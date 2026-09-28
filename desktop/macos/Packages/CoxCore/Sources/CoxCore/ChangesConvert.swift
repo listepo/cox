@@ -12,10 +12,16 @@ extension CoxClient.Changes {
       checkpoints: changes.checkpoints.map {
         CoxClient.Checkpoint(turn: $0.turn, label: $0.label, time: $0.time)
       },
-      worktree: changes.worktree.map {
-        CoxClient.Linked(
-          path: $0.path, branch: $0.branch, base: $0.base, commit: $0.commit, bytes: $0.bytes)
-      })
+      worktree: changes.worktree.map { CoxClient.Linked($0) })
+  }
+}
+
+extension CoxClient.Linked {
+  /// Shared by the Changes and Info tabs, which both show the worktree.
+  init(_ linked: CoxFFIBindings.Linked) {
+    self.init(
+      path: linked.path, branch: linked.branch, base: linked.base, commit: linked.commit,
+      bytes: linked.bytes)
   }
 }
 

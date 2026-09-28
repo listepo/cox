@@ -15,10 +15,10 @@ use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange}
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind};
 use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 use cox_app::{
-    Activity, ChangedFile, Changes, Checkpoint, Completion, Dropped, FileChange, Icon, InboxItem,
-    Intent, Layer, Linked, McpLogin, McpServer, MeterRow, MeterText, Need, Project, SearchHit,
-    SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind, TaskTarget, TurnUsage,
-    UsageView,
+    Activity, ChangedFile, Changes, Checkpoint, Completion, ConfigSource, Dropped, FileChange,
+    Icon, InboxItem, Info, Intent, Layer, Linked, McpLogin, McpServer, MeterRow, MeterText, Need,
+    Project, SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind,
+    TaskTarget, TurnUsage, UsageView,
 };
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
@@ -555,6 +555,22 @@ pub struct Checkpoint {
     pub turn: u32,
     pub label: String,
     pub time: String,
+}
+
+#[uniffi::remote(Record)]
+pub struct Info {
+    pub session: SessionId,
+    pub cwd: PathBuf,
+    pub worktree: Option<Linked>,
+    pub config: Vec<ConfigSource>,
+    pub rollout: PathBuf,
+}
+
+#[uniffi::remote(Record)]
+pub struct ConfigSource {
+    pub layer: Layer,
+    pub file: Option<PathBuf>,
+    pub keys: u32,
 }
 
 #[uniffi::remote(Record)]
