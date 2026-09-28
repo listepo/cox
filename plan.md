@@ -2793,18 +2793,21 @@ Check: `npm test` passes; `get_screenshot` of node 4:2 shows every text layer re
 Depends: — · Size: ~120 · Files: `desktop/design` (a script, its test, `package.json`), `DESIGN.md` §2
 Goal: A119. One command takes a CoxUI snapshot PNG and the matching frame (a Figma export or `mockups/screens/<id>.png`), scales them to the same size and writes a diff image plus a short report: the share of differing pixels and the bounding boxes of the largest differing regions, so an agent sees where spacing, colour or type drift without comparing by eye. Prefer a maintained library (e.g. `pixelmatch`) over custom code.
 Check: a test with two small PNGs that differ in one known rectangle reports that rectangle; the command runs on a real CoxUI snapshot and its mockup frame; `DESIGN.md` §2 says how to use it.
+Plan: pick a maintained PNG diff library (pixelmatch + pngjs) or an installed tool, add a `desktop/design` script and npm command that scales both images, writes a diff PNG and prints the differing share and largest regions; a node test with two synthetic PNGs; a DESIGN.md §2 paragraph; a toolchain.md row for any new package.
 
 #### T37.44.5 Settings and onboarding screens match the Figma frames
 
 Depends: T37.44.1 · Size: ~150 · Files: CoxUI settings and first-run views, their snapshots
 Goal: A114, A119. The Figma page "Settings & onboarding" frames are compared with the CoxUI snapshots of the same screens; every difference in layout, spacing, radius, colour or type is fixed through the tokens (no raw values), snapshots re-recorded on purpose. Iterate in CoxUI alone (no XCFramework).
 Check: per screen, the snapshot next to the frame matches by eye (or by the T37.44.4 diff once it exists); CoxUI tests pass; swift-format and swiftlint strict clean.
+Plan: map the Figma page's frames to CoxUI snapshot tests (add a snapshot where a screen has none), compare each with `get_screenshot`/`get_design_context`, fix differences through tokens in CoxUI, re-record, lint; iterate in CoxUI only.
 
 #### T37.44.6 Inspector and review screens match the Figma frames
 
 Depends: T37.44.1 · Size: ~150 · Files: CoxUI inspector, review and diff views, their snapshots
 Goal: A114, A119. The Figma page "Inspector & review" frames are compared with the CoxUI snapshots of the same screens; every difference is fixed through the tokens, snapshots re-recorded on purpose. Iterate in CoxUI alone.
 Check: as T37.44.5.
+Plan: as T37.44.5 for the "Inspector & review" page.
 
 #### T37.44.7 Approval and composer screens match the Figma frames
 
