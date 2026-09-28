@@ -35,6 +35,8 @@ schemars = { workspace = true }
 # T3.4 (`edit`): unified diffs + closest-line ratio for NotFound suggestions.
 similar = { workspace = true }
 nix = { workspace = true, features = ["signal", "process", "poll", "term"] }
+# T41.3: path <-> `file://` URI conversion for the LSP wire (A81).
+url = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

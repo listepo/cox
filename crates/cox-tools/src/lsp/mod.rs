@@ -4,3 +4,4 @@
 //! server lifecycle and the tool can each be tested alone.
 
 pub mod client;
+pub mod diag;
