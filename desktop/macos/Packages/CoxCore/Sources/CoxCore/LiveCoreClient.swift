@@ -1,5 +1,5 @@
-// The `CoreClient` over cox-ffi (DT§4.4, §4.6): opens sessions, and reads
-// and edits settings (DT§5.7), through the generated `App` and hands the
+// The `CoreClient` over cox-ffi (DT§4.4, §4.6): opens sessions, reads the
+// inbox, and reads and edits settings (DT§5.7), through the generated `App` and hands the
 // stores `CoxClient` values. Separate from the
 // conversions, which are data only; this file is the one place the app
 // calls into Rust.
@@ -21,6 +21,10 @@ public final class LiveCoreClient: CoreClient {
       request: OpenRequest(cwd: request.cwd, resume: request.resume, theme: request.theme))
     return LiveSession(handle)
   }
+}
+
+extension LiveCoreClient: InboxClient {
+  public func inbox() -> [CoxClient.InboxItem] { app.inbox().map { CoxClient.InboxItem($0) } }
 }
 
 final class LiveSession: SessionClient {

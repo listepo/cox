@@ -1,7 +1,8 @@
 // `Sidebar` (DS§6.4 row `Sidebar`, the mockup's `.sidebar`; DT§5.1): the session list — the
 // filter, the status sections ("Needs you", "Running"), the projects as disclosure groups, and
-// the footer with New session and the providers' health. Separate so the window shell shows
-// sessions from one value the core fills, and reports what the person does as intents.
+// the footer with New session and the providers' health. A "Needs you" row is one inbox item
+// (T37.27.7), which opens its session and, once expired, is read-only. Separate so the window
+// shell shows sessions from one value the core fills, and reports what the person does as intents.
 
 import SwiftUI
 
@@ -9,9 +10,15 @@ import SwiftUI
 /// `state` and reports every action through `send`; it owns no session state.
 struct Sidebar: View {
   struct Session: Equatable, Sendable, Identifiable {
-    /// The session's stable id from Rust.
+    /// The session's stable id from Rust, or an inbox item's: one session can wait on several.
     let id: String
     var row: SessionRow.Item
+    /// The session an inbox item's row opens; `nil` when `id` is the session.
+    var session: ID?
+    /// An expired inbox item: shown, but no longer answerable from this window.
+    var isReadOnly = false
+
+    var opens: ID { session ?? id }
   }
 
   struct Group: Equatable, Sendable, Identifiable {
@@ -131,11 +138,12 @@ private struct SidebarGroup: View {
   private var rows: some View {
     ForEach(group.sessions) { session in
       Button {
-        send(.select(session.id))
+        send(.select(session.opens))
       } label: {
-        SessionRow(session.row, isSelected: session.id == selection)
+        SessionRow(session.row, isSelected: session.opens == selection)
       }
       .buttonStyle(.plain)
+      .disabled(session.isReadOnly)
       .padding(.horizontal, Space.m)
     }
   }
@@ -175,5 +183,10 @@ private struct SidebarFooter: View {
 #Preview("main") {
   PreviewMatrix {
     Sidebar(state: PreviewState.sidebar) { _ in }.frame(height: Size.windowMinHeight)
+  }
+}
+#Preview("needs you") {
+  PreviewMatrix {
+    Sidebar(state: PreviewState.inboxSidebar) { _ in }.frame(height: Size.windowMinHeight)
   }
 }

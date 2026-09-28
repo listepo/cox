@@ -22,7 +22,7 @@ let approveWrite = fixtures.first { $0.lastPathComponent == "approve-write.json"
 
 /// The first pending approval's call id, once the store holds one.
 @MainActor
-private func pendingApproval(_ store: SessionStore) -> String? {
+func pendingApproval(_ store: SessionStore) -> String? {
   store.blocks.values.lazy.compactMap { block -> String? in
     guard case .approval(let call, _, _, _, _, nil, _) = block.kind else { return nil }
     return call
