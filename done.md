@@ -3294,3 +3294,17 @@ Deviations: `.gitignore` gains `desktop/macos/build/` (a fourth file). No split 
 Check: `CARGO_BUILD_JOBS=4 just desktop-xcframework` exit 0 (staticlib 4m44s, bindgen 4m49s); `lipo -archs` → `arm64`; `otool` minimum OS 26.0 on our objects (`compiler_builtins` and a few prebuilt `std` objects say 11.0, which links fine); `actionlint` 1.7.12 with shellcheck clean; `shellcheck` 0.11.0 clean. Commit ca495b5. The CI job first runs on the PR.
 
 Not done: the static library is 393 MB (1250 members, fat LTO) — revisit when the app is packaged.
+
+#### T37.17 Token pipeline: DTCG → `Tokens.swift`, `Colors.xcassets`, `tokens.css`
+
+Depends: T37.0, T37.15 · Size: ~120 · Files: `desktop/design/style-dictionary.config.mjs`, `desktop/design/package.json`, `justfile`
+Goal: Style Dictionary generates the Swift tokens, asset-catalog colorsets (Any, Dark, High Contrast) and the mockups' CSS from `desktop/design/tokens/` (DS§2). New dependency `style-dictionary` (§1.1 row).
+Check: `just desktop-tokens` regenerates with no diff (drift test in CI); a generated colorset has a dark variant; `build_tokens.py` is deleted.
+Status: done 2026-09-28
+Result: Style Dictionary 5.5.5 (`desktop/design/style-dictionary.config.mjs`, pinned in `desktop/design/package.json` with a lockfile; custom Swift and CSS formats and a colorset action, since the built-in ones do not handle DTCG composites or asset catalogs) builds `desktop/design/tokens/*.json` into `desktop/macos/Packages/CoxUI/Sources/CoxUI/Tokens/Tokens.swift` (`Space`, `Radius`, `Size`, `Motion`, `MaterialToken`, `FontToken`, `ElevationToken`), `Tokens/Colors.xcassets` (56 colorsets, Any + Dark) and `desktop/design/tokens/tokens.css` (`:root` light, `.dark`). `just desktop-tokens` runs it; CI job `desktop-tokens` (ubuntu-24.04, node only) re-runs it and fails on a diff. `build_tokens.py` is deleted; DS§2 describes the new pipeline. node 24.21.0 (latest LTS) is pinned in `mise.toml`.
+
+Deviations: more than three files (`.gitignore`, `ci.yml`, `mise.toml`, `toolchain.md`, `DESIGN.md`, token JSON). Tokens with child tokens (`accent`/`accent.soft`, `font.transcript`/`transcript.h3`), whose children Style Dictionary drops, became DTCG 2025.10 `$root` groups (§6.2) with the same values. Swift type names `FontToken`, `MaterialToken`, `ElevationToken` avoid shadowing SwiftUI's `Font`, `Material` and the planned `Elevation` modifier. Weight 650 maps to `.semibold` (DS§3.2).
+
+Check: `just desktop-tokens` before and after the commit — no diff, no untracked files; an edited colour shows the diff; `surfaceWindow.colorset` has a `"luminosity": "dark"` entry; `xcrun actool` compiles the catalog (112 renditions); `swiftc -typecheck -swift-version 6 Tokens.swift` ok; a temporary `color.dark-hc.json` adds a contrast entry and an unknown mode file fails the build; `actionlint` clean. Commit addef79.
+
+Not done: no High Contrast values yet — the pipeline adds them when `color.light-hc.json`/`color.dark-hc.json` exist, but the colours are a design choice for the creator. `mockups.html` still has its own inline variables (outside the card's files). `letterSpacing` is stored as `rem` but means em; it is emitted as em tracking.
