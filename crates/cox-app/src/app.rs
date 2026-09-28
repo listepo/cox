@@ -84,6 +84,15 @@ pub enum AppError {
     Terminal(#[from] crate::TerminalError),
     #[error("session {0} is not open here")]
     NotOpen(SessionId),
+    /// T52.4 (DT§3.3.1): the intent needs cox state an external agent's
+    /// session does not have: its model, mode, history and files are the
+    /// agent's own.
+    #[error("{intent} is not available in {agent} sessions (Agent Client Protocol)")]
+    Unsupported { agent: String, intent: &'static str },
+    /// T52.4: the agent could not start: its program or key is missing (the
+    /// one warning, EA§7), or it failed `initialize` or `session/new`.
+    #[error(transparent)]
+    Agent(#[from] cox_session::acp_session::AcpOpenError),
 }
 
 impl From<SessionError> for AppError {
@@ -232,6 +241,18 @@ impl App {
             None => None,
         };
         LiveSession::open(Arc::clone(self), cwd, resume, theme).await
+    }
+
+    /// A new session in `cwd` driven by the external agent `agent` (T52.4,
+    /// DT§3.3.1): a user-config `[external_agents.<name>]` entry or a
+    /// granted plugin's. Call on a tokio runtime, as for [`App::open`].
+    pub async fn open_agent(
+        self: &Arc<Self>,
+        cwd: PathBuf,
+        agent: &str,
+        theme: String,
+    ) -> Result<Arc<LiveSession>, AppError> {
+        LiveSession::open_agent(Arc::clone(self), cwd, agent, theme).await
     }
 
     /// The Settings screen for a session in `cwd` (DT§5.7), with each MCP

@@ -18,6 +18,7 @@ use cox_protocol::types::{Event, Level, Submission, TodoItem};
 use cox_render::diffmodel::DiffModel;
 use cox_sanitize::sanitize;
 use cox_session::SessionSpec;
+use cox_session::acp_session::AcpSession;
 use cox_session::plugin_ui::PluginAnswer;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -41,9 +42,16 @@ const EVENTS: usize = 256;
 /// request, which the next redraw asks again.
 const PLUGIN_QUEUE: usize = 64;
 
+/// What runs the session: cox's own core, or an external ACP agent's
+/// process (T52.4), whose events feed the same timeline.
+enum Driver {
+    Core(Session),
+    Agent { id: SessionId, acp: AcpSession },
+}
+
 pub struct LiveSession {
     app: Arc<App>,
-    session: Session,
+    driver: Driver,
     /// Shared with each queued turn, which reports when it starts.
     controller: Arc<Controller>,
     completer: Completer,
@@ -137,7 +145,7 @@ impl LiveSession {
             sandbox: cox_session::sandbox_policy(&opened.config),
             roots: opened.config.core.workspace_roots,
             app,
-            session,
+            driver: Driver::Core(session),
             cwd,
             theme,
         });
@@ -146,8 +154,71 @@ impl LiveSession {
         Ok(live)
     }
 
+    /// A session driven by the external agent `agent` (T52.4): its events
+    /// go through the same inbox tee, timeline and controller as a cox
+    /// session's. No plugin UI, cox commands or terminal policy of its own:
+    /// the agent brings its own.
+    pub(crate) async fn open_agent(
+        app: Arc<App>,
+        cwd: PathBuf,
+        agent: &str,
+        theme: String,
+    ) -> Result<Arc<Self>, AppError> {
+        let config = app.config(&cwd)?;
+        let (opened, roots) = crate::external::open(&app, &config, &cwd, agent).await?;
+        let id = SessionId::new();
+        let events = tee(Arc::clone(&app), id, opened.events);
+        let (asks, _) = mpsc::channel(1);
+        let owner = Arc::clone(&app);
+        let live = Arc::new(Self {
+            completer: Completer::default(),
+            plugins: Arc::new(PluginUi::new(asks)),
+            controller: Arc::new(Controller::open(
+                Timeline::new(&theme),
+                StatusFold::open(&config),
+                events,
+            )),
+            warnings: Vec::new(),
+            turn: Mutex::new(None),
+            sandbox: cox_session::agent_policy(&config),
+            roots,
+            app,
+            driver: Driver::Agent {
+                id,
+                acp: opened.session,
+            },
+            cwd,
+            theme,
+        });
+        owner.register(&live);
+        Ok(live)
+    }
+
     pub fn id(&self) -> SessionId {
-        self.session.id()
+        match &self.driver {
+            Driver::Core(session) => session.id(),
+            Driver::Agent { id, .. } => *id,
+        }
+    }
+
+    /// The external agent driving this session, if one does (T52.4).
+    pub fn agent(&self) -> Option<&str> {
+        match &self.driver {
+            Driver::Core(_) => None,
+            Driver::Agent { acp, .. } => Some(acp.agent()),
+        }
+    }
+
+    /// Cox's own core; an agent's session has none, so what needs it is
+    /// refused by `what`'s name.
+    fn core(&self, what: &'static str) -> Result<&Session, AppError> {
+        match &self.driver {
+            Driver::Core(session) => Ok(session),
+            Driver::Agent { acp, .. } => Err(AppError::Unsupported {
+                agent: acp.agent().to_string(),
+                intent: what,
+            }),
+        }
     }
 
     /// What was skipped while the session was built (D14).
@@ -167,20 +238,26 @@ impl LiveSession {
 
     /// Returns at once for a turn; a fork or handoff returns its child.
     pub async fn send(&self, intent: Intent) -> Result<Option<Arc<Self>>, AppError> {
+        let session = match &self.driver {
+            Driver::Core(session) => session,
+            Driver::Agent { id, acp } => {
+                return crate::external::send(&self.app, *id, acp, intent).map(|()| None);
+            }
+        };
         if let Intent::Command { line } = &intent {
             // `/<id>:<name>` is the plugin's (PL§8); no built-in has a colon.
             if self.plugins.command(line) {
                 return Ok(None);
             }
         }
-        let parent = self.session.id();
+        let parent = session.id();
         let home = &self.app.home;
         let child = match dispatch(intent)? {
             Dispatch::Submit {
                 submission,
                 spawn: false,
             } => {
-                self.session.submit(submission).await?;
+                session.submit(submission).await?;
                 return Ok(None);
             }
             Dispatch::Submit { submission, .. } => {
@@ -193,7 +270,7 @@ impl LiveSession {
             }
             Dispatch::Fork { turn } => cox_session::fork(home, &self.cwd, parent, turn)?,
             Dispatch::Handoff { objective } => {
-                let summary = self.session.handoff_summary(&objective).await;
+                let summary = session.handoff_summary(&objective).await;
                 cox_session::handoff(home, &self.cwd, parent, &objective, summary.as_deref())?
             }
         };
@@ -344,11 +421,13 @@ impl LiveSession {
     /// This session's `AllowForSession` grants, as its core holds them
     /// (T37.45.3), with its title for the Settings row.
     pub async fn grants(&self) -> Vec<SessionGrant> {
+        let Driver::Core(core) = &self.driver else {
+            return Vec::new();
+        };
         let (session, store) = (self.id(), self.app.workspace().store());
         // A session with no ledger row yet has no title to show.
         let title = store.session_info(&session).ok().and_then(|i| i.title);
-        self.session
-            .grants()
+        core.grants()
             .await
             .into_iter()
             .map(|(tool, subject)| SessionGrant {
@@ -367,7 +446,7 @@ impl LiveSession {
             tool: tool.to_string(),
             subject: subject.to_string(),
         };
-        Ok(self.session.submit(revoke).await?)
+        Ok(self.core("RevokeGrant")?.submit(revoke).await?)
     }
 
     /// The plugin keys granted in this session (T52.14), for the leader
@@ -443,7 +522,9 @@ impl LiveSession {
                     NoticeLevel::Info => Level::Info,
                 };
                 // A session that ended has no stream left to tell.
-                let _ = self.session.notice(level, sanitize(&notice.text)).await;
+                if let Ok(session) = self.core("Notice") {
+                    let _ = session.notice(level, sanitize(&notice.text)).await;
+                }
                 return;
             }
             Some(CommandOut::Nothing) | None => return,
@@ -455,7 +536,9 @@ impl LiveSession {
             }) => self.spawn(submission, true),
             // A failed compaction says so in the event stream.
             Ok(Dispatch::Submit { submission, .. }) => {
-                let _ = self.session.submit(submission).await;
+                if let Ok(session) = self.core("Compact") {
+                    let _ = session.submit(submission).await;
+                }
             }
             // An empty prompt is dropped; neither intent dispatches otherwise.
             _ => {}
@@ -480,14 +563,21 @@ impl LiveSession {
 
     /// Quitting: ends every turn and kills what it detached (T38.2).
     pub fn end(&self) {
-        self.session.end();
+        match &self.driver {
+            Driver::Core(session) => session.end(),
+            Driver::Agent { acp, .. } => acp.end(),
+        }
         self.close();
     }
 
     /// Spawns a turn (R9.4.3); `queued` waits for the one spawned last and
     /// counts in the status patch until it starts.
     fn spawn(&self, submission: Submission, queued: bool) {
-        let session = self.session.clone();
+        // Only a core session's intents and plugin commands spawn turns.
+        let Driver::Core(session) = &self.driver else {
+            return;
+        };
+        let session = session.clone();
         let controller = queued.then(|| Arc::clone(&self.controller));
         let mut last = self.turn.lock().unwrap_or_else(PoisonError::into_inner);
         let before = last.take().filter(|_| queued);

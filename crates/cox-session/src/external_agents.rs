@@ -61,27 +61,13 @@ pub(crate) fn drivers(
     if agents.is_empty() {
         return (out, left_out);
     }
-    let home = std::env::home_dir();
-    // The rules the session's own engine compiled from (`Session::new`); an
-    // error there already failed the session, so this is belt and braces.
-    let engine = match Engine::compile(&config.permissions, home.as_deref(), cwd) {
-        Ok(engine) => Arc::new(engine),
+    let acp = match acp_host(config, cwd, writable) {
+        Ok(host) => Arc::new(host),
         Err(e) => {
-            left_out.push(format!("external agents left out: permissions: {e}"));
+            left_out.push(format!("external agents left out: {e}"));
             return (out, left_out);
         }
     };
-    // T52.2: the agent's own process has network (`agent_policy`), so the
-    // terminals it asks cox for get the same policy, one value for both.
-    let policy = crate::sandbox::agent_policy(config);
-    let acp = Arc::new(AcpHost {
-        roots: writable.to_vec(),
-        cwd: cwd.to_path_buf(),
-        sandbox: (policy.mode != SandboxMode::DangerFullAccess).then_some(policy),
-        engine,
-        mode: config.permissions.mode,
-        approval: config.permissions.approval,
-    });
     for agent in agents {
         let name = agent.name().to_string();
         if let Some(cli) = agent.missing_cli(path) {
@@ -194,21 +180,22 @@ fn state_dirs(dirs: &[PathBuf], home: Option<&Path>) -> Result<Vec<PathBuf>, Str
         .collect()
 }
 
-/// How one entry's CLI is started for a turn.
-struct Spawn {
-    name: String,
-    agent: ExternalAgentCommand,
-    mode: AgentMode,
-    key_env: String,
-    key: String,
-    cwd: PathBuf,
+/// How one entry's CLI is started: for a turn here, for a whole session in
+/// `acp_session` (T52.4), through the same env allowlist and process group.
+pub(crate) struct Spawn {
+    pub(crate) name: String,
+    pub(crate) agent: ExternalAgentCommand,
+    pub(crate) mode: AgentMode,
+    pub(crate) key_env: String,
+    pub(crate) key: String,
+    pub(crate) cwd: PathBuf,
 }
 
 impl Spawn {
     /// The wrapped argv plus `extra`, with the child env allowlist (D14)
     /// and the key from `key_env` only — cox's own provider keys stay
     /// behind. Its own process group, so `Reap` takes everything it started.
-    fn spawn(&self, extra: &[&str], stdin: Stdio) -> Result<(Child, Reap), CoreError> {
+    pub(crate) fn spawn(&self, extra: &[&str], stdin: Stdio) -> Result<(Child, Reap), CoreError> {
         use std::os::unix::process::CommandExt as _;
 
         let mut cmd = self.agent.command();
@@ -233,7 +220,7 @@ impl Spawn {
         Ok((child, reap))
     }
 
-    fn error(&self, message: String) -> CoreError {
+    pub(crate) fn error(&self, message: String) -> CoreError {
         CoreError::ExternalAgent {
             agent: self.name.clone(),
             message,
@@ -244,7 +231,7 @@ impl Spawn {
 /// Kills the CLI's process group however the turn ends — done, failed,
 /// cancelled, or the core dropping the turn — with the kill a cancelled
 /// `bash` ends with.
-struct Reap(Option<u32>);
+pub(crate) struct Reap(Option<u32>);
 
 impl Drop for Reap {
     fn drop(&mut self) {
@@ -256,7 +243,7 @@ impl Drop for Reap {
 
 /// The last `STDERR_TAIL` bytes the CLI wrote to stderr, sanitized. Read to
 /// the end so a chatty CLI never blocks on a full pipe.
-async fn stderr_tail(mut stderr: impl AsyncRead + Unpin) -> String {
+pub(crate) async fn stderr_tail(mut stderr: impl AsyncRead + Unpin) -> String {
     let (mut tail, mut buf) = (Vec::new(), [0u8; 4096]);
     while let Ok(n) = stderr.read(&mut buf).await {
         if n == 0 {
@@ -327,13 +314,66 @@ impl ExternalAgent for StreamJson {
 }
 
 /// Everything an ACP `ClientHost` is built from, shared by every ACP entry.
-struct AcpHost {
+pub(crate) struct AcpHost {
     roots: Vec<PathBuf>,
     cwd: PathBuf,
     sandbox: Option<SandboxPolicy>,
     engine: Arc<Engine>,
     mode: PermissionMode,
     approval: ApprovalPolicy,
+}
+
+/// The host every ACP agent in a session in `cwd` is answered from: the
+/// rules the session's own engine compiled from (`Session::new`), and, since
+/// T52.2, the agent's own policy (`agent_policy`, network on), so the
+/// terminals it asks cox for run as the agent itself does.
+pub(crate) fn acp_host(
+    config: &Config,
+    cwd: &Path,
+    writable: &[PathBuf],
+) -> Result<AcpHost, String> {
+    let home = std::env::home_dir();
+    let engine = Engine::compile(&config.permissions, home.as_deref(), cwd)
+        .map_err(|e| format!("permissions: {e}"))?;
+    let policy = crate::sandbox::agent_policy(config);
+    Ok(AcpHost {
+        roots: writable.to_vec(),
+        cwd: cwd.to_path_buf(),
+        sandbox: (policy.mode != SandboxMode::DangerFullAccess).then_some(policy),
+        engine: Arc::new(engine),
+        mode: config.permissions.mode,
+        approval: config.permissions.approval,
+    })
+}
+
+impl AcpHost {
+    /// A `ClientHost` whose `Ask` verdicts go to `approver` and whose
+    /// `session/update`s go to `updates`.
+    pub(crate) fn client(
+        &self,
+        approver: Arc<dyn Approver>,
+        updates: mpsc::UnboundedSender<SessionUpdate>,
+    ) -> ClientHost {
+        ClientHost {
+            roots: self.roots.clone(),
+            cwd: self.cwd.clone(),
+            sandbox: self.sandbox.clone(),
+            engine: self.engine.clone(),
+            mode: self.mode,
+            approval: self.approval,
+            grants: Vec::new(),
+            approver,
+            updates: Some(updates),
+        }
+    }
+
+    pub(crate) fn cwd(&self) -> &Path {
+        &self.cwd
+    }
+
+    pub(crate) fn sandboxed(&self) -> bool {
+        self.sandbox.is_some()
+    }
 }
 
 /// `mode = "acp"` (EA§4): the CLI speaks ACP on its stdio for one turn:
@@ -348,7 +388,7 @@ struct Acp {
 /// route to the session's `ApprovalRequired` relay, so the request is
 /// refused (fail closed) with the way out named. A rule the engine already
 /// allows or denies is decided as usual.
-struct RefuseAsk;
+pub(crate) struct RefuseAsk;
 
 #[async_trait::async_trait]
 impl Approver for RefuseAsk {
@@ -384,20 +424,9 @@ impl ExternalAgent for Acp {
         };
         let stderr = tokio::spawn(stderr_tail(stderr));
         let (tx, mut updates) = mpsc::unbounded_channel();
-        let h = &self.host;
-        let host = ClientHost {
-            roots: h.roots.clone(),
-            cwd: h.cwd.clone(),
-            sandbox: h.sandbox.clone(),
-            engine: h.engine.clone(),
-            mode: h.mode,
-            approval: h.approval,
-            grants: Vec::new(),
-            approver: Arc::new(RefuseAsk),
-            updates: Some(tx),
-        };
-        let cwd = h.cwd.clone();
-        let sandboxed = h.sandbox.is_some();
+        let host = self.host.client(Arc::new(RefuseAsk), tx);
+        let cwd = self.host.cwd().to_path_buf();
+        let sandboxed = self.host.sandboxed();
         let transport = ByteStreams::new(stdin.compat_write(), stdout.compat());
         let run = cox_acp::connect(transport, host, async move |cx| {
             cx.send_request(cox_acp::initialize_request(sandboxed))

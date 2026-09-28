@@ -186,6 +186,66 @@ pub fn dispatch(intent: Intent) -> Result<Dispatch, IntentError> {
     }
 }
 
+/// What a session driven by an external ACP agent does with an intent
+/// (T52.4, DT§3.3.1): the agent owns the model, mode, history and files, so
+/// only a prompt, a cancel and a rename mean anything; the rest is refused
+/// by name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentDispatch {
+    /// `session/prompt`, after the one in flight.
+    Prompt(String),
+    /// `session/cancel`.
+    Cancel,
+    /// The session's title in `cox.db`, as for any session.
+    Rename(String),
+    /// Not available in an agent's session; the intent's name.
+    Refused(&'static str),
+}
+
+/// Maps `intent` for an external agent's session. A `/` line goes to the
+/// agent verbatim (its commands apply, not cox's); a `!` line needs cox's
+/// shell and is refused.
+pub fn agent_dispatch(intent: Intent) -> Result<AgentDispatch, IntentError> {
+    Ok(match intent {
+        Intent::Send {
+            text, attachments, ..
+        }
+        | Intent::Queue {
+            text, attachments, ..
+        } => {
+            if !attachments.is_empty() {
+                AgentDispatch::Refused("Attachments")
+            } else if text.trim().is_empty() {
+                return Err(IntentError::Empty);
+            } else {
+                AgentDispatch::Prompt(text)
+            }
+        }
+        Intent::Command { line } if line.trim_start().starts_with('!') => {
+            AgentDispatch::Refused("Shell")
+        }
+        Intent::Command { line } if line.trim().is_empty() => return Err(IntentError::Empty),
+        Intent::Command { line } => AgentDispatch::Prompt(line.trim().to_string()),
+        Intent::Interrupt => AgentDispatch::Cancel,
+        Intent::Rename { title } if title.trim().is_empty() => return Err(IntentError::Empty),
+        Intent::Rename { title } => AgentDispatch::Rename(title),
+        Intent::Approve { .. } => AgentDispatch::Refused("Approve"),
+        Intent::Answer { .. } => AgentDispatch::Refused("Answer"),
+        Intent::Compact { .. } => AgentDispatch::Refused("Compact"),
+        Intent::SetMode { .. } => AgentDispatch::Refused("SetMode"),
+        Intent::SwitchModel { .. } => AgentDispatch::Refused("SwitchModel"),
+        Intent::SetEffort { .. } => AgentDispatch::Refused("SetEffort"),
+        Intent::Rewind { .. } => AgentDispatch::Refused("Rewind"),
+        Intent::Redo => AgentDispatch::Refused("Redo"),
+        Intent::RevertFile { .. } => AgentDispatch::Refused("RevertFile"),
+        Intent::RevertHunk { .. } => AgentDispatch::Refused("RevertHunk"),
+        Intent::Fork { .. } => AgentDispatch::Refused("Fork"),
+        Intent::Handoff { .. } => AgentDispatch::Refused("Handoff"),
+        Intent::Background { .. } => AgentDispatch::Refused("Background"),
+        Intent::Shell { .. } => AgentDispatch::Refused("Shell"),
+    })
+}
+
 /// A turn needs text or an attachment.
 fn turn(
     text: String,
@@ -276,6 +336,32 @@ mod tests {
                 },
                 spawn: false,
             })
+        );
+    }
+
+    /// T52.4: an agent's session prompts, cancels and renames; a `/` line
+    /// goes verbatim, and everything that needs cox's own state is refused.
+    #[test]
+    fn agent_dispatch_refuses_what_the_agent_owns() {
+        let line = |l: &str| Intent::Command { line: l.into() };
+        assert_eq!(
+            agent_dispatch(line("/review now")),
+            Ok(AgentDispatch::Prompt("/review now".into()))
+        );
+        assert_eq!(
+            agent_dispatch(line("!ls")),
+            Ok(AgentDispatch::Refused("Shell"))
+        );
+        assert_eq!(agent_dispatch(Intent::Interrupt), Ok(AgentDispatch::Cancel));
+        let rewind = Intent::Rewind {
+            to_turn: 1,
+            code: true,
+            conversation: true,
+        };
+        assert_eq!(agent_dispatch(rewind), Ok(AgentDispatch::Refused("Rewind")));
+        assert_eq!(
+            agent_dispatch(Intent::Fork { turn: None }),
+            Ok(AgentDispatch::Refused("Fork"))
         );
     }
 }
