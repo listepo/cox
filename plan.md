@@ -32,8 +32,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.43 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.20.1 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.20.2 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.20.3 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.20.4 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.21 | todo | P0 | 4 | 0% | |
 | T37.22 | todo | P0 | 3 | 0% | |
 | T37.23 | todo | P0 | 5 | 0% | |
@@ -1112,18 +1110,6 @@ Check: snapshot per variant × light/dark × Solid/Frosted; under Reduce Motion 
 Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
 Goal: the token meter's data graphics: `Sparkline(samples)` (tint, gradient fill) and `StackedBar(segments)` (segment colours from tokens).
 Check: snapshots for empty, one-sample and full series and for a bar of each segment mix × light/dark.
-
-#### T37.20.3 `Thumbnail`
-
-Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
-Goal: `Thumbnail(attachment)` in its image and file variants (DS§6.2).
-Check: snapshot per variant × light/dark × Solid/Frosted.
-
-#### T37.20.4 `Hairline` atom
-
-Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
-Goal: the DS§6.2 hairline atom. SwiftPM rejects two files of the same name in one target and `Foundations/Hairline.swift` exists, so the atom's file (or the Foundations file) takes another name; the type names must not clash either.
-Check: snapshot per orientation × light/dark; the Foundations `hairline` references stay unchanged.
 
 #### T37.21 `CoxUI` Molecules
 

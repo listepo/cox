@@ -26,8 +26,6 @@
 - T37.43. Incremental text from `StyledDoc` spans
 - T37.20.1. `Spinner` and `ProgressRing`
 - T37.20.2. `Sparkline` and `StackedBar`
-- T37.20.3. `Thumbnail`
-- T37.20.4. `Hairline` atom
 - T37.21. `CoxUI` Molecules
 - T37.22. Window shell: split view, sidebar, toolbar, inspector frame
 - T37.23. Transcript view and the DT§9 benchmark gate

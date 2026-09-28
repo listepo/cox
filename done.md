@@ -3462,3 +3462,31 @@ Deviations: 9 Rust and ~14 Swift files. `cox-app` sessions load `<app home>/conf
 Check: insta snapshot `a_setting_the_project_overrides_is_read_only_with_its_layer` (`tiers.code.model` from the project layer, read-only; the project's budget raise dropped by the guard list); secrets tests use in-memory stores only; real binary against a scratch `COX_HOME`: `config set`, `config show --sources`; `swift test` CoxModel 12/12, CoxPlatform 5/5, CoxCore 5/5 (incl. a live round trip through the Rust core; xcframework rebuilt once); `swiftlint --strict` and `swift-format lint --strict` clean on the three packages (tests without the plugin lines locally). After the merge into `p37-desktop`: `nextest -p cox-config -p cox-app -p cox-ffi` 61/61, `-p cox --test deps` 9/9, clippy and fmt clean. Commit 190c199.
 
 Not done: T37.30.1–T37.30.4.
+
+#### T37.20.3 `Thumbnail`
+
+Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
+Goal: `Thumbnail(attachment)` in its image and file variants (DS§6.2).
+Check: snapshot per variant × light/dark × Solid/Frosted.
+Status: done 2026-09-28
+Result: `Atoms/Thumbnail.swift` — the DS§6.2 attachment tile (mockup `.thumb`), `Thumbnail(name, image: Image? = nil)`: the image variant fills a 92×60 tile; the file variant shows `doc.text` over the file name, truncated in the middle so the extension stays visible; `Radius.m` corners, a `.hairline(in:)` rim, VoiceOver reads the name. Plain values, since `CoxUI` must not depend on `CoxModel`. Fixtures in `Previews/PreviewState+Thumbnail.swift`; tests in `Tests/CoxUITests/ThumbnailTests.swift`.
+
+Deviations: fixtures in a new Previews file (avoids a conflict with T37.20.1–T37.20.2); the image variant has no name label (text over an arbitrary picture cannot meet DS§8 contrast); tile size as named private constants; the 10 px label uses `.micro`; the file face uses `fillPrimary` instead of the mockup's placeholder gradient.
+
+Check: 8 snapshots recorded, then a full `swift test` 38 tests in 10 suites pass without re-recording; `swiftlint --strict` and `swift-format lint --strict` clean (tests without the plugin lines locally). Commit ba19224.
+
+Not done: nothing.
+
+#### T37.20.4 `Hairline` atom
+
+Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
+Goal: the DS§6.2 hairline atom. SwiftPM rejects two files of the same name in one target and `Foundations/Hairline.swift` exists, so the atom's file (or the Foundations file) takes another name; the type names must not clash either.
+Check: snapshot per orientation × light/dark; the Foundations `hairline` references stay unchanged.
+Status: done 2026-09-28
+Result: `Atoms/Hairline.swift` — `Hairline(.horizontal | .vertical)`, a free-standing 0.5 pt `separator` rule across its container (mockup `.divider:before`, `.popover .sep`), drawn through the existing `.hairline` modifier so rules and edges share one width and colour. `Foundations/Hairline.swift` renamed to `Foundations/HairlineModifier.swift` (content unchanged) to free the file name; no type names clash. DESIGN.md §5 and §6.2 updated.
+
+Deviations: snapshots cover orientation × light/dark × Solid/Frosted (`Variant.all`), a superset of the card's light/dark.
+
+Check: 8 snapshots recorded, then a full `swift test` 39 tests in 11 suites pass, the Foundations `hairline` references unchanged; `swiftlint --strict` and `swift-format lint --strict` clean. Commit ffb4282.
+
+Not done: nothing.
