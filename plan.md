@@ -34,6 +34,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.21.11 | in progress | P2 | 2 | 90% | Claude Code / Opus 5.5 |
 | T37.22.7 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.22.8 | in progress | P2 | 4 | 0% | Claude Code / Opus 5.5 |
+| T37.22.9 | todo | P2 | 3 | 0% | |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2784,6 +2786,18 @@ Depends: — · Size: ~120 · Files: `scripts/vendor/…`, `crates/cox-models`, 
 Goal: A111. The `scripts/vendor` script that builds the model catalog also takes each model's `name` from models.dev; `ModelRow` gains `display_name` (with its schema and drift test regenerated); the TUI and the app read it; the app's model pill drops the vendor prefix (`Sonnet 5 · high`). A model without a name falls back to its id.
 Check: the vendor script's tests; a cox-models test that `claude-sonnet-5` reads `Claude Sonnet 5`; the pill shows `Sonnet 5 · high` on the approve-write fixture.
 
+#### T37.22.8 Session titles: generated after the first turn, behind a setting
+
+Depends: — · Size: ~200 · Files: `crates/cox-core`, `crates/cox-store` (a migration and a column), `crates/cox-protocol` config
+Goal: A113. After a session's first turn, when `[session] auto_title` is on (default on), cox-core runs one low-cost `Job::Title` request (routing D5) on the first prompt and emits `Event::TitleSet`; the store keeps the title in a `sessions` column (Diesel migration, typed DSL); the call is a `usage` row in the ledger like any other. A title set by the user is never overwritten. Scripted scenarios and tests run with it off unless a test is about it. Config key with default.toml, docs and schema regenerated.
+Check: a cox-core test that a scripted session with the setting on emits one `TitleSet` after turn 1 and none after turn 2, and with it off none; a cox-store test that the title round-trips; a real-binary run with `COX_HOME=/tmp/…` and `COX_PROVIDER=scripted`.
+
+#### T37.22.9 Session titles in the TUI and the app, with rename
+
+Depends: T37.22.8 · Size: ~150 · Files: `crates/cox-tui`, `crates/cox` (a `cox rename` or `/rename`), cox-app/cox-ffi, CoxModel, the app's toolbar and sidebar
+Goal: A113. The TUI shows the session title where it shows the session today and in the resume list; `/rename <title>` in the TUI and a rename in the app (double-click the toolbar title or a sidebar row's context menu) set it through one `Submission` that marks the title as the user's. The app's toolbar and sidebar read the title from the store and follow `TitleSet`.
+Check: a TUI snapshot with a title; a test that a user rename survives a later generated title; a screenshot of the app with titled sessions.
+
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
@@ -2957,6 +2971,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A110 T37.22.6 — the sidebar footer's "N providers" counts the providers the user can use now (a stored or env key, or a reachable local server), not the configured sections, by the creator (2026-09-28). Why: on defaults the section count reads 9 and says nothing about what works.
 - A111 T37.22.7 — a model's display name comes from models.dev (its `name`, e.g. `Claude Sonnet 5`) through the `scripts/vendor` script into the catalog; the app's model pill drops the vendor prefix (`Sonnet 5 · high`), by the creator (2026-09-28). Why: the mockup's pill, and one source for names instead of hand-kept strings.
 - A112 T37.21.11 — contrast, by the creator (2026-09-28): the filter prompt uses a new placeholder token (`#69696e` in light, the dark `text.secondary` in dark) instead of changing `text.secondary`; DS§8's Frosted and Glossy contrast is measured on the glass laid over the window fill, the worst predictable case, while the snapshot wallpaper stays for looks. Why: the recommendations as proposed; the user's wallpaper is unknown.
+- A113 T37.22.8, T37.22.9 — session titles, by the creator (2026-09-28): a title is generated after the first turn by one low-cost `Job::Title` request, behind a setting (`[session] auto_title`, default on), and the user can rename a session; a user's title is never overwritten. Why: every session read "Untitled session" in the app's sidebar and toolbar.
 
 ## 7. Risk register
 
