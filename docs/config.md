@@ -312,3 +312,12 @@ mode.cycle = "shift+tab"
 - It runs under the sandbox, read-only and without network (the session's own policy only under `danger-full-access`), with the environment cleared to the child allowlist plus `COLUMNS`. A host with no sandbox backend gets one warning and no row; the command never runs bare.
 - Its output is untrusted: every escape sequence is stripped, so colours and links are dropped, and the row is drawn dim.
 - A project `.cox/config.toml` cannot set `command`: it would run on every start in a cloned repository, so the value is reverted with a warning, like the other guarded keys.
+
+## Theme editor
+
+`Ctrl+E` on a colour row of the `/theme` picker (T46.7) opens that theme's 17 tokens with a swatch and the current value. `Up`/`Down` (or `Tab`) move, typing edits the selected value, and every colour that parses is drawn at once; one that does not is marked `invalid colour` and not applied. `Esc` puts back what was drawn before `/theme` opened.
+
+- `Enter` (or `Ctrl+S`) writes `~/.cox/themes/<stem>.toml`, selects it as `tui.theme` and lists it in `/theme` without a restart. It edits each token's half for the background in use (`dark` or `light`).
+- A built-in is never overwritten: its edits go to `<name>-custom.toml`, which starts as a copy of the built-in's own file. A user theme is edited in place, keeping its comments and every other key.
+- A stem must match `[a-z0-9][a-z0-9._-]{0,63}` with no `..`; any other is refused with a warning, and a failed write is a warning too.
+- The file: optional `variant = "dark"` (or `"light"`) and `syntax = "<.tmTheme name>"`, then `[tokens]` with `<token> = { dark = "<colour>", light = "<colour>" }`. A colour is `#rrggbb`, an ANSI index `0`-`255` or one of the sixteen ANSI names. The tokens are text, dim, accent, user, agent, tool, ok, warn, error, diff_add, diff_del, diff_hunk, border, selection, mode_plan, mode_auto and mode_bypass.

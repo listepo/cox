@@ -57,6 +57,11 @@ fn hints(state: &State, width: u16) -> Line<'static> {
     let sep = format!(" {} ", state.glyphs.sep);
     let mut rows = state.keymap.rows(state.context());
     rows.dedup_by_key(|(_, action)| *action);
+    // T46.7: `Ctrl+E` edits a theme only over `/theme`, so no other modal
+    // advertises it.
+    let themes =
+        matches!(&state.modal, Some(Modal::Picker(p)) if p.kind == crate::picker::Kind::Themes);
+    rows.retain(|(_, action)| themes || *action != "theme.edit");
     let mut text = String::new();
     for (n, (key, action)) in rows.into_iter().take(5).enumerate() {
         let hint = format!("{key} {}", commands::label(action));

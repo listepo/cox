@@ -564,7 +564,6 @@ pub fn run_init(cli: &Cli, cwd: &Path, force: bool) -> anyhow::Result<i32> {
     Ok(i32::from(!written))
 }
 
-/// Runs the interactive TUI until the user quits.
 /// T46.4 (P46): starts the `[tui.status_line]` runner for one TUI session
 /// and turns its row on, or does nothing when no command is set. A host
 /// whose sandbox cannot wrap the command gets one warning and no row; the
@@ -611,6 +610,55 @@ fn start_status_line(
     }
 }
 
+/// T46.7: a theme file stem the editor may write: `^[a-z0-9][a-z0-9._-]{0,63}$`
+/// and no `..`. Not a model path, so `confine` does not apply; this check
+/// is the only thing keeping the write inside `<home>/themes`.
+fn theme_stem_ok(stem: &str) -> bool {
+    let mut chars = stem.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && stem.len() <= 64
+        && chars
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-'))
+        && !stem.contains("..")
+}
+
+/// T46.7: answers `Ask::SaveTheme`. Starts from the existing
+/// `<dir>/<stem>.toml`, else from the built-in a `-custom` stem was named
+/// after, sets each token with `theme::set_token` (comments and other keys
+/// kept) and writes it through `config_cmd`'s one writer.
+fn save_theme(
+    dir: &Path,
+    stem: &str,
+    dark: bool,
+    tokens: &[(String, String)],
+) -> anyhow::Result<cox_tui::theme::ThemeFile> {
+    use cox_tui::theme;
+    if !theme_stem_ok(stem) {
+        anyhow::bail!("{stem:?} is not a theme file name");
+    }
+    let path = dir.join(format!("{stem}.toml"));
+    let mut src = match std::fs::read_to_string(&path) {
+        Ok(src) => src,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => stem
+            .strip_suffix("-custom")
+            .and_then(theme::builtin_source)
+            .unwrap_or_default()
+            .to_string(),
+        Err(e) => return Err(e.into()),
+    };
+    for (token, value) in tokens {
+        let color = theme::parse_color(value)
+            .ok_or_else(|| anyhow::anyhow!("{value:?} is not a colour"))?;
+        src = theme::set_token(&src, token, dark, color)?;
+    }
+    let file = theme::parse_theme_file(&src)?;
+    cox_config::cmd::write_file(&path, &src)?;
+    Ok(file)
+}
+
+/// Runs the interactive TUI until the user quits.
 pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
     let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
@@ -886,6 +934,20 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
                                 if let Some(tx) = &status_tx {
                                     let input = status_line::input(input, me, &dir, &project);
                                     let _ = tx.try_send((input, columns));
+                                }
+                            }
+                            // T46.7: never fatal; a refused stem or a failed
+                            // write is a warning and the old theme stays.
+                            Some(Ask::SaveTheme { stem, dark, tokens }) => {
+                                let msg = match save_theme(&home.join("themes"), &stem, dark, &tokens) {
+                                    Ok(file) => Msg::ThemeSaved(stem, file),
+                                    Err(e) => Msg::Event(Event::Notice {
+                                        level: Level::Warn,
+                                        text: format!("theme {stem:?} not saved: {e}"),
+                                    }),
+                                };
+                                if feed.send(msg).await.is_err() {
+                                    break;
                                 }
                             }
                             None => break,
@@ -1209,5 +1271,39 @@ mod tests {
         assert_eq!(with, without);
         assert!(!with_rollout.contains("PAINTED"));
         assert!(with.iter().all(|r| !r.contains("PAINTED")));
+    }
+
+    /// T46.7: the stem is the only guard on where the editor writes, so a
+    /// separator, a `..` or an absolute path is refused and nothing lands
+    /// outside `<home>/themes`.
+    #[test]
+    fn save_theme_rejects_a_path_stem() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let dir = home.path().join("themes");
+        let tokens = vec![("accent".to_string(), "#ff0000".to_string())];
+        for stem in ["../evil", "a/b", "/abs", "a..b", "", "Upper", ".hidden"] {
+            assert!(
+                save_theme(&dir, stem, true, &tokens).is_err(),
+                "{stem:?} was accepted"
+            );
+        }
+        assert!(!home.path().join("evil.toml").exists());
+        assert!(!dir.exists(), "a refused stem created nothing");
+    }
+
+    /// T46.7: a `-custom` stem starts from its built-in's own text, and the
+    /// written file parses to what the TUI is told it holds.
+    #[test]
+    fn save_theme_writes_a_custom_copy_of_a_builtin() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let dir = home.path().join("themes");
+        let tokens = vec![("accent".to_string(), "#ff0000".to_string())];
+        let file = save_theme(&dir, "cox-dark-custom", true, &tokens).expect("saved");
+        let written = std::fs::read_to_string(dir.join("cox-dark-custom.toml")).expect("written");
+        assert_eq!(
+            cox_tui::theme::parse_theme_file(&written).expect("parses"),
+            file
+        );
+        assert_eq!(file.dark.accent, cox_tui::theme::parse_color("#ff0000"));
     }
 }

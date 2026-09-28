@@ -65,6 +65,7 @@ binding; a plugin's slash commands show up in the `/` palette as
 | `Esc` | close | modal |
 | `Up` | previous | modal |
 | `Down` | next | modal |
+| `Ctrl+E` | theme.edit | modal |
 | `Esc` | close | overlay |
 | `?` | close | overlay |
 | `PageUp` | scroll.up | overlay |
