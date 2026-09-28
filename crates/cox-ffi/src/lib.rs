@@ -12,6 +12,7 @@ use cox_app::SettingsView;
 use cox_app::WorkspaceError;
 use cox_app::app::{App as Owner, AppError as OwnerError};
 use cox_app::onboarding::CheckRow;
+use cox_app::terminal::TerminalError;
 use cox_app::{Activity, Holder, InboxItem, ModelChoice, Project, SearchHit, SessionEntry};
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::WorktreeInfo;
@@ -23,7 +24,7 @@ pub mod session;
 pub mod types;
 
 pub use host::AppHost;
-pub use session::SessionHandle;
+pub use session::{SessionHandle, TerminalHandle};
 pub use types::OpenRequest;
 
 uniffi::setup_scaffolding!();
@@ -61,6 +62,12 @@ impl From<OwnerError> for AppError {
 
 impl From<WorkspaceError> for AppError {
     fn from(e: WorkspaceError) -> Self {
+        OwnerError::from(e).into()
+    }
+}
+
+impl From<TerminalError> for AppError {
+    fn from(e: TerminalError) -> Self {
         OwnerError::from(e).into()
     }
 }
