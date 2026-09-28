@@ -3858,3 +3858,40 @@ Check: `swift test --no-parallel` in CoxTranscriptText: 23/23. `BlockSelectionTe
 - the menu item is reached through a real right-click and read back from a private named pasteboard.
 The ⇧-click and menu tests fail with the extension disabled. `tenThousandBlocksBuiltPatchByPatchFitTheLaunchBudget` missed 400 ms once at load average 74, then passed alone and on a full rerun. Lints are clean.
 Not done: DT§4.6's CoxTranscriptText row is not updated.
+
+#### T37.22.1 Inspector as an overlay below 1280 pt
+
+Depends: T37.26 · Size: ~80 · Files: `…/Screens/MainScreen.swift`, `…/Organisms/Inspector.swift`
+Goal: below 1280 pt of window width the inspector floats over the transcript column instead of taking width from it.
+Check: snapshots at 1440 and 1100 pt wide; the transcript column keeps its width at 1100 pt.
+Status: done 2026-09-28
+Result: when the window is narrower than 1280 pt, `MainScreen` draws the inspector over the transcript column, inset by `Size.paneGap` from the column's edges, instead of beside it. A `GeometryReader` around the shell supplies the window width. The 1280 pt threshold is a named constant because no token exists for it. DS§4 says the column keeps its width.
+Deviations: none (`Inspector.swift` needed no change).
+Check:
+- New 1100 pt snapshot `mainScreenWithTheInspectorFloating`; the 1440 pt snapshots are unchanged.
+- `InspectorOverlayTests` measures the column from inside its slot. At 1100 pt the width is the same with the inspector shown or hidden; at 1440 pt it shrinks by the inspector width plus one gap.
+- CoxUI `swift test`: 107 tests in 35 suites pass. Lints clean.
+Not done: none.
+
+#### T37.22.2 Sidebar and inspector shortcuts; the bypass strip
+
+Depends: T37.26 · Size: ~100 · Files: `…/Screens/MainScreen.swift`, `desktop/design/DESIGN.md`, `docs/design/desktop.md`
+Goal: the sidebar and inspector toggles use the system `SidebarCommands`/`InspectorCommands` and their default shortcuts (A74), and DS§4 and DT§5 say the same; the bypass-mode strip sits under the toolbar (A74), and DS§4 says so. The Appearance popover's ⌘⌥A (DS) is bound too.
+Check: snapshot with bypass on; the toolbar tooltips name the shortcuts; DS§4 and DT§5 agree.
+Status: done 2026-09-28
+Result:
+- `ShellShortcut` (in `SessionToolbar.swift`) holds each key and its glyphs, so the app menu can reuse them.
+- Shortcuts:
+  - the sidebar buttons (toolbar and `Sidebar`) answer ⌃⌘S;
+  - the inspector button answers ⌃⌘I;
+  - the Appearance button answers ⌘⌥A, and its key cap now reads the same glyphs.
+  Each tooltip names its key.
+- ⌃⌘S and ⌃⌘I are the system defaults. Apple's `InspectorCommands` page gives ⌃⌘I. For the sidebar key, a test app with `SidebarCommands` and `InspectorCommands` was built against the macOS 27 SDK and showed both in its View menu.
+- In Bypass mode the toolbar draws a 3 pt `status.danger` strip under the bar, lined up with the panes.
+- DS§3.1, §4 and §6.4 and DT§5.1 and §5.5 now agree.
+Deviations: the edits are in `SessionToolbar`, `Sidebar` and `AppearancePopover`, where the buttons are, not in `MainScreen`.
+Check:
+- New snapshots `mainScreenInBypass`: light-frosted, plus a folded dark-frosted one.
+- `ShellShortcutTests` covers the keys and the tooltip strings.
+- Full CoxUI run: 110 tests in 36 suites passed, with no existing snapshot re-recorded. Lints clean.
+Not done: installing the menu commands. The system `SidebarCommands`/`InspectorCommands` act only on system-built panes, so the app replaces both menu groups with the same titles and keys through `ShellShortcut` (T37.22.3).

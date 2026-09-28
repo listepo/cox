@@ -43,8 +43,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.19.6 | todo | P2 | 2 | 0% | |
 | T37.20.5 | todo | P2 | 2 | 0% | |
 | T37.21.11 | todo | P2 | 2 | 0% | |
-| T37.22.1 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.22.2 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.22.3 | todo | P1 | 2 | 0% | |
 
 ## Reference
@@ -1176,22 +1174,10 @@ Depends: T37.19.5 · Size: ~100 · Files: `…/Molecules/…`, `desktop/design/D
 Goal: `clock` joins the DS§3.7 symbol table; `SessionRow` reuses `InspectorRow`'s selected-row styling; `DiffStat` hides "−0" for add-only files; section headers and the filter prompt stay readable on Frosted (not `text.tertiary` there); the `KeyCap` inside `StopButton` is visible on the inverted capsule.
 Check: the changed snapshots are re-recorded on purpose; each fixed text pair meets DS§8 contrast on all three materials.
 
-#### T37.22.1 Inspector as an overlay below 1280 pt
-
-Depends: T37.26 · Size: ~80 · Files: `…/Screens/MainScreen.swift`, `…/Organisms/Inspector.swift`
-Goal: below 1280 pt of window width the inspector floats over the transcript column instead of taking width from it.
-Check: snapshots at 1440 and 1100 pt wide; the transcript column keeps its width at 1100 pt.
-
-#### T37.22.2 Sidebar and inspector shortcuts; the bypass strip
-
-Depends: T37.26 · Size: ~100 · Files: `…/Screens/MainScreen.swift`, `desktop/design/DESIGN.md`, `docs/design/desktop.md`
-Goal: the sidebar and inspector toggles use the system `SidebarCommands`/`InspectorCommands` and their default shortcuts (A74), and DS§4 and DT§5 say the same; the bypass-mode strip sits under the toolbar (A74), and DS§4 says so. The Appearance popover's ⌘⌥A (DS) is bound too.
-Check: snapshot with bypass on; the toolbar tooltips name the shortcuts; DS§4 and DT§5 agree.
-
 #### T37.22.3 App window setup and the public CoxUI surface
 
 Depends: T37.32 (the app target) · Size: ~100 · Files: `…/Screens/MainScreen.swift`, the app target
-Goal: the app window has a hidden title bar and a behind-window blur; the screen, state and intent types the app target needs are `public`. The app wires the Appearance popover (T37.26) to `SettingsStore`. It draws blur and wallpaper tint through the behind-window view. It fills the value texts and closes the popover on click-outside or Esc. Controls locked by a higher config layer are disabled, with the layer named. The Settings screen (T37.30.1) opens from the app menu, with slider writes coalesced. The app passes `HostBridge(MacHost())` (T37.30.2) to `LiveCoreClient`, and a notification delegate handles clicks and foreground display.
+Goal: the app window has a hidden title bar and a behind-window blur; the screen, state and intent types the app target needs are `public`. The app wires the Appearance popover (T37.26) to `SettingsStore`. It draws blur and wallpaper tint through the behind-window view. It fills the value texts and closes the popover on click-outside or Esc. Controls locked by a higher config layer are disabled, with the layer named. The Settings screen (T37.30.1) opens from the app menu, with slider writes coalesced. The app passes `HostBridge(MacHost())` (T37.30.2) to `LiveCoreClient`, and a notification delegate handles clicks and foreground display. The app's View menu replaces the system sidebar and inspector command groups with items of the same titles and keys from `ShellShortcut` (T37.22.2), because the system commands act only on system-built panes and the shell is laid out by hand.
 Check: the app target builds against `CoxUI` with only public API; a screenshot of the running app matches mockup screen 28 by eye.
 
 ## 4. Definition of done for v0.1

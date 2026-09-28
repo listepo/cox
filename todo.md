@@ -37,6 +37,4 @@
 - T37.19.6. Increase Contrast in `Appearance`
 - T37.20.5. Atom tokens: project purple, RiskChip colours, named constants
 - T37.21.11. Molecule legibility and small fixes
-- T37.22.1. Inspector as an overlay below 1280 pt
-- T37.22.2. Sidebar and inspector shortcuts; the bypass strip
 - T37.22.3. App window setup and the public CoxUI surface
