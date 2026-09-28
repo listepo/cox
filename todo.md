@@ -23,7 +23,6 @@
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T37.23.9. Prompt bubble glass, elevation and hover actions
 - T37.23.10. Thought duration in the thinking header
-- T37.23.11. Word-level diff in the desktop hunks
 - T37.25.1. Context window size and split in the token popover
 - T37.24.7. Composer status chips
 - T37.24.8. Queue from Rust

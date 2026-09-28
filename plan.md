@@ -29,7 +29,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.23.9 | todo | P2 | 2 | 0% | |
 | T37.23.10 | todo | P2 | 2 | 0% | |
-| T37.23.11 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.25.1 | todo | P2 | 3 | 0% | |
 | T37.24.7 | todo | P2 | 3 | 0% | |
 | T37.24.8 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
@@ -2766,12 +2765,6 @@ Depends: — · Size: ~80 · Files: `crates/cox-app/src/timeline.rs`, `desktop/m
 Goal: a thinking block carries how long the model thought (from its first to its last reasoning delta, as `cox-app` folds the events), and the fold header reads "Thought for 12 s" once it ends and "Thinking" while it streams (DS§6.3).
 Check: a `cox-app` test that a folded reasoning run records its duration and replay gives the same value; a snapshot of the header in both states.
 Held for the creator: the event stream carries no reasoning timing, and live reasoning deltas are keyed to the reply's `AssistantMessage` item, so `Timeline` drops them (`cox-core/src/turn.rs`). The proposed fix, a protocol change, needs approval first: `cox-core` gives streamed reasoning its own `Thinking` item (`ItemStarted` → deltas → `ItemDone`) and records the first-to-last-delta time in the rollout, either as a new `Event::ThinkingDone { item, duration_ms }` or as `ItemDone.duration_ms: Option<u64>`.
-
-#### T37.23.11 Word-level diff in the desktop hunks
-
-Depends: — · Size: ~80 · Files: `crates/cox-render/src/diffmodel.rs`, `crates/cox-render/Cargo.toml`, `desktop/macos/Packages/CoxTranscript/…`
-Goal: `DiffLine` carries the changed word ranges of a paired del/add line, computed in `diffmodel` (so `similar` no longer needs the ratatui feature and the TUI keeps one word-diff path), and the edit card marks them.
-Check: a `diffmodel` test for a one-word change; the TUI word-diff snapshots unchanged; an edit-card snapshot with the marked words.
 
 #### T37.25.1 Context window size and split in the token popover
 

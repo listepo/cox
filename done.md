@@ -4827,3 +4827,22 @@ Check:
 - CoxCore 9/9, CoxModel 30/30, CoxTranscript 13/13, CoxUI 130/130 with new snapshots (meter idle/streaming/open, popover streaming/idle, composer with popover).
 - After merging into `p37-desktop`: cox-app and cox-ffi 63/63, CoxModel 39/39, CoxTranscript 27/27, CoxUI 138/138.
 Not done: the context window and its split (T37.25.1); app wiring (T37.22.3).
+
+#### T37.23.11 Word-level diff in the desktop hunks
+
+Depends: — · Size: ~80 · Files: `crates/cox-render/src/diffmodel.rs`, `crates/cox-render/Cargo.toml`, `desktop/macos/Packages/CoxTranscript/…`
+Goal: `DiffLine` carries the changed word ranges of a paired del/add line, computed in `diffmodel` (so `similar` no longer needs the ratatui feature and the TUI keeps one word-diff path), and the edit card marks them.
+Check: a `diffmodel` test for a one-word change; the TUI word-diff snapshots unchanged; an edit-card snapshot with the marked words.
+Status: done 2026-09-28
+Result:
+- `cox-render/src/diffmodel.rs` owns the one word-diff engine: `words()` (similar `from_words`, merged byte ranges), `align`/`Aligned` (moved from `diff.rs`), `replaced()` and `WORD_DIFF_CAP`. `DiffLine.words: Vec<WordRange { start, end }>` (UTF-8 byte offsets); its `spans` are cut at every range edge. The TUI's `diff.rs` draws its dim/add/del spans from the same ranges through `marked()`; `similar` is no longer behind the `ratatui` feature.
+- cox-ffi declares `WordRange` in `types.rs`; CoxClient `DiffLine.words`/`WordRange`, CoxCore `Convert.swift` and `TranscriptCard` map it. CoxUI `CodeRun.isChanged` and `attributed(_:mark:)`; `DiffLineView` puts changed runs on the `diff.*Gutter` token. DESIGN.md `DiffLineView` row updated.
+Deviations:
+- 15 files, about 165 non-moved lines.
+- `desktop/macos/Fixtures/edit.json` re-recorded (at the merge again, so it carries both `words` and T37.25's usage `text`); cox-app `scenarios__edit.snap` updated for `words`.
+- Words split on whitespace, as in the TUI.
+Check:
+- `cargo nextest run -p cox-render -p cox-app -p cox-ffi -p cox-tui`: 358/358, including `a_one_word_change_marks_that_word_on_both_lines` and `only_a_paired_line_within_the_cap_carries_words`; no cox-tui snapshot changed. clippy (also `-p cox-render --no-default-features`) and fmt clean.
+- CoxModel 33, CoxUI 133 (`onlyAChangedRunSitsOnTheMark`), CoxTranscript 23 with `anOpenedEditCard` light/dark re-recorded, CoxTranscriptText 29.
+- After merging into `p37-desktop`: cox-render, cox-app and cox-ffi 114/114; CoxModel 39/39, CoxTranscript 27/27, CoxPlatform 13/13, CoxUI Diff/Code 6/6.
+Not done: CoxCore tests (the bindings were checked with `uniffi-bindgen` from a debug library instead; CI runs them).
