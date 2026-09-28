@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T22.10 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T22.11 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T33.14 | todo | P2 | 4 | 0% | |
 | T33.18 | todo | P2 | 5 | 0% | |
@@ -807,14 +806,6 @@ Rationale in §6 A25. Jev is a decision model (System One), not a chat or coding
 Out of scope for the whole phase: any change under `crates/` — only `docs/design/v0.2-jev.md`, `plan.md`, and `roadmap.md` move here, mirroring the P19 scoping-gate shape. T21.1–T21.2 (below) are the implementation the gate allowed: provider wiring only, no call sites yet.
 
 ### P22 — Trust (goal: every config key, hook event and documented command does what the docs say; evidence in research.md §8.5 #32)
-
-#### T22.10 A project config may only tighten the permission rules
-
-Depends: — · Size: ~80 · Files: `crates/cox-config/src/load.rs`, its tests, `docs/design` guard-list text if it names the keys
-Goal: A122. Today a project `.cox/config.toml` replaces `permissions.allow`, `permissions.ask` and `permissions.deny` wholesale (figment replaces arrays, and none of them is on the guard list), so a cloned repository can drop the default `Read(~/.ssh/**)` deny or allow `Bash`. After this card the effective lists are: `deny` and `ask` = the lists without the project layer plus the project's extra rules (the project cannot remove one); `allow` = the list without the project layer (a project `allow` that differs is reverted). Each reverted or dropped rule is a `GuardViolation` with its own reason line ("A project may not allow a tool call" / "A project may not remove a deny or ask rule"), reported the way the other guarded keys are, and `GUARDED_KEYS` names the three keys so `--sources` reads their provenance right.
-Check: `cox-config` tests: a project `allow = ["Bash"]` is reverted with a violation; a project `deny = []` keeps the default deny and reports it; a project `deny = ["Bash(rm:*)"]` is appended to the user's deny; the same for `ask`; the config-schema drift test unchanged.
-
-Plan (Claude Code / opus-5.5): extend the guard pass in `load.rs` next to the `permissions.mode` guard — read the three arrays from the pre-project and full figments, merge as above, push violations; add the reasons to `GuardViolation::reason` and the keys to `GUARDED_KEYS`; tests at the bottom of `load.rs`. No build or test run (no-build rule); the verification pass runs the Check.
 
 #### T22.11 A repository's `.claude/settings.json` may only tighten the permission rules
 
