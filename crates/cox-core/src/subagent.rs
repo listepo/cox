@@ -9,7 +9,7 @@
 //! like `explore`/`shell`. `AgentDef`/`tier_for` live in
 //! `cox_protocol::agent`, not `cox-ext` (which reads the filesystem and
 //! this crate may not depend on): the surface
-//! (`crates/cox/src/session.rs`) runs discovery once at session build and
+//! (`crates/cox-session`'s `open`) runs discovery once at session build and
 //! hands the result to `Session::set_agent_defs`, keeping this crate
 //! I/O-free. A custom preset's usage rows are tagged `Job::Agent`; its own
 //! `tier`/`model` decides the actual tier, not the job.

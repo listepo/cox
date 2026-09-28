@@ -2,7 +2,7 @@
 //! the parent's own follow-up to a child (T34.6, SM§4). Thin glue only —
 //! parsing plus one call through `cx.relay`. Stateless (T34.6 review): the
 //! tool holds no `Relay` of its own, since one shared instance is handed
-//! to every session's tool list (`crates/cox/src/session.rs`, the same
+//! to every session's tool list (`crates/cox-session`'s `open`, the same
 //! `tools()` list `ask_user` is built into) and a child may in future get
 //! it too (T34.1 custom presets can list any built-in tool by name). The
 //! `Relay` that answers a given call must be *that call's own session* —

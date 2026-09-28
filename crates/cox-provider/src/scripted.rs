@@ -150,6 +150,16 @@ impl Provider for Scripted {
             })?;
             turns.remove(index).expect("index just found by position")
         };
+        let turn = if turn.echo_tools {
+            let mut names: Vec<&str> = req.tools.iter().map(|t| t.name.as_str()).collect();
+            names.sort_unstable();
+            TurnSpec {
+                text: Some(names.join("\n")),
+                ..turn
+            }
+        } else {
+            turn
+        };
         let usage = Self::usage_for(&turn, &req);
         let model = if self.model.is_empty() {
             req.model.clone()

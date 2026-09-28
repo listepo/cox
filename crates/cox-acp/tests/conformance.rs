@@ -64,8 +64,9 @@ struct TestFactory {
     ask: Vec<String>,
 }
 
+#[async_trait]
 impl cox_acp::SessionFactory for TestFactory {
-    fn create(&self, req: cox_acp::FactoryRequest) -> anyhow::Result<cox_core::Session> {
+    async fn create(&self, req: cox_acp::FactoryRequest) -> anyhow::Result<cox_core::Session> {
         let mut config = Config::default();
         config.core.workspace_roots = vec![req.cwd.clone()];
         config.permissions.ask = self.ask.clone();

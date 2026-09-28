@@ -89,7 +89,7 @@ pub struct AnthropicProvider {
     /// `capabilities()` carries no per-request model, so this is the same
     /// "resolve at construction" shape `openai_shaped`'s `context_window`
     /// parameter already used before this card. `backend_for_with` in
-    /// `crates/cox/src/session.rs` does the lookup and falls back to
+    /// `crates/cox-session/src/provider.rs` does the lookup and falls back to
     /// 200 000 — today's literal — when the catalog has no row for the
     /// configured model.
     pub max_context: u32,
@@ -103,7 +103,7 @@ impl AnthropicProvider {
     /// real Anthropic API, which always needs a key; this stays for tests
     /// and any caller that already resolved (or deliberately skipped) one
     /// (mirrors `JevProvider::with_key`) — `backend_for_with` in
-    /// `crates/cox/src/session.rs` builds through this so a test can inject
+    /// `crates/cox-session/src/provider.rs` builds through this so a test can inject
     /// the lookup instead of ever reaching the real keyring (A49, T30.28).
     pub fn with_key(
         transport: &cox_protocol::config::Transport,
@@ -456,7 +456,7 @@ mod tests {
     /// T30.25: `capabilities().max_context` is whatever the caller resolved
     /// at construction, not a fixed literal — this is the provider-level
     /// half of the "1M-context model reports 1M" claim; the catalog lookup
-    /// itself is proved in `crates/cox/src/session.rs`'s
+    /// itself is proved in `crates/cox-session/src/provider.rs`'s
     /// `anthropic_capabilities_report_the_configured_models_context_window`.
     #[test]
     fn capabilities_max_context_is_whatever_was_resolved_at_construction() {

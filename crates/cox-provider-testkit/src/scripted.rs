@@ -83,6 +83,11 @@ pub struct TurnSpec {
     /// the module doc). `None` for an ordinary turn, matched by position.
     #[serde(default)]
     pub when_contains: Option<String>,
+    /// T37.2: answer with the names of the tools the request offered, one
+    /// per line and sorted, in place of `text` — so an e2e can compare the
+    /// tool lists two surfaces build for the same `COX_HOME`.
+    #[serde(default)]
+    pub echo_tools: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -185,6 +190,7 @@ tool_calls = [
             }],
             error: None,
             when_contains: None,
+            echo_tools: false,
         };
         let usage = Usage {
             input_tokens: 1,

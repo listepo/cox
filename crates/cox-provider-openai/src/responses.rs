@@ -493,7 +493,7 @@ pub struct OpenAiResponsesProvider {
 impl OpenAiResponsesProvider {
     /// Builds a client for any `api = "responses"` section — `[providers.
     /// openai]` or any compatible section passing that shape (T30.23:
-    /// `openai_shaped` in `crates/cox/src/session.rs` is the one
+    /// `openai_shaped` in `crates/cox-session/src/provider.rs` is the one
     /// production caller). `api_key` is already resolved by the caller
     /// (`None` means no `Authorization` header at all).
     pub fn new(

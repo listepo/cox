@@ -2,7 +2,7 @@
 //! `enable`, `disable`, `update`, `remove`, `link`. `list` reports discovery results only — id, source, version,
 //! digest and the manifest's *declared* capabilities, plus the real grant
 //! state from `grant::check` (T33.7; T33.6 landed the check itself in
-//! `session.rs`'s session-open path) — and never compiles or runs a
+//! `cox-session`'s session-open path) — and never compiles or runs a
 //! plugin's module (PL§1 line 47/445: a project plugin is untrusted
 //! repository content and must not load before the user grants it).
 //! `install`/`enable`/`disable`/`update`/`remove` are the only writers of
