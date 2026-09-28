@@ -10,9 +10,9 @@ use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{CallId, ItemId, TurnId};
 use cox_protocol::traits::{Relay, Tool, ToolCx};
 use cox_protocol::types::{
-    Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Level, Message,
-    ModelId, Risk, Role, SandboxMode, SandboxPolicy, Source, StopReason, ToolCall, ToolOutput,
-    ToolResult, Usage, Why,
+    Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, ItemKind, Level,
+    Message, ModelId, Risk, Role, SandboxMode, SandboxPolicy, Source, StopReason, ToolCall,
+    ToolOutput, ToolResult, Usage, Why,
 };
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -141,6 +141,19 @@ pub(crate) async fn run_tools(
     turn: TurnId,
     calls: Vec<(CallId, String, Value)>,
 ) -> Result<Vec<(CallId, ToolResult)>, CoreError> {
+    run_signed_tools(session, turn, calls, &HashMap::new()).await
+}
+
+/// [`run_tools`] for a model batch whose calls may carry thought signatures
+/// (T39.2): a signed call's `ToolCallRequested` is preceded by an empty
+/// signed `Thinking` item, so the rollout rebuilds the block in the same
+/// place the live history put it (§1.15 invariant 6).
+pub(crate) async fn run_signed_tools(
+    session: &Session,
+    turn: TurnId,
+    calls: Vec<(CallId, String, Value)>,
+    signatures: &HashMap<CallId, String>,
+) -> Result<Vec<(CallId, ToolResult)>, CoreError> {
     let tools: HashMap<String, Arc<dyn Tool>> = session
         .tools
         .iter()
@@ -164,6 +177,15 @@ pub(crate) async fn run_tools(
         })
         .collect();
     for call in &calls {
+        if let Some(signature) = signatures.get(&call.id) {
+            let item = ItemId::new();
+            let kind = ItemKind::Thinking {
+                text: String::new(),
+                signature: Some(signature.clone()),
+            };
+            session.emit(Event::ItemStarted { item, kind }).await?;
+            session.emit(Event::ItemDone { item }).await?;
+        }
         session
             .emit(Event::ToolCallRequested { call: call.clone() })
             .await?;

@@ -27,7 +27,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T39.2 | in progress | P1 | 4 | 0% | Claude Code / opus-5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -1120,40 +1119,6 @@ Every card in this phase:
 - runs the three standard commands.
 
 **Blockers:** T39.1 → T39.2 → T39.3 is the signature path; T39.5 is independent; T39.6 needs T39.3 and T39.5.
-
-### T39.2. Core keeps a tool call's signature in history and the rollout
-
-- Model: Claude Code / opus-5.5
-- Status: in progress
-- Depends: T39.1
-- Size: ~170
-- Priority: P1
-- Complexity: 4
-- Goal: a signature captured in T39.1 lives in history as `Content::Thinking { text: "", signature: Some(sig) }` directly before its `Content::ToolUse`, and the rebuild after resume produces the same messages (§1.15 invariant 6).
-- Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/turn.rs`, `crates/cox-core/src/rollout.rs`
-- Steps:
-  1. `session.rs` (the assistant-message build, ~line 1610): for each call, push the signed `Content::Thinking` right before its `Content::ToolUse` when `streamed.signatures` has the call id. Pass the signatures to `run_tools`.
-  2. `turn.rs` `run_tools`: right before `Event::ToolCallRequested` for a call that has a signature, emit `ItemStarted`/`ItemDone` with `ItemKind::Thinking { text: String::new(), signature: Some(sig) }`, so the rollout gets it in the same order as the live history.
-  3. `rollout.rs`: an `ItemKind::Thinking` item with a signature appends `Content::Thinking` to the last assistant message. Reuse the shape of `append_tool_use` through one shared `append_assistant_block` helper, not a second copy. Unsigned thinking items stay ignored as today.
-  4. Tests:
-     - `signed_tool_call_keeps_signature_before_its_tool_use` (live history).
-     - `resume_rebuilds_signed_thinking_before_tool_use` (rollout).
-     - The existing `resume_builds_identical_request` extended with a scripted turn that carries a `ToolUseSignature`.
-  5. Confirm that `router::strip_thinking` and `strip_thinking_before` already drop these blocks on a model switch, and add one assertion that proves it.
-- Check:
-  ```bash
-  mise exec -- cargo nextest run -p cox-core -E 'test(signature) | test(resume_builds_identical_request) | test(strip_thinking)'
-  ```
-- Done when: live history and the rebuilt history are equal for a signed tool round. The scripted provider can emit `ToolUseSignature` (a scenario key, only if the scenario format needs one; otherwise a hand-built event list in the test).
-- Out of scope:
-  - Wire translation (T39.3) and surface rendering (T39.4).
-  - Signatures on plain text parts (Gemini may send them on non-tool responses; the loop does not need them).
-- Execution plan:
-  1. Tests first. `rollout.rs`: `resume_rebuilds_signed_thinking_before_tool_use` (hand-built events: a signed `ItemKind::Thinking` item before each `ToolCallRequested`, plus an unsigned one that stays ignored). `crates/cox-core/tests/resume.rs`: a test-only `Signed` provider that wraps `Scripted` and inserts `ToolUseSignature` after every `ToolUseStart` (a hand-built event stream, so the scenario format needs no new key); `signed_tool_call_keeps_signature_before_its_tool_use` (live history has the signed block right before its `ToolUse`, and `router::strip_thinking` drops it) and `resume_builds_identical_request_with_signature` (the existing test's body, shared through one helper, run with `Signed`). Confirm they fail on the current code.
-  2. `turn.rs`: `run_tools` stays the entry point for its other callers and delegates to a new `run_signed_tools(session, turn, calls, &signatures)`, which emits `ItemStarted`/`ItemDone` with `ItemKind::Thinking { text: "", signature }` right before a signed call's `ToolCallRequested`.
-  3. `session.rs`: the assistant-message build pushes the signed `Content::Thinking` before each signed call's `ToolUse` and calls `run_signed_tools` with `streamed.signatures`.
-  4. `rollout.rs`: `append_tool_use` becomes a caller of one shared `append_assistant_block`; a finished signed `ItemKind::Thinking` item appends through it.
-  5. Verify: the card's Check, fmt, clippy, `cargo nextest run -p cox-core` (history build, rollout and resume all live there).
 
 ### T39.3. Chat translator replays a signature as `extra_content` on its tool call
 
