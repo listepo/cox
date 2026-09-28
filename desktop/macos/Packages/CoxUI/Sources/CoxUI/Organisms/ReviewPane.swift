@@ -4,7 +4,9 @@
 // `ChangesTab`, which only names the files, because this is where a file's diff is read. A click
 // on a line number starts a comment; the draft collects under the diff until "Send to agent"
 // (T37.28.4). The draft is the app's; the typed text of the open comment is the pane's until saved.
+// Each hunk header's "Revert hunk" (T51.21) asks first; ⌥-click skips the question.
 
+import AppKit
 import SwiftUI
 
 /// The list at the inspector's width, a hairline, then the diff filling the rest.
@@ -33,13 +35,18 @@ public struct ReviewPane: View {
     public var comments: [Comment] = []
     /// The anchor of the line a click picked, while its comment is being typed.
     public var editing: String?
+    /// Whether each hunk header offers "Revert hunk": the core numbered the hunks and read the
+    /// file's digest (T51.21).
+    public var revertsHunks: Bool
 
     public init(
       turns: [Turn] = [], timeline: RewindTimeline.State = .init(), selection: String? = nil,
-      hunks: [ToolCard.Hunk] = [], comments: [Comment] = [], editing: String? = nil
+      hunks: [ToolCard.Hunk] = [], comments: [Comment] = [], editing: String? = nil,
+      revertsHunks: Bool = false
     ) {
       (self.turns, self.timeline, self.selection) = (turns, timeline, selection)
       (self.hunks, self.comments, self.editing) = (hunks, comments, editing)
+      self.revertsHunks = revertsHunks
     }
   }
 
@@ -66,12 +73,16 @@ public struct ReviewPane: View {
     case remove(Int)
     /// Post the draft to the agent as one message.
     case sendComments
+    /// Revert this hunk, by index, of the open diff; the person confirmed or ⌥-clicked.
+    case revertHunk(Int)
   }
 
   let state: State
   let send: @MainActor (Intent) -> Void
   @State private var text = ""
   @FocusState private var typing: Bool
+  /// The hunk whose revert waits for the person's yes.
+  @State private var confirming: Int?
 
   public init(state: State, send: @escaping @MainActor (Intent) -> Void) {
     (self.state, self.send) = (state, send)
@@ -90,6 +101,28 @@ public struct ReviewPane: View {
     .onChange(of: state.editing) {
       text = ""
       typing = state.editing != nil
+    }
+    .confirmationDialog(
+      "Revert this hunk?", isPresented: isConfirming, titleVisibility: .visible,
+      presenting: confirming
+    ) { hunk in
+      Button("Revert hunk", role: .destructive) { send(.revertHunk(hunk)) }
+      Button("Cancel", role: .cancel) {}
+    } message: { _ in
+      Text("These lines go back to how they were before the session. /redo undoes it.")
+    }
+  }
+
+  private var isConfirming: Binding<Bool> {
+    Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } })
+  }
+
+  /// ⌥ held at the click reverts at once; otherwise the pane asks.
+  private func revert(_ hunk: Int) {
+    if NSEvent.modifierFlags.contains(.option) {
+      send(.revertHunk(hunk))
+    } else {
+      confirming = hunk
     }
   }
 
@@ -121,9 +154,10 @@ public struct ReviewPane: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 0) {
           ForEach(state.hunks.indices, id: \.self) { hunk in
-            DiffHunkView(header: state.hunks[hunk].header, lines: state.hunks[hunk].lines) {
-              send(.comment(hunk: hunk, line: $0))
-            }
+            DiffHunkView(
+              header: state.hunks[hunk].header, lines: state.hunks[hunk].lines,
+              comment: { send(.comment(hunk: hunk, line: $0)) },
+              revert: state.revertsHunks ? { revert(hunk) } : nil)
           }
         }
         .clipShape(shape)

@@ -19,6 +19,12 @@ import Testing
     try check(DiffHunkSample(), variant)
   }
 
+  /// Review's hunk header (T51.21): "Revert hunk" laid out but hidden at rest, shown on hover.
+  @Test(arguments: Variant.all) func diffHunkHeaderWithRevert(_ variant: Variant) throws {
+    try check(DiffHunkSample(revert: true), variant, "idle")
+    try check(DiffHunkSample(revert: true, isHovered: true), variant, "hovered")
+  }
+
   @Test(arguments: Variant.all) func codeBlock(_ variant: Variant) throws {
     try check(CodeBlockSample(language: PreviewState.codeLanguage), variant, "language")
     try check(CodeBlockSample(language: nil), variant, "plain")

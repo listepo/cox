@@ -1,8 +1,9 @@
 // The rewind timeline's intent (T37.28.1, DT§5.4): a checkpoint of `ChangesTabState`, whose id
 // is the turn, and the scope the person picked become `Intent.rewind`; a changed file's Revert
-// (T37.28.3) becomes `Intent.revertFile`. Here, beside the mapping that wrote the id, so the app
-// never parses it; the core does the rewind itself. A prompt's Edit and resend (T37.23.18, A102)
-// rewinds too, the conversation only, to before its turn.
+// (T37.28.3) becomes `Intent.revertFile`, and a Review hunk's (T51.21) `Intent.revertHunk`. Here,
+// beside the mapping that wrote the id, so the app never parses it; the core does the rewind
+// itself. A prompt's Edit and resend (T37.23.18, A102) rewinds too, the conversation only, to
+// before its turn.
 
 import CoxClient
 
@@ -18,6 +19,17 @@ extension SessionStore {
   /// its pre-image from before turn 1. The core checkpoints it first, so `redo` undoes it.
   public func revert(path: String) async throws {
     _ = try await send(.revertFile(path: path, toTurn: 1))
+  }
+
+  /// Reverts the hunk at `position` in Review's open diff to before the session, as `revert(path:)`
+  /// does the whole file: the core's number for the hunk and the digest of the file Review read,
+  /// so the core refuses the revert with a Notice if the file changed since. A diff without a
+  /// digest or numbered hunks, or a position past its hunks, sends nothing.
+  public func revert(hunk position: Int, in review: ReviewState) async throws {
+    guard let path = review.selection, let diff = review.diff, let digest = diff.digest,
+      diff.hunks.indices.contains(position), let index = diff.hunks[position].index
+    else { return }
+    _ = try await send(.revertHunk(path: path, toTurn: 1, hunk: index, nowDigest: digest))
   }
 
   /// The Changes tab's plain Rewind (`ChangesTab.Intent.rewind(checkpoint:)`): code only, DT§5.2's

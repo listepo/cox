@@ -84,11 +84,18 @@ struct DiffLineSample: View {
   }
 }
 
-/// The mockup's hunk across the reading column.
+/// The mockup's hunk across the reading column; with `revert`, Review's header (T51.21), its
+/// "Revert hunk" revealed when `isHovered`.
 struct DiffHunkSample: View {
+  var revert = false
+  var isHovered = false
+
   var body: some View {
-    DiffHunkView(header: PreviewState.hunkHeader, lines: PreviewState.hunk)
-      .frame(width: Size.readingWidth)
+    DiffHunkView(
+      header: PreviewState.hunkHeader, lines: PreviewState.hunk, revert: revert ? {} : nil,
+      isHovered: isHovered
+    )
+    .frame(width: Size.readingWidth)
   }
 }
 

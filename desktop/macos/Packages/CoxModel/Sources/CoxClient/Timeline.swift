@@ -151,16 +151,26 @@ public struct ArchiveRef: Equatable, Sendable, Decodable {
 public struct DiffModel: Equatable, Sendable, Decodable {
   public var path: String
   public var hunks: [DiffHunk]
+  /// Review's digest of the file on disk when the diff was read (T51.20); a hunk revert sends it
+  /// back so the core refuses one the file has moved past. `nil` on an edit card's diff.
+  public var digest: String?
 
-  public init(path: String, hunks: [DiffHunk]) { (self.path, self.hunks) = (path, hunks) }
+  public init(path: String, hunks: [DiffHunk], digest: String? = nil) {
+    (self.path, self.hunks, self.digest) = (path, hunks, digest)
+  }
 }
 
 public struct DiffHunk: Equatable, Sendable, Decodable {
   /// `@@ -41,12 +41,26 @@ impl Backoff`; empty for lines before any header.
   public var header: String
   public var lines: [DiffLine]
+  /// The core's number for this hunk in a Review diff (T51.20), which `revertHunk` names; `nil`
+  /// in a timeline written before hunks were numbered.
+  public var index: UInt32?
 
-  public init(header: String, lines: [DiffLine]) { (self.header, self.lines) = (header, lines) }
+  public init(header: String, lines: [DiffLine], index: UInt32? = nil) {
+    (self.header, self.lines, self.index) = (header, lines, index)
+  }
 }
 
 public struct DiffLine: Equatable, Sendable, Decodable {
