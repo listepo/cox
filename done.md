@@ -5083,3 +5083,18 @@ Goal: DT§5 review of the session's changes and rewind to a checkpoint (code, co
 Check: fixture rewind restores the expected files in a scratch worktree.
 Status: done 2026-09-28
 Split at claim into T37.28.1 (rewind timeline, done), T37.28.2 (review pane), T37.28.3 (per-file revert, needs an amendment) and T37.28.4 (line comments).
+
+#### T37.30.5 Coloured page tiles in Settings
+
+Depends: — · Size: ~80 · Files: `desktop/design/tokens/color.*.json` (and the generated token outputs), `desktop/design/DESIGN.md`, `desktop/macos/Packages/CoxUI/…` (Settings sidebar)
+Goal (A96): `tile.settings.<page>.top/bottom/glyph` tokens mapped to macOS system colours (e.g. `systemBlue`, `systemGray`), with high-contrast variants; the Settings sidebar draws each page's symbol on its coloured tile as in the mockup instead of the plain symbol, and DESIGN.md drops the "need colour tokens that do not exist yet" note.
+Check: the token build's own check; CoxUI snapshots of the Settings sidebar in light, dark and high contrast.
+Status: done 2026-09-28
+Result:
+- `tile.settings.<page>.top/bottom/glyph` in `desktop/design/tokens/color.light.json` and `color.dark.json` (A96), flat as the mockup draws them, white glyph: General systemGray, Models & Providers systemPurple, Permissions systemOrange, Sandbox systemGreen, Budget systemTeal, MCP Servers systemBlue, Plugins systemIndigo, Appearance systemPink, Advanced systemBrown (the mockup has no Advanced tile). Values are macOS 27.0's resolved light, dark and increased-contrast system colours; regenerated `color.*-hc.json`, `tokens.css` and 27 colorsets.
+- `IconTile.init(face:glyph:symbol:)`; `InspectorRow` takes a leading glyph view (its `symbol:` init still works through `SymbolGlyph`); `SettingsSidebar` leads each page with `SettingsPage.tile`; `#Preview("models, high contrast")`. DESIGN.md tile row, `IconTile`/`SettingsSidebar` rows and the Settings paragraph updated.
+Deviations: `high-contrast.mjs` reads a pinned value from `$extensions.cox.highContrast` so High Contrast uses the system's own increased-contrast colour, and its check confirms the pin; in dark High Contrast the glyph (not the face) moves to reach 3:1 (mid-grey). `IconTile.swift` and `InspectorRow.swift` beyond the card's files; ~125 lines.
+Check:
+- `npm ci && npm run build`: light-hc and dark-hc 184 pairs pass, rebuild gives no diff; `npm run check` passes. `settingsSidebar` and every Settings window snapshot re-recorded on purpose; new `settingsSidebarInHighContrast`. CoxUI `Settings|AtomSnapshotTests|InspectorRow|ChangesTab|ToolMolecule` 31, `TasksTab|Inspector` 11; swiftlint and swift-format clean.
+- After merging into `p37-desktop`: CoxUI `Settings|InspectorRow|ChangesTab|TasksTab|Inspector|RewindTimeline|AtomSnapshotTests` 40/40.
+Not done: `mockups.html` keeps inline hex tile colours (T37.17.2).

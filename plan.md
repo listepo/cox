@@ -41,7 +41,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.28.3 | todo | P2 | 3 | 0% | |
 | T37.28.4 | todo | P3 | 2 | 0% | |
 | T37.29.3 | todo | P2 | 4 | 0% | |
-| T37.30.5 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.17.2 | todo | P3 | 1 | 0% | |
@@ -2836,12 +2835,6 @@ Check: a cox-app test of the message; a snapshot of a draft.
 Depends: T37.25.1 · Size: split at claim · Files: `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`, `crates/cox-app/…`
 Goal: the context window as a StackedBar by part, cache-hit %, Compact now, per-turn cost as a KeyValueGrid, session and project totals and the budget cap; the missing cox-app calls (context breakdown, per-turn history, project totals, budget) come with it.
 Check: a snapshot per cell; cox-app tests for each new call.
-
-#### T37.30.5 Coloured page tiles in Settings
-
-Depends: — · Size: ~80 · Files: `desktop/design/tokens/color.*.json` (and the generated token outputs), `desktop/design/DESIGN.md`, `desktop/macos/Packages/CoxUI/…` (Settings sidebar)
-Goal (A96): `tile.settings.<page>.top/bottom/glyph` tokens mapped to macOS system colours (e.g. `systemBlue`, `systemGray`), with high-contrast variants; the Settings sidebar draws each page's symbol on its coloured tile as in the mockup instead of the plain symbol, and DESIGN.md drops the "need colour tokens that do not exist yet" note.
-Check: the token build's own check; CoxUI snapshots of the Settings sidebar in light, dark and high contrast.
 
 #### T37.32 Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 

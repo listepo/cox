@@ -35,7 +35,6 @@
 - T37.28.3. Revert one file to before turn N
 - T37.28.4. Line comments sent to the agent
 - T37.29.3. Inspector Context & Cost tab
-- T37.30.5. Coloured page tiles in Settings
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.17.2. `letterSpacing` in em, mockups on `tokens.css`
