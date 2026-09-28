@@ -2,11 +2,12 @@
 //! for this platform from GitHub, verifies its `.sha256` checksum, and
 //! replaces the running binary. Refuses to install without a matching
 //! checksum; refuses Windows (rename-over-running needs a dance this does
-//! not do).
+//! not do). The download, checksum and `tar` helpers live in
+//! `plugin_fetch`, shared with `cox plugin install <https-url>` (T53.2).
 
 use std::path::PathBuf;
 
-use sha2::{Digest, Sha256};
+use crate::plugin_fetch::{fetch, sha256_hex, untar};
 
 /// `listepo/cox` releases carry `cox-<target>.tar.xz` built by
 /// `scripts/package.sh` and published by `.github/workflows/release.yml`.
@@ -41,26 +42,6 @@ async fn latest_tag(client: &reqwest::Client) -> anyhow::Result<String> {
         .and_then(|t| t.as_str())
         .map(str::to_string)
         .ok_or_else(|| anyhow::anyhow!("latest release has no tag_name"))
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
-
-/// Downloads `url` fully.
-async fn fetch(client: &reqwest::Client, url: &str) -> anyhow::Result<Vec<u8>> {
-    Ok(client
-        .get(url)
-        .header("User-Agent", "cox-self-update")
-        .send()
-        .await?
-        .error_for_status()?
-        .bytes()
-        .await?
-        .to_vec())
 }
 
 /// Updates to `version` (a tag like `v0.1.0`) or the latest release.
@@ -108,8 +89,7 @@ pub async fn run(version: Option<String>) -> anyhow::Result<()> {
 }
 
 /// Extracts the `cox` binary from the `.tar.xz` archive to `dest` with the
-/// system `tar` (BSD and GNU both read `.tar.xz`; no new C-linked
-/// dependency for one extraction per update).
+/// system `tar` (`plugin_fetch::untar`, shared with `cox plugin install`).
 fn unpack_cox(archive: &[u8], dest: &PathBuf) -> anyhow::Result<()> {
     let dir: PathBuf = dest
         .parent()
@@ -126,17 +106,7 @@ fn unpack_cox(archive: &[u8], dest: &PathBuf) -> anyhow::Result<()> {
     let archive_path = tmp.join("cox.tar.xz");
     if let Err(e) = (|| -> anyhow::Result<()> {
         std::fs::write(&archive_path, archive)?;
-        let status = std::process::Command::new("tar")
-            .args(["-xJf"])
-            .arg(&archive_path)
-            .args(["-C"])
-            .arg(&tmp)
-            .arg("cox")
-            .status()
-            .map_err(|e| anyhow::anyhow!("tar not found: {e}"))?;
-        if !status.success() {
-            anyhow::bail!("tar failed: {status}");
-        }
+        untar(&archive_path, &tmp, &["cox"])?;
         std::fs::rename(tmp.join("cox"), dest)?;
         #[cfg(unix)]
         {

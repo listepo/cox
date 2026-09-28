@@ -36,6 +36,7 @@ use cox_store::Store;
 
 use crate::cli::Cli;
 use crate::config_load::{self, cox_home, find_git_root};
+use crate::plugin_fetch;
 
 /// `cox plugin list [--json]`.
 pub fn list(cli: &Cli, cwd: &Path, json: bool) -> String {
@@ -69,18 +70,61 @@ pub fn list(cli: &Cli, cwd: &Path, json: bool) -> String {
     out
 }
 
-/// `cox plugin install <dir> [--yes]` (PL§1): the only v1 source is a
-/// local directory. Validates and digests it through the same
-/// `discover::load_manifest` a discovered plugin goes through, copies it
-/// into `<home>/plugins/<id>/versions/<digest12>/`, writes `current`
-/// atomically (temp file, then rename), then runs the same approval flow
-/// as `enable`, recording the source path in the grant (PL§1: "install
-/// records `{kind: "path", path, digest}`").
-pub fn install(cli: &Cli, dir: &Path, yes: bool) -> anyhow::Result<()> {
-    let home = cli.home.clone().unwrap_or_else(cox_home);
+/// `cox plugin install <dir | https-url> [--sha256 <hex>] [--yes]` (PL§1):
+/// a URL (anything with `://`) is checked for `https://` and a
+/// `--sha256` before a byte is fetched, then downloaded and unpacked into
+/// staging (T53.2); either way the tree ends in `install_tree`, the one
+/// install path.
+pub fn install(cli: &Cli, source: &str, sha256: Option<&str>, yes: bool) -> anyhow::Result<()> {
+    if source.contains("://") {
+        plugin_fetch::https_url(source)?;
+        let sha256 = plugin_fetch::sha256_arg(sha256)?;
+        return install_url(cli, source, &sha256, yes);
+    }
+    if sha256.is_some() {
+        anyhow::bail!("--sha256 applies only to an https:// URL");
+    }
+    let dir = Path::new(source);
     // Absolute, so `update` can re-read the recorded source from any cwd.
     let dir = &fs::canonicalize(dir)
         .map_err(|e| anyhow::anyhow!("cannot install {}: {e}", dir.display()))?;
+    install_tree(cli, dir, yes, |digest| {
+        serde_json::json!({
+            "kind": "path",
+            "path": dir.display().to_string(),
+            "digest": digest,
+        })
+    })
+}
+
+/// The URL half of `install`, after its scheme and hash checks — the seam
+/// the tests reach a plain-http mock server through. Staging is dropped,
+/// and so removed, on every return.
+fn install_url(cli: &Cli, url: &str, sha256: &str, yes: bool) -> anyhow::Result<()> {
+    let home = cli.home.clone().unwrap_or_else(cox_home);
+    let staging = plugin_fetch::Staging::new(&home)?;
+    let root = plugin_fetch::fetch_archive(&staging, url, sha256)?;
+    install_tree(
+        cli,
+        &root,
+        yes,
+        |_| serde_json::json!({ "kind": "url", "url": url, "sha256": sha256 }),
+    )
+}
+
+/// The one install path every source ends in (PL§1): validates and
+/// digests `dir` through the same `discover::load_manifest` a discovered
+/// plugin goes through, copies it into
+/// `<home>/plugins/<id>/versions/<digest12>/`, writes `current` atomically
+/// (temp file, then rename), then runs the same approval flow as `enable`,
+/// recording `source(digest)` in the grant. Nothing in `dir` runs.
+fn install_tree(
+    cli: &Cli,
+    dir: &Path,
+    yes: bool,
+    source: impl FnOnce(&str) -> serde_json::Value,
+) -> anyhow::Result<()> {
+    let home = cli.home.clone().unwrap_or_else(cox_home);
     let manifest_path = dir.join("plugin.toml");
     let (manifest, digest) = discover::load_manifest(dir, &manifest_path, None)
         .map_err(|e| anyhow::anyhow!("cannot install {}: {e}", dir.display()))?;
@@ -96,11 +140,7 @@ pub fn install(cli: &Cli, dir: &Path, yes: bool) -> anyhow::Result<()> {
     );
 
     let store = Store::open(&home)?;
-    let source = serde_json::json!({
-        "kind": "path",
-        "path": dir.display().to_string(),
-        "digest": digest,
-    });
+    let source = source(&digest);
     let mut out = Vec::new();
     let mut confirm_fn = |q: &str| confirm(q);
     decide(
@@ -1075,5 +1115,206 @@ mod tests {
         let refs = keybinding_refs(home.path(), "git-glance");
 
         assert_eq!(refs, vec!["plugin.git-glance.status = \"ctrl-g\""]);
+    }
+
+    const MANIFEST: &str =
+        "api = 1\nid = \"demo\"\nversion = \"0.1.0\"\nname = \"Demo\"\nwasm = \"plugin.wasm\"\n";
+
+    fn cli_at(home: &Path) -> Cli {
+        use clap::Parser as _;
+        Cli::parse_from(["cox", "--home", home.to_str().unwrap()])
+    }
+
+    /// A plain ustar archive (`tar -xf` reads it as readily as a `.tar.gz`)
+    /// written by hand, so a test can hold the entries a well-behaved `tar`
+    /// refuses to create: `(name, type flag, link target, bytes)`, with
+    /// `b'0'` a file and `b'2'` a symlink.
+    fn ustar(entries: &[(&str, u8, &str, &[u8])]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for (name, kind, link, data) in entries {
+            let mut h = [0u8; 512];
+            h[..name.len()].copy_from_slice(name.as_bytes());
+            h[100..107].copy_from_slice(b"0000644");
+            h[108..115].copy_from_slice(b"0000000");
+            h[116..123].copy_from_slice(b"0000000");
+            h[124..135].copy_from_slice(format!("{:011o}", data.len()).as_bytes());
+            h[136..147].copy_from_slice(b"00000000000");
+            h[156] = *kind;
+            h[157..157 + link.len()].copy_from_slice(link.as_bytes());
+            h[257..263].copy_from_slice(b"ustar\0");
+            h[263..265].copy_from_slice(b"00");
+            h[148..156].fill(b' ');
+            let sum: u32 = h.iter().map(|&b| u32::from(b)).sum();
+            h[148..155].copy_from_slice(format!("{sum:06o}\0").as_bytes());
+            out.extend_from_slice(&h);
+            out.extend_from_slice(data);
+            out.resize(out.len().next_multiple_of(512), 0);
+        }
+        out.resize(out.len() + 1024, 0);
+        out
+    }
+
+    fn package(prefix: &str) -> Vec<u8> {
+        ustar(&[
+            (
+                &format!("{prefix}plugin.toml"),
+                b'0',
+                "",
+                MANIFEST.as_bytes(),
+            ),
+            (
+                &format!("{prefix}plugin.wasm"),
+                b'0',
+                "",
+                b"dummy wasm bytes",
+            ),
+        ])
+    }
+
+    /// A mock server that outlives the test body: `server` drops (and
+    /// verifies) before the runtime serving it.
+    struct Served {
+        server: wiremock::MockServer,
+        rt: tokio::runtime::Runtime,
+    }
+
+    impl Served {
+        fn url(&self) -> String {
+            format!("{}/demo.tar.gz", self.server.uri())
+        }
+
+        fn hits(&self) -> usize {
+            self.rt
+                .block_on(self.server.received_requests())
+                .unwrap_or_default()
+                .len()
+        }
+    }
+
+    fn serve(bytes: Vec<u8>) -> Served {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let server = rt.block_on(async {
+            let server = wiremock::MockServer::start().await;
+            wiremock::Mock::given(wiremock::matchers::path("/demo.tar.gz"))
+                .respond_with(wiremock::ResponseTemplate::new(200).set_body_bytes(bytes))
+                .mount(&server)
+                .await;
+            server
+        });
+        Served { server, rt }
+    }
+
+    /// Nothing was installed and staging is gone.
+    fn assert_nothing_left(home: &Path) {
+        assert!(!home.join("plugins/demo").exists(), "nothing installed");
+        assert!(
+            !home.join("plugins/.staging").exists(),
+            "staging is removed on every exit"
+        );
+    }
+
+    #[test]
+    fn plugin_install_url_rejects_a_hash_mismatch() {
+        let home = tempfile::tempdir().unwrap();
+        let served = serve(package(""));
+
+        let err = install_url(&cli_at(home.path()), &served.url(), &"0".repeat(64), true)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("sha256 mismatch"), "{err}");
+        assert!(err.contains("nothing was unpacked"), "{err}");
+        assert_eq!(served.hits(), 1);
+        assert_nothing_left(home.path());
+    }
+
+    #[test]
+    fn plugin_install_url_rejects_http() {
+        let home = tempfile::tempdir().unwrap();
+        let bytes = package("");
+        let sha = plugin_fetch::sha256_hex(&bytes);
+        let served = serve(bytes);
+        let cli = cli_at(home.path());
+
+        for url in [served.url(), "file:///etc/passwd".to_string()] {
+            let err = install(&cli, &url, Some(&sha), true)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("must be https://"), "{err}");
+        }
+        let https = served.url().replacen("http://", "https://", 1);
+        let err = install(&cli, &https, None, true).unwrap_err().to_string();
+        assert!(err.contains("--sha256 <hex> is required"), "{err}");
+
+        assert_eq!(served.hits(), 0, "refused before a byte is fetched");
+        assert!(!home.path().join("plugins").exists());
+    }
+
+    #[test]
+    fn plugin_install_url_rejects_a_symlink_entry() {
+        let home = tempfile::tempdir().unwrap();
+        let bytes = ustar(&[
+            ("plugin.toml", b'0', "", MANIFEST.as_bytes()),
+            ("plugin.wasm", b'2', "/etc/passwd", b""),
+        ]);
+        let sha = plugin_fetch::sha256_hex(&bytes);
+        let served = serve(bytes);
+
+        let err = install_url(&cli_at(home.path()), &served.url(), &sha, true)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("not a plain file or directory"), "{err}");
+        assert_nothing_left(home.path());
+    }
+
+    #[test]
+    fn plugin_install_url_rejects_dot_dot_entries() {
+        let home = tempfile::tempdir().unwrap();
+        let bytes = ustar(&[
+            ("plugin.toml", b'0', "", MANIFEST.as_bytes()),
+            ("../../../escaped", b'0', "", b"out"),
+        ]);
+        let sha = plugin_fetch::sha256_hex(&bytes);
+        let served = serve(bytes);
+
+        let err = install_url(&cli_at(home.path()), &served.url(), &sha, true)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("leaves the staging directory"), "{err}");
+        assert!(!home.path().join("escaped").exists());
+        assert!(!home.path().join("plugins/escaped").exists());
+        assert_nothing_left(home.path());
+    }
+
+    #[test]
+    fn plugin_install_url_records_the_source() {
+        let home = tempfile::tempdir().unwrap();
+        let bytes = package("demo-0.1.0/");
+        let sha = plugin_fetch::sha256_hex(&bytes);
+        let served = serve(bytes);
+
+        install_url(&cli_at(home.path()), &served.url(), &sha, true).unwrap();
+
+        let plugin_dir = home.path().join("plugins/demo");
+        let current = fs::read_to_string(plugin_dir.join("current")).unwrap();
+        let version = plugin_dir.join("versions").join(current.trim());
+        assert!(version.join("plugin.wasm").is_file());
+        assert!(
+            !version.join("package.tar").exists(),
+            "only the tree, never the archive"
+        );
+        let digest = cox_plugin::package_digest(&version).unwrap();
+        let grant = Store::open(home.path())
+            .unwrap()
+            .grant_get("demo", &GrantScope::User, &digest)
+            .unwrap()
+            .expect("granted with --yes");
+        assert_eq!(
+            grant.source,
+            serde_json::json!({ "kind": "url", "url": served.url(), "sha256": sha })
+        );
+        assert!(!home.path().join("plugins/.staging").exists());
     }
 }

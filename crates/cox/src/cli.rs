@@ -357,11 +357,17 @@ pub enum PluginAction {
         #[arg(long)]
         json: bool,
     },
-    /// Validate `<dir>`, copy it into `versions/<digest12>/`, write
-    /// `current`, then ask for its capabilities (PL§1).
+    /// Validate a package, copy it into `versions/<digest12>/`, write
+    /// `current`, then ask for its capabilities (PL§1). An https URL is
+    /// downloaded and unpacked into staging first.
     Install {
-        /// A local plugin package directory (the only v1 source).
-        dir: PathBuf,
+        /// A local plugin package directory, or an `https://` URL of a
+        /// `.tar.gz` package archive (needs `--sha256`).
+        source: String,
+        /// The archive's SHA-256; required with a URL. A mismatch is
+        /// refused before anything is unpacked.
+        #[arg(long, value_name = "HEX")]
+        sha256: Option<String>,
         /// Skip the stdin prompt and grant what the manifest asks for.
         #[arg(long)]
         yes: bool,

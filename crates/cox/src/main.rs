@@ -15,6 +15,7 @@ mod mcp_cmd;
 mod plain;
 #[cfg(feature = "plugins")]
 mod plugin_cmd;
+mod plugin_fetch;
 #[cfg(feature = "plugins")]
 mod plugin_new;
 #[cfg(feature = "plugins")]
@@ -100,9 +101,11 @@ fn main() -> anyhow::Result<()> {
                 print!("{}", plugin_cmd::list(&cli, &cwd, *json));
                 Ok(())
             }
-            Some(crate::cli::PluginAction::Install { dir, yes }) => {
-                plugin_cmd::install(&cli, dir, *yes)
-            }
+            Some(crate::cli::PluginAction::Install {
+                source,
+                sha256,
+                yes,
+            }) => plugin_cmd::install(&cli, source, sha256.as_deref(), *yes),
             Some(crate::cli::PluginAction::Enable { id, project, yes }) => {
                 plugin_cmd::enable(&cli, &cwd, id, *project, *yes)
             }
