@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node style-dictionary.config.mjs"
+    "build": "node high-contrast.mjs && node style-dictionary.config.mjs",
+    "check": "node high-contrast.mjs --check"
   },
   "dependencies": {
     "style-dictionary": "5.5.5"

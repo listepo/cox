@@ -27,7 +27,8 @@ const APPEARANCES = {
     { appearance: 'contrast', value: 'high' },
   ],
 };
-const CSS_SELECTORS = { light: ':root', dark: '.dark' };
+// The mockups opt into High Contrast with an `hc` class next to `dark`.
+const CSS_SELECTORS = { light: ':root', dark: '.dark', 'light-hc': '.hc', 'dark-hc': '.dark.hc' };
 
 // Swift type per base group. Font, Material and Elevation would shadow SwiftUI's and the
 // Foundations modifier's names inside CoxUI, hence the `Token` suffix.
