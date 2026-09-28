@@ -27,15 +27,17 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.39.1 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.23.5 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.23.6 | todo | P1 | 2 | 0% | |
-| T37.23.7 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.23.8 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.23.9 | todo | P2 | 2 | 0% | |
 | T37.23.10 | todo | P2 | 2 | 0% | |
-| T37.24 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.25 | todo | P1 | 3 | 0% | |
+| T37.24.5 | todo | P2 | 2 | 0% | |
+| T37.24.6 | todo | P2 | 3 | 0% | |
+| T37.24.7 | todo | P2 | 3 | 0% | |
+| T37.24.8 | todo | P2 | 3 | 0% | |
+| T37.24.9 | todo | P3 | 2 | 0% | |
 | T37.27 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.28 | todo | P1 | 4 | 0% | |
 | T37.29 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
@@ -2751,12 +2753,6 @@ Every card in this phase:
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
 
-#### T37.39.1 `cox-ffi` forwards only: the check
-
-Depends: — · Size: ~80 · Files: `crates/cox-ffi/tests/forward_only.rs`, `AGENTS.md`
-Goal: A90's rule as a test. Every `#[uniffi::export]` function and method in `lib.rs`, `session.rs` and `host.rs` has a body of one expression that calls into `cox-app`, or converts through `types.rs`. The AGENTS.md `cox-ffi` row states the rule instead of the line count.
-Check: the test passes on the current crate; a scratch copy of a method with an `if`, a `match` or a second statement makes it fail.
-
 #### T37.23.5 Structured diff hunks from Rust for edit cards
 
 Depends: — · Size: ~150 · Files: `crates/cox-app/…`, `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxTranscript/…`
@@ -2768,12 +2764,6 @@ Check: a `cox-app` test of the hunk shape for a scripted edit; a snapshot of an 
 Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxTranscriptText/…`, `desktop/macos/Packages/CoxTranscript/…`
 Goal: `TranscriptStyle` is rebuilt when `[desktop.transcript]` text size or line height changes, and the whole text restyles in place without losing the selection.
 Check: snapshots at two text sizes; a selection survives the change.
-
-#### T37.23.7 Follow the tail while a reply streams
-
-Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxTranscript/…`
-Goal: while the view is scrolled to the bottom it stays there as a reply streams; scrolling up stops following until the user returns to the bottom.
-Check: a test streams `docTail` patches and the view stays at the bottom; after a scroll up it stays put.
 
 #### T37.23.8 Headings, lists and quotes in replies
 
@@ -2793,17 +2783,41 @@ Depends: — · Size: ~80 · Files: `crates/cox-app/src/timeline.rs`, `desktop/m
 Goal: a thinking block carries how long the model thought (from its first to its last reasoning delta, as `cox-app` folds the events), and the fold header reads "Thought for 12 s" once it ends and "Thinking" while it streams (DS§6.3).
 Check: a `cox-app` test that a folded reasoning run records its duration and replay gives the same value; a snapshot of the header in both states.
 
-#### T37.24 Composer: mentions, commands, shell mode, attachments, queue
-
-Depends: T37.23, T37.21.7 · Size: split at claim · Files: `…/Organisms/Composer.swift`, `…/Molecules/ComposerChip.swift`
-Goal: DT§5 composer with completion driven by `cox-app` (T37.10).
-Check: UI test types `@`, picks a file, sends; the intent reaches the fixture client.
-
 #### T37.25 Token meter and token popover
 
 Depends: T37.12, T37.24 · Size: ~150 · Files: `…/Molecules/TokenMeter.swift`, `…/Organisms/TokenPopover.swift`
 Goal: ↑ sent, ↓ received and live tok/s with a sparkline in the composer; the popover shows turn and session breakdown, first-token time, cost and the context bar (mockup 30).
 Check: snapshots idle and streaming; VoiceOver label reads the three numbers; the UI does no arithmetic on them (values come formatted from `cox-app`).
+
+#### T37.24.5 Paste into the composer
+
+Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxUI/…/Composer.swift`, `desktop/macos/Packages/CoxModel/…/ComposerStore.swift`
+Goal: ⌘V of an image or file URLs attaches them (as T37.24.3's drop does) instead of inserting text.
+Check: a UI test pastes a PNG from a private pasteboard and the `send` intent carries it.
+
+#### T37.24.6 Prompt history in the composer
+
+Depends: — · Size: ~120 · Files: `crates/cox-app/…`, `crates/cox-ffi/src/session.rs`, `desktop/macos/Packages/CoxModel/…`
+Goal: ↑ in an empty composer walks the session's earlier prompts, newest first, through a new `cox-app` call and its one-expression FFI forward (A90).
+Check: a cox-app test for the call; a UI test presses ↑ twice and gets the two earlier prompts, with the fixture client serving them without Rust.
+
+#### T37.24.7 Composer status chips
+
+Depends: — · Size: ~120 · Files: `desktop/macos/Packages/CoxUI/…/Composer.swift`, `desktop/macos/Packages/CoxModel/…`
+Goal: the mode chip (⇧⇥ cycles), model · effort, and the think toggle under the composer (mockup), driven by a Swift mirror of `TimelinePatch::Status`.
+Check: snapshots in the four cells; ⇧⇥ sends `setMode`.
+
+#### T37.24.8 Queue from Rust
+
+Depends: — · Size: ~100 · Files: `crates/cox-app/…`, `desktop/macos/Packages/CoxModel/…/ComposerStore.swift`
+Goal: `Intent::Queue` carries attachments and the status patch reports the queue length, so `ComposerStore` stops deriving it from block turn numbers and a draft with attachments can be queued.
+Check: cox-app tests for both; the Swift count comes from the patch.
+
+#### T37.24.9 Caret-aware completion and the failure notice
+
+Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxUI/…/Composer.swift`, `desktop/macos/Packages/CoxModel/…/ComposerStore.swift`
+Goal: completion uses the token at the caret, not the end of the draft, and `ComposerStore.failure` shows as a `NoticeRow` above the composer.
+Check: a UI test completes mid-text; a snapshot with a failure.
 
 #### T37.27 Approvals, questions, inbox, notifications with actions, Dock badge
 

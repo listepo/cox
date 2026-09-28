@@ -21,15 +21,17 @@
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
-- T37.39.1. `cox-ffi` forwards only: the check
 - T37.23.5. Structured diff hunks from Rust for edit cards
 - T37.23.6. Restyle the transcript when the text size changes
-- T37.23.7. Follow the tail while a reply streams
 - T37.23.8. Headings, lists and quotes in replies
 - T37.23.9. Prompt bubble glass, elevation and hover actions
 - T37.23.10. Thought duration in the thinking header
-- T37.24. Composer: mentions, commands, shell mode, attachments, queue
 - T37.25. Token meter and token popover
+- T37.24.5. Paste into the composer
+- T37.24.6. Prompt history in the composer
+- T37.24.7. Composer status chips
+- T37.24.8. Queue from Rust
+- T37.24.9. Caret-aware completion and the failure notice
 - T37.27. Approvals, questions, inbox, notifications with actions, Dock badge
 - T37.28. Review pane and rewind timeline
 - T37.29. Inspector tabs: Changes, Plan, Context & Cost, Tasks, Info

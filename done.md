@@ -4489,3 +4489,90 @@ Check:
 - 4 CoxUI PNG snapshots of the Budget page.
 - The Rust and Swift suites listed in T37.30.3.
 Not done: nothing.
+
+#### T37.24 Composer: mentions, commands, shell mode, attachments, queue
+
+Depends: T37.23, T37.21.7 · Size: split at claim · Files: `…/Organisms/Composer.swift`, `…/Molecules/ComposerChip.swift`
+Goal: DT§5 composer with completion driven by `cox-app` (T37.10).
+Check: UI test types `@`, picks a file, sends; the intent reaches the fixture client.
+Status: done 2026-09-28
+Result: T37.24 landed as four commits.
+- T37.24.1: `CoxUI/Organisms/Composer.swift`, `Composer(state:send:)`:
+  - It has the editor with its hint, completion rows (new molecule `CompletionList`), shell mode with "Share output", mention chips, a "Queued · n" chip and Send.
+  - ⏎, ⇧⏎, ⌘⏎, ↑ ↓ ⇥ ⎋ and ⌫ each map to a `Composer.Intent`.
+- T37.24.2: completion through the client:
+  - `SessionClient.complete` and `CoxClient.Completion`, with `LiveSession` forwarding to the existing `SessionHandle.complete`.
+  - `CoxModel/ComposerStore.swift` handles `@` and `/` completion and picks one intent (`shell`, `command` or `send`).
+  - `CoxTranscript/SessionComposer.swift` connects the composer to the store.
+- T37.24.3: dropped or picked files are read off the main actor and sent as attachments, shown as `Thumbnail` rows with a remove badge (`ComposerAttachments`).
+- T37.24.4: while a turn runs, ⏎ queues the prompt (`.queue`) and ⌘⏎ interrupts and sends.
+- DESIGN.md §6.3 and §6.4 and the DT§4.6 rows are updated. cox-ffi is unchanged.
+Deviations:
+- The selected row is on `accent.soft`.
+- Send uses `CoxButtonStyle(.primary)`.
+- Completion uses the word at the end of the draft, not the word at the caret.
+- `failure` is not shown.
+- The queue length is derived from block turn numbers.
+- A draft with attachments cannot be queued.
+- `LiveSession.complete` was checked against the bindings but not compiled.
+- Paste is not handled.
+Check:
+- CoxUI: 113 tests in 38 suites.
+- CoxModel: 27.
+- CoxTranscript `ComposerFlowTests`: 2. One is a real editor test (`@` → ↓ ⏎ → ⏎ reaches `FixtureSession`), the other is `whileATurnRunsReturnQueuesAndCommandReturnInterruptsAndSends`.
+- `ComposerStoreTests` and `attachedFilesAreReadAndSentWithTheTurn` pass.
+- swiftlint and swift-format are clean.
+Not done:
+- Placing `SessionComposer` in `MainScreen` goes to T37.22.3.
+- Remaining work is in T37.24.5–T37.24.9.
+
+#### T37.39.1 `cox-ffi` forwards only: the check
+
+Depends: — · Size: ~80 · Files: `crates/cox-ffi/tests/forward_only.rs`, `AGENTS.md`
+Goal: A90's rule as a test. Every `#[uniffi::export]` function and method in `lib.rs`, `session.rs` and `host.rs` has a body of one expression that calls into `cox-app`, or converts through `types.rs`. The AGENTS.md `cox-ffi` row states the rule instead of the line count.
+Check: the test passes on the current crate; a scratch copy of a method with an `if`, a `match` or a second statement makes it fail.
+Status: done 2026-09-28
+Result:
+- `crates/cox-ffi/tests/forward_only.rs` parses `lib.rs`, `session.rs` and `host.rs` with `syn`. It fails on any function or method body that is not one forward expression, exported or not, trait default bodies included.
+  - Allowed forms: calls, method chains, fields, `?`, `.await`, `&`, struct literals, and closures or `async` blocks that are themselves one such expression.
+  - Failing forms: `let`, macros, `if`, `match`, loops, operators, `as` and the rest.
+- One exemption: the `From<OwnerError> for AppError` that flattens cox-app's error for Swift.
+- Code that broke the rule was fixed inside cox-ffi:
+  - `let`s were folded into calls.
+  - Async methods take `self: Arc<Self>`. Swift's API is unchanged.
+  - The runtime `OnceLock` is at module scope.
+- The AGENTS.md `cox-ffi` row states the rule (A90).
+Deviations:
+- Three files beyond the card's two, plus the example, `Cargo.toml` and `Cargo.lock`; about 60 changed lines.
+- New dev-dependency `syn` 3.0.5, already in the lockfile. Recorded in §1.1, `toolchain.md` and `rust.md`.
+- At the merge into `p37-desktop`, T37.30.3's `settings`, `set_setting` and `mcp_login` were brought under the rule the same way. The branch's `ProjectRow → Project` conversion was dropped, because T37.30.3 made `cox_app::Project` forwardable as is.
+Check:
+- `nextest -p cox-ffi`: 6/6, on the branch and again after the merge.
+- The card's negative check: a scratch `if`, `match` or second statement in `SessionHandle::id` each fails the test, then was reverted.
+- Clippy `-D warnings` and fmt are clean.
+Not done: where a call lands (only `cox-app` and `cox-protocol`) stays `deps.rs`'s job.
+
+#### T37.23.7 Follow the tail while a reply streams
+
+Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxTranscript/…`
+Goal: while the view is scrolled to the bottom it stays there as a reply streams; scrolling up stops following until the user returns to the bottom.
+Check: a test streams `docTail` patches and the view stays at the bottom; after a scroll up it stays put.
+Status: done 2026-09-28
+Result:
+- `CoxTranscript/TailFollow.swift`: a patch batch that lands while the reader is at the bottom scrolls the new end into view. After the reader scrolls up, the view stays put until they return to the bottom.
+- Whether to follow is decided on each scroll, so text that grows below between batches does not break following. A transcript opened at the top stays there.
+- `TranscriptCoordinator.follow` runs each `didApply` batch through it.
+Deviations:
+- The streaming benchmark times the view's own follow instead of calling `scrollToEndOfDocument` on every frame. Both budgets still pass.
+- DT§5 is not updated.
+Check:
+- `TranscriptTailTests` (3/3) use the real hosted scroll view and `docTail` batches:
+  - stays pinned after every batch;
+  - stays exactly in place after a 300 pt scroll up;
+  - follows again after the reader returns;
+  - a short transcript is followed once it outgrows the window;
+  - a transcript opened at the top stays at offset 0.
+- Each test fails with the scroll removed or with it always on.
+- CoxTranscript: 11 tests in 5 suites. Streaming busy 16.1%, max 5.18 ms; scroll hitch 0.00% at load 25.8.
+- swiftlint and swift-format are clean.
+Not done: app wiring waits for T37.22.3.
