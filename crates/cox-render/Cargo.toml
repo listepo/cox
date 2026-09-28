@@ -10,7 +10,7 @@ license.workspace = true
 # `StyledDoc` and syntax highlighting remain, for the desktop app.
 [features]
 default = ["ratatui"]
-ratatui = ["dep:ratatui", "dep:terminal-colorsaurus", "dep:toml_edit", "dep:thiserror"]
+ratatui = ["dep:ratatui", "dep:terminal-colorsaurus", "dep:toml_edit"]
 
 [dependencies]
 cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
@@ -31,7 +31,8 @@ terminal-colorsaurus = { workspace = true, optional = true }
 # T24.2: `~/.cox/themes/<name>.toml` parses with the same crate `cox config
 # set` uses, so a theme file's own comments survive an edit.
 toml_edit = { workspace = true, optional = true }
-thiserror = { workspace = true, optional = true }
+# T51.18: `diffmodel::HunkError`, which the desktop build needs too.
+thiserror = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
