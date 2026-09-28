@@ -34,7 +34,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.44.1 | in progress | P2 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.44.2 | todo | P2 | 4 | 0% | |
-| T37.22.7 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.22.9 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.22.10 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
@@ -2784,12 +2783,6 @@ Check: the generator's test; `get_variable_defs` on the rebuilt screen 28 return
 Depends: T37.44.1 · Size: ~200 · Files: CoxUI, `desktop/macos/App`
 Goal: A114. Each screen of the running app is compared with its Figma frame (`get_design_context`, `get_variable_defs`, `get_screenshot`) against a screenshot of the app, starting with main screen 28, then the rest; every difference in layout, spacing, radius, colour or type is fixed in CoxUI through the tokens (no raw values), with snapshots re-recorded on purpose.
 Check: per screen, the app screenshot next to the Figma frame matches by eye; CoxUI snapshots re-recorded on purpose; swiftlint and swift-format clean.
-
-#### T37.22.7 Model display names from models.dev
-
-Depends: — · Size: ~120 · Files: `scripts/vendor/…`, `crates/cox-models`, the vendored model data
-Goal: A111. The `scripts/vendor` script that builds the model catalog also takes each model's `name` from models.dev; `ModelRow` gains `display_name` (with its schema and drift test regenerated); the TUI and the app read it; the app's model pill drops the vendor prefix (`Sonnet 5 · high`). A model without a name falls back to its id.
-Check: the vendor script's tests; a cox-models test that `claude-sonnet-5` reads `Claude Sonnet 5`; the pill shows `Sonnet 5 · high` on the approve-write fixture.
 
 #### T37.22.9 Session titles in the TUI and the app, with rename
 

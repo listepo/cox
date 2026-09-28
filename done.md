@@ -5605,3 +5605,17 @@ Deviations: Rust `SessionConfig::default()` is off (schema shows `default: false
 Check: cox-core `title::tests`, cox-store `session_title_round_trips_and_keeps_a_user_title`, `just test --changed-since p37-desktop` 1553 passed; clippy on the six crates and fmt clean; real binary under a scratch `COX_HOME` stored title "Fix the ledger sum" (source `auto`) with usage rows `main|code` and `title|cheap`. On the merged tree: 13 title/schema/migration/round-trip tests passed.
 
 Not done: TUI/app display and rename (T37.22.9); `subagent::summarize` and `memory_extract` not moved onto `side_call`.
+
+#### T37.22.7 Model display names from models.dev
+
+Depends: — · Size: ~120 · Files: `scripts/vendor/…`, `crates/cox-models`, the vendored model data
+Goal: A111. The `scripts/vendor` script that builds the model catalog also takes each model's `name` from models.dev; `ModelRow` gains `display_name` (with its schema and drift test regenerated); the TUI and the app read it; the app's model pill drops the vendor prefix (`Sonnet 5 · high`). A model without a name falls back to its id.
+Check: the vendor script's tests; a cox-models test that `claude-sonnet-5` reads `Claude Sonnet 5`; the pill shows `Sonnet 5 · high` on the approve-write fixture.
+Status: done 2026-09-28
+Result: `cox-vendor` writes each model's models.dev `name` into `crates/cox-protocol/default.toml` as `display_name` (new `cox-vendor model-names` writes only names; 19 added, prices untouched; User-Agent `cox-dev (https://github.com/listepo/cox)`). `ProviderModel` and `ModelRow` carry an optional `display_name`. cox-app's session status sends `model_name` and `ModelChoice` carries `display_name`; cox-ffi forwards both as new fields (A90). CoxModel `ModelName.short` drops the `Claude ` prefix (A111) and falls back to the id; the composer chip, the toolbar pill and the popover rows use it.
+
+Deviations: > 3 files (ModelChoice request from T37.22.6 and the Swift wiring); the TUI still shows ids (threading the catalog into cox-tui is a separate change).
+
+Check: vendor tests 48 passed, `model-names --check` up to date; nextest cox-protocol/cox-models/cox-app/cox-ffi/cox-config 256 passed, cox-core/cox-session/cox-provider-openai 381, `cox --test docs --test deps` 10; config drift tests pass; clippy and fmt clean; Swift CoxModel 82, CoxCore 13, CoxPlatform 13, CoxTranscriptText 36, PinnedDecision snapshots (pill `Sonnet 5 · high`), swiftlint and swift-format strict clean. On the merged tree: cox-config, cox-models, cox-app 140 passed.
+
+Not done: a full `cox-vendor models` run (would add `medium` efforts and move one OpenRouter price) was left for the creator; only the `Claude ` prefix is dropped, so haiku reads `Haiku 4.5 (latest)` as models.dev names it.
