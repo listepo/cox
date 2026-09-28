@@ -85,6 +85,7 @@ Programs the project uses and the direct packages from its manifests.
 | pulldown-cmark | local | https://crates.io/crates/pulldown-cmark | T5.3: plan.md says pulldown-cmark 0.10; 0.13 is the current line with the same Tag/TagEnd API. syntect without onig (pure-Rust fancy-regex engine). Lives in `cox-render` (T32.2). |
 | ratatui | local | https://crates.io/crates/ratatui | cox-tui |
 | reqwest | local | https://crates.io/crates/reqwest | cox-provider |
+| url | local | https://crates.io/crates/url | cox-tools: LSP `file://` URI ↔ path (T41.3) |
 | rmcp | local | https://crates.io/crates/rmcp | cox-mcp |
 | rstest | local | https://crates.io/crates/rstest | Rust dependency |
 | schemars | local | https://crates.io/crates/schemars | Rust dependency |
