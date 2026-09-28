@@ -255,7 +255,7 @@ fn built_in_segments(state: &State) -> Vec<(bool, String)> {
         SandboxMode::WorkspaceWrite => "workspace-write",
         SandboxMode::DangerFullAccess => "danger-full-access",
     };
-    let pct = u64::from(s.context_tokens) * 100 / u64::from(s.context_window.max(1));
+    let pct = u64::from(s.context_used()) * 100 / u64::from(s.context_window.max(1));
     let filled =
         ((s.cache_ratio.clamp(0.0, 1.0) * CTX_CELLS as f64).round() as usize).min(CTX_CELLS);
     let bar: String = "▰".repeat(filled) + &"▱".repeat(CTX_CELLS - filled);
@@ -630,5 +630,43 @@ mod tests {
         let seg = segments(&state).remove(0);
         assert!(seg.text.starts_with("red x"), "{}", seg.text);
         assert_eq!(seg.text.width(), usize::from(SEGMENT_COLS));
+    }
+
+    /// A98: `ctx N%` is a share of the window the last
+    /// `Event::ContextBreakdown` named (1M here, so 7%, not the 200k
+    /// guess's 38%), drawn in each theme.
+    #[test]
+    fn ctx_share_uses_the_event_window() {
+        use cox_protocol::ids::TurnId;
+        use cox_protocol::types::{ContextBreakdown, Event};
+
+        use crate::theme::Theme;
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.status.model = "sonnet-5".into();
+        state.status.cache_ratio = 0.6;
+        state.status.context_tokens = 76_400;
+        update(
+            &mut state,
+            Msg::Event(Event::ContextBreakdown {
+                turn: TurnId::new(),
+                breakdown: ContextBreakdown {
+                    window: Some(1_000_000),
+                    total: 70_000,
+                    ..ContextBreakdown::default()
+                },
+            }),
+        );
+        for (name, theme) in [
+            ("dark", Theme::dark()),
+            ("light", Theme::light()),
+            ("no_color", Theme::mono()),
+        ] {
+            state.theme = theme;
+            let area = Rect::new(0, 0, 60, 1);
+            let mut buf = Buffer::empty(area);
+            ratatui::widgets::Widget::render(line_at(&state, 60), area, &mut buf);
+            assert!(crate::view::buffer_to_string(&buf).contains("ctx ▰▰▰▱▱ 7%"));
+            insta::assert_snapshot!(format!("ctx_share_{name}"), format!("{buf:?}"));
+        }
     }
 }

@@ -98,6 +98,9 @@ pub enum Action {
     Quit,
     Help,
     Cost,
+    /// `/context` (A98): the last request's window and split, drawn from
+    /// state the TUI already holds rather than asked of the core.
+    Context,
     /// Toggle the todo panel.
     Todo,
     /// List the running background tasks.
@@ -247,6 +250,7 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
         },
         "compact" => Action::Submit(Submission::Compact { focus: joined() }),
         "cost" => Action::Cost,
+        "context" => Action::Context,
         "permissions" => match args.first().map(String::as_str) {
             None => Action::Notice("/permissions <default|plan|auto|bypass>".into()),
             Some(m) => match mode_named(m) {
