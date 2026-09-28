@@ -3716,3 +3716,24 @@ Check: `swift test` passed 3 runs: 19 tests in 3 suites.
 - `tenThousandBlocksBuiltPatchByPatchFitTheLaunchBudget`: 10 000 blocks in batches of 64 reach the first frame in 293–374 ms against 400 ms. Measured on the shared M3 Max at load 39–51; a whole `load` takes about 200 ms.
 Both linters are clean.
 Not done: the ≤400 ms budget was not measured on the M1 Air.
+
+#### T37.17.1 High Contrast palette
+
+Depends: — · Size: ~80 plus generated files · Files: `desktop/design/tokens/color.light-hc.json`, `desktop/design/tokens/color.dark-hc.json`, the generated outputs
+Goal: the High Contrast appearances (A74) derived from the light and dark palettes by one rule. Text is at least 7:1 on its surface, hairlines and borders are solid and at least 3:1, glass opacity is raised and the specular sweep is off. The pipeline emits the HC variants into `Colors.xcassets` and `tokens.css`.
+Check: `just desktop-tokens` emits both HC appearances; a test or script checks every HC text/surface pair at ≥7:1 and every border at ≥3:1; the `desktop-tokens` drift job is clean.
+Status: done 2026-09-28
+Result: `desktop/design/high-contrast.mjs` (node) derives `tokens/color.light-hc.json` and `tokens/color.dark-hc.json` from the light and dark palettes using A74's rule, then reads them back and checks them. It covers 166 declared pairs per mode:
+- text at least 7:1;
+- `separator` and `surface.capsuleBorder` solid and at least 3:1;
+- context-bar segments and tile glyphs at least 3:1;
+- glass keeps a quarter of its transparency.
+A failing colour moves the smallest step toward black or white; a passing one is kept. A colour token no rule names fails the build.
+`npm run build`, and with it `just desktop-tokens` and the CI drift job, runs the script before Style Dictionary; `npm run check` checks without writing. All 56 colorsets in `Colors.xcassets` get a High Contrast entry; `tokens.css` gets `.hc` and `.dark.hc` blocks; the DESIGN.md §8 line is extended.
+Examples: light `text.tertiary` on window goes from 2.57 to 9.11; dark `syntax.comment` on `diff.del` from 3.68 to 7.97.
+Deviations:
+- A translucent surface is judged composited over its palette's opaque `surface.window`.
+- Secondary and tertiary text end up almost identical in HC (light #48484b, dark #d2d2d5), because 7:1 applies to every text role.
+- The white glyphs on the edit, search and write tiles cannot get lighter, so the tile tops darken instead.
+Check: `just desktop-tokens` exits 0 and prints "166 pairs pass" per mode; a second run leaves no diff. A broken file fails the check with a named pair ("text.secondary on surface.window: 2.57:1 is below 7:1"). `Tokens.swift` is byte-identical; every Any and Dark colorset entry is JSON-identical to before; no snapshot is affected.
+Not done: turning the specular sweep off and raising window opacity under Increase Contrast. These are `material.*` numbers in CoxUI's `Appearance`, not colour tokens, and move to T37.19.6.

@@ -41,9 +41,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.31 | todo | P2 | 2 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.17.1 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.17.2 | todo | P3 | 1 | 0% | |
 | T37.19.5 | todo | P2 | 3 | 0% | |
+| T37.19.6 | todo | P2 | 2 | 0% | |
 | T37.20.5 | todo | P2 | 2 | 0% | |
 | T37.21.11 | todo | P2 | 2 | 0% | |
 | T37.22.1 | todo | P2 | 2 | 0% | |
@@ -1169,12 +1169,6 @@ Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/�
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
 
-#### T37.17.1 High Contrast palette
-
-Depends: — · Size: ~80 plus generated files · Files: `desktop/design/tokens/color.light-hc.json`, `desktop/design/tokens/color.dark-hc.json`, the generated outputs
-Goal: the High Contrast appearances (A74) derived from the light and dark palettes by one rule. Text is at least 7:1 on its surface, hairlines and borders are solid and at least 3:1, glass opacity is raised and the specular sweep is off. The pipeline emits the HC variants into `Colors.xcassets` and `tokens.css`.
-Check: `just desktop-tokens` emits both HC appearances; a test or script checks every HC text/surface pair at ≥7:1 and every border at ≥3:1; the `desktop-tokens` drift job is clean.
-
 #### T37.17.2 `letterSpacing` in em, mockups on `tokens.css`
 
 Depends: — · Size: ~40 · Files: `desktop/design/tokens/*.json`, `desktop/design/style-dictionary.config.*`, `desktop/design/mockups.html`
@@ -1186,6 +1180,12 @@ Check: generated `Tokens.swift` values are unchanged or the changed snapshots ar
 Depends: — · Size: ~120 · Files: `desktop/design/tokens/*.json`, `…/Foundations/…`
 Goal: an on-accent text token replaces the `Color.white` constant on the primary button; a dark e1 highlight token so dark controls lose the bright rim; `surface.capsuleBorder` is either used by capsules or removed; disabled toggle and slider visuals; check the faint vertical bars at a stroked pill's ends on screen and fix them if they are real.
 Check: snapshots re-recorded on purpose for the changed foundations, and every other suite passes unchanged; SwiftLint's no-literal rules stay clean.
+
+#### T37.19.6 Increase Contrast in `Appearance`
+
+Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/Appearance.swift`
+Goal: when the system asks for more contrast (`colorSchemeContrast == .increased`), `Appearance` turns the specular sweep off and raises window and pane opacity, the part of A74's High Contrast rule that lives in `material.*` numbers rather than colour tokens (T37.17.1 did the colours).
+Check: a snapshot per material with increased contrast shows no sweep and a more opaque glass; the default snapshots are unchanged.
 
 #### T37.20.5 Atom tokens: project purple, RiskChip colours, named constants
 
