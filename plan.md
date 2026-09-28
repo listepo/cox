@@ -1499,7 +1499,8 @@ Every card in this phase: same four bullets as P39.
 
 ### T41.1. `[lsp]` config and its project-config guard
 
-- Model: sonnet
+- Model: Claude Code / opus-5.5
+- Status: in progress
 - Depends: -
 - Size: ~110
 - Priority: P1
@@ -1517,6 +1518,11 @@ Every card in this phase: same four bullets as P39.
   mise exec -- cargo nextest run -p cox-protocol -E 'test(lsp)'
   mise exec -- cargo nextest run -p cox-config -E 'test(lsp) | test(schema)'
   ```
+- Plan:
+  1. Tests first. `crates/cox-protocol/src/config.rs`: `lsp_defaults_parse` (both `LspConfig::default()` and `default.toml` through figment give `enabled`, `timeout_s = 30`, `quiet_ms = 500` and the four servers with their commands, args and extensions); fails to compile until `LspConfig` exists. `crates/cox-config/src/load.rs`: `project_config_cannot_set_lsp_servers` (a project `.cox/config.toml` that adds a server and changes the default `rust` command is reverted to the user/default servers, one `lsp.servers` violation, `source_of("lsp.servers")` is not `project`, a project `lsp.timeout_s` still applies).
+  2. `config.rs`: `LspConfig { enabled, timeout_s, quiet_ms, servers: BTreeMap<String, LspServerConfig> }` and `LspServerConfig { command, args, extensions }`, both `deny_unknown_fields` + `default`, hand-written `Default` carrying the matrix; `Config.lsp`. `default.toml`: `[lsp]` plus one `[lsp.servers.<name>]` table per default server.
+  3. `load.rs`: guard `lsp.servers` — any difference from the layers without the project reverts the whole map (a repository must not choose a program cox runs), reported as a `GuardViolation` like the others; add the key to `GUARDED_KEYS`.
+  4. Regenerate `docs/config.md` and `docs/config.jsonschema` through their drift tests (delete, re-run the test that writes them). Verify: the card's Check, `cox-protocol` and `cox-config` suites, the config tests in `crates/cox`, fmt, clippy; the real binary's `config show` against `COX_HOME=/tmp/cox-t41.1` with a project config that sets `lsp.servers` (warned and reverted), removed afterwards.
 - Done when: `docs/config.md` documents every `lsp` key, enforced by the existing docs test.
 - Out of scope: using the config (T41.7).
 
