@@ -89,7 +89,7 @@ pub async fn record(
             attachments: vec![],
         };
         Arc::clone(session).send(send).await?;
-        while let Some(batch) = session.next_patches().await {
+        while let Some(batch) = Arc::clone(session).next_patches().await {
             let done = batch.iter().any(ends_turn);
             batches.push(batch);
             if done {

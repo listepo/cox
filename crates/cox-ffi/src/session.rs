@@ -39,9 +39,8 @@ impl SessionHandle {
     }
 
     /// The next batch, at most one per frame; `None` once closed.
-    pub async fn next_patches(&self) -> Option<Vec<TimelinePatch>> {
-        let live = Arc::clone(&self.live);
-        on_runtime(async move { live.next_patches().await })
+    pub async fn next_patches(self: Arc<Self>) -> Option<Vec<TimelinePatch>> {
+        on_runtime(async move { self.live.next_patches().await })
             .await
             .ok()
             .flatten()
@@ -52,14 +51,15 @@ impl SessionHandle {
         self: Arc<Self>,
         intent: Intent,
     ) -> Result<Option<Arc<SessionHandle>>, AppError> {
-        let child = on_runtime(async move { self.live.send(intent).await }).await??;
-        Ok(child.map(Self::new))
+        Ok(on_runtime(async move { self.live.send(intent).await })
+            .await??
+            .map(Self::new))
     }
 
     /// `/` commands and `@` files for the composer's token.
     pub fn complete(&self, token: String, limit: u32) -> Vec<Completion> {
-        let limit = usize::try_from(limit).unwrap_or(usize::MAX);
-        self.live.complete(&token, limit)
+        self.live
+            .complete(&token, usize::try_from(limit).unwrap_or(usize::MAX))
     }
 
     /// Stops the pull; the session keeps running (DT§4.5).

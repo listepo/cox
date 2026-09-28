@@ -64,8 +64,9 @@ impl From<WorkspaceError> for AppError {
 }
 
 /// The one runtime (DT§4.5), made on first use; nothing blocks on it.
+static RUNTIME: OnceLock<std::io::Result<Runtime>> = OnceLock::new();
+
 fn runtime() -> Result<&'static Runtime, AppError> {
-    static RUNTIME: OnceLock<std::io::Result<Runtime>> = OnceLock::new();
     RUNTIME
         .get_or_init(|| {
             tokio::runtime::Builder::new_multi_thread()
@@ -112,8 +113,9 @@ impl App {
     /// `home` is `COX_HOME`; `None` means `~/.cox`.
     #[uniffi::constructor]
     pub fn new(home: Option<String>, host: Arc<dyn AppHost>) -> Result<Arc<Self>, AppError> {
-        let owner = Owner::new(home.map(PathBuf::from), Arc::new(host::Bridge(host)))?;
-        Ok(Arc::new(Self { owner }))
+        Ok(Arc::new(Self {
+            owner: Owner::new(home.map(PathBuf::from), Arc::new(host::Bridge(host)))?,
+        }))
     }
 
     pub fn projects(&self, limit: u32) -> Result<Vec<Project>, AppError> {
@@ -131,10 +133,14 @@ impl App {
         Ok(self.owner.workspace().search(&query, i64::from(limit))?)
     }
 
-    pub async fn worktrees(&self, project: String) -> Result<Vec<WorktreeInfo>, AppError> {
-        let owner = Arc::clone(&self.owner);
-        let project = PathBuf::from(project);
-        Ok(on_runtime(async move { owner.workspace().worktrees(&project).await }).await??)
+    pub async fn worktrees(
+        self: Arc<Self>,
+        project: String,
+    ) -> Result<Vec<WorktreeInfo>, AppError> {
+        Ok(
+            on_runtime(async move { self.owner.workspace().worktrees(Path::new(&project)).await })
+                .await??,
+        )
     }
 
     /// Most urgent first, oldest first within a rank.
@@ -156,38 +162,47 @@ impl App {
     }
 
     /// The Settings screen for a session in `cwd` (DT§5.7).
-    pub async fn settings(&self, cwd: String) -> Result<SettingsView, AppError> {
-        let owner = Arc::clone(&self.owner);
-        Ok(on_runtime(async move { owner.settings(Path::new(&cwd)).await }).await??)
+    pub async fn settings(self: Arc<Self>, cwd: String) -> Result<SettingsView, AppError> {
+        Ok(on_runtime(async move { self.owner.settings(Path::new(&cwd)).await }).await??)
     }
 
     /// Sets `key` to the JSON `value` in the user file; the new view.
     pub async fn set_setting(
-        &self,
+        self: Arc<Self>,
         cwd: String,
         key: String,
         value: String,
     ) -> Result<SettingsView, AppError> {
-        let owner = Arc::clone(&self.owner);
         Ok(
-            on_runtime(async move { owner.set_setting(Path::new(&cwd), &key, &value).await })
+            on_runtime(async move { self.owner.set_setting(Path::new(&cwd), &key, &value).await })
                 .await??,
         )
     }
 
     /// Logs in to (`login`) or out of the MCP server `name` (T37.30.3).
-    pub async fn mcp_login(&self, cwd: String, name: String, login: bool) -> Result<(), AppError> {
-        let owner = Arc::clone(&self.owner);
+    pub async fn mcp_login(
+        self: Arc<Self>,
+        cwd: String,
+        name: String,
+        login: bool,
+    ) -> Result<(), AppError> {
         Ok(
-            on_runtime(async move { owner.mcp_login(Path::new(&cwd), &name, login).await })
+            on_runtime(async move { self.owner.mcp_login(Path::new(&cwd), &name, login).await })
                 .await??,
         )
     }
 
-    pub async fn open(&self, request: OpenRequest) -> Result<Arc<SessionHandle>, AppError> {
-        let owner = Arc::clone(&self.owner);
-        let OpenRequest { cwd, resume, theme } = request;
-        let live = on_runtime(async move { owner.open(cwd.into(), resume, theme).await });
-        Ok(SessionHandle::new(live.await??))
+    pub async fn open(
+        self: Arc<Self>,
+        request: OpenRequest,
+    ) -> Result<Arc<SessionHandle>, AppError> {
+        Ok(SessionHandle::new(
+            on_runtime(async move {
+                self.owner
+                    .open(request.cwd.into(), request.resume, request.theme)
+                    .await
+            })
+            .await??,
+        ))
     }
 }
