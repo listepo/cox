@@ -45,14 +45,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T46.5 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
 | T46.6 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
 | T46.7 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
-| T47.1 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T47.2 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
-| T47.3 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
-| T47.4 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
-| T48.1 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
-| T48.2 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
-| T50.3 | in progress | P2 | 1 | 0% | Claude Code / opus-5.5 |
-| T50.5 | in progress | P3 | 1 | 0% | Claude Code / opus-5.5 |
 | T51.1 | todo | P2 | 2 | 0% | |
 | T51.2 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T51.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
@@ -1494,118 +1486,11 @@ Decisions:
 - No new guard: `cox_permission::Engine` already allowed the MCP call; the person is the gate for what they type. Server name, message, titles and options are shown through the modal, which already runs `sanitize` on every string. Answers go to the server only — never into the transcript, the rollout or the model's context.
 - A person answering must not trip `mcp.timeout_s`: the call's deadline stops counting while a question is open.
 
-### T47.1. Elicitation form model: schema to prompts, answers to typed JSON
-
-Model: sonnet · Status: open · Depends: — · Size: ~180 · Priority: P2 · Complexity: 3
-Goal: a pure module that turns an rmcp `ElicitationSchema` into an ordered list of prompts and each typed answer back into a JSON value that validates against the field, with no I/O.
-Files: `crates/cox-mcp/src/elicit.rs` (new), `crates/cox-mcp/src/lib.rs`.
-Steps:
-1. `//!` header: why separate (pure mapping the handler and tests share; no rmcp service types).
-2. `Field { key, label, help: Option<String>, kind: Kind, required: bool, default: Option<Value> }`, `Kind::{Text { format, min_len, max_len }, Number { integer, min, max }, Bool, One(Vec<(Value, String)>), Many { options, min, max }}`; `fields(&ElicitationSchema) -> Vec<Field>` in the schema's property order, titled and untitled enums both mapped.
-3. `prompt(server, message, &Field) -> (String, Vec<String>)`: question text `"<message> — <label>"` (+ `(default: x, Enter keeps it)`), options = enum labels, `["yes", "no"]` for `Bool`, empty for free text; `Many` takes comma-separated labels.
-4. `parse(&Field, &str) -> Result<Option<Value>, String>`: empty → default, or `None` when optional, or an error when required; numbers and bounds, string length, `email`/`uri`/`date`/`date-time` shape checks (no new crate: `url` is already in the tree only through rmcp, so `uri` is a scheme-and-colon check), enum label → const.
-5. `review(server, message, &serde_json::Map) -> (String, Vec<String>)` with options `["send", "edit", "decline"]` — the spec's "review and modify before sending".
-6. Tests named as claims: `titled_enum_answers_its_const`, `required_empty_answer_is_rejected`, `integer_out_of_range_is_rejected`, `optional_empty_answer_is_omitted`, `default_is_used_on_enter`, `many_select_splits_on_commas`.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-mcp elicit::
-```
-Done when: every `PrimitiveSchemaDefinition` variant rmcp 3.4.0 defines has a test; done.md has the output.
-Out of scope: talking to a server or a surface (T47.2).
-
-### T47.2. `cox-mcp` client handler answers `elicitation/create` through an asker
-
-Model: opus · Status: open · Depends: T47.1 · Size: ~200 · Priority: P2 · Complexity: 4
-Goal: with an asker present the client declares `elicitation.form` and returns `accept` with validated content, `decline` or `cancel` exactly as the person chose; without one it declares nothing and declines — for both the 2025-11-25 request and the 2026-07-28 MRTR round.
-Files: `crates/cox-mcp/src/client.rs`, `crates/cox-mcp/src/elicit.rs`, `crates/cox-mcp/tests/client.rs` (+ `crates/cox-mcp/Cargo.toml`: rmcp `elicitation` feature under `[dev-dependencies]` only, for the test server — see open questions).
-Steps:
-1. `elicit.rs`: `pub struct Ask { pub server: String, pub question: String, pub options: Vec<String>, pub reply: oneshot::Sender<String> }`, `pub type Asker = mpsc::Sender<Ask>`; `async fn run_form(asker, server, message, schema) -> ElicitResult`: one `Ask` per field (re-asked with the parse error appended, at most 3 times), then the review `Ask`; `send` → `accept` + content, `decline` → `decline`, `edit` → ask again with the answers as defaults (at most 3 rounds), a dropped reply (Esc) → `cancel`; a schema `fields` cannot map → `decline`.
-2. `client.rs`: `Auth` (already "what a surface brings" — the OAuth prompt) gains `ask: Option<Asker>`; `Auth::none()` sets `None`; its doc says both are about a person being present. A `CoxClient { server, ask, asking: Arc<AtomicUsize> + Notify }` implements `rmcp::ClientHandler`: `get_info` declares `ElicitationCapability { form: Some(..), url: None }` only when `ask` is `Some`; `create_elicitation` runs `run_form` for form params and returns `decline` for URL params (until T47.4) and whenever `ask` is `None`.
-3. `connect`, `connect_http` and `from_transport` serve `CoxClient` instead of `()`; `McpClient.service` becomes `RunningService<RoleClient, CoxClient>`.
-4. `McpTool::call`: the `timeout` stops counting while `asking > 0` (deadline re-armed when the count returns to zero); `cx.cancel` still wins and drops the pending `Ask`, which the handler turns into `cancel`.
-5. Tests in `tests/client.rs` over the existing in-process duplex: `form_elicitation_round_trips_through_the_asker`, `review_decline_answers_decline`, `dismissed_question_answers_cancel`, `no_asker_declares_no_elicitation_capability`, `waiting_for_a_person_does_not_time_out_the_call` (tool timeout 200 ms, answer after 500 ms).
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-mcp elicit form_elicitation review_decline dismissed_question no_asker_declares waiting_for_a_person
-mise exec -- cargo nextest run -p cox-mcp
-```
-Done when: the five tests pass and each fails without its step; existing OAuth tests unchanged; done.md has the output.
-Out of scope: the surface bridge (T47.3); URL mode (T47.4); ACP forwarding (no MCP servers in ACP sessions).
-
-### T47.3. Bridge elicitation into the question modal (TUI and `--plain`) and document the surfaces
-
-Model: sonnet · Status: open · Depends: T47.2 · Size: ~110 · Priority: P2 · Complexity: 2
-Goal: in the TUI and `--plain`, each elicitation prompt appears in the T22.1 modal labelled with the server; `cox run -p` and `cox acp` behave as documented (no capability, decline).
-Files: `crates/cox/src/session.rs`, `crates/cox-tui/src/modal.rs`, `docs/tools.md` (+ `docs/compat.md` row, `research.md` §8.4 matrix cell).
-Steps:
-1. `session::open`: when `questions` is `Some`, create the `Asker` channel before `mcp_tools` and put it in `mcp_auth`'s `Auth.ask`; after `Session::new`, spawn one bridge task that maps each `cox_mcp::elicit::Ask` to an `AskUserQuestion { call: CallId::new(), question, options, reply, source: Some(Source { session: <id>, agent: Some(format!("mcp:{server}")), preset: None }) }` on the same `questions` sender — the same modal, no second path. `questions == None` (headless, ACP, MCP-serve) leaves `Auth.ask = None`.
-2. `modal.rs`: the header's fixed `ask_user` word becomes `mcp` when the label starts with `mcp:` (the label itself already reads `mcp:<server> asks:`), so the person sees which server asks (spec MUST).
-3. Docs: `docs/tools.md` "MCP elicitation" — TUI/`--plain` answer in the modal (Esc = cancel, review step with send/edit/decline); `cox run -p` declares no capability and never answers; `cox acp` connects no MCP servers today; answers never reach the model. `docs/compat.md` and research.md §8.4 row "MCP elicitation": yes (TUI, plain).
-4. Tests: `question_modal_labels_mcp_server` (snapshot), and in `crates/cox` `headless_open_passes_no_asker`.
-5. Manual: a tiny stdio test server (the T47.2 test server as an example binary is out of scope — use `npx @modelcontextprotocol/server-everything` only if the creator allows network; otherwise the unit tests stand) — record which in done.md.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-tui question_modal_labels_mcp_server
-mise exec -- cargo nextest run -p cox headless_open_passes_no_asker
-```
-Done when: tests pass, docs updated, done.md says what the manual step did.
-Out of scope: URL mode (T47.4); ACP forwarding.
-
-### T47.4. URL-mode elicitation: show the URL, ask consent, open the browser
-
-Model: sonnet · Status: open · Depends: T47.3 · Size: ~110 · Priority: P3 · Complexity: 2
-Goal: with a person present the client declares `elicitation.url`; a URL request shows the full URL with its host called out, opens it only on an explicit `open`, and answers `accept`/`decline`/`cancel` accordingly — never pre-fetching.
-Files: `crates/cox-mcp/src/elicit.rs`, `crates/cox-mcp/src/client.rs`, `crates/cox-mcp/tests/client.rs`.
-Steps:
-1. `elicit::url_prompt(server, message, url) -> Result<(String, Vec<String>), String>`: parse with the `url` crate rmcp already pulls in only if it is a direct dependency of `cox-mcp` already — else a plain `scheme://host` split; question `"<message>\nopen <full url>\nhost: <host>"`, a `punycode host` warning when any label starts with `xn--`, a `not https` warning; options `["open", "decline"]`; a non-http(s) scheme → `decline` without asking.
-2. `CoxClient`: declares `url: Some(..)` with an asker; on `open` calls `cox_mcp::auth::open_browser` (the T22.5 opener — no second opener) and answers `accept`; `decline`/Esc as in T47.2.
-3. Tests: `url_elicitation_opens_only_after_consent` (opener injected), `punycode_host_is_flagged`, `file_scheme_is_declined_unasked`.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-mcp url_elicitation punycode_host file_scheme
-```
-Done when: tests pass; `docs/tools.md` gains the URL-mode paragraph.
-Out of scope: tracking out-of-band completion (removed from the 2026-07-28 spec; the retry carries it).
-
 ### P48 — `trycmd` fixtures for `cox run -p` (goal: the full output of `cox run -p` in text, json, stream-json, a denied write and a bad format is a reviewed fixture, not hand-parsed asserts)
 
 Rationale in §6 A79.
 
 `trycmd` 1.2.1 (crates.io API, checked 2026-09-28: published 2026-07-21, MIT OR Apache-2.0, `rust_version` 1.85 vs cox's 1.98, repository assert-rs/snapbox) is a new dev-dependency for cox. It is not a new crate for the workspace root: `apps/rtok` pins `trycmd = "1.2.1"` and `apps/ketch` `"1.2"`, and `rust.md` lists it under Tests with the rule "full command output goes through `trycmd` fixtures … `assert_cmd` + `predicates` stay for exit codes and partial matches". Against the plan.md testing note of 2026-09-17: it is not in cox's "Already covered" list, but the shared catalog it points to lists it as already in use across apps and it duplicates nothing cox has (`insta` covers TUI frames, `assert_cmd` partial matches). New transitive crates in `Cargo.lock`: `snapbox`, `humantime`, `humantime-serde` (and their small deps). The divan benchmark from the same `ideas.md` line is excluded (benchmarks are out).
-
-### T48.1. trycmd harness plus text, json and bad-format cases
-
-Model: haiku · Status: open · Depends: — · Size: ~60 · Priority: P2 · Complexity: 2
-Goal: `crates/cox/tests/trycmd.rs` runs every `crates/cox/tests/cmd/*.toml` case against the real `cox` binary with a scratch `COX_HOME`, the scripted provider and no network, and three cases pass: text, json, `--output-format yaml`.
-Files: `Cargo.toml` (`[workspace.dependencies] trycmd = "1.2.1"`), `crates/cox/Cargo.toml` (dev-dependency), `crates/cox/tests/trycmd.rs` (+ fixtures `crates/cox/tests/cmd/run_text.toml`, `run_json.toml`, `run_bad_format.toml`; `plan.md` §1.1 row, the 2026-09-17 testing note's "Already covered" line, `toolchain.md` row).
-Steps:
-1. Harness: a `tempfile::TempDir` as `COX_HOME` and `HOME` for every case (`TestCases::env`), `COX_PROVIDER=scripted`, the `cox` bin from the package (trycmd registers the crate's own bins); `insert_var("[HOME]", …)` to redact the scratch path; cargo's `COX_KEYRING=off` is inherited (A49) — assert it is set so no case can reach a keychain.
-2. Cases: `run -p hi` text (scenario `crates/cox-core/tests/scenarios/text_only.toml`, named by a path relative to the case's cwd), `--output-format json` with `[..]` for `session_id`, durations and any timestamp, `--output-format yaml` with its exit status and stderr.
-3. Bless with `TRYCMD=overwrite`, review, commit; the commit message carries the one-line reason for the dependency.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox --test trycmd
-test "$(ls crates/cox/tests/cmd/*.toml | wc -l)" -ge 3
-```
-Done when: the three cases pass; `cargo deny check licenses` clean; §1.1, the testing note and `toolchain.md` list trycmd.
-Out of scope: stream-json and denied (T48.2); any divan benchmark.
-
-### T48.2. stream-json and denied-write cases; drop the asserts the fixtures now cover
-
-Model: haiku · Status: open · Depends: T48.1 · Size: ~60 · Priority: P2 · Complexity: 2
-Goal: `stream-json` and a denied write are fixtures (the denied case also proves on disk that the file was not written), and no `run_cli.rs` test checks a subset of what a fixture checks in full.
-Files: `crates/cox/tests/run_cli.rs` (+ fixtures `crates/cox/tests/cmd/run_stream_json.toml`, `run_denied.toml`, `run_denied.in/`, `run_denied.out/`).
-Steps:
-1. `run_stream_json.toml`: every event line with `[..]` for ids, timestamps and durations; the Claude-alias fields stay literal.
-2. `run_denied.toml`: `write_then_done.toml` scenario, default mode, `--output-format json`, `fs.sandbox = true`, `status.code = 2`; `run_denied.out/` has no written file. If a relative `COX_SCENARIO` does not resolve from the sandboxed cwd, copy that one scenario into `run_denied.in/` (fixture data) and say so in done.md.
-3. `run_cli.rs`: remove only the tests whose every assertion a fixture now makes — expected `text_format_prints_the_final_assistant_text`, `json_format_reports_result_usage_cost_and_stop`, `unknown_output_format_is_an_error`, `a_denied_write_exits_2_and_the_file_is_not_written`; keep the interactive stdin approval tests, the prefix-rule tests and everything else. List the removed names in done.md.
-Check:
-```bash
-mise exec -- cargo nextest run -p cox --test trycmd --test run_cli
-test "$(ls crates/cox/tests/cmd/*.toml | wc -l)" -ge 5
-```
-Done when: five cases pass; the removed tests are named in done.md with the fixture that replaces each.
-Out of scope: fixtures for other subcommands (a later card if wanted).
 
 ### P49 — Later scope gates (goal: remote control, Windows sandbox, voice input, MCP Apps and Cursor's Cloud Agents API each get a one-page gate doc with a verdict; no runtime code)
 
@@ -1626,30 +1511,6 @@ test -z "$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0
 ### P50 — Gaps found while planning P39–P49 (goal: the model sees the project's instruction files and skills, and a subagent never runs with wider permissions than its parent)
 
 Rationale in §6 A81.
-
-### T50.3. The volatile block shows the live permission mode
-
-Model: mid-tier · Status: open · Depends: — · Size: ~60 · Files: `crates/cox-core/src/context.rs`, `crates/cox-core/src/session.rs`
-
-Goal: `context.rs` (~151) renders `config.permissions.mode` into the volatile block, so after Shift+Tab the model is still told the configured mode. Render the session's live mode instead. The block stays after the last cache breakpoint, so the cache-stable prefix is unchanged. Found by T45.1; the engine already enforces the live mode, so this fixes only what the model is told.
-
-Check: a test switches the mode with `SetPermissionMode` and finds the new mode in the next request's volatile block, with the cached prefix byte-identical (`prefix_bytes_identical_between_turns` stays green); it fails on current `main`.
-
-Done when: the Check passes and the three AGENTS.md commands are clean.
-
-Out of scope: recording the mode in the rollout (T50.2).
-
-### T50.5. `cox --plain` shows the mode after `/permissions`
-
-Model: mid-tier · Status: open · Depends: — · Size: ~40 · Files: `crates/cox/src/plain.rs` (or its owner)
-
-Goal: after `/permissions <mode>` in `cox --plain`, the plain surface's own displayed mode updates (today `plain.rs` sends the change but keeps showing the configured mode). Use the `Event::StateChanged` that records a mode change (T50.2; T37.5's event, which replaced `Event::PermissionModeChanged` in the P37 merge) rather than a second source of truth. Found by T50.2.
-
-Check: a test drives the plain surface through `/permissions plan` and finds `plan` in the next status output; it fails on current `main`.
-
-Done when: the Check passes and the three AGENTS.md commands are clean.
-
-Out of scope: the full TUI (already correct).
 
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
