@@ -129,6 +129,15 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `timeout_s` = `120`
 - `max_retries` = `4`
 - `models` = `[{id="glm-5.2", display_name="GLM-5.2", context_window=1000000, efforts=["high", "xhigh"]}, {id="glm-5.3", display_name="GLM-5.3", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
+## `[providers.gemini]`
+
+- `base_url` = `"https://generativelanguage.googleapis.com/v1beta/openai"` — client appends /chat/completions
+- `api_key_env` = `"GEMINI_API_KEY"` — else keyring entry "cox/gemini"
+- `api` = `"chat"` — Google calls its OpenAI compatibility beta: https://ai.google.dev/gemini-api/docs/openai
+- `model` = `"gemini-3.8-flash"`
+- `timeout_s` = `120`
+- `max_retries` = `4`
+- `models` = `[{id="gemini-3.8-flash", context_window=0, efforts=[], reasoning_effort=true}, {id="gemini-3.1-pro-preview", context_window=0, efforts=[], reasoning_effort=true}, {id="gemini-3.5-flash-lite", context_window=0, efforts=[], reasoning_effort=true}]`
 ## `[context]`
 
 - `compact_at` = `0.75` — fraction of max_context
