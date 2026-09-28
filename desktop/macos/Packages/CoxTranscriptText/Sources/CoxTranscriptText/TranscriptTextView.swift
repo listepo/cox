@@ -11,6 +11,14 @@ public final class TranscriptTextView: NSTextView {
   public private(set) var style = TranscriptStyle.system
   /// Where each block's text sits; kept in step with the text storage.
   public private(set) var blockRanges = BlockRanges()
+  /// The shown blocks by id, for copy (`MarkdownCopy.swift`).
+  public private(set) var blocks: [BlockID: Block] = [:]
+  /// Whether a drag may run across blocks (A67). The app passes
+  /// `[desktop.transcript] cross_block_selection`; `false` clamps a selection
+  /// to the block it started in (`Selection.swift`).
+  public var crossBlockSelection = true
+  /// The block a clamped drag started in, while the drag runs.
+  var dragAnchor: Int?
 
   /// A read-only, selectable transcript on TextKit 2. `NSTextView()` would
   /// also be TextKit 2, but this names it: reading `layoutManager` falls back
@@ -44,8 +52,11 @@ public final class TranscriptTextView: NSTextView {
 
   /// Replaces the whole text with `blocks`, in order.
   public func load(_ blocks: some Sequence<Block>) {
+    let blocks = Array(blocks)
     let (text, ranges) = TranscriptText.build(blocks, style: style)
     blockRanges = ranges
+    self.blocks = Dictionary(blocks.map { ($0.id, $0) }) { first, _ in first }
+    dragAnchor = nil
     textStorage?.setAttributedString(text)
   }
 

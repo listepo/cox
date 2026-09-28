@@ -455,6 +455,10 @@ block and on a multi-block selection made with ⇧-click in the gutter.
 Cross-block drag selection (on by default, `cross_block_selection = false`
 clamps it to one block) runs on our own TextKit 2 view, package
 `CoxTranscriptText`, chosen by spike T37.37 (`research.md` §9.5.13).
+Copy writes the selection twice, blocks in order: Markdown
+(`net.daringfireball.markdown`; a whole reply as its source, a card as its
+summary line, a code block cut short still fenced) and plain text; the view
+takes the setting as `crossBlockSelection` and never reads config (T37.42).
 
 ### 5.3 Composer
 
