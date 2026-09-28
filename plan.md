@@ -29,10 +29,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.41 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.43 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
-| T37.21.5 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.21.6 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.21.7 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.21.10 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.23 | todo | P0 | 5 | 0% | |
 | T37.24 | todo | P0 | 4 | 0% | |
 | T37.25 | todo | P1 | 3 | 0% | |
@@ -1091,30 +1087,6 @@ Check: a test expands and collapses a card and the range and frame of the next b
 Depends: T37.40 · Size: ~200 · Files: `…/CoxTranscriptText/…`
 Goal: the text storage is built from Rust `StyledDoc` spans (T37.7) and appended as patches arrive instead of rebuilt; the spike took ~630 ms to build 10 000 blocks at once, over the 400 ms launch budget (research.md §9.5.13).
 Check: building the 10 000-block fixture incrementally stays within the DT§1 launch budget; a streamed `AppendText` patch edits only its block's range.
-
-#### T37.21.5 `UserBubble` and `ThinkingDisclosure`
-
-Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
-Goal: the user turn bubble with attachments row, and the collapsible thinking block. Built only from atoms and foundations (DS§6.3).
-Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
-
-#### T37.21.6 `NoticeRow`, `TurnDivider` and `TurnMeta`
-
-Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
-Goal: notices (info, warning, error), the divider between turns, and the per-turn meta line (tokens, cost, duration, stop reason). Built only from atoms and foundations (DS§6.3).
-Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
-
-#### T37.21.7 `ComposerChip`
-
-Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
-Goal: the composer's mention, attachment and command chips with remove affordance. Built only from atoms and foundations (DS§6.3).
-Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
-
-#### T37.21.10 `SettingRow`
-
-Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
-Goal: a Settings row — label, control and the source-layer badge (mockup `.group .gr`); DS§6.3 gains its row. Built only from atoms and foundations (DS§6.3).
-Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
 
 #### T37.23 Transcript view and the DT§9 benchmark gate
 

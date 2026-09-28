@@ -3637,3 +3637,47 @@ Result: `CoxUI/Molecules/TerminalTail.swift` shows lines in an inset well on `su
 Deviations: carries the small ToolHeader state-glyph refactor (no visual change).
 Check: the same runs as T37.21.1: 68/68 passed with no re-recording; lints clean; the merged build succeeded.
 Not done: none.
+
+#### T37.21.5 `UserBubble` and `ThinkingDisclosure`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the user turn bubble with attachments row, and the collapsible thinking block. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `CoxUI/Molecules/UserBubble.swift` shows the prompt on a readable face at e2, with a row of `Thumbnail`s built from `UserBubble.Attachment`. `ThinkingDisclosure.swift` shows a chevron and the summary; opened, it shows the reasoning in italics beside a hairline, and the open state is the view's own `@State` animated with `Motion.durationBase`. Fixtures are in `Previews/PreviewState+Turn.swift` and snapshots in `TurnMoleculeTests`. DS§6.3 rows give the signatures.
+Deviations: the bubble draws its glass face in `.background`, because the specular sweep over the content washed out the prompt text (DS§8). The nearest tokens stand in for the mockup's 14 px sides (`Space.l`) and its 2 px thinking rule (the hairline).
+Check: each new suite recorded its snapshots once and then passed without re-recording. After the last commit the full `swift test` ran twice: 71 tests in 21 suites passed both times. `swiftlint lint --strict` and `swift-format lint --strict` are clean. After merging into `p37-desktop`, `swift build --build-tests` succeeded.
+Not done: none.
+
+#### T37.21.6 `NoticeRow`, `TurnDivider` and `TurnMeta`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: notices (info, warning, error), the divider between turns, and the per-turn meta line (tokens, cost, duration, stop reason). Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `NoticeRow` (info, warning, error, optional symbol), `TurnDivider` (`Hairline` atoms around an optional caption) and `TurnMeta` (a `Facts` value in the mockup's order) are in `CoxUI/Molecules/`, with fixtures and snapshots in the turn files and a unit test on the order of the meta facts.
+Deviations: warning and error text is `text.primary`, with the colour on the symbol only; the meta line is `text.secondary` in `font.footnote`. The mockup's red and tertiary text miss DS§8.
+Check: each new suite recorded its snapshots once and then passed without re-recording. After the last commit the full `swift test` ran twice: 71 tests in 21 suites passed both times. `swiftlint lint --strict` and `swift-format lint --strict` are clean. After merging into `p37-desktop`, `swift build --build-tests` succeeded.
+Not done: none.
+
+#### T37.21.7 `ComposerChip`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the composer's mention, attachment and command chips with remove affordance. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `CoxUI/Molecules/ComposerChip.swift`, `ComposerChip(label, kind:, shortcut:, onRemove:)`, handles mention, attachment and command chips. It shows a symbol, the label, an optional `KeyCap` and an `xmark` remove button on a readable capsule at e1; mention and command chips use the accent tint. Fixtures are in `PreviewState+Composer.swift` and snapshots in `ComposerMoleculeTests`.
+Deviations: `Size.buttonHeightSmall` and `Space.xs` stand in for the 26 px height and 5 px gap. The symbols were picked in the task: `at`, `paperclip`, `bolt`.
+Check: each new suite recorded its snapshots once and then passed without re-recording. After the last commit the full `swift test` ran twice: 71 tests in 21 suites passed both times. `swiftlint lint --strict` and `swift-format lint --strict` are clean. After merging into `p37-desktop`, `swift build --build-tests` succeeded.
+Not done: none.
+
+#### T37.21.10 `SettingRow`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: a Settings row — label, control and the source-layer badge (mockup `.group .gr`); DS§6.3 gains its row. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `CoxUI/Molecules/SettingRow.swift` shows a LabeledToggle, a LabeledSlider or a `SettingLabel` beside any control, followed by a Badge that names the source layer. `SettingSource` lists default, user, project, claude-settings, env and flag. A value from project, claude-settings, env or flag is read-only: the control is disabled and a lock with a tooltip sits before the badge. A unit test checks which layers lock a setting. DS§6.3 has a row for it.
+Deviations: adds the `claude-settings` layer, which `cox-config` reports (D13). `SettingLabel.swift` is extracted from `LabeledToggle`; its snapshots are unchanged.
+Check: each new suite recorded its snapshots once and then passed without re-recording. After the last commit the full `swift test` ran twice: 71 tests in 21 suites passed both times. `swiftlint lint --strict` and `swift-format lint --strict` are clean. After merging into `p37-desktop`, `swift build --build-tests` succeeded.
+Not done: none.
