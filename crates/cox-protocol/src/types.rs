@@ -1036,6 +1036,15 @@ pub enum Event {
         /// The next chunk of thinking text.
         text: String,
     },
+    /// A streamed `Thinking` item stopped growing (A91): how long the model
+    /// thought, from its first to its last reasoning delta. Kept in the
+    /// rollout, so a replay shows the duration the live run measured.
+    ThinkingDone {
+        /// The `Thinking` item that ended.
+        item: ItemId,
+        /// Milliseconds from the first to the last delta.
+        duration_ms: u64,
+    },
     /// The model requested a tool call.
     ToolCallRequested {
         /// The requested call.
@@ -1557,6 +1566,7 @@ mod tests {
     #[case::item_started(Event::ItemStarted { item: ItemId::new(), kind: ItemKind::UserMessage { text: "hi".into(), attachments: vec![] } })]
     #[case::text_delta(Event::TextDelta { item: ItemId::new(), text: "chunk".into() })]
     #[case::thinking_delta(Event::ThinkingDelta { item: ItemId::new(), text: "chunk".into() })]
+    #[case::thinking_done(Event::ThinkingDone { item: ItemId::new(), duration_ms: 12_000 })]
     #[case::tool_call_requested(Event::ToolCallRequested { call: ToolCall { id: CallId::new(), name: "read".into(), input: serde_json::json!({"path": "a.rs"}), risk: Risk::ReadOnly, subject: "a.rs".into(), segments: None } })]
     #[case::approval_required(Event::ApprovalRequired { call: ToolCall { id: CallId::new(), name: "bash".into(), input: Value::Null, risk: Risk::Exec, subject: "ls".into(), segments: None }, why: Why::Risk { risk: Risk::Exec }, source: Some(Source { session: SessionId::new(), agent: Some("explore-2".into()), preset: Some("explore".into()) }) })]
     #[case::approval_decided(Event::ApprovalDecided { call_id: CallId::new(), decision: Decision::Allow, by: DecidedBy::User })]

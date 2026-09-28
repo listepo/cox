@@ -147,7 +147,7 @@ fn merge(queued: &mut TimelinePatch, later: TimelinePatch) -> Result<(), Timelin
 /// Applies an `AppendText` or `DocTail` to the block it names.
 fn apply_content(kind: &mut BlockKind, patch: TimelinePatch) -> Result<(), TimelinePatch> {
     match (kind, patch) {
-        (BlockKind::Thinking { text }, TimelinePatch::AppendText { text: more, .. }) => {
+        (BlockKind::Thinking { text, .. }, TimelinePatch::AppendText { text: more, .. }) => {
             text.push_str(&more);
         }
         (BlockKind::Tool { tail: t, .. }, TimelinePatch::AppendText { text: more, .. }) => {
@@ -189,7 +189,13 @@ mod tests {
     }
 
     fn thinking(key: &str, text: &str) -> TimelinePatch {
-        block(key, BlockKind::Thinking { text: text.into() })
+        block(
+            key,
+            BlockKind::Thinking {
+                text: text.into(),
+                duration_ms: None,
+            },
+        )
     }
 
     fn append(key: &str, text: &str) -> TimelinePatch {
@@ -257,7 +263,7 @@ mod tests {
         ]);
         let blocks = mirror(&[], &queue);
         assert_eq!(queue.len(), 2);
-        assert!(matches!(&blocks[1].kind, BlockKind::Thinking { text } if text == "ab"));
+        assert!(matches!(&blocks[1].kind, BlockKind::Thinking { text, .. } if text == "ab"));
         assert!(
             matches!(&blocks[0].kind, BlockKind::Tool { tail, .. } if tail == "2\n3\n4\n5\n6\n")
         );

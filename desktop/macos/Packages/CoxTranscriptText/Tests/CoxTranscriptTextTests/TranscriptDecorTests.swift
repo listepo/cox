@@ -103,4 +103,21 @@ struct TranscriptDecorTests {
       #expect((fragment is DecorFragment) == decorated, "\(id)")
     }
   }
+
+  @Test func aThoughtsHeaderReadsThinkingUntilItsDurationArrives() throws {
+    let streaming = Block(id: "k", turn: 1, kind: .thinking(text: reasoning))
+    #expect(TranscriptCards.thoughtTitle(streaming.kind) == "Thinking")
+    let view = TranscriptTextView.make()
+    view.load([streaming])
+    var done = streaming
+    done.kind = .thinking(text: reasoning, durationMs: 12_400)
+    view.apply([.upsert(block: done, after: nil)]) { _ in done }
+
+    let storage = try #require(view.textStorage)
+    let start = try #require(view.range(of: "k")).location
+    let header = try #require(
+      storage.attribute(.attachment, at: start, effectiveRange: nil) as? CardAttachment)
+    #expect(TranscriptCards.thoughtTitle(header.block.kind) == "Thought for 12 s")
+    #expect(TranscriptCards.thoughtTitle(.thinking(text: "", durationMs: 90)) == "Thought for 1 s")
+  }
 }

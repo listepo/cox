@@ -1553,14 +1553,9 @@ impl Session {
             }
             budget::Decision::Proceed => {}
         }
+        // `consume_provider` starts this item once any streamed thought is
+        // over (A91), so the thought is listed ahead of the reply.
         let assistant_item = ItemId::new();
-        self.emit(Event::ItemStarted {
-            item: assistant_item,
-            kind: ItemKind::AssistantMessage {
-                text: String::new(),
-            },
-        })
-        .await?;
         self.set_state(State::Streaming).await;
         let (ptx, mut prx) = mpsc::channel(64);
         let provider = self.provider.clone();

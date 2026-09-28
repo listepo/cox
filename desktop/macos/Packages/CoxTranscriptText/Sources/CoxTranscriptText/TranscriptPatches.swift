@@ -49,8 +49,8 @@ extension TranscriptTextView {
   ) {
     guard let index = blockRanges.index(of: id) else { return }
     defer { blocks[id] = current(id) ?? blocks[id] }
-    if case .thinking(let old)? = blocks[id]?.kind, var grown = blocks[id] {
-      grown.kind = .thinking(text: old + text)
+    if case .thinking(let old, let durationMs)? = blocks[id]?.kind, var grown = blocks[id] {
+      grown.kind = .thinking(text: old + text, durationMs: durationMs)
       thoughtGrew(index, by: text, to: current(id) ?? grown, look)
     } else if let block = current(id) {
       card(at: index)?.update(block)

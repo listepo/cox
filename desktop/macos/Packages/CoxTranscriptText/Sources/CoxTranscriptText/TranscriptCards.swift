@@ -11,12 +11,14 @@ import SwiftUI
 
 /// The SwiftUI view each card block shows, and the small views inside a prompt
 /// and a thought (T37.23.4): an attachment's tile and a thought's fold header,
-/// given whether it is open and what opens or folds it. CoxUI supplies its
+/// given its title (`thoughtTitle`), whether it is open and what opens or folds it. CoxUI supplies its
 /// catalogue views; `summary` draws plain text for tests and previews.
 public struct TranscriptCards {
   let view: @MainActor (Block) -> AnyView
   let thumbnail: @MainActor (String) -> AnyView
-  let header: @MainActor (_ open: Bool, _ toggle: @escaping @MainActor () -> Void) -> AnyView
+  let header:
+    @MainActor (_ title: String, _ open: Bool, _ toggle: @escaping @MainActor () -> Void) ->
+      AnyView
   /// Set by the view that hosts the cards: a card's view was made (`false`)
   /// or its height changed (`true`).
   var changed: @MainActor (BlockID, _ resized: Bool) -> Void = { _, _ in }
@@ -27,17 +29,24 @@ public struct TranscriptCards {
   public init<Card: View, Tile: View, Header: View>(
     _ view: @escaping @MainActor (Block) -> Card,
     thumbnail: @escaping @MainActor (String) -> Tile,
-    thinking header: @escaping @MainActor (Bool, @escaping @MainActor () -> Void) -> Header
+    thinking header: @escaping @MainActor (String, Bool, @escaping @MainActor () -> Void) -> Header
   ) {
     self.view = { AnyView(view($0)) }
     self.thumbnail = { AnyView(thumbnail($0)) }
-    self.header = { AnyView(header($0, $1)) }
+    self.header = { AnyView(header($0, $1, $2)) }
   }
 
   public init<Card: View>(_ view: @escaping @MainActor (Block) -> Card) {
     self.init(
       view, thumbnail: { Text($0) },
-      thinking: { open, toggle in Button(open ? "Fold" : "Thinking") { toggle() } })
+      thinking: { title, open, toggle in Button(open ? "Fold" : title) { toggle() } })
+  }
+
+  /// A thought's fold header (DS§6.3): "Thinking" while it streams, then how
+  /// long the model thought, "Thought for 12 s", in whole seconds and never 0.
+  static func thoughtTitle(_ kind: BlockKind) -> String {
+    guard case .thinking(_, let durationMs?) = kind else { return "Thinking" }
+    return "Thought for \(max(1, (durationMs + 500) / 1000)) s"
   }
 
   public static var summary: TranscriptCards {
@@ -92,7 +101,8 @@ final class CardAttachment: NSTextAttachment {
     case .thumbnail(let name): return cards.thumbnail(name)
     case .header:
       let (id, cards) = (block.id, cards)
-      return cards.header(cards.isOpen(id)) { cards.toggle(id) }
+      let title = TranscriptCards.thoughtTitle(block.kind)
+      return cards.header(title, cards.isOpen(id)) { cards.toggle(id) }
     }
   }
 

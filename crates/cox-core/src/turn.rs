@@ -55,7 +55,32 @@ struct Acc {
     input: String,
 }
 
+/// The streamed `Thinking` item still growing (A91), with when its first
+/// and latest deltas arrived: `ThinkingDone` reports the gap between them.
+struct Thought {
+    item: ItemId,
+    first: Instant,
+    last: Instant,
+}
+
+/// Closes a streamed thought: its duration, then its `ItemDone`.
+async fn end_thought(session: &Session, thought: Thought) -> Result<(), CoreError> {
+    let duration_ms = thought.last.duration_since(thought.first).as_millis() as u64;
+    session
+        .emit(Event::ThinkingDone {
+            item: thought.item,
+            duration_ms,
+        })
+        .await?;
+    session.emit(Event::ItemDone { item: thought.item }).await
+}
+
 /// Forwards `ProviderEvent`s as `Event`s and collects tool-use blocks.
+///
+/// Reasoning streams into its own `Thinking` item (A91), and the reply's
+/// `AssistantMessage` item starts only once the thought is over — before
+/// the first other provider event, or at the end — so every surface lists
+/// the thought ahead of the reply it led to.
 pub(crate) async fn consume_provider(
     session: &Session,
     rx: &mut mpsc::Receiver<cox_protocol::types::ProviderEvent>,
@@ -64,7 +89,18 @@ pub(crate) async fn consume_provider(
     use cox_protocol::types::ProviderEvent as P;
     let mut out = Streamed::default();
     let mut current: Option<Acc> = None;
+    let mut thought: Option<Thought> = None;
+    let mut replying = false;
     while let Some(ev) = rx.recv().await {
+        if !matches!(ev, P::ThinkingDelta { .. }) {
+            if let Some(done) = thought.take() {
+                end_thought(session, done).await?;
+            }
+            if !replying {
+                replying = true;
+                start_reply(session, assistant_item).await?;
+            }
+        }
         match ev {
             P::MessageStart { model } => out.response_model = Some(model),
             P::TextDelta { text } => {
@@ -80,12 +116,28 @@ pub(crate) async fn consume_provider(
                 if crate::session::capture_message_content() {
                     out.thinking.push_str(&text);
                 }
-                session
-                    .emit(Event::ThinkingDelta {
-                        item: assistant_item,
-                        text,
-                    })
-                    .await?;
+                let now = Instant::now();
+                let item = match thought.as_mut() {
+                    Some(open) => {
+                        open.last = now;
+                        open.item
+                    }
+                    None => {
+                        let item = ItemId::new();
+                        let kind = ItemKind::Thinking {
+                            text: String::new(),
+                            signature: None,
+                        };
+                        session.emit(Event::ItemStarted { item, kind }).await?;
+                        thought = Some(Thought {
+                            item,
+                            first: now,
+                            last: now,
+                        });
+                        item
+                    }
+                };
+                session.emit(Event::ThinkingDelta { item, text }).await?;
             }
             P::ToolUseStart { id, name } => {
                 current = Some(Acc {
@@ -132,7 +184,21 @@ pub(crate) async fn consume_provider(
             }
         }
     }
+    if let Some(done) = thought {
+        end_thought(session, done).await?;
+    }
+    if !replying {
+        start_reply(session, assistant_item).await?;
+    }
     Ok(out)
+}
+
+/// Opens the reply's (still empty) `AssistantMessage` item.
+async fn start_reply(session: &Session, item: ItemId) -> Result<(), CoreError> {
+    let kind = ItemKind::AssistantMessage {
+        text: String::new(),
+    };
+    session.emit(Event::ItemStarted { item, kind }).await
 }
 
 /// Runs one batch of tool calls; results are returned in emission order.
@@ -743,5 +809,59 @@ mod tests {
             streamed.signatures,
             HashMap::from([(signed, "sig-1".to_string())])
         );
+    }
+
+    /// A91: reasoning streams into its own `Thinking` item, which closes
+    /// with its duration before the reply's item starts.
+    #[tokio::test]
+    async fn streamed_thought_is_its_own_item_closed_before_the_reply() {
+        let store = Arc::new(MemoryStore::new());
+        let session = Session::new(
+            cox_protocol::Config::default(),
+            Arc::new(Scripted::from_toml("", "").expect("scenario")),
+            vec![],
+            store.clone(),
+            store,
+            PathBuf::from("/tmp/cox-turn-thought"),
+        )
+        .expect("session");
+        let mut events = session.events().expect("events");
+        let (tx, mut rx) = mpsc::channel(8);
+        for text in ["weigh ", "options"] {
+            let ev = ProviderEvent::ThinkingDelta { text: text.into() };
+            tx.send(ev).await.expect("send");
+        }
+        let reply = ProviderEvent::TextDelta { text: "ok".into() };
+        tx.send(reply).await.expect("send");
+        drop(tx);
+        let assistant = ItemId::new();
+        consume_provider(&session, &mut rx, assistant)
+            .await
+            .expect("stream");
+        let mut seen = Vec::new();
+        while let Ok(ev) = events.try_recv() {
+            // Only what the stream caused; a new session may announce itself.
+            if !seen.is_empty() || matches!(ev, Event::ItemStarted { .. }) {
+                seen.push(ev);
+            }
+        }
+        let Some(Event::ItemStarted {
+            item: thought,
+            kind: ItemKind::Thinking { .. },
+        }) = seen.first().cloned()
+        else {
+            panic!("thought item first: {seen:?}");
+        };
+        assert!(matches!(
+            &seen[1..],
+            [
+                Event::ThinkingDelta { item: a, .. },
+                Event::ThinkingDelta { item: b, .. },
+                Event::ThinkingDone { item: c, .. },
+                Event::ItemDone { item: d },
+                Event::ItemStarted { item: e, kind: ItemKind::AssistantMessage { .. } },
+                Event::TextDelta { item: f, .. },
+            ] if [a, b, c, d] == [&thought; 4] && [e, f] == [&assistant; 2]
+        ));
     }
 }

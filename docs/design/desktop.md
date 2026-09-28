@@ -187,7 +187,7 @@ SessionController               one per open session
 | --- | --- | --- |
 | `User` | `ItemStarted{UserMessage}` | text, attachments |
 | `Assistant` | `ItemStarted{AssistantMessage}` + `TextDelta`s | `StyledDoc` (parsed in Rust) |
-| `Thinking` | `ThinkingDelta`s | text, seconds, collapsed |
+| `Thinking` | `ItemStarted{Thinking}` + `ThinkingDelta`s → `ThinkingDone` (A91) | text, seconds (`None` while streaming), collapsed |
 | `Tool` | `ToolCallRequested` → `ToolCallOutput` → `ToolCallDone` | tool, one-line summary, icon key, risk, state, output tail (last 5 lines), full-output `ArchiveRef`, `DiffModel`, duration |
 | `ToolGroup` | consecutive read/grep/glob/outline calls | "Explored 7 files", children |
 | `Approval` | `ApprovalRequired` / `ApprovalDecided` | call, why text, grant preview, source (subagent), state |

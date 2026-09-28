@@ -105,7 +105,10 @@ impl Timeline {
                         text: text.clone(),
                         doc: markdown::parse(text, &self.theme, &UNICODE),
                     },
-                    ItemKind::Thinking { text, .. } => BlockKind::Thinking { text: text.clone() },
+                    ItemKind::Thinking { text, .. } => BlockKind::Thinking {
+                        text: text.clone(),
+                        duration_ms: None,
+                    },
                     ItemKind::Notice { level, text } => BlockKind::Notice {
                         level: *level,
                         text: text.clone(),
@@ -133,6 +136,11 @@ impl Timeline {
                 }
             }
             Event::ThinkingDelta { item, text } => self.append(key("item", item), text),
+            Event::ThinkingDone { item, duration_ms } => self.update(&key("item", item), |k| {
+                if let BlockKind::Thinking { duration_ms: d, .. } = k {
+                    *d = Some(*duration_ms);
+                }
+            }),
             Event::ToolCallRequested { call } => {
                 let kind = BlockKind::Tool {
                     tool: call.name.clone(),
@@ -457,7 +465,7 @@ impl Timeline {
             return vec![];
         };
         match &mut self.blocks[i].kind {
-            BlockKind::Thinking { text } => text.push_str(delta),
+            BlockKind::Thinking { text, .. } => text.push_str(delta),
             BlockKind::Tool { tail: t, .. } => *t = tail(&(t.clone() + delta)).to_owned(),
             _ => return vec![],
         }
@@ -646,5 +654,57 @@ mod tests {
             panic!("expected a compaction block");
         };
         assert_eq!(summary.as_deref(), Some("we fixed the login"));
+    }
+
+    /// A91: a folded reasoning run records its duration from
+    /// `ThinkingDone`, and folding the same events read back from a rollout
+    /// line by line gives the same value.
+    #[test]
+    fn folded_thought_records_its_duration_and_replay_keeps_it() {
+        let item = ItemId::new();
+        let kind = ItemKind::Thinking {
+            text: String::new(),
+            signature: None,
+        };
+        let events = [
+            Event::ItemStarted { item, kind },
+            Event::ThinkingDelta {
+                item,
+                text: "weigh ".into(),
+            },
+            Event::ThinkingDelta {
+                item,
+                text: "options".into(),
+            },
+            Event::ThinkingDone {
+                item,
+                duration_ms: 12_000,
+            },
+            Event::ItemDone { item },
+        ];
+        let fold = |events: &[Event]| {
+            let mut timeline = Timeline::default();
+            for ev in events {
+                timeline.apply(ev);
+            }
+            timeline.blocks().to_vec()
+        };
+        let live = fold(&events);
+        let [block] = live.as_slice() else {
+            panic!("one thinking block, got {live:?}");
+        };
+        let BlockKind::Thinking { text, duration_ms } = &block.kind else {
+            panic!("a thinking block, got {block:?}");
+        };
+        assert_eq!(
+            (text.as_str(), *duration_ms),
+            ("weigh options", Some(12_000))
+        );
+        let replayed: Vec<Event> = events
+            .iter()
+            .map(|ev| serde_json::to_string(ev).and_then(|line| serde_json::from_str(&line)))
+            .collect::<Result<_, _>>()
+            .expect("rollout lines");
+        assert_eq!(fold(&replayed), live);
     }
 }

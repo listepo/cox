@@ -17,7 +17,8 @@ extension CoxClient.BlockKind {
     switch value {
     case .user(let text, let attachments): self = .user(text: text, attachments: attachments)
     case .assistant(let text, let doc): self = .assistant(text: text, doc: .init(doc))
-    case .thinking(let text): self = .thinking(text: text)
+    case .thinking(let text, let durationMs):
+      self = .thinking(text: text, durationMs: durationMs)
     case .tool(
       let tool, let summary, let icon, let risk, let state, let tail, let archive, let diff,
       let durationMs):

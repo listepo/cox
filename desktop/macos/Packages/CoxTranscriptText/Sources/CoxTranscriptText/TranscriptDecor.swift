@@ -240,7 +240,7 @@ extension TranscriptText {
         (attributes[.attachment], attributes[.kern]) = (tile, look.style.bubble.gap)
         out.append(NSAttributedString(string: "\u{FFFC}", attributes: attributes))
       }
-    case .thinking(let text):
+    case .thinking(let text, _):
       guard !text.isEmpty else { break }
       let header = CardAttachment(block, cards: cards, role: .header)
       out.append(NSAttributedString(attachment: header))
@@ -260,7 +260,7 @@ extension TranscriptTextView {
     guard openThoughts.contains(id) != open else { return }
     if open { openThoughts.insert(id) } else { openThoughts.remove(id) }
     guard let index = blockRanges.index(of: id), let block = blocks[id],
-      case .thinking(let text) = block.kind
+      case .thinking(let text, _) = block.kind
     else { return }
     let range = blockRanges.ranges[index]
     guard range.length > 0 else { return }

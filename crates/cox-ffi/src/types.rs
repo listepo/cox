@@ -163,6 +163,7 @@ pub enum BlockKind {
     },
     Thinking {
         text: String,
+        duration_ms: Option<u64>,
     },
     Tool {
         tool: String,
