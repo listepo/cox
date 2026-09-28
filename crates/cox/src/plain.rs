@@ -365,6 +365,7 @@ impl Plain {
                 text,
                 options,
                 from,
+                ..
             }) => {
                 let label = match from {
                     Some(from) => format!("question from {}", sanitize(from)),

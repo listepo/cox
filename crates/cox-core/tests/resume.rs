@@ -123,9 +123,10 @@ impl Provider for Seeing {
         sink: mpsc::Sender<ProviderEvent>,
         cancel: CancellationToken,
     ) -> Result<Usage, ProviderError> {
-        let mut seen = self.1.lock().unwrap_or_else(|e| e.into_inner());
-        seen.push(req.clone());
-        drop(seen);
+        self.1
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(req.clone());
         self.0.stream(req, sink, cancel).await
     }
     async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {

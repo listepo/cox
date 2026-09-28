@@ -505,7 +505,10 @@ pub trait RepoMapper: Send + Sync {
         &self,
         root: &Path,
         budget_bytes: usize,
-        admit: &(dyn Fn(&Path) -> bool + Send + Sync),
+        // An explicit `for<'p>`: `#[async_trait]` names every elided lifetime,
+        // the one inside `Fn(&Path)` too, which would tie the argument to the
+        // call and reject `admit(&root.join(rel))`.
+        admit: &(dyn for<'p> Fn(&'p Path) -> bool + Send + Sync),
     ) -> String;
 }
 
