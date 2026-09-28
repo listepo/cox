@@ -31,6 +31,7 @@ pub mod tasks;
 pub mod terminal;
 pub mod timeline;
 pub mod usage;
+pub mod wire;
 pub mod workspace;
 
 pub use browser::{Browser, BrowserError, PageText};

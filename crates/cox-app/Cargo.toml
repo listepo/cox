@@ -55,6 +55,9 @@ nix = { workspace = true, features = ["signal", "process"] }
 # `url` parses what `browser_open` is given.
 async-trait = { workspace = true }
 url = { workspace = true }
+# T52.18: the app-server wire's schema (`docs/app-server.schema.json`),
+# as cox-protocol and cox-config generate theirs; already in the tree.
+schemars = { workspace = true }
 
 [dev-dependencies]
 # The scenario tests run a real session over the Scripted provider and
