@@ -33,7 +33,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.21.11 | todo | P2 | 2 | 90% | |
-| T37.22.3 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.22.4 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.22.5 | in progress | P1 | 4 | 0% | Claude Code / Opus 5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2778,11 +2779,17 @@ Check: the changed snapshots are re-recorded on purpose; each fixed text pair me
 
 Waits for the creator: the filter prompt's `text.secondary` is 4.19:1 on the light sidebar filter well (4.5 needs about `#69696e`) — `text.primary`, a new placeholder token, a darker light `text.secondary`, or accept; and which backdrop DS§8's Frosted and Glossy contrast is measured on (over the snapshot backdrop no text token but light `text.primary` reaches 4.5:1). The finished work for all five items is kept as a patch by the orchestrator.
 
-#### T37.22.3 App window setup and the public CoxUI surface
+#### T37.22.4 App glass, window chrome and composer stats match mockup 28
 
-Depends: T37.32.1 (the app target, A106) · Size: ~100 · Files: `…/Screens/MainScreen.swift`, the app target
-Goal: the app window has a hidden title bar and a behind-window blur; the screen, state and intent types the app target needs are `public`. The app wires the Appearance popover (T37.26) to `SettingsStore`. It draws blur and wallpaper tint through the behind-window view. It fills the value texts and closes the popover on click-outside or Esc. Controls locked by a higher config layer are disabled, with the layer named. The Settings screen (T37.30.1) opens from the app menu, with slider writes coalesced. The app passes `HostBridge(MacHost())` (T37.30.2) to `LiveCoreClient`, and a notification delegate handles clicks and foreground display. The app's View menu replaces the system sidebar and inspector command groups with items of the same titles and keys from `ShellShortcut` (T37.22.2), because the system commands act only on system-built panes and the shell is laid out by hand. The onboarding checklist (`App::checklist`, T37.31) is forwarded through `cox-ffi` and shown on first run.
-Check: the app target builds against `CoxUI` with only public API; a screenshot of the running app matches mockup screen 28 by eye.
+Depends: T37.22.3 · Size: ~150 · Files: `desktop/macos/App/WindowChrome.swift`, `…/Screens/MainScreen.swift`, the composer stats view
+Goal: fixes the running app's differences from mockup 28 that the creator's local look (2026-09-28) found. (1) The window strip behind the toolbar is fully clear: whatever is behind the window reads sharp through it; the behind-window blur and wallpaper tint must cover the whole window, as on the mockup. (2) The panes render nearly opaque white; they must follow `window transparency` (58 % on the mockup) and frost so the wallpaper colour shows through, while text blocks stay readable (the popover note: at least 80 % opaque). (3) The sidebar pane encloses the traffic lights, as on the mockup, and every pane keeps the mockup's margin to the window edges; the composer does not touch the bottom edge. (4) The composer's rate reads `183763 tok/s` on the approve-write fixture: a rate over a near-zero duration must not show (the mockup shows `71 tok/s` with its sparkline). (5) The model pill reads `claude-…t-5 · high`; it shows the catalog display name (`Sonnet 5 · high`).
+Check: a screenshot of the app on the approve-write fixture next to mockup 28 shows the glass, margins, rate and model name matching by eye; a unit test for the rate guard.
+
+#### T37.22.5 App wiring: toolbar, sidebar and inspector from the live stores
+
+Depends: T37.22.3 · Size: ~200 · Files: `desktop/macos/App/SessionWindow.swift`, `…/Screens/MainScreen.swift`, CoxModel stores
+Goal: the parts of mockup 28 the app still shows empty (the creator's local look, 2026-09-28, and T37.22.3's Not done). Toolbar: the session title with project and worktree breadcrumb, the model pill with its popover, the cost and `ctx n%` meter (it shows an empty `· ctx`), Stop while a turn runs, the Appearance button; the `+` menu only if the mockup has it. Sidebar: the session list grouped as on the mockup (Needs you, Running, per project) with cost and status, and the providers footer. Inspector: the Changes, Plan, Context, Tasks and Info tabs read their stores; the Review pane sends through `SessionStore.sendReview(settings.reviewSend)` (A108). The app calls `loadLoginEnv` so the shell-environment row fills, and the stored-keys list refreshes after `storeKey`.
+Check: a screenshot of the app on a fixture with a few sessions matches mockup 28's toolbar, sidebar and inspector by eye; a CoxModel test for each new store read.
 
 ## 4. Definition of done for v0.1
 

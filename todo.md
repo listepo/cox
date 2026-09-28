@@ -27,7 +27,8 @@
 - T37.32.2. Developer ID signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.21.11. Molecule legibility and small fixes
-- T37.22.3. App window setup and the public CoxUI surface
+- T37.22.4. App glass, window chrome and composer stats match mockup 28
+- T37.22.5. App wiring: toolbar, sidebar and inspector from the live stores
 - T39.3. Chat translator replays a signature as `extra_content` on its tool call
 - T39.4. Surfaces skip the empty signed thinking item
 - T39.5. `[providers.gemini]` preset and vendored model rows
