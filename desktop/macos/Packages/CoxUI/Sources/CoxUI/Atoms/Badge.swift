@@ -11,41 +11,40 @@ struct Badge: View {
   }
 
   let text: String
-  let kind: Kind
+  let foreground: Color
+  let background: Color
 
-  /// The mockup's `border-radius: 5px`, between `Radius.xs` and `Radius.s`.
-  private static let cornerRadius: CGFloat = 5
   /// The mockup's `padding: 1px 6px`: the vertical step is below `Space.xxs`.
   private static let verticalPadding: CGFloat = 1
 
   init(_ text: String, kind: Kind = .neutral) {
+    self.init(text, foreground: kind.foreground, background: kind.background)
+  }
+
+  /// A badge in its caller's roles, as `RiskChip` draws a risk level.
+  init(_ text: String, foreground: Color, background: Color) {
     self.text = text
-    self.kind = kind
+    self.foreground = foreground
+    self.background = background
   }
 
   var body: some View {
     Text(text)
       .textStyle(.micro)
       .lineLimit(1)
-      .foregroundStyle(kind.foreground)
+      .foregroundStyle(foreground)
       .padding(.horizontal, Space.s)
       .padding(.vertical, Self.verticalPadding)
-      .background(
-        kind.background,
-        in: RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+      .background(background, in: RoundedRectangle(cornerRadius: Radius.badge, style: .continuous))
   }
 }
 
 extension Badge.Kind {
-  /// The mockup's `.b-project` fill, `rgba(142,68,216,.13)`: the tint over its colour.
-  private static let projectTint = 0.13
-
   var foreground: Color {
     switch self {
     case .neutral, .default: Color(.textSecondary)
     case .user: Color(.accent)
-    // No project role exists; the plan colour stands in for the mockup's purple.
-    case .project: Color(.statusPlan)
+    case .project: Color(.roleProject)
     case .env: Color(.statusSuccess)
     case .warning: Color(.statusWarning)
     case .danger: Color(.statusDanger)
@@ -56,7 +55,7 @@ extension Badge.Kind {
     switch self {
     case .neutral, .default: Color(.fillSecondary)
     case .user: Color(.accentSoft)
-    case .project: Color(.statusPlan).opacity(Self.projectTint)
+    case .project: Color(.roleProjectSoft)
     case .env: Color(.statusSuccessSoft)
     case .warning: Color(.statusWarningSoft)
     case .danger: Color(.statusDangerSoft)

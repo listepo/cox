@@ -73,6 +73,8 @@ Name by role, never by hue. A view asks for `text.secondary`, not "grey".
 | line | `separator` | 0.5 pt hairlines |
 | quote | `bar` | A quote's bar in the transcript, one per depth, `size.quoteBar` (3 pt) wide: `text.tertiary`'s value, stronger than a hairline; High Contrast holds it to 3:1 (A97) |
 | intent | `accent`, `accent.soft`, `status.success/warning/danger/plan` (+ `Soft`) | Meaning: selection, done, needs you, error, plan mode |
+| role | `role.project` (+ `Soft`) | The project config layer's badge: the mockup's purple, lightened in dark mode to hold 4.5:1 (§8) |
+| risk | `risk.low/medium/high` (+ `Soft`) | A RiskChip's label and face per level: low quiet (`text.secondary` on `fill.secondary`), medium the mockup's `.risk` orange, high `status.danger`; their own roles so a level can change without moving the status colours |
 | diff | `add`, `addGutter`, `del`, `delGutter` | Diff lines and gutters |
 | syntax | `keyword`, `string`, `number`, `function`, `comment`, `type` | Highlighting; same roles as `cox-render`'s `StyleToken`, so TUI and app match |
 | data | `meter.sent`, `meter.received`, `context.system/tools/instructions/history` | Token meter and context bar |
@@ -112,10 +114,10 @@ tok/s, timers) are always tabular (`.monospacedDigit()`).
 - **Radius** goes up with the size of the thing: key cap `xs` → icon tile `s` → button `m` → tool card
   and row `l` → bubble `xl` → approval `xxl` → sidebar `panel` → pane and composer `pane` → popover
   `popover` → window `window`; pills use `capsule`. Nested shapes are concentric: inner radius = outer
-  radius − inset.
+  radius − inset. Badges and inline code use `badge` (5), between `xs` and `s`.
 - **Size** fixes the layout skeleton: toolbar 56, sidebar 252, inspector 324, reading column 760,
-  gap between floating panes 8, capsule 32, button 28 / 24, icon tile 22, status dot 9, hairline 0.5,
-  quote bar 3.
+  gap between floating panes 8, capsule 32, button 28 / 24, icon tile 22, status dot 9 (halo 3, idle
+  ring 1.5), count badge 16, hairline 0.5, quote bar 3.
 
 ### 3.4 Elevation (depth)
 
@@ -275,9 +277,9 @@ component.
 | `StatusDot` | running, waiting, idle, error | `.dot .d-*` |
 | `IconTile(kind, symbol)` | neutral, edit, shell, search, write; the tool picks the DS§3.7 symbol. `IconTile(face:glyph:symbol:)` takes its caller's colours, as a Settings page's | `.tool .ic.c-*`, `.set-side .sq` |
 | `KeyCap` | — | `.kbd` |
-| `Badge` | neutral, user, project, env, default, warning, danger | `.badge .b-*` |
-| `CountBadge` | `text.onAccent` digits on a `status.warning` pill at e1 | `.sect .cnt` |
-| `RiskChip(text, level)` | low, medium, high — drawn as a `Badge`: neutral, warning, danger | `.risk` |
+| `Badge` | neutral, user, project (`role.project`), env, default, warning, danger; `radius.badge` | `.badge .b-*` |
+| `CountBadge` | `text.onAccent` digits on a `status.warning` pill at e1, `size.countBadge` high | `.sect .cnt` |
+| `RiskChip(text, level)` | low, medium, high — drawn as a `Badge` in the level's `risk.*` role | `.risk` |
 | `Spinner`, `ProgressRing(fraction)` | — | `.spin`, `.ring` |
 | `Sparkline(samples)` | tint | `svg` in `.meter` |
 | `StackedBar(segments)` | — | `.tokpop .bar` |

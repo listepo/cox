@@ -52,6 +52,8 @@ public enum Radius {
     public static let pane: CGFloat = 18
     public static let popover: CGFloat = 20
     public static let window: CGFloat = 22
+    /// Badges and inline code: the mockup's border-radius 5px, between xs and s
+    public static let badge: CGFloat = 5
     public static let capsule: CGFloat = 999
 }
 
@@ -66,6 +68,12 @@ public enum Size {
     public static let buttonHeightSmall: CGFloat = 24
     public static let iconTile: CGFloat = 22
     public static let statusDot: CGFloat = 9
+    /// The glow around a live StatusDot: the mockup's 0 0 0 3px ring of the soft status colour
+    public static let statusDotHalo: CGFloat = 3
+    /// An idle StatusDot's ring: the mockup's border 1.5px
+    public static let statusDotRing: CGFloat = 1.5
+    /// CountBadge's height and least width: the mockup's .cnt line-height 16px
+    public static let countBadge: CGFloat = 16
     public static let hairline: CGFloat = 0.5
     /// A quote's bar in the transcript (A97), coloured quote.bar
     public static let quoteBar: CGFloat = 3

@@ -1235,6 +1235,118 @@
           }
         }
       }
+    },
+    "role": {
+      "project": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.5569,
+            0.2667,
+            0.8471
+          ],
+          "hex": "#8e44d8"
+        },
+        "$description": "The project layer: the project badge's label, the mockup's --purple"
+      },
+      "projectSoft": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.5569,
+            0.2667,
+            0.8471
+          ],
+          "hex": "#8e44d8",
+          "alpha": 0.13
+        },
+        "$description": "The project badge's face: role.project at the mockup's .b-project tint"
+      }
+    },
+    "risk": {
+      "low": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.4314,
+            0.4314,
+            0.451
+          ],
+          "hex": "#6e6e73"
+        },
+        "$description": "A low-risk RiskChip's label: text.secondary's value (the mockup has only the medium colour)"
+      },
+      "lowSoft": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "hex": "#000000",
+          "alpha": 0.07
+        },
+        "$description": "A low-risk RiskChip's face: fill.secondary's value"
+      },
+      "medium": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.9412,
+            0.5412,
+            0.0
+          ],
+          "hex": "#f08a00"
+        },
+        "$description": "A medium-risk RiskChip's label: the mockup's .risk, status.warning's value"
+      },
+      "mediumSoft": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            1.0,
+            0.5843,
+            0.0
+          ],
+          "hex": "#ff9500",
+          "alpha": 0.12
+        },
+        "$description": "A medium-risk RiskChip's face: the mockup's .risk, status.warningSoft's value"
+      },
+      "high": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.898,
+            0.2078,
+            0.1686
+          ],
+          "hex": "#e5352b"
+        },
+        "$description": "A high-risk RiskChip's label: status.danger's value"
+      },
+      "highSoft": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            1.0,
+            0.2314,
+            0.1882
+          ],
+          "hex": "#ff3b30",
+          "alpha": 0.11
+        },
+        "$description": "A high-risk RiskChip's face: status.dangerSoft's value"
+      }
     }
   }
 }

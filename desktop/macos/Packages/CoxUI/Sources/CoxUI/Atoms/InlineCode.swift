@@ -8,8 +8,6 @@ import SwiftUI
 struct InlineCode: View {
   let code: String
 
-  /// The mockup's `border-radius: 5px`, between `Radius.xs` and `Radius.s`.
-  private static let cornerRadius: CGFloat = 5
   /// The mockup's `padding: 1px 5px`: neither step is on the space scale.
   private static let verticalPadding: CGFloat = 1
   private static let horizontalPadding: CGFloat = 5
@@ -19,7 +17,7 @@ struct InlineCode: View {
   }
 
   var body: some View {
-    let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+    let shape = RoundedRectangle(cornerRadius: Radius.badge, style: .continuous)
     Text(code)
       .textStyle(.monoInline)
       .lineLimit(1)

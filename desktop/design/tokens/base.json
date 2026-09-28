@@ -142,6 +142,14 @@
         "unit": "px"
       }
     },
+    "badge": {
+      "$type": "dimension",
+      "$description": "Badges and inline code: the mockup's border-radius 5px, between xs and s",
+      "$value": {
+        "value": 5,
+        "unit": "px"
+      }
+    },
     "capsule": {
       "$type": "dimension",
       "$value": {
@@ -218,6 +226,30 @@
       "$type": "dimension",
       "$value": {
         "value": 9,
+        "unit": "px"
+      }
+    },
+    "statusDotHalo": {
+      "$type": "dimension",
+      "$description": "The glow around a live StatusDot: the mockup's 0 0 0 3px ring of the soft status colour",
+      "$value": {
+        "value": 3,
+        "unit": "px"
+      }
+    },
+    "statusDotRing": {
+      "$type": "dimension",
+      "$description": "An idle StatusDot's ring: the mockup's border 1.5px",
+      "$value": {
+        "value": 1.5,
+        "unit": "px"
+      }
+    },
+    "countBadge": {
+      "$type": "dimension",
+      "$description": "CountBadge's height and least width: the mockup's .cnt line-height 16px",
+      "$value": {
+        "value": 16,
         "unit": "px"
       }
     },

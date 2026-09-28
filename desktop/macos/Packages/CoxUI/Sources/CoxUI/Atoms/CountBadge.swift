@@ -10,9 +10,6 @@ struct CountBadge: View {
   /// The count as Rust formats it ("3", "99+").
   let count: String
 
-  /// The mockup's `line-height: 16px`: no size token is that small.
-  private static let height: CGFloat = 16
-
   init(_ count: String) {
     self.count = count
   }
@@ -22,9 +19,9 @@ struct CountBadge: View {
       .textStyle(.micro, tabularDigits: true)
       .foregroundStyle(Color(.textOnAccent))
       .padding(.horizontal, Space.s)
-      .frame(minWidth: Self.height, minHeight: Self.height)
+      .frame(minWidth: Size.countBadge, minHeight: Size.countBadge)
       .background(Color(.statusWarning), in: Capsule())
-      .elevation(.e1, cornerRadius: Self.height / 2)
+      .elevation(.e1, cornerRadius: Size.countBadge / 2)
   }
 }
 

@@ -73,8 +73,10 @@ import Testing
     #expect(glowing == [.running, .waiting])
   }
 
-  @Test func riskLevelsTintQuietWarningAndDanger() {
-    #expect(RiskChip.Level.allCases.map(\.badge) == [.neutral, .warning, .danger])
+  @Test func eachRiskLevelDrawsInItsOwnRiskRole() {
+    let levels = RiskChip.Level.allCases
+    #expect(levels.map(\.foreground) == [Color(.riskLow), Color(.riskMedium), Color(.riskHigh)])
+    #expect(Set(levels.map(\.background)).count == levels.count)
   }
 
   @Test func diffStatReadsAsLinesAddedAndRemoved() {

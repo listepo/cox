@@ -47,6 +47,10 @@ const RULES = [
   { fg: [...CODE, 'text.primary'], bg: onCode('diff.add', 'diff.del'), min: TEXT },
   { fg: ['text.primary'], bg: onCode('diff.addGutter', 'diff.delGutter'), min: TEXT },
   { fg: ['text.terminal', 'text.terminalOk'], bg: ['surface.terminal'], min: TEXT },
+  // A badge's label on its own tint: the project badge, each RiskChip level (DS§6.2).
+  ...['role.project', 'risk.low', 'risk.medium', 'risk.high'].map((fg) => ({
+    fg: [fg], bg: [...PAGE, `${fg}Soft@surface.window`], min: TEXT,
+  })),
   // A label on a filled face: the primary button, the Bypass segment, the count badge.
   { fg: ['text.onAccent'], bg: ['accent', 'status.danger', 'status.warning'], min: TEXT },
   { fg: ['separator', 'surface.capsuleBorder'], bg: PAGE, min: GRAPHIC, solid: true },
