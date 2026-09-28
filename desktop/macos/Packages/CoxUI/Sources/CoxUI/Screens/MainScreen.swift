@@ -1,38 +1,60 @@
 // `MainScreen` (DS§4, DS§6.5; DT§5.1): the window shell — the sidebar, the toolbar, the
 // transcript column and the inspector as floating panes on the window's glass. Composition
 // only (DS§5): the panes style themselves, and the transcript and inspector tabs are slots
-// their own cards fill (T37.23, T37.24, T37.29). The app binds `state` and `send` to its stores.
+// their own cards fill (T37.23, T37.24, T37.29). The app binds `state` and `send` to its stores;
+// the types it names are public, the panes' own rows stay internal until the app fills them.
 
+import AppKit
 import SwiftUI
 
 /// What the shell shows: each pane's state and which panes are out.
-struct MainScreenState: Equatable, Sendable {
+public struct MainScreenState: Equatable, Sendable {
   var sidebar = Sidebar.State()
   var toolbar = SessionToolbar.State()
-  var isSidebarVisible = true
-  var isInspectorVisible = true
-  var inspectorTab = InspectorTab.changes
+  public var isSidebarVisible = true
+  public var isInspectorVisible = true
+  public var inspectorTab = InspectorTab.changes
   /// Shown while the toolbar's `popover` is `.appearance`.
-  var appearance = AppearancePopover.State()
+  public var appearance = AppearancePopover.State()
+
+  public init() {}
+
+  init(
+    sidebar: Sidebar.State, toolbar: SessionToolbar.State, isSidebarVisible: Bool = true,
+    isInspectorVisible: Bool = true
+  ) {
+    (self.sidebar, self.toolbar) = (sidebar, toolbar)
+    (self.isSidebarVisible, self.isInspectorVisible) = (isSidebarVisible, isInspectorVisible)
+  }
+}
+
+extension MainScreenState {
+  /// The toolbar popover that is open; the one open marks its capsule active.
+  public var popover: SessionToolbar.Popover? {
+    get { toolbar.popover }
+    set { toolbar.popover = newValue }
+  }
 }
 
 /// Every intent the shell reports, tagged by the pane it came from.
-enum MainScreenIntent: Equatable, Sendable {
+public enum MainScreenIntent: Equatable, Sendable {
   case sidebar(Sidebar.Intent)
   case toolbar(SessionToolbar.Intent)
   case inspectorTab(InspectorTab)
   case appearance(AppearancePopover.Intent)
+  /// A click outside the open popover, or Esc.
+  case dismissPopover
 }
 
 /// The shell for one open session. The sidebar and inspector fold away as `state` says; the
 /// material, window opacity and Depth reach every pane from `coxAppearance`.
-struct MainScreen<Transcript: View, InspectorContent: View>: View {
+public struct MainScreen<Transcript: View, InspectorContent: View>: View {
   let state: MainScreenState
   let send: (MainScreenIntent) -> Void
   let transcript: Transcript
   let inspector: (InspectorTab) -> InspectorContent
 
-  init(
+  public init(
     state: MainScreenState, send: @escaping (MainScreenIntent) -> Void,
     @ViewBuilder transcript: () -> Transcript,
     @ViewBuilder inspector: @escaping (InspectorTab) -> InspectorContent
@@ -47,9 +69,21 @@ struct MainScreen<Transcript: View, InspectorContent: View>: View {
   /// width from it, so a small window keeps its reading room (DS§4).
   static var inspectorFloatsBelow: CGFloat { 1280 }
 
-  var body: some View {
+  /// Esc's key code, which `WindowKeys` sees before the focused editor takes it.
+  private static var escape: UInt16 { 53 }
+
+  public var body: some View {
     GeometryReader { window in
       shell(inspectorFloats: window.size.width < Self.inspectorFloatsBelow)
+    }
+    .overlay {
+      if state.toolbar.popover != nil {
+        // A transient popover's dismissal (HIG): a click anywhere outside it, or Esc.
+        Color.clear.contentShape(Rectangle())
+          .onTapGesture { send(.dismissPopover) }
+          .background(WindowKeys(handle: dismissOnEscape))
+          .accessibilityHidden(true)
+      }
     }
     .overlay(alignment: .topTrailing) {
       if state.toolbar.popover == .appearance {
@@ -63,6 +97,12 @@ struct MainScreen<Transcript: View, InspectorContent: View>: View {
     .frame(minWidth: Size.windowMinWidth, minHeight: Size.windowMinHeight)
     .animation(.cox(Motion.durationSlow), value: state.isSidebarVisible)
     .animation(.cox(Motion.durationSlow), value: state.isInspectorVisible)
+  }
+
+  private func dismissOnEscape(_ event: NSEvent) -> Bool {
+    guard event.keyCode == Self.escape else { return false }
+    send(.dismissPopover)
+    return true
   }
 
   private func shell(inspectorFloats: Bool) -> some View {

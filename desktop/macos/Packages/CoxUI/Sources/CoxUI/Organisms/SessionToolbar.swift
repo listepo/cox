@@ -9,13 +9,13 @@ import SwiftUI
 /// `Breadcrumb` at the leading end; the capsules, Stop and the icon buttons at the trailing
 /// end, `Size.toolbarHeight` tall on the window's own glass. It owns no session state. While
 /// the mode is Bypass a `status.danger` strip runs under the whole bar (DS§3.1, A89).
-struct SessionToolbar: View {
+public struct SessionToolbar: View {
   /// The popover a capsule or button opens; the one open marks its capsule active.
-  enum Popover: Equatable, Sendable {
+  public enum Popover: Equatable, Sendable {
     case model, cost, appearance
   }
 
-  struct State: Equatable, Sendable {
+  public struct State: Equatable, Sendable {
     var title = ""
     var project = ""
     var branch: String?
@@ -30,10 +30,10 @@ struct SessionToolbar: View {
     var popover: Popover?
   }
 
-  enum Intent: Equatable, Sendable {
+  public enum Intent: Equatable, Sendable {
     case showSidebar
     case open(Popover)
-    case mode(ModeSegmented.Mode)
+    case mode(SessionMode)
     case stop
     case toggleInspector
   }
@@ -62,7 +62,7 @@ struct SessionToolbar: View {
   /// DS§3.1's Bypass strip: thin enough not to crowd the bar, thick enough to see at a glance.
   private static let bypassStripHeight: CGFloat = 3
 
-  var body: some View {
+  public var body: some View {
     HStack(spacing: Space.ml) {
       if !isSidebarVisible {
         Spacer().frame(width: Self.windowButtonsWidth)
@@ -108,13 +108,16 @@ struct SessionToolbar: View {
 /// A shell toggle's key and the glyphs a tooltip names it by. The sidebar and inspector keys are
 /// the defaults of the system `SidebarCommands` (⌃⌘S) and `InspectorCommands` (⌃⌘I), so the
 /// app's View menu items and these buttons answer the same keys (A89); Appearance is DS§3.5's.
-struct ShellShortcut: Sendable {
-  let key: KeyboardShortcut
-  let glyphs: String
+public struct ShellShortcut: Sendable {
+  public let key: KeyboardShortcut
+  public let glyphs: String
 
-  static let sidebar = Self(key: .init("s", modifiers: [.control, .command]), glyphs: "⌃⌘S")
-  static let inspector = Self(key: .init("i", modifiers: [.control, .command]), glyphs: "⌃⌘I")
-  static let appearance = Self(key: .init("a", modifiers: [.command, .option]), glyphs: "⌘⌥A")
+  public static let sidebar = Self(
+    key: .init("s", modifiers: [.control, .command]), glyphs: "⌃⌘S")
+  public static let inspector = Self(
+    key: .init("i", modifiers: [.control, .command]), glyphs: "⌃⌘I")
+  public static let appearance = Self(
+    key: .init("a", modifiers: [.command, .option]), glyphs: "⌘⌥A")
 
   /// The tooltip for a control labelled `label`: its name, then its keys (DS§8).
   func help(_ label: String) -> String { "\(label) (\(glyphs))" }

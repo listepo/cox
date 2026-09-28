@@ -15,12 +15,15 @@ extension PreviewState {
   /// frosted values, which its disabled sliders show.
   static func appearance(_ material: GlassMaterial) -> AppearancePopover.State {
     let isGlossy = material == .glossy
-    return AppearancePopover.State(
-      material: material,
-      opacity: isGlossy ? MaterialToken.glossyWindowOpacity : MaterialToken.frostedWindowOpacity,
-      blur: isGlossy ? reflection : MaterialToken.frostedBlur, blurRange: blurRange,
-      depth: depth, tint: true, transparencyText: isGlossy ? "70%" : "58%",
-      blurText: isGlossy ? "Strong" : "34 pt", depthText: "High")
+    var state = AppearancePopover.State()
+    state.material = material
+    state.opacity =
+      isGlossy ? MaterialToken.glossyWindowOpacity : MaterialToken.frostedWindowOpacity
+    (state.blur, state.blurRange) = (isGlossy ? reflection : MaterialToken.frostedBlur, blurRange)
+    (state.depth, state.tint) = (depth, true)
+    state.transparencyText = isGlossy ? "70%" : "58%"
+    (state.blurText, state.depthText) = (isGlossy ? "Strong" : "34 pt", "High")
+    return state
   }
 
   /// Mockup screens 28–29: the main screen with the Appearance popover open.
@@ -64,4 +67,13 @@ struct LiveMainScreenSample: View {
     .frame(width: PreviewState.window.width, height: PreviewState.window.height)
     .padding(Space.xxl)
     .background(PreviewBackdrop())
+}
+
+extension PreviewState {
+  /// The project config sets the material and Depth, so their controls are disabled.
+  static var appearanceLocked: AppearancePopover.State {
+    var state = appearance(.frosted)
+    state.locked = [.material: "project", .depth: "project"]
+    return state
+  }
 }

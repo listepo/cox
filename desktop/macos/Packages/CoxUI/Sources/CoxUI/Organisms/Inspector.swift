@@ -51,7 +51,7 @@ struct Inspector<Content: View>: View {
 }
 
 /// The DT§5.1 tabs, in the order the strip shows them.
-enum InspectorTab: CaseIterable, Sendable {
+public enum InspectorTab: CaseIterable, Sendable {
   case changes, plan, context, tasks, info
 
   var title: String {

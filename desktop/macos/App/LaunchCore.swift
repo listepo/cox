@@ -1,6 +1,7 @@
 // Which core the app talks to (DT§4.1, §8): the live Rust core, or a recorded patch stream from
 // `desktop/macos/Fixtures` replayed by `FixtureCoreClient`, so the whole app runs without Rust
-// state or a key. Separate from the window so the one launch-time choice has one owner.
+// state or a key. Settings and the first-run checklist always read the live core, since a
+// recording has neither. Separate from the window so the one launch-time choice has one owner.
 //
 //   Cox.app/Contents/MacOS/Cox -CoxFixture desktop/macos/Fixtures/edit.json
 //   COX_HOME=/tmp/cox-scratch Cox.app/Contents/MacOS/Cox -CoxProject ~/src/repo
@@ -10,29 +11,44 @@ import CoxCore
 import CoxPlatform
 import Foundation
 
-enum LaunchCore {
+struct LaunchCore {
+  /// Where sessions open: the fixture's replay or `live`.
+  let core: Result<any CoreClient, any Error>
+  /// The Rust core at `COX_HOME`, `~/.cox` when unset: settings and the checklist.
+  let live: Result<LiveCoreClient, any Error>
+  /// Where provider keys live; the host's `secret` and Settings' key fields read the same one.
+  let secrets: any SecretStore
+  let isFixture: Bool
+
   /// `-CoxFixture <path>` (a launch argument, read through `UserDefaults`' argument domain)
-  /// replays that fixture; otherwise the live core at `COX_HOME`, `~/.cox` when unset.
-  /// `COX_KEYRING=off`, as cargo sets it for every development run, keeps provider keys out of
-  /// the Keychain here too (A49, A51): a dev launch never raises a Keychain prompt.
+  /// replays that fixture; otherwise sessions open on the live core. `COX_KEYRING=off`, as
+  /// cargo sets it for every development run, keeps provider keys out of the Keychain here too
+  /// (A49, A51): a dev launch never raises a Keychain prompt.
   static func pick(
     _ defaults: UserDefaults = .standard,
     environment: [String: String] = ProcessInfo.processInfo.environment
-  ) -> Result<any CoreClient, any Error> {
-    Result {
-      if let path = defaults.string(forKey: "CoxFixture") {
-        return FixtureCoreClient(fixture: try Fixture(contentsOf: URL(filePath: path)))
-      }
-      let secrets: any SecretStore =
-        environment["COX_KEYRING"] == "off" ? MemorySecretStore() : KeychainSecretStore()
-      return try LiveCoreClient(
+  ) -> LaunchCore {
+    let secrets: any SecretStore =
+      environment["COX_KEYRING"] == "off" ? MemorySecretStore() : KeychainSecretStore()
+    let live = Result {
+      try LiveCoreClient(
         home: environment["COX_HOME"], host: HostBridge(MacHost(secrets: secrets)))
     }
+    let fixture = defaults.string(forKey: "CoxFixture")
+    let core: Result<any CoreClient, any Error> =
+      if let fixture {
+        Result { FixtureCoreClient(fixture: try Fixture(contentsOf: URL(filePath: fixture))) }
+      } else {
+        live.map { $0 }
+      }
+    return LaunchCore(core: core, live: live, secrets: secrets, isFixture: fixture != nil)
   }
 
-  /// The directory a new session works in: `-CoxProject <path>`, else the home directory (a
-  /// Finder launch's working directory is `/`). The sidebar's project list replaces this.
+  /// The directory a new session works in: `-CoxProject <path>` or the folder first run chose,
+  /// else the home directory (a Finder launch's working directory is `/`).
   static func project(_ defaults: UserDefaults = .standard) -> String {
-    defaults.string(forKey: "CoxProject") ?? NSHomeDirectory()
+    defaults.string(forKey: projectKey) ?? NSHomeDirectory()
   }
+
+  static let projectKey = "CoxProject"
 }

@@ -6,13 +6,17 @@
 import SwiftUI
 
 extension SettingsScreen {
-  struct DroppedValue: Identifiable, Equatable, Sendable {
+  public struct DroppedValue: Identifiable, Equatable, Sendable {
     /// The dotted config key.
-    let id: String
+    public let id: String
     /// Why the project may not set it.
     var reason: String
     /// `999 → 5`: what the project set, then what holds.
     var change: String
+
+    public init(id: String, reason: String, change: String) {
+      (self.id, self.reason, self.change) = (id, reason, change)
+    }
   }
 }
 

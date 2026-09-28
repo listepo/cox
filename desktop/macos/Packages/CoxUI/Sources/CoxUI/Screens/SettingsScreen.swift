@@ -2,26 +2,36 @@
 // page's config tables as boxes of `SettingRow`s, each value with the layer it comes from, and
 // a secure key field in each provider's box. Composition only (DS§5): what each field shows,
 // whether it is read-only and which file sets it arrive in `state`; the app binds `state` and
-// `send` to `SettingsStore`.
+// `send` to `SettingsStore`, through the public types below.
 
 import SwiftUI
 
 /// The pages that hold settings, the selected one and its tables, and the files behind them.
-struct SettingsScreenState: Equatable, Sendable {
-  var pages: [SettingsPage] = []
-  var selection = SettingsPage.general
+public struct SettingsScreenState: Equatable, Sendable {
+  public var pages: [SettingsPage] = []
+  public var selection = SettingsPage.general
   /// The selected page's tables, in key order.
-  var tables: [SettingsScreen.Table] = []
-  var userFile = ""
-  var projectFile: String?
+  public var tables: [SettingsScreen.Table] = []
+  public var userFile = ""
+  public var projectFile: String?
   /// The MCP servers' logins, on the MCP page.
-  var logins: [SettingsScreen.Login] = []
+  public var logins: [SettingsScreen.Login] = []
   /// The page's project values the guard list threw out.
-  var dropped: [SettingsScreen.DroppedValue] = []
+  public var dropped: [SettingsScreen.DroppedValue] = []
+
+  public init(
+    pages: [SettingsPage] = [], selection: SettingsPage = .general,
+    tables: [SettingsScreen.Table] = [], userFile: String = "", projectFile: String? = nil,
+    logins: [SettingsScreen.Login] = [], dropped: [SettingsScreen.DroppedValue] = []
+  ) {
+    (self.pages, self.selection, self.tables) = (pages, selection, tables)
+    (self.userFile, self.projectFile) = (userFile, projectFile)
+    (self.logins, self.dropped) = (logins, dropped)
+  }
 }
 
 /// Every intent the Settings screen reports.
-enum SettingsScreenIntent: Equatable, Sendable {
+public enum SettingsScreenIntent: Equatable, Sendable {
   case select(SettingsPage)
   /// A new value for `key`; a slider reports it while it moves.
   case set(key: String, SettingsScreen.Edit)
@@ -32,11 +42,15 @@ enum SettingsScreenIntent: Equatable, Sendable {
 }
 
 /// The Settings window: `SettingsSidebar` beside a column of `SettingsGroupBox`es.
-struct SettingsScreen: View {
+public struct SettingsScreen: View {
   let state: SettingsScreenState
   let send: (SettingsScreenIntent) -> Void
 
-  var body: some View {
+  public init(state: SettingsScreenState, send: @escaping (SettingsScreenIntent) -> Void) {
+    (self.state, self.send) = (state, send)
+  }
+
+  public var body: some View {
     ShellPane(.window) {
       HStack(spacing: Size.paneGap) {
         SettingsSidebar(
@@ -63,30 +77,46 @@ struct SettingsScreen: View {
 
 extension SettingsScreen {
   /// One config table: its settings and, for a provider's table, the key field.
-  struct Table: Identifiable, Equatable, Sendable {
+  public struct Table: Identifiable, Equatable, Sendable {
     /// The keys' shared prefix, `tiers.code`; the box's header.
-    let id: String
+    public let id: String
     var fields: [Field]
     var key: Key?
+
+    public init(id: String, fields: [Field], key: Key? = nil) {
+      (self.id, self.fields, self.key) = (id, fields, key)
+    }
   }
 
-  struct Field: Identifiable, Equatable, Sendable {
+  public struct Field: Identifiable, Equatable, Sendable {
     /// The dotted config key.
-    let id: String
+    public let id: String
     var title: String
     /// The schema's help text, or the file a read-only value is set in.
     var detail: String?
     var source: SettingSource
     var control: Control
+
+    public init(
+      id: String, title: String, detail: String?, source: SettingSource, control: Control
+    ) {
+      (self.id, self.title, self.detail, self.source, self.control) = (
+        id, title, detail, source, control
+      )
+    }
   }
 
   /// A provider section's key: whether one is stored, never the key itself.
-  struct Key: Equatable, Sendable {
+  public struct Key: Equatable, Sendable {
     var provider: String
     var isStored: Bool
+
+    public init(provider: String, isStored: Bool) {
+      (self.provider, self.isStored) = (provider, isStored)
+    }
   }
 
-  enum Control: Equatable, Sendable {
+  public enum Control: Equatable, Sendable {
     case toggle(Bool)
     case slider(Double, range: ClosedRange<Double>, text: String)
     case choice(String, options: [String])
@@ -95,7 +125,7 @@ extension SettingsScreen {
     case json(String)
   }
 
-  enum Edit: Equatable, Sendable {
+  public enum Edit: Equatable, Sendable {
     case bool(Bool)
     case number(Double)
     /// Typed or chosen text; the store types it by the field's kind.

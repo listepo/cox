@@ -10,6 +10,7 @@ use std::sync::{Arc, OnceLock};
 
 use cox_app::WorkspaceError;
 use cox_app::app::{App as Owner, AppError as OwnerError};
+use cox_app::onboarding::CheckRow;
 use cox_app::{Activity, Holder, InboxItem, Project, SearchHit, SessionEntry, SettingsView};
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::WorktreeInfo;
@@ -197,6 +198,12 @@ impl App {
             on_runtime(async move { self.owner.mcp_login(Path::new(&cwd), &name, login).await })
                 .await??,
         )
+    }
+
+    /// The first-run checklist for a session in `cwd` (DT§5.8, T37.31); it
+    /// runs `git` and probes the sandbox, so it runs off the caller's thread.
+    pub async fn checklist(self: Arc<Self>, cwd: String) -> Result<Vec<CheckRow>, AppError> {
+        Ok(on_runtime(async move { self.owner.checklist(Path::new(&cwd)) }).await??)
     }
 
     pub async fn open(

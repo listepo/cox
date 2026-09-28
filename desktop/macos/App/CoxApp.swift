@@ -1,19 +1,66 @@
-// The app target's entry (DT§4.6, DT§7, A106): `@main` and its scenes. Thin by design — every
-// view and store lives in the local packages; this target picks the core at launch and hosts
-// the window. The window chrome, the Settings scene and the View menu's pane commands are
-// T37.22.3's; the menus are the system's until then.
+// The app target's entry (DT§4.6, DT§7, A106): `@main`, its scenes and the launch-wide state
+// they share. Thin by design — every view and store lives in the local packages; this target
+// picks the core at launch, hosts the windows and joins stores to screens. The session window
+// hides its title bar (DS§4); Settings opens from the app menu (⌘,).
 
+import AppKit
 import CoxClient
+import CoxModel
+import CoxPlatform
 import SwiftUI
+import UserNotifications
 
 @main
 struct CoxApp: App {
-  /// Picked once per launch, so every window opens its session on the same core.
-  private let core = LaunchCore.pick()
+  @State private var model = AppModel(launch: LaunchCore.pick())
 
   var body: some Scene {
     WindowGroup("Cox") {
-      SessionWindow(core: core)
+      SessionWindow(model: model)
     }
+    .windowStyle(.hiddenTitleBar)
+    .commands { ShellCommands() }
+    Settings {
+      SettingsWindow(model: model)
+    }
+  }
+}
+
+/// What every window of this launch shares: the core, one `SettingsStore` for the project, and
+/// the notification centre's delegate, which routes an action to the session it names.
+@MainActor
+final class AppModel {
+  let launch: LaunchCore
+  /// `nil` when the live core did not start; the windows say why.
+  let settings: SettingsStore?
+  private var sessions: [String: WeakSession] = [:]
+  private var responder: NotificationResponder?
+
+  init(launch: LaunchCore) {
+    self.launch = launch
+    settings = try? SettingsStore(
+      client: launch.live.get(), secrets: launch.secrets, cwd: LaunchCore.project())
+    let responder = NotificationResponder(
+      handle: { [weak self] route in Task { @MainActor in self?.route(route) } },
+      show: { _ in Task { @MainActor in NSApp.activate() } })
+    // The centre holds its delegate weakly; this model lives as long as the app.
+    UNUserNotificationCenter.current().delegate = responder
+    self.responder = responder
+  }
+
+  /// Makes `store` the target of the notifications for `session`.
+  func register(_ store: SessionStore, as session: String) {
+    sessions[session] = WeakSession(store: store)
+  }
+
+  /// Allow, Deny or an answer from a notification, sent to the session it came from; a closed
+  /// session's action is dropped, as its card is gone too.
+  private func route(_ route: NotificationRoute) {
+    guard let store = sessions[route.session]?.store else { return }
+    Task { _ = try? await store.send(route.intent) }
+  }
+
+  private struct WeakSession {
+    weak var store: SessionStore?
   }
 }

@@ -6,10 +6,10 @@
 import SwiftUI
 
 /// The Settings pages in DT§5.7's order, each with its title and DS§3.7 symbol.
-enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
+public enum SettingsPage: String, CaseIterable, Identifiable, Sendable {
   case general, models, permissions, sandbox, budget, mcp, plugins, appearance, advanced
 
-  var id: Self { self }
+  public var id: Self { self }
 
   var title: String {
     switch self {
