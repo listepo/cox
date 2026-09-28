@@ -19,6 +19,7 @@ pub mod memory_extract;
 mod monotone;
 mod plugin_model;
 pub mod redact;
+mod repomap;
 mod rewind;
 mod rollout;
 pub mod router;

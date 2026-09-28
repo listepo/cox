@@ -2493,6 +2493,7 @@ mod tests {
             permission_mode: None,
             grants: Vec::new(),
             truncated: false,
+            repomap: None,
             turns: 4,
             turn_marks: vec![HistoryTurn {
                 item: ItemId::new(),

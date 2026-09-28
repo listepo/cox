@@ -26,7 +26,9 @@ const NO_OUTLINE: &str = "(no outline entries found)";
 /// The map for the workspace at `root`: one `path\n` line per file followed
 /// by its outline indented two spaces, until the next file would pass
 /// `budget_bytes`; then one `… N more files` line (outside the budget).
-/// `admit` sees each file's confined absolute path; a file it rejects is
+/// `admit` sees each file as `root.join(path)` — the path as a model's
+/// `read` would name it, so relative and absolute permission rules both
+/// match — and only after `confine` accepted it; a file it rejects is
 /// neither shown nor counted. Binaries and files over `read`'s visible cap
 /// are skipped. A zero budget is the empty map.
 pub async fn build(
@@ -67,7 +69,7 @@ fn render(
     let roots = [root.to_path_buf()];
     let mut admitted = order.iter().filter_map(|rel| {
         let abs = confine(&roots, root, rel).ok()?;
-        admit(&abs).then_some((rel, abs))
+        admit(&root.join(rel)).then_some((rel, abs))
     });
     let mut out = String::new();
     while let Some((rel, abs)) = admitted.next() {
