@@ -32,6 +32,9 @@ public protocol SessionClient: AnyObject, Sendable {
   func nextPatches() async -> [TimelinePatch]?
   /// Returns at once for a turn; a fork or handoff returns its child.
   func send(_ intent: Intent) async throws -> (any SessionClient)?
+  /// Rows for the composer's token, `@que…` or `/que…`, best first, at most `limit`
+  /// (`cox_app::Completer`, DT§5.3).
+  func complete(_ token: String, limit: UInt32) -> [Completion]
   /// Stops the pull; the session keeps running (DT§4.5).
   func close()
 }
@@ -55,19 +58,25 @@ public struct Fixture: Equatable, Sendable, Decodable {
 
 public struct FixtureCoreClient: CoreClient {
   public let fixture: Fixture
+  public let completions: [Completion]
 
-  public init(fixture: Fixture) { self.fixture = fixture }
+  public init(fixture: Fixture, completions: [Completion] = []) {
+    self.fixture = fixture
+    self.completions = completions
+  }
 
   public func open(_ request: OpenSession) async throws -> any SessionClient {
-    FixtureSession(fixture: fixture)
+    FixtureSession(fixture: fixture, completions: completions)
   }
 }
 
 /// Hands out the recorded batches one pull at a time and keeps what was
-/// sent, so a test can check the intents a store emitted.
+/// sent, so a test can check the intents a store emitted. Completes from a
+/// fixed list instead of the Rust completer.
 public final class FixtureSession: SessionClient {
   public let id = "fixture"
   private let fixture: Fixture
+  private let completions: [Completion]
   private let state = Mutex(State())
 
   private struct State {
@@ -76,7 +85,10 @@ public final class FixtureSession: SessionClient {
     var sent: [Intent] = []
   }
 
-  public init(fixture: Fixture) { self.fixture = fixture }
+  public init(fixture: Fixture, completions: [Completion] = []) {
+    self.fixture = fixture
+    self.completions = completions
+  }
 
   public var sent: [Intent] { state.withLock { $0.sent } }
 
@@ -94,6 +106,22 @@ public final class FixtureSession: SessionClient {
   public func send(_ intent: Intent) async throws -> (any SessionClient)? {
     state.withLock { $0.sent.append(intent) }
     return nil
+  }
+
+  /// The rows of the token's sigil whose insert holds the rest of the token in order, in list
+  /// order: enough to drive a view, not the core's ranking.
+  public func complete(_ token: String, limit: UInt32) -> [Completion] {
+    guard let sigil = token.first, sigil == "@" || sigil == "/" else { return [] }
+    let query = token.dropFirst().lowercased()
+    let rows = completions.filter { row in
+      guard row.insert.first == sigil else { return false }
+      var rest = Substring(query)
+      for character in row.insert.dropFirst().lowercased() where character == rest.first {
+        rest = rest.dropFirst()
+      }
+      return rest.isEmpty
+    }
+    return Array(rows.prefix(Int(limit)))
   }
 
   public func close() { state.withLock { $0.closed = true } }
