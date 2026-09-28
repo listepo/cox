@@ -80,6 +80,9 @@ public final class SettingsStore {
   /// Each tier's models as the core's catalog lists them, read again after each load and edit so
   /// a tier's picker offers what its provider serves.
   public private(set) var models: [ModelChoice] = []
+  /// The sidebar's search: `sections` keeps only the settings whose label or dotted key holds
+  /// it, so the pages and their boxes shrink to the matches. Empty keeps every setting.
+  public var filter = ""
   /// The project whose layer applies.
   public let cwd: String
   @ObservationIgnored private let client: any SettingsClient
@@ -109,9 +112,14 @@ public final class SettingsStore {
     }
   }
 
-  /// Non-empty groups in DT§5.7's order, keys sorted within each.
+  /// Non-empty groups in DT§5.7's order, keys sorted within each, narrowed to `filter`.
   public var sections: [SettingsSection] {
-    let rows = Dictionary(grouping: view?.settings ?? []) { SettingsGroup(key: $0.key) }
+    let query = filter.trimmingCharacters(in: .whitespaces)
+    let shown = (view?.settings ?? []).filter {
+      query.isEmpty || $0.key.localizedStandardContains(query)
+        || Self.title(of: $0.key).localizedStandardContains(query)
+    }
+    let rows = Dictionary(grouping: shown) { SettingsGroup(key: $0.key) }
     return SettingsGroup.allCases.compactMap { group in
       rows[group].map { SettingsSection(group: group, settings: $0) }
     }
