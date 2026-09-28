@@ -51,7 +51,7 @@ impl LiveSession {
         }
         // The Claude-settings layer is read only by `crates/cox`.
         let flags = serde_json::Value::Object(serde_json::Map::new());
-        let config = cox_config::load::load(&cwd, &flags, |_| None)?.config;
+        let config = cox_config::load::load_in(&app.user_config(), &cwd, &flags, |_| None)?.config;
         let (login, keys) = (Arc::clone(&app.host), Arc::clone(&app.host));
         let spec = SessionSpec {
             config,

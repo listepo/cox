@@ -399,7 +399,18 @@ pub fn load(
     flags: &JsonValue,
     claude_layer: impl FnOnce(&Path) -> Option<JsonValue>,
 ) -> Result<LoadedConfig, CoreError> {
-    let user_path = user_config_path();
+    load_in(&user_config_path(), cwd, flags, claude_layer)
+}
+
+/// [`load`] with the user layer read from `user_path` rather than
+/// `COX_HOME`'s: the desktop app's `App` owns a home of its own (T37.30).
+pub fn load_in(
+    user_path: &Path,
+    cwd: &Path,
+    flags: &JsonValue,
+    claude_layer: impl FnOnce(&Path) -> Option<JsonValue>,
+) -> Result<LoadedConfig, CoreError> {
+    let user_path = user_path.to_path_buf();
     let project_path = project_config_path(cwd);
 
     // Whether to import is itself a config key, so the `.cox` layers decide

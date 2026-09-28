@@ -1,5 +1,6 @@
-// The `CoreClient` over cox-ffi (DT§4.4, §4.6): opens sessions through the
-// generated `App` and hands the stores `CoxClient` values. Separate from the
+// The `CoreClient` over cox-ffi (DT§4.4, §4.6): opens sessions, and reads
+// and edits settings (DT§5.7), through the generated `App` and hands the
+// stores `CoxClient` values. Separate from the
 // conversions, which are data only; this file is the one place the app
 // calls into Rust.
 
@@ -40,4 +41,17 @@ final class LiveSession: SessionClient {
   }
 
   func close() { handle.close() }
+}
+
+/// CoxClient's, not the generated record of the same name.
+public typealias ClientSettings = CoxClient.SettingsView
+
+extension LiveCoreClient: SettingsClient {
+  public func settings(cwd: String) async throws -> ClientSettings {
+    ClientSettings(try app.settings(cwd: cwd))
+  }
+
+  public func setSetting(cwd: String, key: String, json: String) async throws -> ClientSettings {
+    ClientSettings(try app.setSetting(cwd: cwd, key: key, value: json))
+  }
 }

@@ -6,7 +6,7 @@
 //! (`config_cmd::show` prints the lines [`show_lines`] builds).
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::Value as JsonValue;
 use toml_edit::{DocumentMut, Item, Table, Value as TomlValue};
@@ -57,12 +57,19 @@ fn fmt_plain_value(v: &JsonValue) -> String {
     }
 }
 
-/// The lines `cox config show [--sources]` prints, in order.
-pub fn show_lines(loaded: &LoadedConfig, with_sources: bool) -> Result<Vec<String>, ConfigError> {
+/// Every `(dotted.key, value)` leaf of the effective config, sorted by key:
+/// what `cox config show` prints and the desktop Settings screen lists.
+pub fn leaves(loaded: &LoadedConfig) -> Result<Vec<(String, JsonValue)>, ConfigError> {
     let json = serde_json::to_value(&loaded.config)?;
     let mut leaves = Vec::new();
     json_leaves(&json, "", &mut leaves);
     leaves.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(leaves)
+}
+
+/// The lines `cox config show [--sources]` prints, in order.
+pub fn show_lines(loaded: &LoadedConfig, with_sources: bool) -> Result<Vec<String>, ConfigError> {
+    let leaves = leaves(loaded)?;
     let mut lines = Vec::with_capacity(leaves.len());
     for (key, value) in leaves {
         let rendered = fmt_toml_value(&value);
@@ -105,12 +112,46 @@ fn parse_value(raw: &str) -> TomlValue {
 /// path written.
 pub fn set(key: &str, raw_value: &str) -> Result<PathBuf, ConfigError> {
     let path = config_load::user_config_path();
+    set_value_in(&path, key, parse_value(raw_value))?;
+    Ok(path)
+}
+
+/// [`set`] for the desktop app (T37.30): the value arrives as JSON, typed
+/// already, so nothing falls back to a bare string, and the file is the
+/// app's own `config.toml`.
+pub fn set_json_in(path: &Path, key: &str, value: &JsonValue) -> Result<(), ConfigError> {
+    let unsupported = || ConfigError::UnsupportedValue {
+        key: key.to_string(),
+        value: value.to_string(),
+    };
+    set_value_in(path, key, toml_from_json(value).ok_or_else(unsupported)?)
+}
+
+/// A JSON scalar or array as TOML; `None` for `null` and objects, which no
+/// leaf key takes.
+fn toml_from_json(value: &JsonValue) -> Option<TomlValue> {
+    Some(match value {
+        JsonValue::Bool(b) => TomlValue::from(*b),
+        JsonValue::Number(n) => match n.as_i64() {
+            Some(i) => TomlValue::from(i),
+            None => TomlValue::from(n.as_f64()?),
+        },
+        JsonValue::String(s) => TomlValue::from(s.as_str()),
+        JsonValue::Array(items) => {
+            let items: Option<Vec<TomlValue>> = items.iter().map(toml_from_json).collect();
+            TomlValue::Array(items?.into_iter().collect())
+        }
+        JsonValue::Null | JsonValue::Object(_) => return None,
+    })
+}
+
+fn set_value_in(path: &Path, key: &str, value: TomlValue) -> Result<(), ConfigError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let existing = fs::read_to_string(&path).unwrap_or_default();
+    let existing = fs::read_to_string(path).unwrap_or_default();
     let mut doc: DocumentMut = existing.parse().map_err(|error| ConfigError::InvalidToml {
-        path: path.clone(),
+        path: path.to_path_buf(),
         error,
     })?;
 
@@ -132,10 +173,10 @@ pub fn set(key: &str, raw_value: &str) -> Result<PathBuf, ConfigError> {
     // strips a comment sitting directly above an existing key. `entry(..)`
     // (via `IndexMut`) leaves the key's decor alone and only replaces the
     // value, so a leading `# comment` above `key = old` survives a `set`.
-    *table.entry(last).or_insert(Item::None) = Item::Value(parse_value(raw_value));
+    *table.entry(last).or_insert(Item::None) = Item::Value(value);
 
-    fs::write(&path, doc.to_string())?;
-    Ok(path)
+    fs::write(path, doc.to_string())?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -206,6 +247,21 @@ mod tests {
             ));
         });
         result.expect("temp_env ran the closure")
+    }
+
+    #[test]
+    fn set_json_writes_typed_values_and_rejects_objects() {
+        let dir = tempdir().expect("tempdir");
+        let path = dir.path().join("config.toml");
+        set_json_in(&path, "budget.session_usd", &serde_json::json!(7.5)).expect("number");
+        set_json_in(&path, "tiers.code.model", &serde_json::json!("5")).expect("string");
+        set_json_in(&path, "core.workspace_roots", &serde_json::json!(["a/b"])).expect("list");
+        let written = fs::read_to_string(&path).expect("read back");
+        assert!(written.contains("session_usd = 7.5"), "{written}");
+        assert!(written.contains("model = \"5\""), "{written}");
+        assert!(written.contains("workspace_roots = [\"a/b\"]"), "{written}");
+        let object = set_json_in(&path, "mcp.servers", &serde_json::json!({ "x": 1 }));
+        assert!(matches!(object, Err(ConfigError::UnsupportedValue { .. })));
     }
 
     #[test]
