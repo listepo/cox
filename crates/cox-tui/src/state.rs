@@ -1754,16 +1754,23 @@ fn agents_rows(
     agents: &[Presence],
     tasks: &[(TaskId, String, Tier, u64, Option<String>)],
     tick: u64,
+    worktree_glyph: &str,
 ) -> Vec<(String, Option<SessionId>)> {
     let mut rows: Vec<(String, Option<SessionId>)> = agents
         .iter()
         .map(|a| {
-            let text = crate::text::sanitize(&format!(
+            let mut text = format!(
                 "{} · preset - · tier - · cost - · elapsed - · {}",
                 a.session,
                 a.status.name()
-            ));
-            (text, Some(a.session))
+            );
+            // T44.3: which worktree the session holds, by its directory name
+            // (the full path is the project's `_worktrees/` prefix again),
+            // behind the status line's worktree glyph.
+            if let Some(name) = a.worktree.as_deref().and_then(std::path::Path::file_name) {
+                text.push_str(&format!(" · {worktree_glyph} {}", name.to_string_lossy()));
+            }
+            (crate::text::sanitize(&text), Some(a.session))
         })
         .collect();
     rows.extend(tasks.iter().map(|(_, label, tier, started, last)| {
@@ -1942,7 +1949,12 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
         // T27.5: an empty list stays the T27.2 `Notice` (nothing to
         // navigate); otherwise `/agents` opens the navigable overlay.
         Action::Agents => {
-            let entries = agents_rows(&state.agents, &state.tasks, state.tick);
+            let entries = agents_rows(
+                &state.agents,
+                &state.tasks,
+                state.tick,
+                state.glyphs.worktree,
+            );
             if entries.is_empty() {
                 notice(state, Level::Info, "no live agents".to_string());
             } else {
