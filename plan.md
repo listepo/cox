@@ -46,7 +46,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.22.1 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.22.2 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.22.3 | todo | P1 | 2 | 0% | |
-| T39.2 | in progress | P1 | 4 | 0% | Claude Code / opus-5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -60,7 +59,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T40.8 | todo | P2 | 3 | 0% | |
 | T40.9 | todo | P2 | 2 | 0% | |
 | T40.10 | todo | P3 | 2 | 0% | |
-| T41.1 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T41.3 | todo | P1 | 2 | 0% | |
 | T41.4 | todo | P1 | 4 | 0% | |
 | T41.5 | todo | P1 | 2 | 0% | |
@@ -109,7 +107,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T49.5 | todo | P3 | 3 | 0% | |
 | T50.3 | todo | P2 | 1 | 0% | |
 | T50.5 | todo | P3 | 1 | 0% | |
-| T50.6 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 
 ## Reference
 
@@ -1145,33 +1142,6 @@ Every card in this phase:
 
 **Blockers:** T39.1 → T39.2 → T39.3 is the signature path; T39.5 is independent; T39.6 needs T39.3 and T39.5.
 
-### T39.2. Core keeps a tool call's signature in history and the rollout
-
-- Model: opus
-- Depends: T39.1
-- Size: ~170
-- Priority: P1
-- Complexity: 4
-- Goal: a signature captured in T39.1 lives in history as `Content::Thinking { text: "", signature: Some(sig) }` directly before its `Content::ToolUse`, and the rebuild after resume produces the same messages (§1.15 invariant 6).
-- Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/turn.rs`, `crates/cox-core/src/rollout.rs`
-- Steps:
-  1. `session.rs` (the assistant-message build, ~line 1610): for each call, push the signed `Content::Thinking` right before its `Content::ToolUse` when `streamed.signatures` has the call id. Pass the signatures to `run_tools`.
-  2. `turn.rs` `run_tools`: right before `Event::ToolCallRequested` for a call that has a signature, emit `ItemStarted`/`ItemDone` with `ItemKind::Thinking { text: String::new(), signature: Some(sig) }`, so the rollout gets it in the same order as the live history.
-  3. `rollout.rs`: an `ItemKind::Thinking` item with a signature appends `Content::Thinking` to the last assistant message. Reuse the shape of `append_tool_use` through one shared `append_assistant_block` helper, not a second copy. Unsigned thinking items stay ignored as today.
-  4. Tests:
-     - `signed_tool_call_keeps_signature_before_its_tool_use` (live history).
-     - `resume_rebuilds_signed_thinking_before_tool_use` (rollout).
-     - The existing `resume_builds_identical_request` extended with a scripted turn that carries a `ToolUseSignature`.
-  5. Confirm that `router::strip_thinking` and `strip_thinking_before` already drop these blocks on a model switch, and add one assertion that proves it.
-- Check:
-  ```bash
-  mise exec -- cargo nextest run -p cox-core -E 'test(signature) | test(resume_builds_identical_request) | test(strip_thinking)'
-  ```
-- Done when: live history and the rebuilt history are equal for a signed tool round. The scripted provider can emit `ToolUseSignature` (a scenario key, only if the scenario format needs one; otherwise a hand-built event list in the test).
-- Out of scope:
-  - Wire translation (T39.3) and surface rendering (T39.4).
-  - Signatures on plain text parts (Gemini may send them on non-tool responses; the loop does not need them).
-
 ### T39.3. Chat translator replays a signature as `extra_content` on its tool call
 
 - Model: sonnet
@@ -1548,29 +1518,6 @@ None is a maintained, async, client-side fit, so framing (~60 LOC) and the few w
 Every card in this phase: same four bullets as P39.
 
 **Blockers:** T41.1, T41.2 and T41.5 can run in parallel. Then T41.3 → T41.4 → T41.6 → T41.7 → T41.8.
-
-### T41.1. `[lsp]` config and its project-config guard
-
-- Model: sonnet
-- Depends: -
-- Size: ~110
-- Priority: P1
-- Complexity: 2
-- Goal: `[lsp]` is part of the config with `enabled`, `timeout_s`, `quiet_ms` and a `servers.<name> { command, args, extensions }` table, with a default matrix. A project config cannot set `lsp.servers`: a repository must not choose a program cox runs.
-- Files: `crates/cox-protocol/src/config.rs`, `crates/cox-config/src/load.rs`. Data: `crates/cox-protocol/default.toml` (plus the regenerated `docs/config.jsonschema` and `docs/config.md`).
-- Steps:
-  1. Add an `LspConfig` struct with serde defaults:
-     - `enabled = true`, `timeout_s = 30`, `quiet_ms = 500`;
-     - servers `rust` (`rust-analyzer`, `rs`), `typescript` (`typescript-language-server --stdio`, `ts tsx js jsx`), `python` (`pyright-langserver --stdio`, `py`) and `go` (`gopls`, `go`).
-  2. Add `lsp.servers` to the project-config guard list in `load.rs`, with the same refusal message as the other guarded keys.
-  3. Tests: `lsp_defaults_parse`, `project_config_cannot_set_lsp_servers`, and the docs drift test.
-- Check:
-  ```bash
-  mise exec -- cargo nextest run -p cox-protocol -E 'test(lsp)'
-  mise exec -- cargo nextest run -p cox-config -E 'test(lsp) | test(schema)'
-  ```
-- Done when: `docs/config.md` documents every `lsp` key, enforced by the existing docs test.
-- Out of scope: using the config (T41.7).
 
 ### T41.3. Diagnostic wire subset, file URIs and formatting
 
@@ -2784,18 +2731,6 @@ Check: a test drives the plain surface through `/permissions plan` and finds `pl
 Done when: the Check passes and the three AGENTS.md commands are clean.
 
 Out of scope: the full TUI (already correct).
-
-### T50.6. `headless_run_does_not_wait_for_a_background_shell` is not timing-flaky
-
-Model: Claude Code / opus-5.5 · Status: in progress · Depends: — · Size: ~60 · Files: the test file that holds it (`crates/cox/tests/subagent_messaging.rs`), plus the code under test only if the test exposes a real bug
-
-Goal: the e2e test fails under full-workspace load (seen by T40.1 and T41.2 on 2026-09-28: 3 of 3 failures when run alone under load at 10–20 s, passes in ~3 s when idle). Find whether it is a fixed wall-clock bound, a race with the detached shell's teardown (T38.2 changed session-end cancellation), or a real bug; make the test wait on an event or a deadline that holds under load, never on a fixed sleep; fix the code instead if it is a real bug.
-
-Check: the test passes 20 times in a row under load (e.g. `cargo nextest run --workspace` in parallel with a second nextest run, or `stress`-style repeat with `--test-threads` high); the root cause is written in the done.md entry.
-
-Done when: the Check passes and the three AGENTS.md commands are clean.
-
-Out of scope: other slow tests.
 
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 

@@ -4196,3 +4196,118 @@ Check output:
 - Real binary against `COX_HOME=/tmp/cox-t50.4` (removed afterwards), scripted provider: a session run with `[permissions] mode = "plan"` in config, resumed with `cox run -p --resume <id>` whose script calls `write`: denied with the plan-mode message both with the config still in place and with it removed; the file was not written.
 - In the worktree: `cargo nextest run --workspace` 1347 passed, 4 skipped; `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean.
 Notes: a session started with `--permission-mode bypass` now resumes in Bypass without the flag (the recorded mode wins, as it already did for a `/permissions bypass` switch since T50.2). In the TUI, switching to another session reuses the launch's `--permission-mode` flag, which then wins over that session's record.
+
+#### T50.6 `headless_run_does_not_wait_for_a_background_shell` is not timing-flaky
+
+Model: Claude Code / opus-5.5 · Depends: — · Size: ~60 · Files: the test file that holds it (`crates/cox/tests/subagent_messaging.rs`), plus the code under test only if the test exposes a real bug
+
+Goal: the e2e test fails under full-workspace load (seen by T40.1 and T41.2 on 2026-09-28: 3 of 3 failures when run alone under load at 10–20 s, passes in ~3 s when idle). Find whether it is a fixed wall-clock bound, a race with the detached shell's teardown (T38.2 changed session-end cancellation), or a real bug; make the test wait on an event or a deadline that holds under load, never on a fixed sleep; fix the code instead if it is a real bug.
+
+Check: the test passes 20 times in a row under load (e.g. `cargo nextest run --workspace` in parallel with a second nextest run, or `stress`-style repeat with `--test-threads` high); the root cause is written in the done.md entry.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: other slow tests.
+
+Plan:
+1. Reproduce first: build the test binary, run the test in a loop (`--test-threads` high, several copies at once) while the machine is under the parallel agents' build load, and record which assertion fails (the 10 s `elapsed` bound, the machine-wide `pgrep -f "sleep 4001"` leak check, or the 30 s `run_scripted` timeout) and where the run spends its time (process start, turns, `end()` + `wait_tasks_cleared(SHELL_CANCEL_GRACE)`).
+2. Write the root cause down here before changing anything.
+3. Fix at the responsible layer: in `crates/cox/tests/subagent_messaging.rs`, replace any fixed wall-clock bound that load can break with a bound that holds under load and still proves the claim (the shell sleeps for 4001 s, so "did not wait" is any exit far below that), and make the leak check see only this run's process (a command line unique to the run, like T38.2's `sleep 4011.<pid>`, polled with a deadline). If the repro shows a real bug in `crates/cox/src/run.rs` or `crates/cox-core/src/tasks.rs` (e.g. the shell outliving the run), fix the code instead and keep the test strict.
+4. Verify: the test 20 times in a row under load, then fmt, clippy, and nextest on `-p cox` (creator rule 2026-09-28: no whole-workspace runs for checks).
+
+Root cause (reproduced before any change, load average 60–86 on 16 cores from the parallel agents' builds): 8 concurrent copies of the test, 3 rounds — round 1 8/8 `cox did not finish within 30s`, round 2 8/8 and round 3 3/8 `headless run waited on a background shell task … 10.0–17.8 s`; the leak check never fired and no `sleep 4001` was left behind. Timestamping every stream-json line of the real binary (same scenario, 8–24 copies at once) shows where the time goes: `session_started` at 0.3–2 s (9 s on the first exec of a freshly linked 166 MB debug binary), then 1–5.3 s between `tool_call_requested` and `task_created` — the pre-call workspace checkpoint (`checkpoint::before` → `GitCheckpointer::snapshot`: `git init`, `rev-parse`, `add -A`, `write-tree`, each a process spawn under load) — then 0.3–3.7 s to exit (turn 2, `end()`, the SIGTERM, and the post-kill `checkpoint::after` snapshot and archive row that `wait_tasks_cleared` waits for, capped by `SHELL_CANCEL_GRACE`). Idle, the whole run takes 1–1.6 s. So both wall-clock bounds (10 s `elapsed`, 30 s `run_scripted` timeout) time process start-up and git spawns, not the claim: a run that waited on the shell would take 4001 s. Not a code bug: the shell is always killed (no leftover process in any run, including the 30 s timeouts, which were killed before the shell ever started). A second latent flake: `pgrep -f "sleep 4001"` is machine-wide, so another worktree running the same test at the same moment makes `leaked` true — shown by starting an unrelated `/bin/sleep 4001` and running the unchanged test, which then failed in 0.31 s with "a `sleep 4001` process outlived the headless run".
+Status: done 2026-09-28
+Result: test-only fix in `crates/cox/tests/subagent_messaging.rs` (and the scenario's comment). `headless_run_does_not_wait_for_a_background_shell` no longer asserts `elapsed < 10 s` or runs under the shared 30 s `run_scripted` timeout; its bound is `DID_NOT_WAIT` = 300 s, derived from the claim (a run that waited on the shell lasts 4001 s), which is 5× the slowest run seen at load average 180. The leak check now looks for this run's own command line: the test copies the scenario into its `COX_HOME` tempdir with `sleep 4001` rewritten to `sleep 4001.<test pid>`, asserts `task_created` carries that command, polls `pgrep -f 'sleep 4001\.<pid>'` until a 10 s deadline (the killed `sleep` is reaped asynchronously), and a `KillOnDrop` guard `pkill`s the pattern when the test ends, pass or panic. No product code changed: the repro showed no real bug.
+Deviations: none in scope. Found, not fixed: (1) removing `session.end()` from `run.rs` still passes this test (run 7.8 s, no leftover `sleep`): when cox exits, the shell's PTY master closes and the kernel hangs up the shell's session (SIGHUP), so an ordinary `sleep` dies either way; only a SIGHUP-ignoring child would show the difference, which `crates/cox-core/tests/bash_tasks.rs` (T38.2) covers at the core level. (2) The post-kill `checkpoint::after` workspace snapshot of a detached shell runs inside the exit's `wait_tasks_cleared(SHELL_CANCEL_GRACE)` window; under heavy load it can use up the 5 s grace, after which `shutdown_background` drops the pending snapshot, archive row and `TaskCompleted` (no process leaks: the shell is already dead by then). (3) The other three tests in the file keep the 30 s `run_scripted` bound, which the same load spike (8/8 runs past 30 s) could exceed; out of scope per the card.
+Check output:
+- Before the change, load average 60–86: 8 concurrent copies × 3 rounds → 19 of 24 failed (8 × `cox did not finish within 30s`, 11 × `waited on a background shell task` at 10.0–17.8 s); a live unrelated `sleep 4001` → failed on the leak check.
+- After: 20 rounds × 8 concurrent copies (160 runs) plus 24 `yes` CPU burners, load average 100–180: 160/160 passed, slowest 62 s, no leftover `sleep 4001*`.
+- `cargo fmt --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo nextest run -p cox` 170 passed, 1 skipped (only `crates/cox` tests changed, so per the creator's 2026-09-28 rule no whole-workspace run).
+
+#### T39.2 Core keeps a tool call's signature in history and the rollout
+
+
+- Model: Claude Code / opus-5.5
+- Status: done 2026-09-28
+- Depends: T39.1
+- Size: ~170
+- Priority: P1
+- Complexity: 4
+- Goal: a signature captured in T39.1 lives in history as `Content::Thinking { text: "", signature: Some(sig) }` directly before its `Content::ToolUse`, and the rebuild after resume produces the same messages (§1.15 invariant 6).
+- Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/turn.rs`, `crates/cox-core/src/rollout.rs`
+- Steps:
+  1. `session.rs` (the assistant-message build, ~line 1610): for each call, push the signed `Content::Thinking` right before its `Content::ToolUse` when `streamed.signatures` has the call id. Pass the signatures to `run_tools`.
+  2. `turn.rs` `run_tools`: right before `Event::ToolCallRequested` for a call that has a signature, emit `ItemStarted`/`ItemDone` with `ItemKind::Thinking { text: String::new(), signature: Some(sig) }`, so the rollout gets it in the same order as the live history.
+  3. `rollout.rs`: an `ItemKind::Thinking` item with a signature appends `Content::Thinking` to the last assistant message. Reuse the shape of `append_tool_use` through one shared `append_assistant_block` helper, not a second copy. Unsigned thinking items stay ignored as today.
+  4. Tests:
+     - `signed_tool_call_keeps_signature_before_its_tool_use` (live history).
+     - `resume_rebuilds_signed_thinking_before_tool_use` (rollout).
+     - The existing `resume_builds_identical_request` extended with a scripted turn that carries a `ToolUseSignature`.
+  5. Confirm that `router::strip_thinking` and `strip_thinking_before` already drop these blocks on a model switch, and add one assertion that proves it.
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-core -E 'test(signature) | test(resume_builds_identical_request) | test(strip_thinking)'
+  ```
+- Done when: live history and the rebuilt history are equal for a signed tool round. The scripted provider can emit `ToolUseSignature` (a scenario key, only if the scenario format needs one; otherwise a hand-built event list in the test).
+- Out of scope:
+  - Wire translation (T39.3) and surface rendering (T39.4).
+  - Signatures on plain text parts (Gemini may send them on non-tool responses; the loop does not need them).
+- Execution plan:
+  1. Tests first. `rollout.rs`: `resume_rebuilds_signed_thinking_before_tool_use` (hand-built events: a signed `ItemKind::Thinking` item before each `ToolCallRequested`, plus an unsigned one that stays ignored). `crates/cox-core/tests/resume.rs`: a test-only `Signed` provider that wraps `Scripted` and inserts `ToolUseSignature` after every `ToolUseStart` (a hand-built event stream, so the scenario format needs no new key); `signed_tool_call_keeps_signature_before_its_tool_use` (live history has the signed block right before its `ToolUse`, and `router::strip_thinking` drops it) and `resume_builds_identical_request_with_signature` (the existing test's body, shared through one helper, run with `Signed`). Confirm they fail on the current code.
+  2. `turn.rs`: `run_tools` stays the entry point for its other callers and delegates to a new `run_signed_tools(session, turn, calls, &signatures)`, which emits `ItemStarted`/`ItemDone` with `ItemKind::Thinking { text: "", signature }` right before a signed call's `ToolCallRequested`.
+  3. `session.rs`: the assistant-message build pushes the signed `Content::Thinking` before each signed call's `ToolUse` and calls `run_signed_tools` with `streamed.signatures`.
+  4. `rollout.rs`: `append_tool_use` becomes a caller of one shared `append_assistant_block`; a finished signed `ItemKind::Thinking` item appends through it.
+  5. Verify: the card's Check, fmt, clippy, `cargo nextest run -p cox-core` (history build, rollout and resume all live there).
+- Result:
+  - `turn.rs`: `run_tools` now delegates to `run_signed_tools(session, turn, calls, &signatures)`, which emits an `ItemStarted`/`ItemDone` pair with `ItemKind::Thinking { text: "", signature: Some(sig) }` right before a signed call's `ToolCallRequested`. The other callers (`init.rs`, `plugin_model.rs`, `user_shell`) keep calling `run_tools` unchanged.
+  - `session.rs`: the assistant-message build pushes `Content::Thinking { text: "", signature: Some(sig) }` right before each signed call's `ToolUse` and runs the batch through `run_signed_tools` with `streamed.signatures`.
+  - `rollout.rs`: `append_tool_use` now goes through one shared `append_assistant_block`; a finished `ItemKind::Thinking` item with a signature appends `Content::Thinking` through it. Unsigned thinking items are still ignored.
+  - `router::strip_thinking` (and `context::strip_thinking_before`, which calls it) already drops these blocks, since it matches every `Content::Thinking`; `signed_tool_call_keeps_signature_before_its_tool_use` asserts it.
+- Tests:
+  - `rollout::tests::resume_rebuilds_signed_thinking_before_tool_use`: hand-built events with two signed calls, one unsigned call and one unsigned thinking item.
+  - `crates/cox-core/tests/resume.rs`: a test-only `Signed` provider wraps `Scripted` and inserts `ToolUseSignature` after every `ToolUseStart`, so the scenario format needed no new key. `signed_tool_call_keeps_signature_before_its_tool_use` checks the live history and the strip; `resume_builds_identical_request_with_signature` runs the existing test's body (now the shared helper `resume_matches_live`) with `Signed` and asserts the signed block exists. `resume_builds_identical_request` still runs the plain scenario.
+  - Before the fix: `resume_rebuilds_signed_thinking_before_tool_use` and `signed_tool_call_keeps_signature_before_its_tool_use` failed. `resume_builds_identical_request_with_signature` fails without the fix on its signed-block assertion.
+- Deviations: the resume test is split into a helper and two tests (plain and signed) rather than changing the one existing test, so the unsigned path keeps its own case. Source diff: `rollout.rs` +91 (about 60 of it the test), `session.rs` +12, `turn.rs` +28; `tests/resume.rs` is a test file.
+- Check output:
+  - The card's Check, plus `test(signed)`: 6 passed (`resume_builds_identical_request`, `resume_builds_identical_request_with_signature`, `signed_tool_call_keeps_signature_before_its_tool_use`, `resume_rebuilds_signed_thinking_before_tool_use`, `router_strip_thinking_keeps_everything_else_verbatim`, `consume_provider_keeps_signature_by_call_id`).
+  - `cargo nextest run -p cox-core`: 272 passed, 1 skipped. `cargo nextest run -p cox -E 'test(resume) | test(rollout)'` (the binary's resume path over `History::from_rollout`): 6 passed.
+  - `cargo clippy --workspace --all-targets -- -D warnings` and `cargo fmt --check` clean.
+  - The real binary, with a scratch `COX_HOME` and the scripted provider, ran a `read` tool turn and a `--continue` resume; the scratch dir was removed afterwards. The scripted provider emits no signature, so this covers only the unsigned path.
+
+#### T41.1 `[lsp]` config and its project-config guard
+
+
+- Model: Claude Code / opus-5.5
+- Depends: -
+- Size: ~110
+- Priority: P1
+- Complexity: 2
+- Goal: `[lsp]` is part of the config with `enabled`, `timeout_s`, `quiet_ms` and a `servers.<name> { command, args, extensions }` table, with a default matrix. A project config cannot set `lsp.servers`: a repository must not choose a program cox runs.
+- Files: `crates/cox-protocol/src/config.rs`, `crates/cox-config/src/load.rs`. Data: `crates/cox-protocol/default.toml` (plus the regenerated `docs/config.jsonschema` and `docs/config.md`).
+- Steps:
+  1. Add an `LspConfig` struct with serde defaults:
+     - `enabled = true`, `timeout_s = 30`, `quiet_ms = 500`;
+     - servers `rust` (`rust-analyzer`, `rs`), `typescript` (`typescript-language-server --stdio`, `ts tsx js jsx`), `python` (`pyright-langserver --stdio`, `py`) and `go` (`gopls`, `go`).
+  2. Add `lsp.servers` to the project-config guard list in `load.rs`, with the same refusal message as the other guarded keys.
+  3. Tests: `lsp_defaults_parse`, `project_config_cannot_set_lsp_servers`, and the docs drift test.
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-protocol -E 'test(lsp)'
+  mise exec -- cargo nextest run -p cox-config -E 'test(lsp) | test(schema)'
+  ```
+- Plan:
+  1. Tests first. `crates/cox-protocol/src/config.rs`: `lsp_defaults_parse` (both `LspConfig::default()` and `default.toml` through figment give `enabled`, `timeout_s = 30`, `quiet_ms = 500` and the four servers with their commands, args and extensions); fails to compile until `LspConfig` exists. `crates/cox-config/src/load.rs`: `project_config_cannot_set_lsp_servers` (a project `.cox/config.toml` that adds a server and changes the default `rust` command is reverted to the user/default servers, one `lsp.servers` violation, `source_of("lsp.servers")` is not `project`, a project `lsp.timeout_s` still applies).
+  2. `config.rs`: `LspConfig { enabled, timeout_s, quiet_ms, servers: BTreeMap<String, LspServerConfig> }` and `LspServerConfig { command, args, extensions }`, both `deny_unknown_fields` + `default`, hand-written `Default` carrying the matrix; `Config.lsp`. `default.toml`: `[lsp]` plus one `[lsp.servers.<name>]` table per default server.
+  3. `load.rs`: guard `lsp.servers` — any difference from the layers without the project reverts the whole map (a repository must not choose a program cox runs), reported as a `GuardViolation` like the others; add the key to `GUARDED_KEYS`.
+  4. Regenerate `docs/config.md` and `docs/config.jsonschema` through their drift tests (delete, re-run the test that writes them). Verify: the card's Check, `cox-protocol` and `cox-config` suites, the config tests in `crates/cox`, fmt, clippy; the real binary's `config show` against `COX_HOME=/tmp/cox-t41.1` with a project config that sets `lsp.servers` (warned and reverted), removed afterwards.
+- Done when: `docs/config.md` documents every `lsp` key, enforced by the existing docs test.
+- Out of scope: using the config (T41.7).
+
+- Result:
+  - `crates/cox-protocol/src/config.rs`: `LspConfig { enabled, timeout_s, quiet_ms, servers }` and `LspServerConfig { command, args, extensions }` (`deny_unknown_fields`, `default`; `servers` is a `BTreeMap` so listings have one order), `Config.lsp`, hand-written `Default` with the four-server matrix. `default.toml`: `[lsp]` and one `[lsp.servers.<name>]` table per default server; the guard is documented on `lsp.servers.rust.command`.
+  - `crates/cox-config/src/load.rs`: `apply_project_guards` reverts the whole `lsp.servers` map to the layers without the project when the project changed it (added a server or changed any field), one `GuardViolation { key: "lsp.servers", project_value: <changed names>, reverted_to: <kept names> }`, printed by `crates/cox` with the same `project config ignores … (guard); using …` warning as the other guarded keys; `lsp.servers` added to `GUARDED_KEYS`. `LoadedConfig::source_of` now treats a leaf key under a guarded table (`lsp.servers.rust.command`, which is what `cox config show --sources` asks for) as reverted too, so it reports `default`/`user` instead of `project`.
+  - `docs/config.md` and `docs/config.jsonschema` regenerated by deleting them and re-running `config_docs_config_md_matches_default_toml` and `config_jsonschema_matches_committed_file`; the diff is additions only.
+- Tests: `lsp_defaults_parse` (cox-protocol: `LspConfig::default()` equals `default.toml`'s `[lsp]`, with the four servers' commands, args and extensions) failed to compile before `LspConfig` existed; `project_config_cannot_set_lsp_servers` (cox-config: a project that changes `rust`'s command and adds a server is reverted, the user's own `zig` server survives, `lsp.timeout_s` stays project-settable, provenance of the leaf keys is `default`/`user`) failed on the guard-less code and again, before the `source_of` fix, on the leaf-key provenance.
+- Deviations: `default.toml` has no `servers = {}` line (TOML cannot extend an inline table with `[lsp.servers.<name>]` headers); the `source_of` leaf-key fix was not in the card but is needed for `cox config show --sources` to report the reverted servers truthfully.
+- Check output summary: `cargo nextest run -p cox-protocol -E 'test(lsp)'` 1 passed; `cargo nextest run -p cox-config -E 'test(lsp) | test(schema)'` 2 passed; `cargo nextest run -p cox-protocol -p cox-config` 106 passed; `cargo nextest run -p cox -E 'test(config)'` 12 passed; `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean. Real binary, scratch `COX_HOME=/tmp/cox-t41.1` and a project `.cox/config.toml` setting `lsp.timeout_s = 10` and `lsp.servers.rust.command = "./evil"`: `cox config show --sources` warned `project config ignores lsp.servers = rust (guard); using go, python, rust, typescript`, showed `lsp.servers.rust.command = "rust-analyzer"  # default` and `lsp.timeout_s = 10  # project`; scratch removed.
+- Status: done 2026-09-28

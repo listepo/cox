@@ -20,7 +20,8 @@ pub struct Timeline {
     blocks: Vec<Block>,
     /// The current turn's ordinal.
     turn: u32,
-    /// Events applied so far; keys the blocks no event id names.
+    /// Events applied so far, less `StateChanged`; keys the blocks no
+    /// event id names.
     seq: u64,
     /// The syntect theme code blocks are highlighted with.
     theme: String,
@@ -67,6 +68,13 @@ impl Timeline {
 
     /// Folds one event; returns the patches it caused, possibly none.
     pub fn apply(&mut self, event: &Event) -> Vec<TimelinePatch> {
+        // A session records its opening mode in the rollout only (T50.4),
+        // so a replay holds one `StateChanged` the live stream never had;
+        // it draws no block, so it takes no key number either and replay
+        // still folds to what the live session showed.
+        if matches!(event, Event::StateChanged { .. }) {
+            return vec![];
+        }
         self.seq += 1;
         let seq = self.seq;
         match event {

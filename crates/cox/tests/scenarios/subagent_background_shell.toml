@@ -4,8 +4,9 @@
 # this — only `TaskKind::Agent` holds the headless exit open — but `run()`
 # (`crates/cox/src/run.rs`) must still cancel and kill it before the
 # process exits, rather than merely abandoning the OS process as an
-# orphan. `4001` is a deliberately uncommon duration so the test's own
-# `pgrep -f` check cannot mistake some unrelated process for this one. No
+# orphan. The test runs a copy of this file with `sleep 4001` rewritten
+# to `sleep 4001.<test pid>` (T50.6), so its `pgrep -f` check cannot
+# mistake another run's process, or an unrelated one, for its own. No
 # further scripted turn is needed for the shell call: unlike `agent`, a
 # detached `bash` runs the real command directly rather than driving
 # another round of this same scripted conversation.

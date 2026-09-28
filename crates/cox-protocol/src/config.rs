@@ -13,7 +13,7 @@
 //! `default.toml`'s values are not a Rust type's zero value (`true`,
 //! non-empty strings, non-zero numbers).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use schemars::JsonSchema;
@@ -55,6 +55,8 @@ pub struct Config {
     pub hooks: HooksConfig,
     /// `[mcp]`
     pub mcp: McpConfig,
+    /// `[lsp]`
+    pub lsp: LspConfig,
     /// `[plugins]`
     pub plugins: PluginsConfig,
     /// `[memory]`
@@ -1055,6 +1057,72 @@ impl Default for McpConfig {
     }
 }
 
+/// One `[lsp.servers.<name>]` entry (T41.1): a stdio language server and
+/// the file extensions it covers. The name is the TOML key.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct LspServerConfig {
+    /// Program to spawn; looked up on `PATH` like an MCP stdio `command`.
+    pub command: String,
+    /// Arguments to `command`.
+    pub args: Vec<String>,
+    /// File extensions, without the dot, this server is asked about.
+    pub extensions: Vec<String>,
+}
+
+/// `[lsp]` (P41, A72): the deferred `diagnostics` tool's servers and
+/// timings. A project config cannot set `servers` (the guard in
+/// `cox-config`'s `load.rs`): a repository must not choose a program cox
+/// runs. A `BTreeMap` so every listing of the servers has one order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct LspConfig {
+    /// Whether the `diagnostics` tool is offered at all.
+    pub enabled: bool,
+    /// Deadline for one `diagnostics` request, in seconds.
+    pub timeout_s: u32,
+    /// Quiet period, in milliseconds, after the last pushed
+    /// `publishDiagnostics` before the result is taken as complete.
+    pub quiet_ms: u32,
+    /// `[lsp.servers.<name>]` entries.
+    pub servers: BTreeMap<String, LspServerConfig>,
+}
+
+impl Default for LspConfig {
+    fn default() -> Self {
+        let server = |command: &str, args: &[&str], extensions: &[&str]| LspServerConfig {
+            command: command.to_string(),
+            args: args.iter().map(|a| a.to_string()).collect(),
+            extensions: extensions.iter().map(|e| e.to_string()).collect(),
+        };
+        let servers = [
+            ("rust", server("rust-analyzer", &[], &["rs"])),
+            (
+                "typescript",
+                server(
+                    "typescript-language-server",
+                    &["--stdio"],
+                    &["ts", "tsx", "js", "jsx"],
+                ),
+            ),
+            (
+                "python",
+                server("pyright-langserver", &["--stdio"], &["py"]),
+            ),
+            ("go", server("gopls", &[], &["go"])),
+        ];
+        Self {
+            enabled: true,
+            timeout_s: 30,
+            quiet_ms: 500,
+            servers: servers
+                .into_iter()
+                .map(|(name, s)| (name.to_string(), s))
+                .collect(),
+        }
+    }
+}
+
 /// `[plugins]` (PL§1, T33.6): the global switch for WASM plugins. Even
 /// when on, only a plugin granted for its exact digest loads (PL§3). Not
 /// `deny_unknown_fields`: the per-plugin `[plugins.<id>]` tables flatten in
@@ -1457,6 +1525,45 @@ mod tests {
         assert_eq!(cfg.sandbox.mode, SandboxMode::WorkspaceWrite);
         assert!(cfg.hooks.events.is_empty());
         assert!(cfg.mcp.servers.is_empty());
+    }
+
+    /// T41.1: the hand-written `LspConfig::default()` and the `[lsp]` rows
+    /// of `default.toml` carry the same matrix, so a layer that omits a
+    /// server table or key falls back to what the docs say.
+    #[test]
+    fn lsp_defaults_parse() {
+        use figment::providers::Format as _;
+        let from_toml: Config =
+            figment::Figment::from(figment::providers::Toml::string(DEFAULT_CONFIG_TOML))
+                .extract()
+                .expect("default.toml parses");
+        let lsp = LspConfig::default();
+        assert_eq!(from_toml.lsp, lsp);
+        assert!(lsp.enabled);
+        assert_eq!((lsp.timeout_s, lsp.quiet_ms), (30, 500));
+        let server = |name: &str| {
+            let s = &lsp.servers[name];
+            (s.command.as_str(), s.args.clone(), s.extensions.clone())
+        };
+        assert_eq!(server("rust"), ("rust-analyzer", vec![], vec!["rs".into()]));
+        assert_eq!(
+            server("typescript"),
+            (
+                "typescript-language-server",
+                vec!["--stdio".into()],
+                vec!["ts".into(), "tsx".into(), "js".into(), "jsx".into()]
+            )
+        );
+        assert_eq!(
+            server("python"),
+            (
+                "pyright-langserver",
+                vec!["--stdio".into()],
+                vec!["py".into()]
+            )
+        );
+        assert_eq!(server("go"), ("gopls", vec![], vec!["go".into()]));
+        assert_eq!(lsp.servers.len(), 4);
     }
 
     #[test]

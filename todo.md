@@ -40,7 +40,6 @@
 - T37.22.1. Inspector as an overlay below 1280 pt
 - T37.22.2. Sidebar and inspector shortcuts; the bypass strip
 - T37.22.3. App window setup and the public CoxUI surface
-- T39.2. Core keeps a tool call's signature in history and the rollout
 - T39.3. Chat translator replays a signature as `extra_content` on its tool call
 - T39.4. Surfaces skip the empty signed thinking item
 - T39.5. `[providers.gemini]` preset and vendored model rows
@@ -54,7 +53,6 @@
 - T40.8. ACP image content blocks become attachments
 - T40.9. A model declared text-only refuses images at the wire
 - T40.10. `cox-vendor models` fills `images` from models.dev
-- T41.1. `[lsp]` config and its project-config guard
 - T41.3. Diagnostic wire subset, file URIs and formatting
 - T41.4. One LSP server: spawn, handshake, document sync, collect, stop
 - T41.5. `Tool::shutdown`, called when the root session ends
@@ -103,4 +101,3 @@
 - T49.5. Cursor Cloud Agents API as a background-task backend — scope gate
 - T50.3. The volatile block shows the live permission mode
 - T50.5. `cox --plain` shows the mode after `/permissions`
-- T50.6. `headless_run_does_not_wait_for_a_background_shell` is not timing-flaky

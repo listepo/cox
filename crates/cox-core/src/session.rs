@@ -31,7 +31,7 @@ use crate::hooks;
 use crate::permission::{Engine, Outcome};
 use crate::rollout::History;
 use crate::router::{Overrides, Route, RouteError, Router};
-use crate::turn::{consume_provider, results_message, run_tools};
+use crate::turn::{consume_provider, results_message, run_signed_tools, run_tools};
 
 /// Loop states from plan.md §1.3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1733,6 +1733,14 @@ impl Session {
                         });
                     }
                     for (id, name, input) in &streamed.calls {
+                        // T39.2: the signature sits right before its call,
+                        // the order `run_signed_tools` writes to the rollout.
+                        if let Some(sig) = streamed.signatures.get(id) {
+                            blocks.push(Content::Thinking {
+                                text: String::new(),
+                                signature: Some(sig.clone()),
+                            });
+                        }
                         blocks.push(Content::ToolUse {
                             id: *id,
                             name: name.clone(),
@@ -1744,7 +1752,7 @@ impl Session {
             });
             inner.state = State::RunningTools;
         }
-        let results = run_tools(self, turn, streamed.calls).await?;
+        let results = run_signed_tools(self, turn, streamed.calls, &streamed.signatures).await?;
         if self.cancel_token().is_cancelled() {
             self.set_state(State::Interrupted).await;
             self.finish(turn, StopReason::Interrupted).await?;

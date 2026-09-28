@@ -154,6 +154,19 @@ impl History {
                             });
                             turn_of.push(current_turn);
                         }
+                        // T39.2: only a signed block is replayed; unsigned
+                        // thinking is display-only, as in the live history.
+                        ItemKind::Thinking {
+                            text,
+                            signature: Some(signature),
+                        } => {
+                            let signature = Some(signature);
+                            append_assistant_block(
+                                &mut messages,
+                                Content::Thinking { text, signature },
+                            );
+                            turn_of.resize(messages.len(), current_turn);
+                        }
                         _ => {}
                     }
                 }
@@ -278,20 +291,29 @@ fn flush_results(messages: &mut Vec<Message>, pending: &mut Vec<Content>) {
 }
 
 fn append_tool_use(messages: &mut Vec<Message>, call: &ToolCall) {
-    let use_block = Content::ToolUse {
-        id: call.id,
-        name: call.name.clone(),
-        input: call.input.clone(),
-    };
+    append_assistant_block(
+        messages,
+        Content::ToolUse {
+            id: call.id,
+            name: call.name.clone(),
+            input: call.input.clone(),
+        },
+    );
+}
+
+/// Adds a block to the assistant message the live loop built in one piece
+/// (text, then each call's signed thinking and `ToolUse`), opening one when
+/// the turn had no text.
+fn append_assistant_block(messages: &mut Vec<Message>, block: Content) {
     if let Some(last) = messages.last_mut()
         && last.role == Role::Assistant
     {
-        last.content.push(use_block);
+        last.content.push(block);
         return;
     }
     messages.push(Message {
         role: Role::Assistant,
-        content: vec![use_block],
+        content: vec![block],
     });
 }
 
@@ -454,5 +476,60 @@ mod tests {
             h.messages[1].content.last(),
             Some(Content::ToolUse { .. })
         ));
+    }
+
+    /// T39.2: a signed thinking item lands right before the `ToolUse` it was
+    /// streamed with, in the same assistant message; unsigned thinking is
+    /// display-only and stays out of history.
+    #[test]
+    fn resume_rebuilds_signed_thinking_before_tool_use() {
+        let user = ItemId::new();
+        let call = |id: CallId| Event::ToolCallRequested {
+            call: ToolCall {
+                id,
+                name: "echo".into(),
+                input: serde_json::json!({}),
+                risk: cox_protocol::types::Risk::ReadOnly,
+                subject: String::new(),
+                segments: None,
+            },
+        };
+        let thinking = |item: ItemId, text: &str, signature: Option<&str>| {
+            [
+                Event::ItemStarted {
+                    item,
+                    kind: ItemKind::Thinking {
+                        text: text.into(),
+                        signature: signature.map(Into::into),
+                    },
+                },
+                Event::ItemDone { item },
+            ]
+        };
+        let (a, b) = (CallId::new(), CallId::new());
+        let mut events = vec![user_item(user, "go"), Event::ItemDone { item: user }];
+        events.extend(thinking(ItemId::new(), "musing", None));
+        events.extend(thinking(ItemId::new(), "", Some("sig-a")));
+        events.push(call(a));
+        events.push(call(b));
+        events.extend(thinking(ItemId::new(), "", Some("sig-c")));
+        let c = CallId::new();
+        events.push(call(c));
+        let h = History::from_events(&events);
+        let signed = |sig: &str| Content::Thinking {
+            text: String::new(),
+            signature: Some(sig.into()),
+        };
+        let used = |id: CallId| Content::ToolUse {
+            id,
+            name: "echo".into(),
+            input: serde_json::json!({}),
+        };
+        assert_eq!(h.messages.len(), 2);
+        assert_eq!(h.messages[1].role, Role::Assistant);
+        assert_eq!(
+            h.messages[1].content,
+            vec![signed("sig-a"), used(a), used(b), signed("sig-c"), used(c)]
+        );
     }
 }

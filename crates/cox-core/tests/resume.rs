@@ -6,15 +6,19 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use cox_core::router::strip_thinking;
 use cox_core::{History, MemoryStore, Session, assemble};
-use cox_protocol::errors::ToolError;
+use cox_protocol::errors::{ProviderError, ToolError};
 use cox_protocol::ids::SessionId;
-use cox_protocol::traits::{Store, Tool, ToolCx};
+use cox_protocol::traits::{Provider, Store, Tool, ToolCx};
 use cox_protocol::types::{
-    Concurrency, Event, PermissionMode, Risk, Submission, ToolOutput, ToolSpec,
+    Caps, Concurrency, Content, Event, Message, PermissionMode, ProviderEvent, ProviderId, Request,
+    Risk, Submission, ToolOutput, ToolSpec, Usage,
 };
 use cox_provider::scripted::Scripted;
 use serde_json::Value;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 struct Echo;
 
@@ -52,12 +56,109 @@ fn scenario() -> String {
     std::fs::read_to_string(&path).expect("one_tool.toml")
 }
 
+/// A hand-built signed stream (T39.2): `Scripted`'s events with a
+/// `ToolUseSignature` after every `ToolUseStart`, as the Chat wire emits one
+/// for Gemini (T39.1). Kept here so the scenario format needs no new key.
+struct Signed(Scripted);
+
+#[async_trait]
+impl Provider for Signed {
+    fn id(&self) -> ProviderId {
+        self.0.id()
+    }
+    fn capabilities(&self) -> Caps {
+        self.0.capabilities()
+    }
+    async fn stream(
+        &self,
+        req: Request,
+        sink: mpsc::Sender<ProviderEvent>,
+        cancel: CancellationToken,
+    ) -> Result<Usage, ProviderError> {
+        // One scripted call is a handful of events, so the buffer never fills.
+        let (tx, mut rx) = mpsc::channel(64);
+        let usage = self.0.stream(req, tx, cancel).await?;
+        let mut n = 0;
+        while let Some(ev) = rx.recv().await {
+            let started = matches!(ev, ProviderEvent::ToolUseStart { .. });
+            sink.send(ev).await.map_err(|_| ProviderError::Cancelled)?;
+            if started {
+                n += 1;
+                let signature = format!("sig-{n}");
+                let ev = ProviderEvent::ToolUseSignature { signature };
+                sink.send(ev).await.map_err(|_| ProviderError::Cancelled)?;
+            }
+        }
+        Ok(usage)
+    }
+    async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {
+        self.0.count_tokens(req).await
+    }
+}
+
+fn scripted() -> Scripted {
+    Scripted::from_toml(&scenario(), "").expect("scenario")
+}
+
+/// T39.2: the live history keeps the signed block directly before its
+/// `ToolUse`, and a model switch still strips it.
+#[tokio::test]
+async fn signed_tool_call_keeps_signature_before_its_tool_use() {
+    let store = Arc::new(MemoryStore::new());
+    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Echo)];
+    let cwd = PathBuf::from("/tmp/cox-turn");
+    let mut config = cox_protocol::Config::default();
+    config.core.workspace_roots = vec![cwd.clone()];
+    let provider = Arc::new(Signed(scripted()));
+    let session =
+        Session::new(config, provider, tools, store.clone(), store, cwd).expect("session");
+    let turn = Submission::UserTurn {
+        text: "one_tool".into(),
+        attachments: vec![],
+        confirm_think: false,
+    };
+    session.submit(turn).await.expect("submit");
+    let live = session.history().await;
+    let asst = &live[1].content;
+    assert!(matches!(&asst[0], Content::Text { .. }), "{asst:?}");
+    assert_eq!(
+        asst[1],
+        Content::Thinking {
+            text: String::new(),
+            signature: Some("sig-1".into()),
+        }
+    );
+    assert!(matches!(&asst[2], Content::ToolUse { .. }), "{asst:?}");
+    let stripped = strip_thinking(&live);
+    assert!(
+        stripped
+            .iter()
+            .flat_map(|m| &m.content)
+            .all(|c| !matches!(c, Content::Thinking { .. }))
+    );
+}
+
 #[tokio::test]
 async fn resume_builds_identical_request() {
-    let toml = scenario();
+    resume_matches_live(Arc::new(scripted())).await;
+}
+
+/// T39.2 (§1.15 invariant 6): a signed tool round rebuilds the same way.
+#[tokio::test]
+async fn resume_builds_identical_request_with_signature() {
+    let live = resume_matches_live(Arc::new(Signed(scripted()))).await;
+    let signed = live
+        .iter()
+        .flat_map(|m| &m.content)
+        .any(|c| matches!(c, Content::Thinking { signature: Some(sig), .. } if sig == "sig-1"));
+    assert!(signed, "no signed block to rebuild: {live:?}");
+}
+
+/// Runs `one_tool`, rebuilds history from the rollout, and asserts it and
+/// the assembled request match the live ones; returns the live history.
+async fn resume_matches_live(provider: Arc<dyn Provider>) -> Vec<Message> {
     let mut config = cox_protocol::Config::default();
     config.core.workspace_roots = vec![PathBuf::from("/tmp/cox-turn")];
-    let provider = Arc::new(Scripted::from_toml(&toml, "").expect("scenario"));
     let store = Arc::new(MemoryStore::new());
     let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Echo)];
     let cwd = PathBuf::from("/tmp/cox-turn");
@@ -93,6 +194,7 @@ async fn resume_builds_identical_request() {
     let live_req = assemble(&live, &config, &tools, &cwd, "");
     let resume_req = assemble(&rebuilt.messages, &config, &tools, &cwd, "");
     assert_eq!(live_req, resume_req);
+    live
 }
 
 #[tokio::test]
