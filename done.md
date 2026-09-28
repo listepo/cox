@@ -3593,3 +3593,47 @@ Not done:
 - Shortcuts: DS§4 says ⌘0/⌘⌥0 but DT§5 says ⌘⌃S/⌥⌘I, so neither is bound.
 - Bypass strip: DS puts it at the window top, DT under the toolbar, so it is not drawn.
 - The inspector overlay below 1280 pt and the app window setup (hidden title bar, behind-window blur) are in ideas.md.
+
+#### T37.21.1 `ToolHeader`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the tool card header: icon tile, summary line, state and duration, the disclosure chevron. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `CoxUI/Molecules/ToolHeader.swift` shows the tool icon, a summary with the subject in bold (monospaced for a command), lines added and removed, the risk chip, the state (spinner, check or cross) with its duration, and the disclosure chevron. A header that can open is a button with hover and press states; when expanded it sits on `fill.primary` over a hairline. Fixtures are in `Previews/PreviewState+Tool.swift`; `ToolMoleculeTests` has 20 snapshots (edited, expanded, running, explored, failed). DESIGN.md has the ToolHeader row.
+Deviations: ~181 source lines against a ~150 estimate. A small refactor of the state glyph (no visual change) landed in the T37.21.4 commit.
+Check: `swift test -j 4`, second run against the committed snapshots: 68 tests in 19 suites passed. `swift-format lint --strict` and `swiftlint lint --strict` are clean. After merging into `p37-desktop`, `swift build --build-tests` succeeded.
+Not done: none.
+
+#### T37.21.2 `DiffLineView` and `DiffHunkView`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: diff lines (added, removed, context, gutter numbers) and a hunk with its header, from plain values. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `CoxUI/Molecules/CodeRun.swift` is one value type for code text plus its syntax role. CodeBlockView shares it, and the app maps Rust `StyledDoc` spans to it. `DiffLineView` shows the gutter number, the sign and highlighted code on the added or removed colours. `DiffHunkView` shows the `@@` header with one gutter width for the whole hunk, on `surface.code`. Fixtures are in `PreviewState+Code.swift`. `CodeMoleculeTests` has 16 snapshots plus a unit test of how runs become text. DESIGN.md row updated.
+Deviations: context line numbers use `text.secondary` (the mockup's tertiary misses 4.5:1, DS§8). The hunk header uses `font.mono.code` because there is no 11 pt mono token. About 187 lines over 3 source files.
+Check: the same runs as T37.21.1: 68/68 passed with no re-recording; lints clean; the merged build succeeded.
+Not done: none.
+
+#### T37.21.3 `CodeBlockView`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: a highlighted code block with language label and copy button, taking pre-styled runs as plain values. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `CoxUI/Molecules/CodeBlockView.swift` is a `radius.l` card. It has a language label and an icon-only copy button (`doc.on.doc`, with a tooltip and an accessibility label) over a hairline, and highlighted code that scrolls sideways instead of wrapping. Copy is a closure; the app owns the pasteboard. 8 snapshots, with and without a language. DESIGN.md row updated.
+Deviations: none.
+Check: the same runs as T37.21.1: 68/68 passed with no re-recording; lints clean; the merged build succeeded.
+Not done: none.
+
+#### T37.21.4 `TerminalTail`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the last lines of a running command in an inset well, monospaced, with the exit state. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `CoxUI/Molecules/TerminalTail.swift` shows lines in an inset well on `surface.terminal`, each cut with an ellipsis, in `font.mono.terminal`. Lines and the exit status arrive as ready strings. While running there is no exit line. Success shows a check with the status in `text.terminalOk`. Failure shows a `status.danger` cross with the status in `text.terminal`, because danger-coloured text misses 4.5:1 on the well. 12 snapshots. DESIGN.md row updated.
+Deviations: carries the small ToolHeader state-glyph refactor (no visual change).
+Check: the same runs as T37.21.1: 68/68 passed with no re-recording; lints clean; the merged build succeeded.
+Not done: none.

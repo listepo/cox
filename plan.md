@@ -29,10 +29,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.41 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.43 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
-| T37.21.1 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.21.2 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.21.3 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.21.4 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.21.5 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.21.6 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.21.7 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
@@ -1095,30 +1091,6 @@ Check: a test expands and collapses a card and the range and frame of the next b
 Depends: T37.40 · Size: ~200 · Files: `…/CoxTranscriptText/…`
 Goal: the text storage is built from Rust `StyledDoc` spans (T37.7) and appended as patches arrive instead of rebuilt; the spike took ~630 ms to build 10 000 blocks at once, over the 400 ms launch budget (research.md §9.5.13).
 Check: building the 10 000-block fixture incrementally stays within the DT§1 launch budget; a streamed `AppendText` patch edits only its block's range.
-
-#### T37.21.1 `ToolHeader`
-
-Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
-Goal: the tool card header: icon tile, summary line, state and duration, the disclosure chevron. Built only from atoms and foundations (DS§6.3).
-Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
-
-#### T37.21.2 `DiffLineView` and `DiffHunkView`
-
-Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
-Goal: diff lines (added, removed, context, gutter numbers) and a hunk with its header, from plain values. Built only from atoms and foundations (DS§6.3).
-Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
-
-#### T37.21.3 `CodeBlockView`
-
-Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
-Goal: a highlighted code block with language label and copy button, taking pre-styled runs as plain values. Built only from atoms and foundations (DS§6.3).
-Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
-
-#### T37.21.4 `TerminalTail`
-
-Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
-Goal: the last lines of a running command in an inset well, monospaced, with the exit state. Built only from atoms and foundations (DS§6.3).
-Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
 
 #### T37.21.5 `UserBubble` and `ThinkingDisclosure`
 
