@@ -64,7 +64,6 @@
 - T44.3. Worktrees in `/agents` and `cox sessions`
 - T44.4. Resume a worktree session in its worktree
 - T44.5. Worktree docs
-- T45.1. A child inherits the parent's live permission mode
 - T45.2. `permissionMode` in an agent definition narrows only
 - T45.3. Plugin manifest declares agent definitions
 - T45.4. Load granted plugins' agent definitions

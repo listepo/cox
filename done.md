@@ -3010,3 +3010,45 @@ Check output:
 - `ending_the_session_kills_a_shell_detached_in_an_older_turn` (`crates/cox-core/tests/bash_tasks.rs`): failed with `end()` aliased to `interrupt()` (`sleep 4011.<pid>` outlived the session after 10 s), passes with the fix.
 - Manual, real binary, `COX_HOME=/tmp/cox-t38.2`, scripted provider, `sleep 4003` detached in turn 1: headless `run --loop 1s --max-iterations 2` exits about 2 s later and leaves no `sleep 4003`; TUI (PTY) with two prompts then Ctrl+C ×2 exits in 0.6 s and leaves no `sleep 4003` (before the fix it survived with ppid 1, T34.11).
 - nextest 1312 passed, 4 skipped; fmt and clippy clean.
+
+#### T45.1 A child inherits the parent's live permission mode
+
+
+Model: Claude Code / opus-5.5 · Depends: - · Size: ~70 · Priority: P0 · Complexity: 3
+
+Goal: a subagent is never wider than its parent at spawn time.
+
+Files:
+- `crates/cox-core/src/session.rs`
+- `crates/cox-core/src/subagent.rs`
+
+Steps:
+1. `session.rs`: `pub(crate) async fn permission_mode(&self) -> PermissionMode` reading `Inner.permission_mode`.
+2. `subagent.rs` `AgentTool::call`: after `let mut config = self.parent.config.clone();` set `config.permissions.mode = self.parent.permission_mode().await` (the child's `build` picks it up; grants are not inherited).
+3. Tests: `child_inherits_parent_live_plan_mode`, `child_of_default_parent_does_not_run_auto`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core child_inherits_parent_live_plan_mode child_of_default_parent
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: both tests pass (open question 9: this may deserve P0 outside P45).
+
+Out of scope: per-agent overrides (T45.2).
+
+Plan:
+1. Tests first, both failing on `main`. `child_inherits_parent_live_plan_mode` (unit, `subagent.rs` `mod tests`): parent configured `auto`, `SetPermissionMode { Plan }`, one `agent` (explore) call; the `Recording` provider also keeps each request's volatile system block, and the child's (cheap-tier) request must say `permission_mode=Plan` (`context.rs` renders it from the child's `config.permissions.mode`, the same field `Session::build` seeds the engine mode from). `child_of_default_parent_does_not_run_auto` (`crates/cox-core/tests/subagent.rs`, inline scenario): parent configured `auto`, live `Default`, a `shell` child limited to the `touch` (`Risk::Write`) tool; after the parent's own `agent` approval the child's `touch` must raise `ApprovalRequired` labelled with the agent (under `auto` it ran unasked).
+2. `session.rs`: `pub(crate) async fn permission_mode(&self)` reads `Inner.permission_mode`.
+3. `subagent.rs` `AgentTool::call`: after `let mut config = self.parent.config.clone();` set `config.permissions.mode = self.parent.permission_mode().await`. Grants stay per session; `cox_permission::Engine` is untouched.
+4. Verify: the two tests, then fmt, clippy, nextest.
+Status: done 2026-09-28
+Result: `AgentTool::call` (`crates/cox-core/src/subagent.rs`) now sets the child's `config.permissions.mode` from the parent's live mode (`Session::permission_mode`, new in `crates/cox-core/src/session.rs`) instead of copying the configured one, so `Session::build` seeds the child's engine mode and its volatile system block from what the parent runs under right now. Grants are not inherited; `cox_permission::Engine` is unchanged. No new dependency. 3 files, about 110 LOC including tests (6 in `session.rs`, 4 in `AgentTool::call`).
+Check output:
+- `child_inherits_parent_live_plan_mode` (unit, `subagent.rs`; the test `Recording` provider now also keeps each request's system blocks): failed before the fix (the child's request said `permission_mode=Auto`), passes after.
+- `child_of_default_parent_does_not_run_auto` (`crates/cox-core/tests/subagent.rs`): failed before the fix ("the child's write ran without asking"), passes after.
+- In the worktree: nextest 1316 passed, 4 skipped; fmt and clippy clean.
+- Not run: the real binary. Headless runs cannot change the mode mid-session, so the bug needs the TUI's Shift+Tab; the core tests drive the same `SetPermissionMode` submission the TUI sends.
+Follow-ups found (not in this card): a finished child woken by `TaskMessage` is restarted from its rollout (`subagent.rs` `restart`), and `History::from_events` always returns `PermissionMode::Default` because mode changes are not recorded, so a child of a plan-mode parent wakes in `Default`; the same applies to resuming any session. The parent's own volatile system block (`context.rs`) also renders `config.permissions.mode`, not the live mode.

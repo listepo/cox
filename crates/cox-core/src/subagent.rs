@@ -423,6 +423,10 @@ impl Tool for AgentTool {
         let tools = self.tools_for(&preset, &input);
         let tier = self.resolve_tier(&preset, &input)?;
         let mut config = self.parent.config.clone();
+        // T45.1: the parent's live mode, not the configured one, so a child
+        // spawned after Shift+Tab to plan is never wider than its parent.
+        // Session grants stay the parent's own.
+        config.permissions.mode = self.parent.permission_mode().await;
         config.budget.session_usd = slice(
             config.budget.session_usd,
             self.parent.spent().await,
@@ -1274,16 +1278,19 @@ mod tests {
 
     use cox_protocol::errors::ProviderError;
     use cox_protocol::traits::Provider;
-    use cox_protocol::types::{Caps, ProviderId, Usage};
+    use cox_protocol::types::{Caps, PermissionMode, ProviderId, Usage};
     use cox_provider::scripted::Scripted;
 
     use crate::tasks::Child;
 
     /// The script, plus each request's tier and text parts, so a test can
-    /// see exactly what history a child turn was sent with.
+    /// see exactly what history a child turn was sent with, and each
+    /// request's system blocks joined, for what the child was told about
+    /// itself.
     struct Recording {
         script: Scripted,
         seen: StdMutex<Vec<(Tier, Vec<String>)>>,
+        system: StdMutex<Vec<(Tier, String)>>,
     }
 
     #[async_trait]
@@ -1307,6 +1314,9 @@ mod tests {
             });
             let row = (req.tier, texts.collect());
             self.seen.lock().expect("lock").push(row);
+            let system = req.system.iter().map(|b| b.text.as_str());
+            let system = (req.tier, system.collect::<Vec<_>>().join("\n"));
+            self.system.lock().expect("lock").push(system);
             self.script.stream(req, sink, cancel).await
         }
         async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {
@@ -1369,15 +1379,28 @@ mod tests {
     }
 
     fn parent_with(toml: &str) -> (Session, Arc<Recording>, mpsc::Receiver<Event>) {
+        parent_in(toml, PermissionMode::Default)
+    }
+
+    /// `parent_with`, configured with permission mode `mode`.
+    fn parent_in(
+        toml: &str,
+        mode: PermissionMode,
+    ) -> (Session, Arc<Recording>, mpsc::Receiver<Event>) {
         let script = Scripted::from_toml(toml, "").expect("scenario");
-        let seen = StdMutex::new(Vec::new());
-        let provider = Arc::new(Recording { script, seen });
+        let (seen, system) = (StdMutex::new(Vec::new()), StdMutex::new(Vec::new()));
+        let provider = Arc::new(Recording {
+            script,
+            seen,
+            system,
+        });
         let store = Arc::new(crate::MemoryStore::new());
         let slot = Arc::new(OnceLock::new());
         let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Poke(slot.clone()))];
         let cwd = PathBuf::from("/tmp/cox-subagent-unit");
         let mut config = cox_protocol::Config::default();
         config.core.workspace_roots = vec![cwd.clone()];
+        config.permissions.mode = mode;
         let session = Session::new(config, provider.clone(), tools, store.clone(), store, cwd)
             .expect("session");
         let _ = slot.set(session.clone());
@@ -1414,6 +1437,36 @@ mod tests {
         let events = until(rx, |e| matches!(e, Event::TurnDone { .. })).await;
         running.await.expect("join").expect("turn");
         events
+    }
+
+    /// T45.1: a child takes the parent's live mode, not the configured
+    /// one — after Shift+Tab to plan, an `auto`-configured parent spawns a
+    /// plan-mode child. The child's volatile system block renders the mode
+    /// its `Session::build` also seeds the engine with.
+    #[tokio::test]
+    async fn child_inherits_parent_live_plan_mode() {
+        let toml = r#"
+[[turn]]
+tool_calls = [{ name = "agent", input = { task = "look around" } }]
+[[turn]]
+text = "found it"
+[[turn]]
+text = "done"
+"#;
+        let (parent, provider, mut rx) = parent_in(toml, PermissionMode::Auto);
+        let mode = Submission::SetPermissionMode {
+            mode: PermissionMode::Plan,
+        };
+        parent.submit(mode).await.expect("set mode");
+        parent_turn(&parent, &mut rx).await;
+        let system = provider.system.lock().expect("lock").clone();
+        let child: Vec<_> = system.iter().filter(|(t, _)| *t == Tier::Cheap).collect();
+        assert_eq!(child.len(), 1, "one child request: {system:?}");
+        assert!(
+            child[0].1.contains("permission_mode=Plan"),
+            "{}",
+            child[0].1
+        );
     }
 
     #[tokio::test]

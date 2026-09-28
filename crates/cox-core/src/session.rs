@@ -984,6 +984,12 @@ impl Session {
         self.inner.lock().await.archives.insert(call, archive);
     }
 
+    /// The live mode (`SetPermissionMode` changes it; the configured one
+    /// is only the starting value), which a subagent inherits (T45.1).
+    pub(crate) async fn permission_mode(&self) -> PermissionMode {
+        self.inner.lock().await.permission_mode
+    }
+
     /// What this session has spent so far, in USD.
     pub(crate) async fn spent(&self) -> f64 {
         self.inner.lock().await.spent_usd

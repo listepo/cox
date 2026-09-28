@@ -421,3 +421,53 @@ text = "done"
         "a higher request is clamped to the parent's own tier (D5: never up)"
     );
 }
+
+/// T45.1: an `auto`-configured parent switched to `Default` spawns a child
+/// that asks before a `Risk::Write` call, as the parent would; a child built
+/// from the configured mode ran it unasked.
+#[tokio::test]
+async fn child_of_default_parent_does_not_run_auto() {
+    let toml = r#"
+[[turn]]
+tool_calls = [{ name = "agent", input = { task = "touch it", preset = "shell", tools = ["touch"] } }]
+[[turn]]
+tool_calls = [{ name = "touch", input = { path = "/tmp/cox-turn/t45-1" } }]
+[[turn]]
+text = "touched"
+[[turn]]
+text = "done"
+"#;
+    let mut config = cox_protocol::Config::default();
+    config.permissions.mode = cox_protocol::types::PermissionMode::Auto;
+    let (session, _store, mut rx) = open(toml, config);
+    session
+        .submit(Submission::SetPermissionMode {
+            mode: cox_protocol::types::PermissionMode::Default,
+        })
+        .await
+        .expect("set mode");
+    let running = spawn_turn(&session, "touch it");
+    let mut child_asked = false;
+    loop {
+        let ev = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("event timeout")
+            .expect("event stream closed");
+        match ev {
+            Event::ApprovalRequired { call, source, .. } => {
+                child_asked |= source.is_some_and(|s| s.agent.is_some());
+                session
+                    .submit(Submission::Approve {
+                        call_id: call.id,
+                        decision: Decision::Allow,
+                    })
+                    .await
+                    .expect("approve");
+            }
+            Event::TurnDone { .. } => break,
+            _ => {}
+        }
+    }
+    running.await.expect("join").expect("turn");
+    assert!(child_asked, "the child's write ran without asking");
+}
