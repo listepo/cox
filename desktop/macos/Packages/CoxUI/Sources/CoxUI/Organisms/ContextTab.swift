@@ -3,7 +3,8 @@
 // instruction files and history, what is left, the turn's cache hit, and "Compact now". Separate
 // so the `Inspector` frame stays a slot and each tab is its own view, fed plain values the app
 // copies from the core's token meter (T37.29.3.1) and cost history (T37.29.3.2), the project's
-// spend as the footnote (T37.29.3.3). The budget comes later.
+// spend as the footnote (T37.29.3.3). The cache hit is the turn's or the session's, as the app
+// picks (A104); "Compact now" waits while a turn runs (A105). The budget comes later.
 
 import SwiftUI
 
@@ -19,8 +20,10 @@ struct ContextTab: View {
     var parts: [Part] = []
     /// `923.6k`, the window less the parts; empty while the window is unknown.
     var free = ""
-    /// `94% this turn`.
+    /// `94% this turn` or `88% this session`.
     var cacheHit = ""
+    /// A turn is running: compaction would rewrite the context it uses, so "Compact now" waits.
+    var turnRunning = false
     /// `In`, `Out`, `Cache r/w`, `$`: the cost grid's value columns.
     var costColumns: [String] = []
     /// A row per turn, its subagents indented under it, the session total last; none hides
@@ -60,6 +63,7 @@ struct ContextTab: View {
             legend
             Button("Compact now") { send(.compact) }
               .buttonStyle(CoxButtonStyle(.secondary, size: .small))
+              .disabled(state.turnRunning)
           }
         }
       }
@@ -117,6 +121,9 @@ struct ContextTab: View {
 
 #Preview("context") { PreviewMatrix { ContextInspectorSample(state: PreviewState.contextTab) } }
 #Preview("costs") { PreviewMatrix { ContextInspectorSample(state: PreviewState.contextCosts) } }
+#Preview("turn running") {
+  PreviewMatrix { ContextInspectorSample(state: PreviewState.contextRunning) }
+}
 #Preview("no window") {
   PreviewMatrix { ContextInspectorSample(state: PreviewState.contextNoWindow) }
 }

@@ -16,7 +16,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3M0W33BJBEZJ0TZTYPXVSTD",
+          "id": "turn:01M3M4KM6GY1XBTHB57EZJFWNV",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -39,7 +39,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3M0W33BZNJQ4CXQEJ5082DX",
+          "id": "item:01M3M4KM6G06XGW6VHMTT2EMKF",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -47,12 +47,12 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3M0W33BJBEZJ0TZTYPXVSTD"
+        "after": "turn:01M3M4KM6GY1XBTHB57EZJFWNV"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3M0W33F5KW8ZGB8T1JJPN9Q",
+          "id": "item:01M3M4KM6M120C89J7N46ESWR6",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -76,12 +76,12 @@
             }
           }
         },
-        "after": "item:01M3M0W33BZNJQ4CXQEJ5082DX"
+        "after": "item:01M3M4KM6G06XGW6VHMTT2EMKF"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3M0W33GE60GHAPSRSEN4FG3",
+          "id": "call:01M3M4KM6MSFP9J19JA08EGZZT",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -92,14 +92,14 @@
             "state": "done",
             "tail": "wrote /project/src/lib.rs (152 bytes)",
             "archive": {
-              "id": "01M3M0W33JSP06ATYVFWTANK91",
+              "id": "01M3M4KM6QBJ8ZQDXP6HWJ2789",
               "bytes": 104
             },
             "diff": null,
             "duration_ms": 1
           }
         },
-        "after": "item:01M3M0W33F5KW8ZGB8T1JJPN9Q"
+        "after": "item:01M3M4KM6M120C89J7N46ESWR6"
       },
       {
         "op": "upsert",
@@ -113,12 +113,12 @@
             ]
           }
         },
-        "after": "call:01M3M0W33GE60GHAPSRSEN4FG3"
+        "after": "call:01M3M4KM6MSFP9J19JA08EGZZT"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3M0W33MN7WT3H7FS9SWE2WW",
+          "id": "item:01M3M4KM6RA6XEYYMR0541RM87",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -158,7 +158,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3M0W33BJBEZJ0TZTYPXVSTD",
+            "turn": "01M3M4KM6GY1XBTHB57EZJFWNV",
             "tally": {
               "sent": 7504,
               "received": 100,
@@ -171,7 +171,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 2025163.7366425372,
+            "tok_per_s": 1620689.6551724137,
             "exact": true,
             "sparkline": [],
             "done": false
@@ -180,12 +180,12 @@
           "text": {
             "sent": "7.5k",
             "received": "100",
-            "rate": "2025164",
-            "spoken": "7.5 thousand tokens sent, 100 received, 2025164 tokens per second",
+            "rate": "1620690",
+            "spoken": "7.5 thousand tokens sent, 100 received, 1620690 tokens per second",
             "heading": "This turn · 2 requests",
             "phase": "streaming",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 474122 tok/s · first token 0 ms · peak 2025164 tok/s",
+            "rate_detail": "avg 335289 tok/s · first token 0 ms · peak 1620690 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -260,6 +260,7 @@
             ],
             "context_free": "996.2k",
             "cache_hit": "0% this turn",
+            "cache_hit_session": "0% this session",
             "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
           }
         }
@@ -267,7 +268,43 @@
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3M0W33MBATTWA05HVDP1SF6",
+          "id": "call:01M3M4KM6SE0G8ABQMGQ51X7T8",
+          "turn": 1,
+          "kind": {
+            "type": "tool",
+            "tool": "edit",
+            "summary": "Editing `src/lib.rs`",
+            "icon": "edit",
+            "risk": "write",
+            "state": "running",
+            "tail": "",
+            "archive": null,
+            "diff": null,
+            "duration_ms": 0
+          }
+        },
+        "after": "item:01M3M4KM6RA6XEYYMR0541RM87"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "checkpoint:19",
+          "turn": 1,
+          "kind": {
+            "type": "checkpoint",
+            "files": [
+              "/project/src/lib.rs"
+            ]
+          }
+        },
+        "after": "call:01M3M4KM6SE0G8ABQMGQ51X7T8"
+      }
+    ],
+    [
+      {
+        "op": "upsert",
+        "block": {
+          "id": "call:01M3M4KM6SE0G8ABQMGQ51X7T8",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -278,7 +315,7 @@
             "state": "done",
             "tail": "edited /project/src/lib.rs",
             "archive": {
-              "id": "01M3M0W33XC77GFFRMG0MA9Y67",
+              "id": "01M3M4KM71FYNQRAH30V7YZDFC",
               "bytes": 93
             },
             "diff": {
@@ -1262,31 +1299,15 @@
                 }
               ]
             },
-            "duration_ms": 1
+            "duration_ms": 2
           }
         },
-        "after": "item:01M3M0W33MN7WT3H7FS9SWE2WW"
+        "after": "item:01M3M4KM6RA6XEYYMR0541RM87"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "checkpoint:19",
-          "turn": 1,
-          "kind": {
-            "type": "checkpoint",
-            "files": [
-              "/project/src/lib.rs"
-            ]
-          }
-        },
-        "after": "call:01M3M0W33MBATTWA05HVDP1SF6"
-      }
-    ],
-    [
-      {
-        "op": "upsert",
-        "block": {
-          "id": "item:01M3M0W33YR25M7VJVXH159Z2G",
+          "id": "item:01M3M4KM77R2QX3WK99NT0795M",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -1315,7 +1336,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3M0W33BJBEZJ0TZTYPXVSTD",
+          "id": "turn:01M3M4KM6GY1XBTHB57EZJFWNV",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -1351,7 +1372,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3M0W33BJBEZJ0TZTYPXVSTD",
+            "turn": "01M3M4KM6GY1XBTHB57EZJFWNV",
             "tally": {
               "sent": 11375,
               "received": 110,
@@ -1364,7 +1385,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 492805.0463236743,
+            "tok_per_s": 338983.05084745766,
             "exact": true,
             "sparkline": [],
             "done": true
@@ -1373,12 +1394,12 @@
           "text": {
             "sent": "11.4k",
             "received": "110",
-            "rate": "492805",
-            "spoken": "11 thousand tokens sent, 110 received, 492805 tokens per second",
+            "rate": "338983",
+            "spoken": "11 thousand tokens sent, 110 received, 338983 tokens per second",
             "heading": "Last turn · 3 requests",
             "phase": "done",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 475762 tok/s · first token 0 ms · peak 2025164 tok/s",
+            "rate_detail": "avg 335622 tok/s · first token 0 ms · peak 1620690 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -1453,6 +1474,7 @@
             ],
             "context_free": "996.1k",
             "cache_hit": "0% this turn",
+            "cache_hit_session": "0% this session",
             "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
           }
         }
@@ -1462,7 +1484,7 @@
   "notes": [],
   "snapshot": [
     {
-      "id": "turn:01M3M0W33BJBEZJ0TZTYPXVSTD",
+      "id": "turn:01M3M4KM6GY1XBTHB57EZJFWNV",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -1483,7 +1505,7 @@
       }
     },
     {
-      "id": "item:01M3M0W33BZNJQ4CXQEJ5082DX",
+      "id": "item:01M3M4KM6G06XGW6VHMTT2EMKF",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -1492,7 +1514,7 @@
       }
     },
     {
-      "id": "item:01M3M0W33F5KW8ZGB8T1JJPN9Q",
+      "id": "item:01M3M4KM6M120C89J7N46ESWR6",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -1517,7 +1539,7 @@
       }
     },
     {
-      "id": "call:01M3M0W33GE60GHAPSRSEN4FG3",
+      "id": "call:01M3M4KM6MSFP9J19JA08EGZZT",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -1528,7 +1550,7 @@
         "state": "done",
         "tail": "wrote /project/src/lib.rs (152 bytes)",
         "archive": {
-          "id": "01M3M0W33JSP06ATYVFWTANK91",
+          "id": "01M3M4KM6QBJ8ZQDXP6HWJ2789",
           "bytes": 104
         },
         "diff": null,
@@ -1546,7 +1568,7 @@
       }
     },
     {
-      "id": "item:01M3M0W33MN7WT3H7FS9SWE2WW",
+      "id": "item:01M3M4KM6RA6XEYYMR0541RM87",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -1571,7 +1593,7 @@
       }
     },
     {
-      "id": "call:01M3M0W33MBATTWA05HVDP1SF6",
+      "id": "call:01M3M4KM6SE0G8ABQMGQ51X7T8",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -1582,7 +1604,7 @@
         "state": "done",
         "tail": "edited /project/src/lib.rs",
         "archive": {
-          "id": "01M3M0W33XC77GFFRMG0MA9Y67",
+          "id": "01M3M4KM71FYNQRAH30V7YZDFC",
           "bytes": 93
         },
         "diff": {
@@ -2566,7 +2588,7 @@
             }
           ]
         },
-        "duration_ms": 1
+        "duration_ms": 2
       }
     },
     {
@@ -2580,7 +2602,7 @@
       }
     },
     {
-      "id": "item:01M3M0W33YR25M7VJVXH159Z2G",
+      "id": "item:01M3M4KM77R2QX3WK99NT0795M",
       "turn": 1,
       "kind": {
         "type": "assistant",

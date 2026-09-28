@@ -1,7 +1,7 @@
 // `PreviewState` fixtures for the inspector's Context tab (T37.29.3.1): a turn's split of a 200k
 // window as `cox_app::MeterText` formats it, the same split with the window unknown, and mockup
 // 10's cost by turn and project footnote as `cox_app::TurnCosts` formats them (T37.29.3.2,
-// T37.29.3.3). Separate
+// T37.29.3.3), and the session's cache hit while a turn runs (A104, A105). Separate
 // from `PreviewState+Inspector.swift` so the inspector's tabs, built in parallel, add their
 // fixtures without editing one file.
 
@@ -32,6 +32,14 @@ extension PreviewState {
     ]
     state.footnote =
       "Project cox today: $3.18 · this week: $21.40. Every number is a row in the cost ledger."
+    return state
+  }
+
+  /// The session's cache hit, as `[desktop.context] cache_hit = "session"` picks, while a turn
+  /// runs, so "Compact now" is disabled.
+  static var contextRunning: ContextTab.State {
+    var state = contextTab
+    (state.cacheHit, state.turnRunning) = ("88% this session", true)
     return state
   }
 

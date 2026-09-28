@@ -1,7 +1,8 @@
 // The Context tab's state from the token meter (T37.29.3.1): the recorded fixture's context split
 // reaches the tab through SessionStore, a part of an unknown kind is left out, and "Compact now"
 // sends one manual compaction; the cost by turn (T37.29.3.2) reaches it with the total last, and
-// the project footnote (T37.29.3.3) stays when the session has not spent yet.
+// the project footnote (T37.29.3.3) stays when the session has not spent yet; the cache hit
+// follows `[desktop.context] cache_hit` and a running turn holds "Compact now" (A104, A105).
 
 import CoxClient
 import Foundation
@@ -27,6 +28,46 @@ import Testing
   #expect(tab.split.parts.map(\.label) == ["System", "Tools", "Instructions", "History"])
   #expect(tab.split.parts.allSatisfy { $0.fraction > 0 })
   #expect(tab.cacheHit == "0% this turn")
+  #expect(!tab.turnRunning)
+  #expect(store.contextTab(cacheHit: .session).cacheHit == "0% this session")
+}
+
+@Test func aTurnThatHasNotEndedHoldsCompactNow() {
+  let tally = Tally(
+    sent: 10, received: 1, cacheRead: 9, cacheWrite: 0, uncached: 1, costUsd: 0, calls: 1,
+    estimated: false)
+  let turn = { (done: Bool) in
+    TurnUsage(
+      turn: "t", tally: tally, thinkingTokens: 0, ttftMs: nil, tokPerS: nil, exact: false,
+      sparkline: [], done: done)
+  }
+  var text = MeterText()
+  (text.cacheHit, text.cacheHitSession) = ("90% this turn", "88% this session")
+  let running = UsageView(session: tally, turn: turn(false), contextTokens: 10, text: text)
+  #expect(ContextTabState(running).turnRunning)
+  #expect(ContextTabState(running).cacheHit == "90% this turn")
+  #expect(ContextTabState(running, cacheHit: .session).cacheHit == "88% this session")
+  let done = UsageView(session: tally, turn: turn(true), contextTokens: 10, text: text)
+  #expect(!ContextTabState(done).turnRunning)
+  #expect(!ContextTabState(UsageView(session: tally, turn: nil, contextTokens: 0)).turnRunning)
+}
+
+@MainActor
+@Test func theCacheHitScopeReadsBackFromTheSettings() async {
+  let view = SettingsView(
+    settings: [
+      Setting(
+        key: "desktop.context.cache_hit", value: "\"session\"", layer: .user, editable: true,
+        kind: .choice(options: ["turn", "session"]), description: "")
+    ],
+    userFile: "/home/.cox/config.toml")
+  let store = SettingsStore(
+    client: FixtureSettingsClient(view: view), secrets: MemorySecretStore(), cwd: "/project")
+  #expect(store.cacheHitScope == .turn)
+  await store.load()
+  #expect(store.cacheHitScope == .session)
+  await store.set("desktop.context.cache_hit", to: .text("turn"))
+  #expect(store.cacheHitScope == .turn)
 }
 
 @Test func aPartOfAnUnknownKindIsLeftOut() {

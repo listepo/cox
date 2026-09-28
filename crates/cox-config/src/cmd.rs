@@ -277,6 +277,22 @@ mod tests {
         assert!(loaded.config.desktop.transcript.cross_block_selection);
     }
 
+    /// A104: per turn unless the user picks the session's.
+    #[test]
+    fn config_set_desktop_cache_hit_round_trips() {
+        use cox_protocol::config::CacheHitScope;
+        assert_eq!(
+            cox_protocol::Config::default().desktop.context.cache_hit,
+            CacheHitScope::Turn
+        );
+        let loaded = set_then_load("desktop.context.cache_hit", "session").expect("load succeeds");
+        assert_eq!(
+            loaded.config.desktop.context.cache_hit,
+            CacheHitScope::Session
+        );
+        assert!(set_then_load("desktop.context.cache_hit", "call").is_err());
+    }
+
     #[test]
     fn config_rejects_out_of_range_desktop_values() {
         for (key, value) in [

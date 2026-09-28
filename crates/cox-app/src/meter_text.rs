@@ -47,6 +47,10 @@ pub struct MeterText {
     /// `94% this turn`, the turn's cache reads over what it sent; empty
     /// before a turn sent anything.
     pub cache_hit: String,
+    /// `88% this session`, every call's cache reads over what they sent
+    /// (A104); empty before the session sent anything. `[desktop.context]
+    /// cache_hit` picks which of the two the Context tab shows.
+    pub cache_hit_session: String,
     /// `Cache hit 94% this turn · counts from the provider's usage, …`.
     pub footnote: String,
 }
@@ -132,10 +136,7 @@ impl MeterText {
         } else {
             "counts from the provider's usage, one ledger row per request"
         };
-        let cache_hit = t.filter(|(t, _)| t.sent > 0).map(|(t, _)| {
-            let hit = f64::from(t.cache_read) / f64::from(t.sent) * 100.0;
-            format!("{hit:.0}% this turn")
-        });
+        let cache_hit = t.and_then(|(t, _)| hit(&t, "this turn"));
         let footnote = match &cache_hit {
             Some(hit) => format!("Cache hit {hit} · {source}"),
             None => format!("C{}", &source[1..]),
@@ -175,9 +176,19 @@ impl MeterText {
                 .and_then(|b| free(&b, view.context_tokens))
                 .unwrap_or_default(),
             cache_hit: cache_hit.unwrap_or_default(),
+            cache_hit_session: hit(s, "this session").unwrap_or_default(),
             footnote,
         }
     }
+}
+
+/// `94% this turn`: `t`'s cache reads over what it sent; `None` before it
+/// sent anything.
+fn hit(t: &Tally, span: &str) -> Option<String> {
+    (t.sent > 0).then(|| {
+        let pct = f64::from(t.cache_read) / f64::from(t.sent) * 100.0;
+        format!("{pct:.0}% {span}")
+    })
 }
 
 /// The context the split is scaled to: the last call's reported context
@@ -305,8 +316,10 @@ mod tests {
 
     #[test]
     fn a_streaming_turn_formats_every_figure_the_popover_shows() {
+        let mut session = tally(218_500, 9_800);
+        session.cache_read = 190_000;
         let view = UsageView {
-            session: tally(218_500, 9_800),
+            session,
             turn: Some(TurnUsage {
                 turn: TurnId::new(),
                 tally: tally(41_600, 1_900),
@@ -354,6 +367,7 @@ mod tests {
         );
         assert_eq!(text.context, "Context · 76.4k");
         assert_eq!(text.cache_hit, "90% this turn");
+        assert_eq!(text.cache_hit_session, "87% this session");
         assert!(
             text.footnote
                 .starts_with("Cache hit 90% this turn · counts"),
@@ -436,6 +450,7 @@ mod tests {
         assert_eq!(text.spoken, "0 tokens sent, 0 received");
         assert_eq!((text.rate.as_str(), text.heading.as_str()), ("", ""));
         assert_eq!(text.cache_hit, "", "no turn, no cache hit");
+        assert_eq!(text.cache_hit_session, "", "nothing sent, no cache hit");
         assert!(text.rows.iter().all(|r| r.turn == "–"));
         assert!(text.footnote.starts_with("Counts from"));
     }

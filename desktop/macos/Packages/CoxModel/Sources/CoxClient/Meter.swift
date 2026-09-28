@@ -14,6 +14,8 @@ public struct MeterText: Equatable, Sendable, Decodable {
   public var contextParts: [ContextPart] = []
   /// `94% this turn`; empty before a turn sent anything.
   public var cacheHit = ""
+  /// `88% this session`, every call's; empty before the session sent anything (A104).
+  public var cacheHitSession = ""
 
   public init() {}
 
@@ -25,6 +27,7 @@ public struct MeterText: Equatable, Sendable, Decodable {
     case contextFree = "context_free"
     case contextParts = "context_parts"
     case cacheHit = "cache_hit"
+    case cacheHitSession = "cache_hit_session"
   }
 }
 

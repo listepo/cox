@@ -718,3 +718,45 @@ async fn turn_costs_group_the_ledger_by_turn_with_the_subagent_under_its_turn() 
         costs.project
     );
 }
+
+/// A104: the meter formats the cache hit both for the last turn and for the
+/// session, each from the ledger rows it covers.
+#[tokio::test]
+async fn the_cache_hit_is_formatted_for_the_last_turn_and_for_the_session() {
+    let dir = scratch(Some(TWO_REPLIES));
+    let session = open(dir.path(), Arc::default()).await.expect("open");
+    let mut text = None;
+    for prompt in ["one", "two"] {
+        session.send(send(prompt)).await.expect("send");
+        loop {
+            let batch = session.next_patches().await.expect("open stream");
+            for patch in &batch {
+                if let TimelinePatch::Usage { usage } = patch {
+                    text = Some(usage.text.clone());
+                }
+            }
+            if batch.iter().any(ends_turn) {
+                break;
+            }
+        }
+    }
+    let text = text.expect("a usage patch");
+
+    let store = cox_store::Store::open(&dir.path().join("user/.cox")).expect("store");
+    let ledger = store.usage_ledger(&session.id()).expect("ledger");
+    let last = ledger
+        .iter()
+        .rposition(|r| r.usage.turn == 1)
+        .expect("turn 2");
+    assert!(last > 0, "two turns: {ledger:?}");
+    let hit = |rows: &[cox_store::queries::LedgerRow], span: &str| {
+        let sum = |f: fn(&cox_protocol::types::Usage) -> u32| {
+            rows.iter().map(|r| f(&r.usage.usage)).sum::<u32>()
+        };
+        let sent = sum(cox_protocol::types::Usage::context_tokens);
+        let read = sum(|u| u.cache_read_tokens);
+        format!("{:.0}% {span}", f64::from(read) / f64::from(sent) * 100.0)
+    };
+    assert_eq!(text.cache_hit, hit(&ledger[last..], "this turn"));
+    assert_eq!(text.cache_hit_session, hit(&ledger, "this session"));
+}

@@ -322,6 +322,9 @@
           "cross_block_selection": true,
           "text_size": 13.5,
           "line_height": 1.55
+        },
+        "context": {
+          "cache_hit": "turn"
         }
       }
     }
@@ -1836,6 +1839,13 @@
             "text_size": 13.5,
             "line_height": 1.55
           }
+        },
+        "context": {
+          "description": "`[desktop.context]`",
+          "$ref": "#/$defs/DesktopContextConfig",
+          "default": {
+            "cache_hit": "turn"
+          }
         }
       },
       "additionalProperties": false
@@ -1928,6 +1938,33 @@
         }
       },
       "additionalProperties": false
+    },
+    "DesktopContextConfig": {
+      "description": "`[desktop.context]` (A104): the inspector's Context & Cost tab.",
+      "type": "object",
+      "properties": {
+        "cache_hit": {
+          "description": "`turn` | `session`: the cache hit the tab shows.",
+          "$ref": "#/$defs/CacheHitScope",
+          "default": "turn"
+        }
+      },
+      "additionalProperties": false
+    },
+    "CacheHitScope": {
+      "description": "Which cache hit the Context tab shows (A104).",
+      "oneOf": [
+        {
+          "description": "The last turn's cache reads over what it sent: what the last\nrequests reused.",
+          "type": "string",
+          "const": "turn"
+        },
+        {
+          "description": "Every call's so far: whether the cache-stable prefix pays off.",
+          "type": "string",
+          "const": "session"
+        }
+      ]
     }
   }
 }

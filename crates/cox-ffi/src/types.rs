@@ -366,6 +366,7 @@ pub struct MeterText {
     pub context_parts: Vec<ContextPart>,
     pub context_free: String,
     pub cache_hit: String,
+    pub cache_hit_session: String,
     pub footnote: String,
 }
 
