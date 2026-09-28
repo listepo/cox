@@ -32,8 +32,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.21.11 | todo | P2 | 2 | 90% | |
+| T37.21.11 | in progress | P2 | 2 | 90% | Claude Code / Opus 5.5 |
 | T37.22.6 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.22.7 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2776,13 +2777,19 @@ Depends: T37.19.5 · Size: ~100 · Files: `…/Molecules/…`, `desktop/design/D
 Goal: `clock` joins the DS§3.7 symbol table; `SessionRow` reuses `InspectorRow`'s selected-row styling; `DiffStat` hides "−0" for add-only files; section headers and the filter prompt stay readable on Frosted (not `text.tertiary` there); the `KeyCap` inside `StopButton` is visible on the inverted capsule.
 Check: the changed snapshots are re-recorded on purpose; each fixed text pair meets DS§8 contrast on all three materials.
 
-Waits for the creator: the filter prompt's `text.secondary` is 4.19:1 on the light sidebar filter well (4.5 needs about `#69696e`) — `text.primary`, a new placeholder token, a darker light `text.secondary`, or accept; and which backdrop DS§8's Frosted and Glossy contrast is measured on (over the snapshot backdrop no text token but light `text.primary` reaches 4.5:1). The finished work for all five items is kept as a patch by the orchestrator.
+Decided (A112): a new placeholder token for the filter prompt; contrast on the glass over the window fill.
 
 #### T37.22.6 App wiring leftovers: model popover, session titles, provider count, live session list
 
 Depends: T37.22.5 · Size: ~150 · Files: `crates/cox-ffi`, `crates/cox-app`, CoxClient, `…/Screens/…`
 Goal: what T37.22.5 left. The toolbar's model pill opens its popover from a model catalog `cox-ffi` exports (a one-expression forward, A90). A session gets a title the same way the TUI titles one, also for `cox run`; the toolbar and the sidebar name an untitled session the same way. The sidebar's footer counts the providers the user can use (a key present or a local server), not the configured sections (9 on defaults) (A110). The session list follows app patches instead of a 2 s poll. A shell task's output opens in a viewer.
 Check: a screenshot on a live core with a few titled sessions; a test for each new FFI export and the provider count.
+
+#### T37.22.7 Model display names from models.dev
+
+Depends: — · Size: ~120 · Files: `scripts/vendor/…`, `crates/cox-models`, the vendored model data
+Goal: A111. The `scripts/vendor` script that builds the model catalog also takes each model's `name` from models.dev; `ModelRow` gains `display_name` (with its schema and drift test regenerated); the TUI and the app read it; the app's model pill drops the vendor prefix (`Sonnet 5 · high`). A model without a name falls back to its id.
+Check: the vendor script's tests; a cox-models test that `claude-sonnet-5` reads `Claude Sonnet 5`; the pill shows `Sonnet 5 · high` on the approve-write fixture.
 
 ## 4. Definition of done for v0.1
 
@@ -2955,6 +2962,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A108 T37.28.6 — the Review pane's "Send to agent" follows a setting: queue the comments while a turn runs, like the composer (the default), or send them at once, by the creator (2026-09-28). Why: the same behaviour as a typed prompt by default, with the choice left to the user.
 - A109 T37.19.5 — the dark-mode control highlight is a user setting, by the creator (2026-09-28): none (the dark mockup's look, the default) or white at 10% of the light highlight's strength; a second setting applies it to controls only (e1, the default, as the card says) or to every elevation level (e1–e4, including the transcript's user bubble). Why: the dark mockup gives no value, and both looks are wanted as options.
 - A110 T37.22.6 — the sidebar footer's "N providers" counts the providers the user can use now (a stored or env key, or a reachable local server), not the configured sections, by the creator (2026-09-28). Why: on defaults the section count reads 9 and says nothing about what works.
+- A111 T37.22.7 — a model's display name comes from models.dev (its `name`, e.g. `Claude Sonnet 5`) through the `scripts/vendor` script into the catalog; the app's model pill drops the vendor prefix (`Sonnet 5 · high`), by the creator (2026-09-28). Why: the mockup's pill, and one source for names instead of hand-kept strings.
+- A112 T37.21.11 — contrast, by the creator (2026-09-28): the filter prompt uses a new placeholder token (`#69696e` in light, the dark `text.secondary` in dark) instead of changing `text.secondary`; DS§8's Frosted and Glossy contrast is measured on the glass laid over the window fill, the worst predictable case, while the snapshot wallpaper stays for looks. Why: the recommendations as proposed; the user's wallpaper is unknown.
 
 ## 7. Risk register
 
