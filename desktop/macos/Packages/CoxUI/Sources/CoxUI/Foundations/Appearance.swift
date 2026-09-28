@@ -1,7 +1,7 @@
 // The appearance every Foundation reads (DS§3.4–3.6): material, window opacity, Depth and text
-// size, plus the one place the system's Reduce Transparency and Reduce Motion override them
-// (DS§1.6). Separate so no modifier resolves a setting on its own. CoxModel fills
-// `coxAppearance` from `[desktop.appearance]`; CoxUI never reads config. The modifiers in
+// size, plus the one place the system's Reduce Transparency, Increase Contrast and Reduce Motion
+// override them (DS§1.6, DS§8). Separate so no modifier resolves a setting on its own. CoxModel
+// fills `coxAppearance` from `[desktop.appearance]`; CoxUI never reads config. The modifiers in
 // Foundations are internal: only CoxUI's own components style a view (DS§5).
 
 import SwiftUI
@@ -28,6 +28,8 @@ public struct Appearance: Sendable, Equatable {
   public var depth: Double
   /// Text size, 1 = 100 % (DS§3.2).
   public var textScale: Double
+  /// The system asked for more contrast; only `effective` sets it, the config never does.
+  private(set) var increaseContrast = false
 
   /// `windowOpacity` defaults to the material's token.
   public init(
@@ -40,27 +42,35 @@ public struct Appearance: Sendable, Equatable {
     self.textScale = textScale
   }
 
-  /// What a view draws: Reduce Transparency forces Solid (DS§1.6).
-  public func effective(reduceTransparency: Bool) -> Appearance {
-    guard reduceTransparency, material != .solid else { return self }
-    var solid = self
-    solid.material = .solid
-    solid.windowOpacity = MaterialToken.solidWindowOpacity
-    return solid
+  /// What a view draws: Reduce Transparency forces Solid (DS§1.6); Increase Contrast drops the
+  /// specular sweep and makes glass more opaque (A89, A100), and Solid stays Solid under both.
+  public func effective(reduceTransparency: Bool, increaseContrast: Bool = false) -> Appearance {
+    var drawn = self
+    drawn.increaseContrast = increaseContrast
+    guard reduceTransparency, material != .solid else { return drawn }
+    drawn.material = .solid
+    drawn.windowOpacity = MaterialToken.solidWindowOpacity
+    return drawn
   }
 
-  /// Background opacity of a surface: Solid is opaque, readable surfaces hold the floor.
+  /// Background opacity of a surface: Solid is opaque, readable surfaces hold the floor, and
+  /// under Increase Contrast glass keeps `highContrastGlassKeep` of its transparency — the
+  /// rule the High Contrast palette applies to its glass colours (A89).
   func backgroundOpacity(_ role: SurfaceRole) -> Double {
-    switch (material, role) {
-    case (.solid, _): MaterialToken.solidWindowOpacity
-    case (_, .chrome): windowOpacity
-    case (_, .readable): max(windowOpacity, MaterialToken.readableFloorWindowOpacity)
-    }
+    let opacity =
+      switch (material, role) {
+      case (.solid, _): MaterialToken.solidWindowOpacity
+      case (_, .chrome): windowOpacity
+      case (_, .readable): max(windowOpacity, MaterialToken.readableFloorWindowOpacity)
+      }
+    guard increaseContrast else { return opacity }
+    return 1 - (1 - opacity) * MaterialToken.highContrastGlassKeep
   }
 
-  /// Strength of the diagonal highlight for the material (DS§3.5).
+  /// Strength of the diagonal highlight for the material (DS§3.5); none under Increase Contrast.
   var specular: Double {
-    switch material {
+    if increaseContrast { return MaterialToken.solidSpecular }
+    return switch material {
     case .solid: MaterialToken.solidSpecular
     case .frosted: MaterialToken.frostedSpecular
     case .glossy: MaterialToken.glossySpecular
@@ -81,13 +91,18 @@ extension EnvironmentValues {
   @Entry public var coxAppearance = Appearance()
 }
 
-/// The appearance with Reduce Transparency applied — the only way a Foundation reads it.
+/// The appearance with Reduce Transparency and Increase Contrast applied — the only way a
+/// Foundation reads it.
 @propertyWrapper
 struct EffectiveAppearance: DynamicProperty {
   @Environment(\.coxAppearance) private var appearance
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.colorSchemeContrast) private var contrast
 
-  var wrappedValue: Appearance { appearance.effective(reduceTransparency: reduceTransparency) }
+  var wrappedValue: Appearance {
+    appearance.effective(
+      reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased)
+  }
 }
 
 extension Animation {

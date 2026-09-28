@@ -6,9 +6,11 @@
 //
 // The rule: text is at least 7:1 on every surface it sits on; hairlines and borders are solid and at
 // least 3:1, as are the other graphics a person must tell apart; glass keeps a quarter of its
-// transparency. A colour that already passes is kept; one that fails moves the least distance
-// towards black or white (away from its surface) that passes. The specular sweep and the window's
-// own opacity are `material.*` numbers, not colours, so no palette file can switch them.
+// transparency — `material.highContrast.glassKeep` in `tokens/base.json`, the number CoxUI's
+// `Appearance` applies to the window and pane opacity (A100), read here so both follow one token.
+// A colour that already passes is kept; one that fails moves the least distance towards black or
+// white (away from its surface) that passes. The specular sweep and the window's own opacity are
+// `material.*` numbers, not colours, so no palette file can switch them.
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +19,6 @@ const tokensDir = join(dirname(fileURLToPath(import.meta.url)), 'tokens');
 const MODES = { 'light-hc': 'light', 'dark-hc': 'dark' };
 const TEXT = 7;
 const GRAPHIC = 3;
-const GLASS_KEEP = 0.25;
 const STEP = 0.005;
 
 // Glass: translucent surfaces. Each sits over the opaque window fill of its palette, as the palette
@@ -180,6 +181,10 @@ const check = (source, hc, mode) => {
 };
 
 const load = async (mode) => JSON.parse(await readFile(join(tokensDir, `color.${mode}.json`), 'utf8'));
+const GLASS_KEEP = JSON.parse(await readFile(join(tokensDir, 'base.json'), 'utf8')).material?.highContrast?.glassKeep?.$value;
+if (!(typeof GLASS_KEEP === 'number' && GLASS_KEEP >= 0 && GLASS_KEEP < 1)) {
+  fail('material.highContrast.glassKeep in base.json must be a number in 0…1 (1 excluded)');
+}
 
 for (const [mode, from] of Object.entries(MODES)) {
   const source = await load(from);

@@ -26,7 +26,8 @@ does not have, add it here first (token, component or variant), then build the s
 5. **Glass is for chrome, not for reading.** Transparency applies to the window and panes. Anything that
    carries text a person must read stays at least `material.readableFloor` opaque at every setting.
 6. **The system wins.** Reduce Transparency forces Solid; Reduce Motion drops movement to cross-fades;
-   Increase Contrast switches to high-contrast colour variants; the accent follows the system accent.
+   Increase Contrast switches to high-contrast colour variants, drops the specular sweep and makes glass
+   more opaque (§3.5); the accent follows the system accent.
 
 ## 2. Token pipeline
 
@@ -144,6 +145,10 @@ highlights go too and the app looks like a standard macOS app. Only `e5` ignores
   setting.
 - Text-bearing surfaces — messages, code, diffs, terminal, popovers, the composer — never drop below
   `material.readableFloor`. The transparency slider only moves the window and pane backgrounds.
+- Increase Contrast (A89, A100): no specular sweep, and every glass background — window, panes and
+  readable surfaces — keeps `material.highContrast.glassKeep` (a quarter) of its transparency:
+  `opacity' = 1 − (1 − opacity) × glassKeep`. `Appearance.effective` applies it; Reduce Transparency
+  still wins and forces Solid. `high-contrast.mjs` reads the same token for the glass colours.
 - Panes are separate glass layers (sidebar, transcript column, inspector) with an 8 pt gap, so the
   wallpaper shows between them. Group neighbouring glass in one `GlassEffectContainer` so shapes blend
   and render in one pass.
@@ -245,7 +250,7 @@ component.
 | --- | --- | --- | --- |
 | `.elevation(_ level:, cornerRadius:)` | Shadow layers + top highlight, scaled by Depth | `elevation.e0–e5`, Depth | `--lift1…3` |
 | `.glassPane(_ shape:, surface:, role:)` | Pane material: glass or solid per setting; `role: .readable` holds the readable floor | `material.*`, `surface.*` | `.glass .col`, `.sidebar`, `.insp` |
-| `.specular(_ strength:, in:)` | Diagonal highlight overlay (strong for Glossy, faint for Frosted, none for Solid) | `material.*.specular` | `.window:after` |
+| `.specular(_ strength:, in:)` | Diagonal highlight overlay (strong for Glossy, faint for Frosted, none for Solid or under Increase Contrast) | `material.*.specular` | `.window:after` |
 | `.hairline(_ edges:)`, `.hairline(in:)` | 0.5 pt `separator` line on edges or around a shape | `size.hairline`, `separator` | `border:.5px` |
 | `.insetWell(_ surface:, cornerRadius:)` | Pressed-in look for terminal and fields | `surface.terminal`, inner shadow | `.tail`, `.filter` |
 | `.textStyle(_ token:, tabularDigits:)` | Font at the text size, line height, tracking, tabular digits | `font.*` | font rules |
@@ -374,7 +379,8 @@ mockup's welcome hero needs a title token and the app icon, which do not exist y
   9.8 thousand received, 71 tokens per second".
 - Honour Reduce Transparency, Reduce Motion and Increase Contrast (§1.6). `high-contrast.mjs` derives
   the Increase Contrast palettes `color.*-hc.json` (A89) and checks them in `just desktop-tokens`: text
-  at least 7:1 on its surface, borders solid and at least 3:1, glass more opaque. A token that stands
+  at least 7:1 on its surface, borders solid and at least 3:1, glass more opaque by
+  `material.highContrast.glassKeep`, the number CoxUI's materials use too (§3.5). A token that stands
   for a macOS system colour pins the system's own Increase Contrast variant in
   `$extensions.cox.highContrast` (A96); the check still holds it to its ratio, moving the glyph on it
   instead.

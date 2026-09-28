@@ -1,6 +1,7 @@
 // `.specular(_:in:)` (DS§3.5, DS§6.1): the diagonal sweep and streak that make glass read as
 // glass, the mockup's `.window:after`. Separate so the sweep's shape lives in one place; it
-// draws nothing when the effective material is Solid, so Reduce Transparency removes it too.
+// draws nothing when the effective appearance has no specular — Solid, so Reduce Transparency
+// removes it too, and Increase Contrast (A89).
 
 import SwiftUI
 
@@ -18,7 +19,7 @@ private struct Specular<S: Shape>: ViewModifier {
 
   func body(content: Content) -> some View {
     content.overlay {
-      if appearance.material != .solid, strength > 0 {
+      if appearance.specular > 0, strength > 0 {
         shape.fill(sweep).allowsHitTesting(false)
       }
     }

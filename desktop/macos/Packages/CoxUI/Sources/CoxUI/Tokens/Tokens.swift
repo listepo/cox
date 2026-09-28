@@ -166,6 +166,7 @@ public enum MaterialToken {
     public static let solidSaturation: Double = 1
     public static let solidSpecular: Double = 0
     public static let readableFloorWindowOpacity: Double = 0.8
+    public static let highContrastGlassKeep: Double = 0.25
 }
 
 // swiftlint:enable line_length

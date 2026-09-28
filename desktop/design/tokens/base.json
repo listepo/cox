@@ -1171,6 +1171,13 @@
         "$value": 0.8
       },
       "$description": "Minimum opacity of any text-bearing panel at every setting"
+    },
+    "highContrast": {
+      "glassKeep": {
+        "$type": "number",
+        "$value": 0.25
+      },
+      "$description": "Increase Contrast (A89, A100): the share of its transparency glass keeps, opacity' = 1 - (1 - opacity) x glassKeep"
     }
   }
 }
