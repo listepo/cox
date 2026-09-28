@@ -23,13 +23,14 @@ pub enum WorkspaceError {
     Worktree(#[from] WorktreeError),
 }
 
-/// One sidebar project: a git root (or a bare cwd outside git).
+/// One sidebar project: a git root (or a bare cwd outside git). The count
+/// is a `u64` so `cox-ffi` exports the type as it is (D11).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ProjectRow {
+pub struct Project {
     pub root: PathBuf,
     /// The root's last path component.
     pub name: String,
-    pub sessions: usize,
+    pub sessions: u64,
     pub cost_usd: f64,
     /// RFC 3339, the newest session's last write.
     pub updated_at: String,
@@ -69,8 +70,8 @@ impl Workspace {
 
     /// Projects of the `limit` most recent sessions, most recently active
     /// first, as the TUI's `/resume` groups them (`find_git_root`).
-    pub fn projects(&self, limit: i64) -> Result<Vec<ProjectRow>, WorkspaceError> {
-        let mut rows: Vec<ProjectRow> = Vec::new();
+    pub fn projects(&self, limit: i64) -> Result<Vec<Project>, WorkspaceError> {
+        let mut rows: Vec<Project> = Vec::new();
         for s in self.store.list_sessions(limit)? {
             let root = project_of(Path::new(&s.cwd));
             match rows.iter_mut().find(|r| r.root == root) {
@@ -78,7 +79,7 @@ impl Workspace {
                     row.sessions += 1;
                     row.cost_usd += s.cost_usd;
                 }
-                None => rows.push(ProjectRow {
+                None => rows.push(Project {
                     name: root.file_name().map_or_else(
                         || root.display().to_string(),
                         |n| n.to_string_lossy().into_owned(),

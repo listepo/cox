@@ -322,7 +322,9 @@ It holds no styling of its own; it takes `MainScreenState` and reports `MainScre
 `SettingRow` per setting (LabeledToggle, LabeledSlider, CoxSegmented or SettingField). It takes
 `SettingsScreenState` and reports `SettingsScreenIntent`; `CoxModel`'s `SettingsStore.tables(in:)` holds
 the titles, details and controls the app copies into that state. The mockup's coloured page tiles need
-colour tokens that do not exist yet, so pages show the plain symbol.
+colour tokens that do not exist yet, so pages show the plain symbol. The MCP page opens with a
+`Logins` `SettingsGroupBox`: per server a `TitledSetting` with its login line and a small
+`CoxButtonStyle` Log in (primary) or Log out (secondary) button, from `SettingsStore.logins`.
 
 ## 7. Data shown in the token meter
 

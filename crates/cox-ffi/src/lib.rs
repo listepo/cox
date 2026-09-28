@@ -8,8 +8,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
+use cox_app::WorkspaceError;
 use cox_app::app::{App as Owner, AppError as OwnerError};
-use cox_app::{Activity, Holder, InboxItem, SearchHit, SessionEntry, SettingsView, WorkspaceError};
+use cox_app::{Activity, Holder, InboxItem, Project, SearchHit, SessionEntry, SettingsView};
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::WorktreeInfo;
 use tokio::runtime::Runtime;
@@ -21,7 +22,7 @@ pub mod types;
 
 pub use host::AppHost;
 pub use session::SessionHandle;
-pub use types::{OpenRequest, Project};
+pub use types::OpenRequest;
 
 uniffi::setup_scaffolding!();
 
@@ -50,7 +51,7 @@ impl From<OwnerError> for AppError {
             OwnerError::Busy { id, holder } => Self::Busy { id, holder },
             OwnerError::Intent(_) => Self::Intent { message },
             OwnerError::Workspace(_) => Self::Workspace { message },
-            OwnerError::Settings(_) => Self::Settings { message },
+            OwnerError::Settings(_) | OwnerError::McpLogin(_) => Self::Settings { message },
             _ => Self::Session { message },
         }
     }
@@ -116,25 +117,14 @@ impl App {
     }
 
     pub fn projects(&self, limit: u32) -> Result<Vec<Project>, AppError> {
-        let rows = self.owner.workspace().projects(i64::from(limit))?;
-        Ok(rows
-            .into_iter()
-            .map(|row| Project {
-                root: row.root,
-                name: row.name,
-                sessions: u64::try_from(row.sessions).unwrap_or(u64::MAX),
-                cost_usd: row.cost_usd,
-                updated_at: row.updated_at,
-            })
-            .collect())
+        Ok(self.owner.workspace().projects(i64::from(limit))?)
     }
 
     pub fn sessions(&self, project: String, limit: u32) -> Result<Vec<SessionEntry>, AppError> {
-        let project = PathBuf::from(project);
         Ok(self
             .owner
             .workspace()
-            .sessions(&project, i64::from(limit))?)
+            .sessions(Path::new(&project), i64::from(limit))?)
     }
 
     pub fn search(&self, query: String, limit: u32) -> Result<Vec<SearchHit>, AppError> {
@@ -166,18 +156,32 @@ impl App {
     }
 
     /// The Settings screen for a session in `cwd` (DT§5.7).
-    pub fn settings(&self, cwd: String) -> Result<SettingsView, AppError> {
-        Ok(self.owner.settings(Path::new(&cwd))?)
+    pub async fn settings(&self, cwd: String) -> Result<SettingsView, AppError> {
+        let owner = Arc::clone(&self.owner);
+        Ok(on_runtime(async move { owner.settings(Path::new(&cwd)).await }).await??)
     }
 
     /// Sets `key` to the JSON `value` in the user file; the new view.
-    pub fn set_setting(
+    pub async fn set_setting(
         &self,
         cwd: String,
         key: String,
         value: String,
     ) -> Result<SettingsView, AppError> {
-        Ok(self.owner.set_setting(Path::new(&cwd), &key, &value)?)
+        let owner = Arc::clone(&self.owner);
+        Ok(
+            on_runtime(async move { owner.set_setting(Path::new(&cwd), &key, &value).await })
+                .await??,
+        )
+    }
+
+    /// Logs in to (`login`) or out of the MCP server `name` (T37.30.3).
+    pub async fn mcp_login(&self, cwd: String, name: String, login: bool) -> Result<(), AppError> {
+        let owner = Arc::clone(&self.owner);
+        Ok(
+            on_runtime(async move { owner.mcp_login(Path::new(&cwd), &name, login).await })
+                .await??,
+        )
     }
 
     pub async fn open(&self, request: OpenRequest) -> Result<Arc<SessionHandle>, AppError> {

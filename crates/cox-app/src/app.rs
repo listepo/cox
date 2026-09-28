@@ -16,6 +16,7 @@ use cox_session::SessionError;
 use cox_store::lock::Holder;
 
 use crate::live::LiveSession;
+use crate::mcp_login::{LoginError, McpAuth};
 use crate::{Activity, Inbox, InboxItem, IntentError, SettingsError, SettingsView};
 use crate::{Workspace, WorkspaceError};
 
@@ -52,6 +53,8 @@ pub enum AppError {
     Workspace(#[from] WorkspaceError),
     #[error(transparent)]
     Settings(#[from] SettingsError),
+    #[error(transparent)]
+    McpLogin(#[from] LoginError),
     #[error("the session's events were already taken")]
     EventsTaken,
 }
@@ -86,11 +89,22 @@ pub struct App {
     pub(crate) host: Arc<dyn Host>,
     inbox: Mutex<Inbox>,
     workspace: Workspace,
+    mcp: McpAuth,
 }
 
 impl App {
     /// `home` is `COX_HOME`; `None` means `~/.cox`.
     pub fn new(home: Option<PathBuf>, host: Arc<dyn Host>) -> Result<Arc<Self>, AppError> {
+        Self::with_mcp(home, host, McpAuth::default())
+    }
+
+    /// [`App::new`] with MCP tokens in `mcp`'s store and its login flow; a
+    /// test passes `cox_mcp::auth::Memory` and a scripted callback (A49).
+    pub fn with_mcp(
+        home: Option<PathBuf>,
+        host: Arc<dyn Host>,
+        mcp: McpAuth,
+    ) -> Result<Arc<Self>, AppError> {
         let home = home.unwrap_or_else(cox_config::load::cox_home);
         let workspace = Workspace::open(&home, Arc::new(cox_tools::git::GitWorktrees))?;
         Ok(Arc::new(Self {
@@ -98,6 +112,7 @@ impl App {
             host,
             inbox: Mutex::default(),
             workspace,
+            mcp,
         }))
     }
 
@@ -139,14 +154,35 @@ impl App {
         LiveSession::open(Arc::clone(self), cwd, resume, theme).await
     }
 
-    /// The Settings screen for a session in `cwd` (DT§5.7).
-    pub fn settings(&self, cwd: &Path) -> Result<SettingsView, AppError> {
-        Ok(crate::settings::view(&self.user_config(), cwd)?)
+    /// The Settings screen for a session in `cwd` (DT§5.7), with each MCP
+    /// server's login read from the token store.
+    pub async fn settings(&self, cwd: &Path) -> Result<SettingsView, AppError> {
+        let user = self.user_config();
+        let loaded = crate::settings::load(&user, cwd)?;
+        let mut view = crate::settings::view_of(&loaded, &user, cwd)?;
+        view.mcp = crate::mcp_login::servers(&loaded.config, cwd, &*self.mcp.secrets).await;
+        Ok(view)
     }
 
     /// Sets `key` to `json` in this home's `config.toml`; the new view.
-    pub fn set_setting(&self, cwd: &Path, key: &str, json: &str) -> Result<SettingsView, AppError> {
-        Ok(crate::settings::set(&self.user_config(), cwd, key, json)?)
+    pub async fn set_setting(
+        &self,
+        cwd: &Path,
+        key: &str,
+        json: &str,
+    ) -> Result<SettingsView, AppError> {
+        crate::settings::set(&self.user_config(), cwd, key, json)?;
+        self.settings(cwd).await
+    }
+
+    /// Logs in to (`log_in`) or out of the MCP server `name` (T37.30.3); a
+    /// login's page opens through [`Host::open_url`] and waits up to
+    /// `cox_mcp::auth::LOGIN_TIMEOUT` for the browser to come back.
+    pub async fn mcp_login(&self, cwd: &Path, name: &str, log_in: bool) -> Result<(), AppError> {
+        let loaded = crate::settings::load(&self.user_config(), cwd)?;
+        let open = |url: &str| self.host.open_url(url);
+        crate::mcp_login::set_login(&loaded.config, cwd, name, log_in, &self.mcp, &open).await?;
+        Ok(())
     }
 
     /// This home's `config.toml`, what sessions and Settings both read.

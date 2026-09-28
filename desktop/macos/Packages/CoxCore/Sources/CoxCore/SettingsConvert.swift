@@ -9,7 +9,25 @@ extension CoxClient.SettingsView {
   init(_ view: CoxFFIBindings.SettingsView) {
     self.init(
       settings: view.settings.map { CoxClient.Setting($0) }, userFile: view.userFile,
-      projectFile: view.projectFile)
+      projectFile: view.projectFile, mcp: view.mcp.map { CoxClient.McpServer($0) })
+  }
+}
+
+extension CoxClient.McpServer {
+  init(_ server: CoxFFIBindings.McpServer) {
+    self.init(name: server.name, source: server.source, login: .init(server.login))
+  }
+}
+
+extension CoxClient.McpLogin {
+  init(_ login: CoxFFIBindings.McpLogin) {
+    switch login {
+    case .stdio: self = .stdio
+    case .loggedOut: self = .loggedOut
+    case .loggedIn(let expires): self = .loggedIn(expires: expires)
+    case .expired: self = .expired
+    case .unreadable(let error): self = .unreadable(error: error)
+    }
   }
 }
 

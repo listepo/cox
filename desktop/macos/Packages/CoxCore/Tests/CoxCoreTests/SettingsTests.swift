@@ -1,6 +1,7 @@
 // Settings through the real Rust core (T37.30): a scratch home, an edit that
-// lands in its `config.toml` and comes back with the `user` layer. The host
-// has no secrets, so nothing reaches the Keychain (A49).
+// lands in its `config.toml` and comes back with the `user` layer, and an MCP
+// server's login (T37.30.3). The host has no secrets and `COX_KEYRING=off`
+// keeps Rust's MCP token reads away from the Keychain (A49).
 
 import CoxClient
 import CoxFFIBindings
@@ -15,10 +16,17 @@ final class SilentHost: AppHost {
   func secret(section: String) -> String? { nil }
 }
 
-@Test func anEditRoundTripsThroughRustIntoTheUserLayer() async throws {
+/// A scratch home and a client over it. Settings reads each HTTP MCP server's
+/// token, so the keyring is switched off first, as cargo does for Rust tests.
+func scratch() throws -> (URL, LiveCoreClient) {
+  setenv("COX_KEYRING", "off", 1)
   let home = FileManager.default.temporaryDirectory.appending(path: "cox-settings-\(UUID())")
+  return (home, try LiveCoreClient(home: home.path(), host: SilentHost()))
+}
+
+@Test func anEditRoundTripsThroughRustIntoTheUserLayer() async throws {
+  let (home, client) = try scratch()
   defer { try? FileManager.default.removeItem(at: home) }
-  let client = try LiveCoreClient(home: home.path(), host: SilentHost())
   let key = "desktop.appearance.material"
 
   let before = try await client.settings(cwd: home.path())
@@ -33,11 +41,26 @@ final class SilentHost: AppHost {
 }
 
 @Test func aValueTheLoaderRejectsIsASettingsError() async throws {
-  let home = FileManager.default.temporaryDirectory.appending(path: "cox-settings-\(UUID())")
+  let (home, client) = try scratch()
   defer { try? FileManager.default.removeItem(at: home) }
-  let client = try LiveCoreClient(home: home.path(), host: SilentHost())
   await #expect {
     try await client.setSetting(cwd: home.path(), key: "desktop.appearance.opacity", json: "1.5")
+  } throws: { error in
+    if case AppError.Settings = error { true } else { false }
+  }
+}
+
+@Test func aStdioServerComesThroughWithNoLoginToRun() async throws {
+  let (home, client) = try scratch()
+  defer { try? FileManager.default.removeItem(at: home) }
+  try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+  try Data("[mcp.servers.cox-local]\ncommand = \"echo\"\n".utf8)
+    .write(to: home.appending(path: "config.toml"))
+
+  let view = try await client.settings(cwd: home.path())
+  #expect(view.mcp.first { $0.name == "cox-local" }?.login == .stdio)
+  await #expect {
+    try await client.mcpLogin(cwd: home.path(), server: "cox-local", login: true)
   } throws: { error in
     if case AppError.Settings = error { true } else { false }
   }

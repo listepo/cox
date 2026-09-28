@@ -11,6 +11,7 @@ pub mod controller;
 pub mod inbox;
 pub mod intent;
 pub mod live;
+pub mod mcp_login;
 pub mod patch;
 pub mod settings;
 pub mod summary;
@@ -22,12 +23,13 @@ pub use complete::{Completer, Completion};
 pub use controller::Controller;
 pub use inbox::{Activity, Inbox, InboxItem, Need};
 pub use intent::{Dispatch, Intent, IntentError, dispatch};
+pub use mcp_login::{McpLogin, McpServer};
 pub use patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
 pub use settings::{Layer, Setting, SettingKind, SettingsError, SettingsView};
 pub use summary::Icon;
 pub use timeline::Timeline;
 pub use usage::{Meter, Tally, TurnUsage, UsageView};
-pub use workspace::{ProjectRow, SearchHit, SessionEntry, Workspace, WorkspaceError};
+pub use workspace::{Project, SearchHit, SessionEntry, Workspace, WorkspaceError};
 
 // What the exported types carry, named here so `cox-ffi` depends on no
 // other workspace crate (T37.39, DT§4.2).

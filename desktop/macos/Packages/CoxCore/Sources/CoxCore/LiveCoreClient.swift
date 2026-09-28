@@ -48,10 +48,14 @@ public typealias ClientSettings = CoxClient.SettingsView
 
 extension LiveCoreClient: SettingsClient {
   public func settings(cwd: String) async throws -> ClientSettings {
-    ClientSettings(try app.settings(cwd: cwd))
+    ClientSettings(try await app.settings(cwd: cwd))
   }
 
   public func setSetting(cwd: String, key: String, json: String) async throws -> ClientSettings {
-    ClientSettings(try app.setSetting(cwd: cwd, key: key, value: json))
+    ClientSettings(try await app.setSetting(cwd: cwd, key: key, value: json))
+  }
+
+  public func mcpLogin(cwd: String, server: String, login: Bool) async throws {
+    try await app.mcpLogin(cwd: cwd, name: server, login: login)
   }
 }
