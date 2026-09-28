@@ -89,14 +89,14 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T53.7 | todo | P3 | 2 | 0% | |
 | T53.8 | todo | P3 | 2 | 0% | |
 | T53.9 | todo | P3 | 1 | 0% | |
-| T54.1 | todo | P2 | 2 | 0% | |
-| T54.2 | todo | P2 | 3 | 0% | |
-| T54.3 | todo | P2 | 3 | 0% | |
-| T54.4 | todo | P2 | 2 | 0% | |
-| T54.5 | todo | P2 | 3 | 0% | |
-| T54.6 | todo | P2 | 4 | 0% | |
-| T54.7 | todo | P2 | 3 | 0% | |
-| T55.1 | todo | P3 | 2 | 0% | |
+| T54.1 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T54.2 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T54.3 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T54.4 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T54.5 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T54.6 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
+| T54.7 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T55.1 | in progress | P3 | 2 | 0% | Claude Code / sonnet-5 |
 | T56.1 | todo | P3 | 2 | 0% | |
 | T56.2 | todo | P3 | 3 | 0% | |
 | T56.3 | todo | P3 | 3 | 0% | |
