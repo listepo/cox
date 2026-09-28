@@ -73,13 +73,17 @@ public struct TranscriptView<Approval: View>: NSViewRepresentable {
 public final class TranscriptCoordinator {
   let appearance = SharedAppearance()
   private weak var store: SessionStore?
+  private var tail: TailFollow?
 
   /// Splices each batch the store applies into `text`, after the store, so a block `current`
-  /// returns is as the batch left it.
+  /// returns is as the batch left it, keeping the view at the end while the reader is there
+  /// (`TailFollow`).
   func follow(_ store: SessionStore, into text: TranscriptTextView) {
     self.store = store
+    let tail = TailFollow(text)
+    self.tail = tail
     store.didApply = { [weak text, weak store] patches in
-      text?.apply(patches) { store?.blocks[$0] }
+      tail.around { text?.apply(patches) { store?.blocks[$0] } }
     }
   }
 
