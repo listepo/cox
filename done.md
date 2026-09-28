@@ -4660,3 +4660,39 @@ Not done:
 - Per-level heading sizes (DT§5.9's 17/15/13 pt) need two new tokens.
 - Hiding the markers needs `StyledDoc` to send depth and marker apart from the text.
 - Both are creator questions, recorded in `ideas.md`.
+
+#### T37.27 Approvals, questions, inbox, notifications with actions, Dock badge
+
+Depends: T37.23, T37.4 · Size: split at claim · Files: `…/Organisms/ApprovalCard.swift`, `desktop/macos/Packages/CoxPlatform/…`
+Goal: DT§5 approvals and questions in the transcript and as actionable notifications; the inbox and Dock badge count what needs you.
+Check: a fixture with a pending approval shows the card, the notification and badge 1; approving from the notification resumes the turn.
+Status: done 2026-09-28
+Result: four commits.
+- T37.27.1: CoxUI `ApprovalCard` (Allow, Allow for session, Deny, a risk chip, a decided row) and `QuestionCard` (options or a typed answer).
+  - CoxTranscript `DecisionCard` maps a block to the card and sends `.approve` or `.answer`.
+  - `TranscriptView(store:crossBlockSelection:send:)` fills the slot.
+- T37.27.2: the recorder writes `notes {batch, item, badge}`, and a new fixture `approve-write.json` has one approval with badge 1.
+  - CoxClient gets `InboxItem`/`Need` → `HostNote`.
+  - `FixtureCoreClient(host:waitsForYou:)` notifies the host and holds the turn until the card is answered.
+- T37.27.3: cox-app's `Host` gains `badge(u32)`, called when the count falls. It is forwarded through `AppHost` → `HostBridge` → `MacHost`.
+- T37.27.4: CoxPlatform `NotificationActions` defines the categories (Allow and Deny; Answer as typed text).
+  - `content(for:)` builds the notification, and `route(action:userInfo:text:)` turns a response into a `NotificationRoute`.
+  - `NotificationResponder` is the delegate the app installs.
+  - `Decision.deniedByUser` is shared with `DecisionCard`.
+- Design doc §4.4 and §5.6 are updated.
+Deviations:
+- No Edit… button and no grant preview, because the approval block carries neither (T37.27.6).
+- Holding the turn in the fixture is opt-in (`waitsForYou`).
+- The `Host` trait change reaches every implementor.
+Check:
+- cox-ffi `an_approval_is_noted_with_badge_one_and_allowing_it_resumes_the_turn`.
+- `nextest -p cox-app -p cox-ffi`: 46/46.
+- CoxModel `aRecordedApprovalIsNotedWithBadgeOneAndApprovingResumesTheTurn` fails without `waitsForYou`.
+- CoxPlatform 13, including `allowingFromTheNotificationResumesTheRecordedTurn`.
+- CoxCore 7, against a rebuilt XCFramework.
+- CoxUI: 28 card snapshots. CoxTranscript: `DecisionCard` 6.
+- swiftlint and swift-format are clean.
+- After merging into `p37-desktop`: T37.30.3's test hosts gained `badge`, and `DecisionCard`'s snapshots were re-recorded (the user turn above them is T37.23.4's bubble). `nextest -p cox-app -p cox-ffi` 57/57; CoxModel 32, CoxPlatform 13, CoxTranscript 21, CoxUI 128.
+Not done:
+- Installing `NotificationResponder` and `HostBridge(MacHost())` in the app goes to T37.22.3, and notifications there post only when the session is not visible.
+- Remaining parts are T37.27.5–T37.27.7.

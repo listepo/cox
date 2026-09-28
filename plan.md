@@ -37,7 +37,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.24.7 | todo | P2 | 3 | 0% | |
 | T37.24.8 | todo | P2 | 3 | 0% | |
 | T37.24.9 | todo | P3 | 2 | 0% | |
-| T37.27 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.27.5 | todo | P1 | 2 | 0% | |
+| T37.27.6 | todo | P2 | 3 | 0% | |
+| T37.27.7 | todo | P2 | 2 | 0% | |
 | T37.28 | todo | P1 | 4 | 0% | |
 | T37.29.1 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.29.2 | todo | P2 | 3 | 0% | |
@@ -2817,11 +2819,23 @@ Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxUI/…/Composer.s
 Goal: completion uses the token at the caret, not the end of the draft, and `ComposerStore.failure` shows as a `NoticeRow` above the composer.
 Check: a UI test completes mid-text; a snapshot with a failure.
 
-#### T37.27 Approvals, questions, inbox, notifications with actions, Dock badge
+#### T37.27.5 Pinned approval bar above the composer
 
-Depends: T37.23, T37.4 · Size: split at claim · Files: `…/Organisms/ApprovalCard.swift`, `desktop/macos/Packages/CoxPlatform/…`
-Goal: DT§5 approvals and questions in the transcript and as actionable notifications; the inbox and Dock badge count what needs you.
-Check: a fixture with a pending approval shows the card, the notification and badge 1; approving from the notification resumes the turn.
+Depends: — · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/…`, `desktop/macos/Packages/CoxTranscript/…/SessionComposer.swift`
+Goal: a pending approval or question is pinned above the composer (T37.24), with ⌘↩ Allow and ⌘⌫ Deny, while its card stays in the transcript.
+Check: a snapshot with a pending approval shows the bar; the shortcut sends `.approve`.
+
+#### T37.27.6 Approval Edit… and the grant preview
+
+Depends: — · Size: ~150 · Files: `crates/cox-app/src/timeline.rs`, `desktop/macos/Packages/CoxUI/…/ApprovalCard.swift`, `desktop/macos/Packages/CoxTranscript/…/DecisionCard.swift`
+Goal: the approval block carries the call input and what "Allow for session" would grant (`grants_for`); the card shows the grant and Edit… edits the input into `Decision.edit`.
+Check: a cox-app test that the block carries both; a UI test that an edit sends the edited JSON; a snapshot showing the grant.
+
+#### T37.27.7 "Needs you" inbox store for the sidebar
+
+Depends: — · Size: ~100 · Files: `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxUI/…/Sidebar.swift`
+Goal: a Swift store over the app inbox gives the sidebar's "Needs you" rows, one per item, with expired rows read-only.
+Check: with the `approve-write` fixture the store lists one row, which clears once the card is answered.
 
 #### T37.28 Review pane and rewind timeline
 

@@ -31,7 +31,9 @@
 - T37.24.7. Composer status chips
 - T37.24.8. Queue from Rust
 - T37.24.9. Caret-aware completion and the failure notice
-- T37.27. Approvals, questions, inbox, notifications with actions, Dock badge
+- T37.27.5. Pinned approval bar above the composer
+- T37.27.6. Approval Edit… and the grant preview
+- T37.27.7. "Needs you" inbox store for the sidebar
 - T37.28. Review pane and rewind timeline
 - T37.29.1. `changes()` from cox-app for the Changes tab
 - T37.29.2. Inspector Plan tab
