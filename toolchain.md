@@ -142,6 +142,13 @@ Programs the project uses and the direct packages from its manifests.
 | pytest | local (dev) | https://github.com/pytest-dev/pytest | Tests for the vendor package |
 | tomlkit | local | https://github.com/sdispater/tomlkit | Comment-preserving TOML edits for `cox-vendor models` (T30.20) |
 
+## SwiftPM (`desktop/macos/Packages/CoxUI`)
+
+| Package | Where | Source | Why here |
+| --- | --- | --- | --- |
+| SwiftLintPlugins | local (build-tool plugin) | https://github.com/SimplyDanny/SwiftLintPlugins | T37.19: runs SwiftLint (same version as `mise.toml`) on every `swift build`/`swift test` of CoxUI with `desktop/macos/.swiftlint.yml` |
+| swift-snapshot-testing | local (test target) | https://github.com/pointfreeco/swift-snapshot-testing | T37.19: image snapshots of the CoxUI Foundations and components (DS§9, A67) |
+
 ## npm (`desktop/design`)
 
 | Package | Where | Source | Why here |
