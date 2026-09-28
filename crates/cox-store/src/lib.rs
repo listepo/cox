@@ -90,6 +90,12 @@ impl Store {
         }
     }
 
+    /// T37.10: the process driving session `id`, when it is another one;
+    /// probes without claiming (`lock::holder`).
+    pub fn session_holder(&self, id: &SessionId) -> Result<Option<lock::Holder>, StoreError> {
+        lock::holder(&self.sessions_dir(), id)
+    }
+
     fn sessions_dir(&self) -> PathBuf {
         self.home.join("sessions")
     }

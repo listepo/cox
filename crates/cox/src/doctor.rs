@@ -849,29 +849,8 @@ fn check_plugins_with(
 #[cfg(feature = "plugins")]
 fn check_plugin_cache(home: &std::path::Path) -> CheckResult {
     let dir = home.join("cache").join("wasmtime");
-    let bytes = dir_size(&dir);
+    let bytes = cox_tools::git::dir_size(&dir);
     CheckResult::ok("plugin cache", format!("{} ({bytes} bytes)", dir.display()))
-}
-
-/// Best-effort recursive byte total; an unreadable entry is skipped rather
-/// than failing the whole check (fail open on extensions).
-#[cfg(feature = "plugins")]
-fn dir_size(dir: &std::path::Path) -> u64 {
-    let mut total = 0u64;
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&d) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            match entry.metadata() {
-                Ok(meta) if meta.is_dir() => stack.push(entry.path()),
-                Ok(meta) => total += meta.len(),
-                _ => {}
-            }
-        }
-    }
-    total
 }
 
 fn parse_iso_date(s: &str) -> Option<(u32, u32, u32)> {

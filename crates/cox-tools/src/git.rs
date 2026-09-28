@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use cox_protocol::errors::WorktreeError;
-use cox_protocol::traits::{Worktree, Worktrees};
+use cox_protocol::traits::{Worktree, WorktreeInfo, Worktrees};
 use tokio::process::Command;
 
 /// Branch and working-tree line counts, as the status line shows them.
@@ -229,6 +229,10 @@ impl Worktrees for GitWorktrees {
     async fn add(&self, from: &Path, name: &str, owner: &str) -> Result<Worktree, WorktreeError> {
         worktree_add(from, name, owner).await
     }
+
+    async fn list(&self, from: &Path) -> Result<Vec<WorktreeInfo>, WorktreeError> {
+        worktree_list(from).await
+    }
 }
 
 /// The main checkout of the repository `dir` is in: the parent of the
@@ -285,40 +289,105 @@ async fn base_ref(main: &Path) -> String {
 
 /// One record of `git worktree list --porcelain`.
 struct Record {
+    /// Canonical when the directory still exists.
+    path: PathBuf,
     branch: Option<String>,
     /// The lock reason; `Some("")` when locked without one.
     locked: Option<String>,
+    prunable: bool,
 }
 
-/// The record for `path`, matched on canonical paths because git prints
-/// the path as it was given at `add` time.
-async fn worktree_record(main: &Path, path: &Path) -> Result<Option<Record>, WorktreeError> {
+/// Every record of `git worktree list --porcelain`, main checkout first.
+async fn worktree_records(main: &Path) -> Result<Vec<Record>, WorktreeError> {
     let out = git_or_err(main, &["worktree", "list", "--porcelain"]).await?;
-    let want = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut records = Vec::new();
     for block in out.split("\n\n") {
         let mut lines = block.lines();
         let Some(head) = lines.next().and_then(|l| l.strip_prefix("worktree ")) else {
             continue;
         };
         let listed = PathBuf::from(head);
-        let listed = std::fs::canonicalize(&listed).unwrap_or(listed);
-        if listed != want {
-            continue;
-        }
         let mut record = Record {
+            path: std::fs::canonicalize(&listed).unwrap_or(listed),
             branch: None,
             locked: None,
+            prunable: false,
         };
         for line in lines {
             if let Some(b) = line.strip_prefix("branch ") {
                 record.branch = Some(b.strip_prefix("refs/heads/").unwrap_or(b).to_string());
             } else if let Some(r) = line.strip_prefix("locked") {
                 record.locked = Some(r.trim().to_string());
+            } else if line.starts_with("prunable") {
+                record.prunable = true;
             }
         }
-        return Ok(Some(record));
+        records.push(record);
     }
-    Ok(None)
+    Ok(records)
+}
+
+/// The record for `path`, matched on canonical paths because git prints
+/// the path as it was given at `add` time.
+async fn worktree_record(main: &Path, path: &Path) -> Result<Option<Record>, WorktreeError> {
+    let want = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    Ok(worktree_records(main)
+        .await?
+        .into_iter()
+        .find(|r| r.path == want))
+}
+
+/// Every checkout of the repository around `from` with its disk size and
+/// whether its branch is merged into the main checkout's `HEAD` (T37.10).
+/// The size walk runs on the blocking pool, never on the async runtime.
+pub async fn worktree_list(from: &Path) -> Result<Vec<WorktreeInfo>, WorktreeError> {
+    let main = main_checkout(from).await?;
+    let merged = git(
+        &main,
+        &["branch", "--merged", "HEAD", "--format=%(refname:short)"],
+    )
+    .await
+    .unwrap_or_default();
+    let merged: Vec<&str> = merged.lines().collect();
+    let mut rows = Vec::new();
+    for r in worktree_records(&main).await? {
+        let dir = r.path.clone();
+        let bytes = tokio::task::spawn_blocking(move || dir_size(&dir))
+            .await
+            .unwrap_or(0);
+        let is_main = r.path == main;
+        rows.push(WorktreeInfo {
+            merged: !is_main && r.branch.as_deref().is_some_and(|b| merged.contains(&b)),
+            main: is_main,
+            path: r.path,
+            branch: r.branch,
+            locked: r.locked,
+            stale: r.prunable,
+            bytes,
+        });
+    }
+    Ok(rows)
+}
+
+/// Best-effort recursive byte total of `dir`; an unreadable entry is
+/// skipped rather than failing the whole count, and symlinks are not
+/// followed. Blocking: async callers run it on the blocking pool.
+pub fn dir_size(dir: &Path) -> u64 {
+    let mut total = 0u64;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            match entry.metadata() {
+                Ok(meta) if meta.is_dir() => stack.push(entry.path()),
+                Ok(meta) => total += meta.len(),
+                _ => {}
+            }
+        }
+    }
+    total
 }
 
 /// `YYYY-MM-DD` of today in UTC, for the lock reason; the civil-date
@@ -472,6 +541,28 @@ mod tests {
     /// A worktree is created once under `<parent>/_worktrees/`, on its own
     /// lower-case branch, locked for its cox owner; asking again returns
     /// the same one, and another owner's lock is refused.
+    #[tokio::test]
+    async fn worktree_list_reports_size_merge_and_lock() {
+        let Some((_dir, main)) = nested().await else {
+            return;
+        };
+        let wt = worktree_add(&main, "t7", "cox / s1").await.expect("add");
+        let rows = worktree_list(&wt.path).await.expect("list");
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        assert!(rows[0].main && rows[0].path == main && !rows[0].merged);
+        let row = &rows[1];
+        assert_eq!(row.path, wt.path);
+        assert_eq!(row.branch.as_deref(), Some("t7"));
+        assert!(row.merged, "a fresh branch has nothing unmerged");
+        assert!(!row.stale);
+        assert!(
+            row.locked
+                .as_deref()
+                .is_some_and(|r| r.starts_with("cox / s1"))
+        );
+        assert!(row.bytes >= 8, "a.txt is on disk: {}", row.bytes);
+    }
+
     #[tokio::test]
     async fn worktree_add_is_idempotent() {
         let Some((_dir, main)) = nested().await else {

@@ -105,6 +105,33 @@ pub fn claim(
     }
 }
 
+/// Who drives session `id` from another process, without claiming it
+/// (T37.10: the desktop's "busy elsewhere" row). A shared probe, released
+/// at once, so it neither writes the holder file nor keeps a lock; a
+/// session this process holds is not "elsewhere".
+pub fn holder(sessions: &Path, id: &SessionId) -> Result<Option<Holder>, StoreError> {
+    let path = sessions.join(format!("{id}.lock"));
+    let held = HELD.lock().unwrap_or_else(|poison| poison.into_inner());
+    if held
+        .iter()
+        .any(|(p, weak)| *p == path && weak.strong_count() > 0)
+    {
+        return Ok(None);
+    }
+    let Ok(mut file) = File::open(&path) else {
+        return Ok(None);
+    };
+    match file.try_lock_shared() {
+        Ok(()) => Ok(None),
+        Err(TryLockError::WouldBlock) => {
+            let mut text = String::new();
+            let _ = file.read_to_string(&mut text);
+            Ok(Some(serde_json::from_str(&text).unwrap_or_default()))
+        }
+        Err(TryLockError::Error(_)) => Err(StoreError::Io),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! The holder is a second process: this test binary re-executed to run
@@ -183,6 +210,26 @@ mod tests {
         assert!(dir.path().join("ready").exists(), "the child held it first");
         let lock = claim(dir.path(), &id, "tui").expect("claim");
         assert!(lock.is_ok(), "the kernel dropped the exited child's lock");
+    }
+
+    #[test]
+    fn holder_names_another_process_without_claiming() {
+        let dir = tempfile::tempdir().expect("dir");
+        let id = SessionId::new();
+        assert_eq!(holder(dir.path(), &id).expect("probe"), None, "no file yet");
+        let mut child = spawn_holder(dir.path(), &id);
+        wait_for("child claimed", || dir.path().join("ready").exists());
+        let busy = holder(dir.path(), &id).expect("probe").expect("busy");
+        assert_eq!(busy.pid, child.id());
+        std::fs::write(dir.path().join("release"), "").expect("release");
+        assert!(child.wait().expect("child").success());
+        assert_eq!(holder(dir.path(), &id).expect("probe"), None, "released");
+        let _mine = claim(dir.path(), &id, "app").expect("claim").expect("free");
+        assert_eq!(
+            holder(dir.path(), &id).expect("probe"),
+            None,
+            "ours is not elsewhere"
+        );
     }
 
     #[test]
