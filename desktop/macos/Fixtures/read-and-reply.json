@@ -16,21 +16,13 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KXQVA79VJ3KRVWZ1GHSDZ8",
+          "id": "turn:01M3KZ6CAMCRAA695RRXGJ6PEW",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
             "model": "claude-sonnet-5",
             "tier": "code",
-            "usage": {
-              "input_tokens": 3709,
-              "output_tokens": 10,
-              "cache_read_tokens": 0,
-              "cache_write_tokens": 0,
-              "estimated": true,
-              "cost_usd": 0.0,
-              "latency_ms": 0
-            },
+            "usage": null,
             "stop": null
           }
         },
@@ -39,7 +31,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KXQVA7PHWTMF12H3DMHA42",
+          "id": "item:01M3KZ6CAM2BSWAEV4GJD99XEZ",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -47,12 +39,134 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3KXQVA79VJ3KRVWZ1GHSDZ8"
+        "after": "turn:01M3KZ6CAMCRAA695RRXGJ6PEW"
       },
+      {
+        "op": "usage",
+        "usage": {
+          "session": {
+            "sent": 0,
+            "received": 0,
+            "cache_read": 0,
+            "cache_write": 0,
+            "uncached": 0,
+            "cost_usd": 0.0,
+            "calls": 0,
+            "estimated": false
+          },
+          "turn": {
+            "turn": "01M3KZ6CAMCRAA695RRXGJ6PEW",
+            "tally": {
+              "sent": 0,
+              "received": 0,
+              "cache_read": 0,
+              "cache_write": 0,
+              "uncached": 0,
+              "cost_usd": 0.0,
+              "calls": 0,
+              "estimated": false
+            },
+            "thinking_tokens": 0,
+            "ttft_ms": null,
+            "tok_per_s": null,
+            "exact": false,
+            "sparkline": [],
+            "done": false
+          },
+          "context_tokens": 0,
+          "text": {
+            "sent": "0",
+            "received": "0",
+            "rate": "",
+            "spoken": "0 tokens sent, 0 received",
+            "heading": "This turn · 0 requests",
+            "phase": "streaming",
+            "rate_unit": "tok/s now",
+            "rate_detail": "",
+            "rows": [
+              {
+                "label": "↑ Sent",
+                "turn": "0",
+                "session": "0",
+                "detail": false
+              },
+              {
+                "label": "cache read",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "cache write",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "uncached",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "↓ Received",
+                "turn": "0",
+                "session": "0",
+                "detail": false
+              },
+              {
+                "label": "of it thinking",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "Cost",
+                "turn": "$0.00",
+                "session": "$0.00",
+                "detail": false
+              }
+            ],
+            "context": "Context · 0",
+            "context_share": "0.6% of 1M",
+            "context_parts": [
+              {
+                "kind": "system",
+                "label": "System",
+                "tokens": "174",
+                "share": 0.000174
+              },
+              {
+                "kind": "tools",
+                "label": "Tools",
+                "tokens": "5.5k",
+                "share": 0.00555
+              },
+              {
+                "kind": "instructions",
+                "label": "Instructions",
+                "tokens": "26",
+                "share": 0.000026
+              },
+              {
+                "kind": "history",
+                "label": "History",
+                "tokens": "21",
+                "share": 0.000021
+              }
+            ],
+            "context_free": "994.2k",
+            "cache_hit": "",
+            "footnote": "Counts from the provider's usage, one ledger row per request"
+          }
+        }
+      }
+    ],
+    [
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KXQVAAAG7CHB1R13D1H1ZF",
+          "id": "item:01M3KZ6CBK5F1WRVZDYD82DSQ7",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -76,12 +190,35 @@
             }
           }
         },
-        "after": "item:01M3KXQVA7PHWTMF12H3DMHA42"
+        "after": "item:01M3KZ6CAM2BSWAEV4GJD99XEZ"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3KXQVABSQQABDW41402RJYE",
+          "id": "turn:01M3KZ6CAMCRAA695RRXGJ6PEW",
+          "turn": 1,
+          "kind": {
+            "type": "turn_meta",
+            "model": "claude-sonnet-5",
+            "tier": "code",
+            "usage": {
+              "input_tokens": 3709,
+              "output_tokens": 10,
+              "cache_read_tokens": 0,
+              "cache_write_tokens": 0,
+              "estimated": true,
+              "cost_usd": 0.0,
+              "latency_ms": 0
+            },
+            "stop": null
+          }
+        },
+        "after": null
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "call:01M3KZ6CBK1SPC27492QD8HKEV",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -92,14 +229,14 @@
             "state": "done",
             "tail": "1\thello\n\n[1 lines total]",
             "archive": {
-              "id": "01M3KXQVAD61F3SPEV02RP86SV",
+              "id": "01M3KZ6CBY1VTCEQ4XMVN4SVBW",
               "bytes": 24
             },
             "diff": null,
-            "duration_ms": 1
+            "duration_ms": 5
           }
         },
-        "after": "item:01M3KXQVAAAG7CHB1R13D1H1ZF"
+        "after": "item:01M3KZ6CBK5F1WRVZDYD82DSQ7"
       },
       {
         "op": "usage",
@@ -115,7 +252,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KXQVA79VJ3KRVWZ1GHSDZ8",
+            "turn": "01M3KZ6CAMCRAA695RRXGJ6PEW",
             "tally": {
               "sent": 3709,
               "received": 10,
@@ -128,7 +265,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 59055.23436069756,
+            "tok_per_s": 51557.553697192176,
             "exact": true,
             "sparkline": [],
             "done": false
@@ -137,12 +274,12 @@
           "text": {
             "sent": "3.7k",
             "received": "10",
-            "rate": "59055",
-            "spoken": "3.7 thousand tokens sent, 10 received, 59055 tokens per second",
+            "rate": "51558",
+            "spoken": "3.7 thousand tokens sent, 10 received, 51558 tokens per second",
             "heading": "This turn · 1 request",
             "phase": "streaming",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 59055 tok/s · first token 0 ms · peak 59055 tok/s",
+            "rate_detail": "avg 51558 tok/s · first token 0 ms · peak 51558 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -215,6 +352,8 @@
                 "share": 0.00009570386192754614
               }
             ],
+            "context_free": "996.3k",
+            "cache_hit": "0% this turn",
             "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
           }
         }
@@ -224,7 +363,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KXQVAFPD3GA374B6B8VW7G",
+          "id": "item:01M3KZ6CC1TWM1PYXAY38SRFST",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -435,12 +574,12 @@
             }
           }
         },
-        "after": "call:01M3KXQVABSQQABDW41402RJYE"
+        "after": "call:01M3KZ6CBK1SPC27492QD8HKEV"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KXQVA79VJ3KRVWZ1GHSDZ8",
+          "id": "turn:01M3KZ6CAMCRAA695RRXGJ6PEW",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -476,7 +615,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KXQVA79VJ3KRVWZ1GHSDZ8",
+            "turn": "01M3KZ6CAMCRAA695RRXGJ6PEW",
             "tally": {
               "sent": 7437,
               "received": 35,
@@ -489,7 +628,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 442149.1988256517,
+            "tok_per_s": 342072.136172076,
             "exact": true,
             "sparkline": [],
             "done": true
@@ -498,12 +637,12 @@
           "text": {
             "sent": "7.4k",
             "received": "35",
-            "rate": "442149",
-            "spoken": "7.4 thousand tokens sent, 35 received, 442149 tokens per second",
+            "rate": "342072",
+            "spoken": "7.4 thousand tokens sent, 35 received, 342072 tokens per second",
             "heading": "Last turn · 2 requests",
             "phase": "done",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 154953 tok/s · first token 0 ms · peak 442149 tok/s",
+            "rate_detail": "avg 131066 tok/s · first token 0 ms · peak 342072 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -576,6 +715,8 @@
                 "share": 0.00009619412166780588
               }
             ],
+            "context_free": "996.3k",
+            "cache_hit": "0% this turn",
             "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
           }
         }
@@ -585,7 +726,7 @@
   "notes": [],
   "snapshot": [
     {
-      "id": "turn:01M3KXQVA79VJ3KRVWZ1GHSDZ8",
+      "id": "turn:01M3KZ6CAMCRAA695RRXGJ6PEW",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -606,7 +747,7 @@
       }
     },
     {
-      "id": "item:01M3KXQVA7PHWTMF12H3DMHA42",
+      "id": "item:01M3KZ6CAM2BSWAEV4GJD99XEZ",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -615,7 +756,7 @@
       }
     },
     {
-      "id": "item:01M3KXQVAAAG7CHB1R13D1H1ZF",
+      "id": "item:01M3KZ6CBK5F1WRVZDYD82DSQ7",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -640,7 +781,7 @@
       }
     },
     {
-      "id": "call:01M3KXQVABSQQABDW41402RJYE",
+      "id": "call:01M3KZ6CBK1SPC27492QD8HKEV",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -651,15 +792,15 @@
         "state": "done",
         "tail": "1\thello\n\n[1 lines total]",
         "archive": {
-          "id": "01M3KXQVAD61F3SPEV02RP86SV",
+          "id": "01M3KZ6CBY1VTCEQ4XMVN4SVBW",
           "bytes": 24
         },
         "diff": null,
-        "duration_ms": 1
+        "duration_ms": 5
       }
     },
     {
-      "id": "item:01M3KXQVAFPD3GA374B6B8VW7G",
+      "id": "item:01M3KZ6CC1TWM1PYXAY38SRFST",
       "turn": 1,
       "kind": {
         "type": "assistant",
