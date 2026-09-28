@@ -13,6 +13,9 @@ use cox_app::InboxItem;
 pub trait AppHost: Send + Sync {
     /// A new inbox item arrived; `badge` is the count that blocks a turn.
     fn notify(&self, item: InboxItem, badge: u32);
+    /// The badge fell with no new item: an approval or question was
+    /// answered, or its session closed.
+    fn badge(&self, badge: u32);
     /// An MCP server's login page, or a link the person asked to follow.
     fn open_url(&self, url: String);
     /// The Keychain secret stored for a provider section (`anthropic`,
@@ -26,6 +29,9 @@ pub(crate) struct Bridge(pub Arc<dyn AppHost>);
 impl cox_app::app::Host for Bridge {
     fn notify(&self, item: InboxItem, badge: u32) {
         self.0.notify(item, badge);
+    }
+    fn badge(&self, badge: u32) {
+        self.0.badge(badge);
     }
     fn open_url(&self, url: &str) {
         self.0.open_url(url.to_string());

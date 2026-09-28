@@ -1,5 +1,6 @@
 // The app's host (DT§4.4, T37.30.2): `secret` reads `KeychainSecretStore`,
-// `notify` posts through `UNUserNotificationCenter`, `open` goes through
+// `notify` posts `NotificationActions`' content with its Allow, Deny or
+// Answer actions through `UNUserNotificationCenter`, `open` goes through
 // `NSWorkspace`. Separate from the Keychain store because this is the
 // AppKit side; the store stays usable without it. Only `secret` and the URL
 // check are tested: the notification centre needs an app bundle, and a test
@@ -26,29 +27,22 @@ public struct MacHost: PlatformHost {
       let center = UNUserNotificationCenter.current()
       let allowed = try? await center.requestAuthorization(options: [.alert, .badge, .sound])
       guard allowed == true else { return }
-      let content = UNMutableNotificationContent()
-      content.title = Self.title(note.kind)
-      content.body = note.text
-      content.threadIdentifier = note.session
+      center.setNotificationCategories(NotificationActions.categories)
       let request = UNNotificationRequest(
-        identifier: UUID().uuidString, content: content, trigger: nil)
+        identifier: UUID().uuidString, content: NotificationActions.content(for: note),
+        trigger: nil)
       try? await center.add(request)
       try? await center.setBadgeCount(note.badge)
     }
   }
 
+  public func badge(_ count: Int) {
+    Task { try? await UNUserNotificationCenter.current().setBadgeCount(count) }
+  }
+
   public func open(_ url: String) {
     guard let url = Self.openable(url) else { return }
     Task { @MainActor in _ = NSWorkspace.shared.open(url) }
-  }
-
-  static func title(_ kind: HostNote.Kind) -> String {
-    switch kind {
-    case .approval: "Approval needed"
-    case .question: "Question"
-    case .failed: "Turn failed"
-    case .taskDone(let succeeded): succeeded ? "Task done" : "Task failed"
-    }
   }
 
   /// Web links only: the URL comes from an MCP server or the model, and a

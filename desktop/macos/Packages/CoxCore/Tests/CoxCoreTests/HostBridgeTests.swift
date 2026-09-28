@@ -12,9 +12,11 @@ import Testing
 final class RecordingHost: PlatformHost {
   let notes = Mutex<[HostNote]>([])
   let opened = Mutex<[String]>([])
+  let badges = Mutex<[Int]>([])
 
   func secret(for section: String) -> String? { section == "anthropic" ? "sk-ant" : nil }
   func notify(_ note: HostNote) { notes.withLock { $0.append(note) } }
+  func badge(_ count: Int) { badges.withLock { $0.append(count) } }
   func open(_ url: String) { opened.withLock { $0.append(url) } }
 }
 
@@ -27,17 +29,21 @@ final class RecordingHost: PlatformHost {
 @Test func anInboxItemBecomesANoteForItsSession() {
   let host = RecordingHost()
   let bridge = HostBridge(host)
-  let question = Need.question(callId: "c1", question: "Which branch?", options: [])
+  let question = CoxFFIBindings.Need.question(callId: "c1", question: "Which branch?", options: [])
   bridge.notify(
-    item: InboxItem(session: "s1", source: nil, need: question, expired: false, seq: 1), badge: 2)
-  let done = Need.taskDone(task: "t1", label: "tests", ok: false)
+    item: CoxFFIBindings.InboxItem(
+      session: "s1", source: nil, need: question, expired: false, seq: 1), badge: 2)
+  let done = CoxFFIBindings.Need.taskDone(task: "t1", label: "tests", ok: false)
   bridge.notify(
-    item: InboxItem(session: "s2", source: nil, need: done, expired: false, seq: 2), badge: 0)
+    item: CoxFFIBindings.InboxItem(session: "s2", source: nil, need: done, expired: false, seq: 2),
+    badge: 0)
   bridge.openUrl(url: "https://example.com")
+  bridge.badge(badge: 0)
   #expect(
     host.notes.withLock { $0 } == [
-      HostNote(session: "s1", kind: .question, text: "Which branch?", badge: 2),
+      HostNote(session: "s1", kind: .question, text: "Which branch?", badge: 2, call: "c1"),
       HostNote(session: "s2", kind: .taskDone(succeeded: false), text: "tests", badge: 0),
     ])
   #expect(host.opened.withLock { $0 } == ["https://example.com"])
+  #expect(host.badges.withLock { $0 } == [0])
 }

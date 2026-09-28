@@ -12,7 +12,8 @@ import Testing
 @testable import CoxCore
 
 final class SilentHost: AppHost {
-  func notify(item: InboxItem, badge: UInt32) {}
+  func notify(item: CoxFFIBindings.InboxItem, badge: UInt32) {}
+  func badge(badge: UInt32) {}
   func openUrl(url: String) {}
   func secret(section: String) -> String? { nil }
 }

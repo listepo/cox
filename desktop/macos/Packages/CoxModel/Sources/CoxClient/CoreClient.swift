@@ -44,11 +44,32 @@ public protocol SessionClient: AnyObject, Sendable {
 public struct Fixture: Equatable, Sendable, Decodable {
   /// The batches pulled from a session opened fresh, in order.
   public var batches: [[TimelinePatch]]
+  /// Each inbox item the host was told about, with the batch it came by.
+  public var notes: [Note]
   /// The session's blocks once the last batch was pulled.
   public var snapshot: [Block]
 
-  public init(batches: [[TimelinePatch]], snapshot: [Block]) {
-    (self.batches, self.snapshot) = (batches, snapshot)
+  /// One `AppHost.notify` call of the recording.
+  public struct Note: Equatable, Sendable, Decodable {
+    public var batch: Int
+    public var item: InboxItem
+    public var badge: Int
+
+    public init(batch: Int, item: InboxItem, badge: Int) {
+      (self.batch, self.item, self.badge) = (batch, item, badge)
+    }
+  }
+
+  public init(batches: [[TimelinePatch]], notes: [Note] = [], snapshot: [Block]) {
+    (self.batches, self.notes, self.snapshot) = (batches, notes, snapshot)
+  }
+
+  /// A fixture recorded before notes were (T37.27) has none.
+  public init(from decoder: any Decoder) throws {
+    let keys = try decoder.fields()
+    batches = try keys("batches")
+    notes = try keys.optional("notes") ?? []
+    snapshot = try keys("snapshot")
   }
 
   public init(contentsOf url: URL) throws {
@@ -59,35 +80,53 @@ public struct Fixture: Equatable, Sendable, Decodable {
 public struct FixtureCoreClient: CoreClient {
   public let fixture: Fixture
   public let completions: [Completion]
+  let host: (any PlatformHost)?
+  let waitsForYou: Bool
 
-  public init(fixture: Fixture, completions: [Completion] = []) {
-    self.fixture = fixture
-    self.completions = completions
+  /// `host` is told each recorded note as its batch is pulled. With `waitsForYou`, a batch
+  /// that leaves an approval or question pending holds the next one until it is answered.
+  public init(
+    fixture: Fixture, completions: [Completion] = [], host: (any PlatformHost)? = nil,
+    waitsForYou: Bool = false
+  ) {
+    (self.fixture, self.completions, self.host, self.waitsForYou) =
+      (fixture, completions, host, waitsForYou)
   }
 
   public func open(_ request: OpenSession) async throws -> any SessionClient {
-    FixtureSession(fixture: fixture, completions: completions)
+    FixtureSession(
+      fixture: fixture, completions: completions, host: host, waitsForYou: waitsForYou)
   }
 }
 
 /// Hands out the recorded batches one pull at a time and keeps what was
 /// sent, so a test can check the intents a store emitted. Completes from a
-/// fixed list instead of the Rust completer.
+/// fixed list instead of the Rust completer. Waiting on the person, it plays
+/// the core: the turn resumes when the card is answered.
 public final class FixtureSession: SessionClient {
   public let id = "fixture"
   private let fixture: Fixture
   private let completions: [Completion]
+  private let host: (any PlatformHost)?
+  private let waitsForYou: Bool
   private let state = Mutex(State())
 
   private struct State {
     var next = 0
     var closed = false
     var sent: [Intent] = []
+    /// The calls the last batch left waiting on the person.
+    var waiting: Set<String> = []
+    /// The pull parked until they are answered.
+    var parked: CheckedContinuation<Void, Never>?
   }
 
-  public init(fixture: Fixture, completions: [Completion] = []) {
-    self.fixture = fixture
-    self.completions = completions
+  public init(
+    fixture: Fixture, completions: [Completion] = [], host: (any PlatformHost)? = nil,
+    waitsForYou: Bool = false
+  ) {
+    (self.fixture, self.completions, self.host, self.waitsForYou) =
+      (fixture, completions, host, waitsForYou)
   }
 
   public var sent: [Intent] { state.withLock { $0.sent } }
@@ -96,15 +135,27 @@ public final class FixtureSession: SessionClient {
   public func snapshot() -> [Block] { [] }
 
   public func nextPatches() async -> [TimelinePatch]? {
-    state.withLock { state in
+    await untilAnswered()
+    let pulled: Int? = state.withLock { state in
       guard !state.closed, state.next < fixture.batches.count else { return nil }
       defer { state.next += 1 }
-      return fixture.batches[state.next]
+      if waitsForYou { state.waiting = fixture.batches[state.next].waiting }
+      return state.next
     }
+    guard let pulled else { return nil }
+    for note in fixture.notes where note.batch == pulled {
+      host?.notify(HostNote(note.item, badge: note.badge))
+    }
+    return fixture.batches[pulled]
   }
 
   public func send(_ intent: Intent) async throws -> (any SessionClient)? {
-    state.withLock { $0.sent.append(intent) }
+    let resume = state.withLock { state in
+      state.sent.append(intent)
+      if let call = intent.answers { state.waiting.remove(call) }
+      return state.waiting.isEmpty ? state.parked.take() : nil
+    }
+    resume?.resume()
     return nil
   }
 
@@ -124,5 +175,50 @@ public final class FixtureSession: SessionClient {
     return Array(rows.prefix(Int(limit)))
   }
 
-  public func close() { state.withLock { $0.closed = true } }
+  public func close() {
+    let resume = state.withLock { state in
+      state.closed = true
+      return state.parked.take()
+    }
+    resume?.resume()
+  }
+
+  private func untilAnswered() async {
+    await withCheckedContinuation { (parked: CheckedContinuation<Void, Never>) in
+      let ready = state.withLock { state in
+        guard !state.waiting.isEmpty, !state.closed else { return true }
+        state.parked = parked
+        return false
+      }
+      if ready { parked.resume() }
+    }
+  }
+}
+
+extension [TimelinePatch] {
+  /// The approvals and questions this batch leaves pending.
+  var waiting: Set<String> {
+    var calls: Set<String> = []
+    for case .upsert(let block, _) in self {
+      switch block.kind {
+      case .approval(let call, _, _, _, _, let decision, _):
+        if decision == nil { calls.insert(call) } else { calls.remove(call) }
+      case .question(let call, _, _, let answer):
+        if answer == nil { calls.insert(call) } else { calls.remove(call) }
+      default: break
+      }
+    }
+    return calls
+  }
+}
+
+extension Intent {
+  /// The approval or question this intent answers.
+  var answers: String? {
+    switch self {
+    case .approve(let call, _): call
+    case .answer(let question, _): question
+    default: nil
+    }
+  }
 }

@@ -10,6 +10,9 @@ public protocol PlatformHost: Sendable {
   func secret(for section: String) -> String?
   /// A new inbox item for a notification and the Dock badge.
   func notify(_ note: HostNote)
+  /// The Dock badge fell with no new item: an approval or question was
+  /// answered, or its session closed.
+  func badge(_ count: Int)
   /// An MCP server's login page or a link; the host decides what it opens.
   func open(_ url: String)
 }
@@ -30,8 +33,12 @@ public struct HostNote: Sendable, Equatable {
   public var text: String
   /// Items that block a turn, across all sessions.
   public var badge: Int
+  /// The approval or question a notification action answers; `nil` for news.
+  public var call: String?
 
-  public init(session: String, kind: Kind, text: String, badge: Int) {
-    (self.session, self.kind, self.text, self.badge) = (session, kind, text, badge)
+  public init(session: String, kind: Kind, text: String, badge: Int, call: String? = nil) {
+    (self.session, self.kind, self.text, self.badge, self.call) = (
+      session, kind, text, badge, call
+    )
   }
 }

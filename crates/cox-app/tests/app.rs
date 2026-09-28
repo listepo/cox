@@ -39,11 +39,15 @@ struct MemoryHost {
     secrets: HashMap<String, String>,
     asked: Mutex<Vec<String>>,
     notes: Mutex<Vec<(InboxItem, u32)>>,
+    badges: Mutex<Vec<u32>>,
 }
 
 impl Host for MemoryHost {
     fn notify(&self, item: InboxItem, badge: u32) {
         self.notes.lock().expect("notes").push((item, badge));
+    }
+    fn badge(&self, badge: u32) {
+        self.badges.lock().expect("badges").push(badge);
     }
     fn open_url(&self, _: &str) {}
     fn secret(&self, section: &str) -> Option<String> {
@@ -186,6 +190,11 @@ async fn an_approval_reaches_the_inbox_and_the_host_and_the_intent_answers_it() 
     let written = std::fs::read_to_string(dir.path().join("project/out.txt"));
     assert_eq!(written.ok().as_deref(), Some("approved\n"));
     assert_eq!(app.badge(), 0);
+    assert_eq!(
+        *host.badges.lock().expect("badges"),
+        [0],
+        "the Dock badge falls"
+    );
 }
 
 #[tokio::test]

@@ -1,0 +1,555 @@
+{
+  "batches": [
+    [
+      {
+        "op": "upsert",
+        "block": {
+          "id": "turn:01M3KH4T7124EXYRF7VAEGG357",
+          "turn": 1,
+          "kind": {
+            "type": "turn_meta",
+            "model": "claude-sonnet-5",
+            "tier": "code",
+            "usage": null,
+            "stop": null
+          }
+        },
+        "after": null
+      },
+      {
+        "op": "usage",
+        "usage": {
+          "session": {
+            "sent": 0,
+            "received": 0,
+            "cache_read": 0,
+            "cache_write": 0,
+            "uncached": 0,
+            "cost_usd": 0.0,
+            "calls": 0,
+            "estimated": false
+          },
+          "turn": {
+            "turn": "01M3KH4T7124EXYRF7VAEGG357",
+            "tally": {
+              "sent": 0,
+              "received": 0,
+              "cache_read": 0,
+              "cache_write": 0,
+              "uncached": 0,
+              "cost_usd": 0.0,
+              "calls": 0,
+              "estimated": false
+            },
+            "thinking_tokens": 0,
+            "ttft_ms": null,
+            "tok_per_s": null,
+            "exact": false,
+            "sparkline": [],
+            "done": false
+          },
+          "context_tokens": 0
+        }
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3KH4T71V0M0P9MH2KTQF8S8",
+          "turn": 1,
+          "kind": {
+            "type": "user",
+            "text": "Write a summary",
+            "attachments": []
+          }
+        },
+        "after": "turn:01M3KH4T7124EXYRF7VAEGG357"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3KH4T76P6XAB1HNAD5WC537",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "",
+            "doc": {
+              "blocks": []
+            }
+          }
+        },
+        "after": "item:01M3KH4T71V0M0P9MH2KTQF8S8"
+      }
+    ],
+    [
+      {
+        "op": "upsert",
+        "block": {
+          "id": "turn:01M3KH4T7124EXYRF7VAEGG357",
+          "turn": 1,
+          "kind": {
+            "type": "turn_meta",
+            "model": "claude-sonnet-5",
+            "tier": "code",
+            "usage": {
+              "input_tokens": 3672,
+              "output_tokens": 16,
+              "cache_read_tokens": 0,
+              "cache_write_tokens": 0,
+              "estimated": true,
+              "cost_usd": 0.0,
+              "latency_ms": 0
+            },
+            "stop": null
+          }
+        },
+        "after": null
+      },
+      {
+        "op": "usage",
+        "usage": {
+          "session": {
+            "sent": 3672,
+            "received": 16,
+            "cache_read": 0,
+            "cache_write": 0,
+            "uncached": 3672,
+            "cost_usd": 0.0,
+            "calls": 1,
+            "estimated": true
+          },
+          "turn": {
+            "turn": "01M3KH4T7124EXYRF7VAEGG357",
+            "tally": {
+              "sent": 3672,
+              "received": 16,
+              "cache_read": 0,
+              "cache_write": 0,
+              "uncached": 3672,
+              "cost_usd": 0.0,
+              "calls": 1,
+              "estimated": true
+            },
+            "thinking_tokens": 0,
+            "ttft_ms": 0,
+            "tok_per_s": 67976.63303239511,
+            "exact": true,
+            "sparkline": [],
+            "done": false
+          },
+          "context_tokens": 3672
+        }
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3KH4T76P6XAB1HNAD5WC537",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "Writing the summary.",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    [
+                      {
+                        "text": "Writing the summary."
+                      }
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "item:01M3KH4T71V0M0P9MH2KTQF8S8"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "call:01M3KH4T76F6A9B02JR3D2K4AG",
+          "turn": 1,
+          "kind": {
+            "type": "tool",
+            "tool": "write",
+            "summary": "Writing `summary.md` · 1 line",
+            "icon": "edit",
+            "risk": "write",
+            "state": "running",
+            "tail": "",
+            "archive": null,
+            "diff": null,
+            "duration_ms": 0
+          }
+        },
+        "after": "item:01M3KH4T76P6XAB1HNAD5WC537"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "approval:01M3KH4T76F6A9B02JR3D2K4AG",
+          "turn": 1,
+          "kind": {
+            "type": "approval",
+            "call": "01M3KH4T76F6A9B02JR3D2K4AG",
+            "tool": "write",
+            "summary": "summary.md",
+            "why": {
+              "type": "risk",
+              "risk": "write"
+            },
+            "source": {
+              "session": "01M3KH4SSQP1D1CKP0DV5AWMPD"
+            },
+            "decision": null,
+            "by": null
+          }
+        },
+        "after": "call:01M3KH4T76F6A9B02JR3D2K4AG"
+      }
+    ],
+    [
+      {
+        "op": "upsert",
+        "block": {
+          "id": "approval:01M3KH4T76F6A9B02JR3D2K4AG",
+          "turn": 1,
+          "kind": {
+            "type": "approval",
+            "call": "01M3KH4T76F6A9B02JR3D2K4AG",
+            "tool": "write",
+            "summary": "summary.md",
+            "why": {
+              "type": "risk",
+              "risk": "write"
+            },
+            "source": {
+              "session": "01M3KH4SSQP1D1CKP0DV5AWMPD"
+            },
+            "decision": {
+              "type": "allow"
+            },
+            "by": "user"
+          }
+        },
+        "after": "call:01M3KH4T76F6A9B02JR3D2K4AG"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "checkpoint:12",
+          "turn": 1,
+          "kind": {
+            "type": "checkpoint",
+            "files": [
+              "/project/summary.md"
+            ]
+          }
+        },
+        "after": "approval:01M3KH4T76F6A9B02JR3D2K4AG"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "call:01M3KH4T76F6A9B02JR3D2K4AG",
+          "turn": 1,
+          "kind": {
+            "type": "tool",
+            "tool": "write",
+            "summary": "Wrote `summary.md` · 1 line",
+            "icon": "edit",
+            "risk": "write",
+            "state": "done",
+            "tail": "wrote /project/summary.md (6 bytes)",
+            "archive": {
+              "id": "01M3KH4T7TTHSVMR270BJMFQ81",
+              "bytes": 102
+            },
+            "diff": null,
+            "duration_ms": 2
+          }
+        },
+        "after": "item:01M3KH4T76P6XAB1HNAD5WC537"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3KH4T8GM44NEGZJ3QVVHNSB",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "",
+            "doc": {
+              "blocks": []
+            }
+          }
+        },
+        "after": "checkpoint:12"
+      }
+    ],
+    [
+      {
+        "op": "upsert",
+        "block": {
+          "id": "turn:01M3KH4T7124EXYRF7VAEGG357",
+          "turn": 1,
+          "kind": {
+            "type": "turn_meta",
+            "model": "claude-sonnet-5",
+            "tier": "code",
+            "usage": {
+              "input_tokens": 7390,
+              "output_tokens": 21,
+              "cache_read_tokens": 0,
+              "cache_write_tokens": 0,
+              "estimated": true,
+              "cost_usd": 0.0,
+              "latency_ms": 0
+            },
+            "stop": {
+              "type": "end_turn"
+            }
+          }
+        },
+        "after": null
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3KH4T8GM44NEGZJ3QVVHNSB",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "Wrote `summary.md`.",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    [
+                      {
+                        "text": "Wrote "
+                      },
+                      {
+                        "text": "summary.md",
+                        "token": "accent"
+                      },
+                      {
+                        "text": "."
+                      }
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "checkpoint:12"
+      },
+      {
+        "op": "usage",
+        "usage": {
+          "session": {
+            "sent": 7390,
+            "received": 21,
+            "cache_read": 0,
+            "cache_write": 0,
+            "uncached": 7390,
+            "cost_usd": 0.0,
+            "calls": 2,
+            "estimated": true
+          },
+          "turn": {
+            "turn": "01M3KH4T7124EXYRF7VAEGG357",
+            "tally": {
+              "sent": 7390,
+              "received": 21,
+              "cache_read": 0,
+              "cache_write": 0,
+              "uncached": 7390,
+              "cost_usd": 0.0,
+              "calls": 2,
+              "estimated": true
+            },
+            "thinking_tokens": 0,
+            "ttft_ms": 0,
+            "tok_per_s": 336134.45378151257,
+            "exact": true,
+            "sparkline": [],
+            "done": true
+          },
+          "context_tokens": 3718
+        }
+      }
+    ]
+  ],
+  "notes": [
+    {
+      "batch": 1,
+      "item": {
+        "session": "01M3KH4SSQP1D1CKP0DV5AWMPD",
+        "source": {
+          "session": "01M3KH4SSQP1D1CKP0DV5AWMPD"
+        },
+        "need": {
+          "type": "approval",
+          "call": {
+            "id": "01M3KH4T76F6A9B02JR3D2K4AG",
+            "name": "write",
+            "input": {
+              "content": "hello\n",
+              "path": "summary.md"
+            },
+            "risk": "write",
+            "subject": "summary.md"
+          },
+          "why": {
+            "type": "risk",
+            "risk": "write"
+          }
+        },
+        "expired": false,
+        "seq": 1
+      },
+      "badge": 1
+    }
+  ],
+  "snapshot": [
+    {
+      "id": "turn:01M3KH4T7124EXYRF7VAEGG357",
+      "turn": 1,
+      "kind": {
+        "type": "turn_meta",
+        "model": "claude-sonnet-5",
+        "tier": "code",
+        "usage": {
+          "input_tokens": 7390,
+          "output_tokens": 21,
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "estimated": true,
+          "cost_usd": 0.0,
+          "latency_ms": 0
+        },
+        "stop": {
+          "type": "end_turn"
+        }
+      }
+    },
+    {
+      "id": "item:01M3KH4T71V0M0P9MH2KTQF8S8",
+      "turn": 1,
+      "kind": {
+        "type": "user",
+        "text": "Write a summary",
+        "attachments": []
+      }
+    },
+    {
+      "id": "item:01M3KH4T76P6XAB1HNAD5WC537",
+      "turn": 1,
+      "kind": {
+        "type": "assistant",
+        "text": "Writing the summary.",
+        "doc": {
+          "blocks": [
+            {
+              "type": "text",
+              "kind": "paragraph",
+              "lines": [
+                [
+                  {
+                    "text": "Writing the summary."
+                  }
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "call:01M3KH4T76F6A9B02JR3D2K4AG",
+      "turn": 1,
+      "kind": {
+        "type": "tool",
+        "tool": "write",
+        "summary": "Wrote `summary.md` · 1 line",
+        "icon": "edit",
+        "risk": "write",
+        "state": "done",
+        "tail": "wrote /project/summary.md (6 bytes)",
+        "archive": {
+          "id": "01M3KH4T7TTHSVMR270BJMFQ81",
+          "bytes": 102
+        },
+        "diff": null,
+        "duration_ms": 2
+      }
+    },
+    {
+      "id": "approval:01M3KH4T76F6A9B02JR3D2K4AG",
+      "turn": 1,
+      "kind": {
+        "type": "approval",
+        "call": "01M3KH4T76F6A9B02JR3D2K4AG",
+        "tool": "write",
+        "summary": "summary.md",
+        "why": {
+          "type": "risk",
+          "risk": "write"
+        },
+        "source": {
+          "session": "01M3KH4SSQP1D1CKP0DV5AWMPD"
+        },
+        "decision": {
+          "type": "allow"
+        },
+        "by": "user"
+      }
+    },
+    {
+      "id": "checkpoint:12",
+      "turn": 1,
+      "kind": {
+        "type": "checkpoint",
+        "files": [
+          "/project/summary.md"
+        ]
+      }
+    },
+    {
+      "id": "item:01M3KH4T8GM44NEGZJ3QVVHNSB",
+      "turn": 1,
+      "kind": {
+        "type": "assistant",
+        "text": "Wrote `summary.md`.",
+        "doc": {
+          "blocks": [
+            {
+              "type": "text",
+              "kind": "paragraph",
+              "lines": [
+                [
+                  {
+                    "text": "Wrote "
+                  },
+                  {
+                    "text": "summary.md",
+                    "token": "accent"
+                  },
+                  {
+                    "text": "."
+                  }
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

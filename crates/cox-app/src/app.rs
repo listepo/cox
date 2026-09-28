@@ -28,6 +28,9 @@ const LOGIN_TIMEOUT: Duration = Duration::from_secs(10);
 pub trait Host: Send + Sync {
     /// A new inbox item arrived; `badge` is the count that blocks a turn.
     fn notify(&self, item: InboxItem, badge: u32);
+    /// The badge fell with no new item to carry it: an approval or question
+    /// was answered, or its session closed.
+    fn badge(&self, badge: u32);
     /// An MCP server's login page, or a link the person asked to follow.
     fn open_url(&self, url: &str);
     /// The stored secret for a provider section (`anthropic`, `openai`, a
@@ -204,11 +207,13 @@ impl App {
     }
 
     /// Folds `event` into the inbox and tells the host about each new item,
-    /// outside the lock so the host may read the inbox back.
+    /// or the lower badge once one is answered, outside the lock so the host
+    /// may read the inbox back.
     pub(crate) fn apply(&self, session: SessionId, event: &Event) {
-        let (fresh, badge) = {
+        let (fresh, badge, fell) = {
             let mut inbox = self.lock_inbox();
             let last = inbox.items().iter().map(|i| i.seq).max();
+            let before = inbox.badge();
             inbox.apply(session, event);
             let fresh: Vec<InboxItem> = inbox
                 .items()
@@ -216,15 +221,26 @@ impl App {
                 .filter(|i| last.is_none_or(|last| i.seq > last))
                 .cloned()
                 .collect();
-            (fresh, count(inbox.badge()))
+            (fresh, count(inbox.badge()), inbox.badge() < before)
         };
         for item in fresh {
             self.host.notify(item, badge);
         }
+        if fell {
+            self.host.badge(badge);
+        }
     }
 
     pub(crate) fn expire(&self, session: SessionId) {
-        self.lock_inbox().expire(session);
+        let (badge, fell) = {
+            let mut inbox = self.lock_inbox();
+            let before = inbox.badge();
+            inbox.expire(session);
+            (count(inbox.badge()), inbox.badge() < before)
+        };
+        if fell {
+            self.host.badge(badge);
+        }
     }
 }
 

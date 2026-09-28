@@ -19,15 +19,18 @@ final class Host {
   let window: NSWindow
   let hosting: NSHostingView<AnyView>
   private let material: GlassMaterial
+  /// Set, the approval slot holds the real `DecisionCard`s and their intents go here.
+  private let send: (@MainActor (Intent) -> Void)?
 
   init(
     _ blocks: [Block], size: NSSize, crossBlockSelection: Bool = true, dark: Bool = false,
-    material: GlassMaterial = .solid
+    material: GlassMaterial = .solid, send: (@MainActor (Intent) -> Void)? = nil
   ) {
     NSApplication.shared.setActivationPolicy(.accessory)
     store = SessionStore(session: FixtureSession(fixture: Fixture(batches: [], snapshot: [])))
     store.apply([.reset(blocks: blocks)])
     self.material = material
+    self.send = send
     hosting = NSHostingView(rootView: AnyView(EmptyView()))
     window = NSWindow(
       // A window frame far off screen, not a design size.
@@ -45,17 +48,24 @@ final class Host {
 
   /// Hands the view a new setting, as the app does when the user flips it.
   func show(crossBlockSelection: Bool) {
-    hosting.rootView = AnyView(
-      TranscriptView(store: store, crossBlockSelection: crossBlockSelection) { block in
-        Text(verbatim: Self.slot(block))
+    let transcript =
+      if let send {
+        AnyView(TranscriptView(store: store, crossBlockSelection: crossBlockSelection, send: send))
+      } else {
+        AnyView(
+          TranscriptView(store: store, crossBlockSelection: crossBlockSelection) { block in
+            Text(verbatim: Self.slot(block))
+          })
       }
-      .environment(\.coxAppearance, Appearance(material: material))
-      // Durations read the same on every machine.
-      .environment(\.locale, Locale(identifier: "en_US_POSIX")))
+    hosting.rootView = AnyView(
+      transcript
+        .environment(\.coxAppearance, Appearance(material: material))
+        // Durations read the same on every machine.
+        .environment(\.locale, Locale(identifier: "en_US_POSIX")))
     flush()
   }
 
-  /// What the approval slot shows in these tests, where no `ApprovalCard` exists yet.
+  /// What the approval slot shows when the host is given no `send`.
   static func slot(_ block: Block) -> String {
     switch block.kind {
     case .approval(_, _, let summary, _, _, _, _): "Approve: \(summary)"

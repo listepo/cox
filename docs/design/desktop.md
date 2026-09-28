@@ -285,8 +285,9 @@ Rules:
   in-memory store, never the real Keychain (A49).
 - The host (T37.30.2): CoxPlatform's `MacHost` implements CoxClient's
   `PlatformHost` — `secret` over `KeychainSecretStore`, `notify` through
-  `UNUserNotificationCenter`, `open` through `NSWorkspace` for `http(s)`
-  links only — and CoxCore's `HostBridge` adapts it to the generated
+  `UNUserNotificationCenter`, `badge` when the count falls with no new item
+  (an approval or question answered, its session closed; T37.27), `open`
+  through `NSWorkspace` for `http(s)` links only — and CoxCore's `HostBridge` adapts it to the generated
   `AppHost`, so CoxPlatform tests without the XCFramework and CoxCore never
   links AppKit. The app passes `HostBridge(MacHost())` to `LiveCoreClient`.
 
@@ -525,7 +526,11 @@ current project and slash commands. The whole app is keyboard-drivable:
 Notifications only when the app is not frontmost or the session is not
 visible: "Turn finished · $0.18", "Approval needed: `git push`" with
 **Allow** and **Deny** actions (allow-for-session and edit need the app, by
-design), "Budget reached". Dock badge = pending approvals + questions across
+design), "Budget reached". A question takes a typed **Answer**. CoxPlatform's
+`NotificationActions` maps a note to its content and an action back to the
+session and `Intent` as plain functions, tested without posting; the app sets
+`NotificationResponder` as the centre's delegate and sends the intent to that
+session (T37.27). Dock badge = pending approvals + questions across
 all sessions. The M2 menu-bar extra lists running sessions and the inbox.
 
 ### 5.7 Settings
