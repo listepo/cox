@@ -343,13 +343,13 @@ extension CoxClient.TurnUsage {
 extension CoxFFIBindings.Intent {
   init(_ value: CoxClient.Intent) {
     switch value {
-    case .send(let text, let attachments):
-      self = .send(text: text, attachments: attachments.map { .init($0) })
+    case .send(let text, let files, let think):
+      self = .send(text: text, attachments: files.map { .init($0) }, confirmThink: think)
     case .approve(let call, let decision): self = .approve(call: call, decision: .init(decision))
     case .answer(let question, let text): self = .answer(question: question, text: text)
     case .interrupt: self = .interrupt
-    case .queue(let text, let attachments):
-      self = .queue(text: text, attachments: attachments.map { .init($0) })
+    case .queue(let text, let files, let think):
+      self = .queue(text: text, attachments: files.map { .init($0) }, confirmThink: think)
     case .compact(let focus): self = .compact(focus: focus)
     case .setMode(let mode):
       switch mode {

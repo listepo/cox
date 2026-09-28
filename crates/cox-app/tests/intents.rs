@@ -154,6 +154,7 @@ async fn send_runs_a_turn_recorded_in_the_scratch_home() {
         Intent::Send {
             text,
             attachments: vec![],
+            confirm_think: false,
         },
     )
     .await;
@@ -180,6 +181,7 @@ async fn approve_lets_the_waiting_call_run() {
         Intent::Send {
             text: "hi".into(),
             attachments: vec![],
+            confirm_think: false,
         },
     )
     .await;
@@ -189,6 +191,7 @@ async fn approve_lets_the_waiting_call_run() {
         Intent::Send {
             text: "touch a".into(),
             attachments: vec![],
+            confirm_think: false,
         },
     )
     .await;
@@ -268,6 +271,7 @@ async fn rewind_drops_the_conversation_from_a_turn() {
         Intent::Send {
             text: "one".into(),
             attachments: vec![],
+            confirm_think: false,
         },
     )
     .await;
@@ -297,6 +301,7 @@ async fn fork_and_handoff_seed_children_the_workspace_lists() {
         Intent::Send {
             text: "hello fork".into(),
             attachments: vec![],
+            confirm_think: false,
         },
     )
     .await;
@@ -372,13 +377,27 @@ fn every_intent_maps_to_its_submission() {
             Intent::Send {
                 text: "hi".into(),
                 attachments: vec![],
+                confirm_think: false,
             },
             spawned(turn("hi")),
         ),
         (
             Intent::Send {
+                text: "plan it".into(),
+                attachments: vec![],
+                confirm_think: true,
+            },
+            spawned(Submission::UserTurn {
+                text: "plan it".into(),
+                attachments: vec![],
+                confirm_think: true,
+            }),
+        ),
+        (
+            Intent::Send {
                 text: " ".into(),
                 attachments: vec![],
+                confirm_think: false,
             },
             Err(IntentError::Empty),
         ),
@@ -407,6 +426,7 @@ fn every_intent_maps_to_its_submission() {
             Intent::Queue {
                 text: "next".into(),
                 attachments: vec![],
+                confirm_think: false,
             },
             Ok(Dispatch::Queue(turn("next"))),
         ),
@@ -414,17 +434,19 @@ fn every_intent_maps_to_its_submission() {
             Intent::Queue {
                 text: String::new(),
                 attachments: vec![shot.clone()],
+                confirm_think: true,
             },
             Ok(Dispatch::Queue(Submission::UserTurn {
                 text: String::new(),
                 attachments: vec![shot],
-                confirm_think: false,
+                confirm_think: true,
             })),
         ),
         (
             Intent::Queue {
                 text: " ".into(),
                 attachments: vec![],
+                confirm_think: false,
             },
             Err(IntentError::Empty),
         ),

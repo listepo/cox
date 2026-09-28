@@ -218,3 +218,33 @@ private func usage(done: Bool) -> UsageView {
   #expect(session.sent == [.setMode(mode: .plan)])
   #expect(store.mode == .default)
 }
+
+/// T37.24.10 (A103): the think toggle sends one turn with `confirmThink` — sent now or queued —
+/// then turns itself off; a `/` command line is not a turn, so the toggle waits for one.
+@MainActor
+@Test func theThinkToggleConfirmsOneTurnThenTurnsItselfOff() async {
+  let (store, session) = composer()
+  store.toggleThink()
+  store.edit("/compact")
+  await store.submit()
+  #expect(store.think, "a command line is not the turn the toggle is for")
+
+  store.edit("plan the refactor")
+  await store.submit()
+  store.edit("then do it")
+  await store.submit()
+  #expect(!store.think)
+
+  store.session.apply([.usage(usage: usage(done: false))])
+  store.toggleThink()
+  store.edit("and review it")
+  await store.submit()
+  #expect(
+    session.sent == [
+      .command(line: "/compact"),
+      .send(text: "plan the refactor", attachments: [], confirmThink: true),
+      .send(text: "then do it", attachments: []),
+      .queue(text: "and review it", attachments: [], confirmThink: true),
+    ])
+  #expect(!store.think)
+}

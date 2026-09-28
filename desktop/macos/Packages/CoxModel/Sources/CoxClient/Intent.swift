@@ -3,11 +3,13 @@
 // the stores send it, nothing decodes it.
 
 public enum Intent: Equatable, Sendable {
-  case send(text: String, attachments: [Attachment])
+  /// `confirmThink`: this one turn goes to the think tier, as `/think` sends it (A103).
+  case send(text: String, attachments: [Attachment], confirmThink: Bool = false)
   case approve(call: String, decision: Decision)
   case answer(question: String, text: String?)
   case interrupt
-  case queue(text: String, attachments: [Attachment])
+  /// Waits for the running turn to end, keeping the `confirmThink` it was sent with.
+  case queue(text: String, attachments: [Attachment], confirmThink: Bool = false)
   case compact(focus: String?)
   case setMode(mode: PermissionMode)
   case switchModel(tier: Tier, model: String?)

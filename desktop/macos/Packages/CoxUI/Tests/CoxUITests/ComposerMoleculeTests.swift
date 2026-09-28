@@ -27,8 +27,12 @@ import Testing
 }
 
 extension ComposerChip.Kind {
-  /// The snapshot's name: the case, and a mode's mode.
+  /// The snapshot's name: the case, a mode's mode and whether think is on.
   fileprivate var name: String {
-    if case .mode(let mode) = self { "mode-\(mode)" } else { "\(self)" }
+    switch self {
+    case .mode(let mode): "mode-\(mode)"
+    case .think(let isOn): isOn ? "think-on" : "think-off"
+    default: "\(self)"
+    }
   }
 }

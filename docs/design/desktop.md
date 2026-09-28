@@ -223,9 +223,10 @@ be healed by `Reset`. Streaming markdown re-parses only the open tail block.
 first, with `session`, `source` and an expiry flag. Drives the "Needs you"
 section, the Dock badge and notifications.
 
-**Intents.** `Send{text, attachments}`, `Approve{call, decision}`,
-`Answer{question, text}`, `Interrupt`, `Queue{text, attachments}`, `Compact`, `SetMode`,
-`SwitchModel`, `SetEffort`, `Rewind`, `Redo`, `Fork{turn}`, `Handoff`,
+**Intents.** `Send{text, attachments, confirm_think}`,
+`Approve{call, decision}`, `Answer{question, text}`, `Interrupt`,
+`Queue{text, attachments, confirm_think}`, `Compact`, `SetMode`, `SwitchModel`,
+`SetEffort`, `Rewind`, `Redo`, `Fork{turn}`, `Handoff`,
 `Background{call}`, `Shell{command, share}`, `Command{line}` (parsed by the
 shared command table). `send` never awaits a turn: `UserTurn` is spawned, as
 `run.rs` already does (R9.4.3).
