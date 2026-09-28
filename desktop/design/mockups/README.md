@@ -10,5 +10,6 @@ Render screens to 2x PNGs (headless Chrome, 1520×980 window) into `screens/`, w
 ```
 
 Screens 01–27 are the solid light/dark set; 28–30 are the glass main screen (frosted, glossy, token
-popover). The CSS custom properties mirror `../tokens/`; once T37.17 lands, they come from
-`../tokens/tokens.css`.
+popover). The colours come from `../tokens/tokens.css`, which `just desktop-tokens` generates from
+`../tokens/`; the page gives them short names and keeps only mockup-only values (wallpaper, window
+shadow, glass materials) inline.

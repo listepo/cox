@@ -102,6 +102,13 @@ pub async fn load_login_env() -> Result<Option<String>, AppError> {
     on_runtime(cox_app::app::load_login_env()).await
 }
 
+/// Review's line comments as the one prompt "Send to agent" posts
+/// (T37.28.4); `None` when no comment has text.
+#[uniffi::export]
+pub fn review_message(comments: Vec<cox_app::review::LineComment>) -> Option<String> {
+    cox_app::review::message(&comments)
+}
+
 /// One per process: the workspace, the inbox across sessions, the host.
 #[derive(uniffi::Object)]
 pub struct App {

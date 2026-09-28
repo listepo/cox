@@ -43,6 +43,9 @@ public protocol SessionClient: AnyObject, Sendable {
   /// Review's diff of a changed file: its checkpoint copy against the file on disk
   /// (`cox_app::live::LiveSession::review`, T37.28.2); `nil` when there is none to show.
   func review(_ path: String) async throws -> DiffModel?
+  /// Review's line comments as the one prompt "Send to agent" posts
+  /// (`cox_app::review::message`, T37.28.4); `nil` when no comment has text.
+  func reviewMessage(_ comments: [LineComment]) -> String?
   /// What the inspector's Plan tab lists: the latest todo list (`LiveSession::plan`, T37.29.2).
   func plan() -> [TodoItem]
   /// What a Tasks-tab click opens (`cox_app::live::LiveSession::open_task`, T37.29.6); `nil`
@@ -242,6 +245,12 @@ public final class FixtureSession: SessionClient {
   public func changes() async throws -> Changes { fixedChanges }
 
   public func review(_ path: String) async throws -> DiffModel? { reviews[path] }
+
+  /// The anchors and texts one per line: enough to drive a test, not the core's wording.
+  public func reviewMessage(_ comments: [LineComment]) -> String? {
+    let lines = comments.filter { !$0.text.isEmpty }.map { "\($0.path):\($0.line) \($0.text)" }
+    return lines.isEmpty ? nil : lines.joined(separator: "\n")
+  }
 
   public func plan() -> [TodoItem] { fixedPlan }
 

@@ -3,26 +3,25 @@
 <head>
 <meta charset="utf-8">
 <title>cox desktop mockups</title>
+<link rel="stylesheet" href="../tokens/tokens.css">
 <style>
+/* Short names for the colour tokens in ../tokens/tokens.css (`just desktop-tokens`). A custom
+   property resolves where it is declared, so `.dark` declares them again to pick up its values. */
+:root,.dark{
+  --win:var(--c-surface-window);--side:var(--c-surface-sidebar);
+  --text:var(--c-text-primary);--sec:var(--c-text-secondary);--ter:var(--c-text-tertiary);--sep:var(--c-separator);--fill:var(--c-fill-primary);--fill2:var(--c-fill-secondary);
+  --accent:var(--c-accent);--accent-soft:var(--c-accent-soft);--orange:var(--c-status-warning);--orange-soft:var(--c-status-warningSoft);
+  --green:var(--c-status-success);--green-soft:var(--c-status-successSoft);--red:var(--c-status-danger);--red-soft:var(--c-status-dangerSoft);--blue:var(--c-status-plan);
+  --add:var(--c-diff-add);--add-g:var(--c-diff-addGutter);--del:var(--c-diff-del);--del-g:var(--c-diff-delGutter);
+  --code-bg:var(--c-surface-code);--glass:var(--c-surface-capsule);--glass-b:var(--c-surface-capsuleBorder);
+  --kw:var(--c-syntax-keyword);--str:var(--c-syntax-string);--num:var(--c-syntax-number);--fn:var(--c-syntax-function);--com:var(--c-syntax-comment);--ty:var(--c-syntax-type);
+}
+/* Mockup-only values that have no token. */
 :root{
   --wall1:#9fb8e8;--wall2:#e7b7d6;--wall3:#f4d6a8;
-  --win:#ffffff;--side:rgba(242,242,246,.86);--side-b:rgba(0,0,0,.06);
-  --text:#1d1d1f;--sec:#6e6e73;--ter:#a1a1a6;--sep:rgba(0,0,0,.09);--fill:rgba(0,0,0,.045);--fill2:rgba(0,0,0,.07);
-  --accent:#0a7cff;--accent-soft:rgba(10,124,255,.12);--orange:#f08a00;--orange-soft:rgba(255,149,0,.12);
-  --green:#1f9d45;--green-soft:rgba(52,199,89,.14);--red:#e5352b;--red-soft:rgba(255,59,48,.11);--purple:#8e44d8;--blue:#2f6fde;
-  --add:rgba(52,199,89,.16);--add-g:rgba(52,199,89,.32);--del:rgba(255,59,48,.13);--del-g:rgba(255,59,48,.3);
-  --code-bg:#f6f6f8;--glass:rgba(255,255,255,.72);--glass-b:rgba(0,0,0,.08);--shadow:0 30px 80px rgba(20,30,60,.35),0 0 0 .5px rgba(0,0,0,.25);
-  --kw:#ad3da4;--str:#c41a16;--num:#1c00cf;--fn:#326d74;--com:#707f8c;--ty:#0b4f79;
+  --side-b:rgba(0,0,0,.06);--purple:#8e44d8;--shadow:0 30px 80px rgba(20,30,60,.35),0 0 0 .5px rgba(0,0,0,.25);
 }
-.dark{
-  --win:#1f1f22;--side:rgba(44,44,48,.86);--side-b:rgba(255,255,255,.07);
-  --text:#f2f2f5;--sec:#a1a1a8;--ter:#6c6c72;--sep:rgba(255,255,255,.09);--fill:rgba(255,255,255,.06);--fill2:rgba(255,255,255,.1);
-  --accent:#3b9bff;--accent-soft:rgba(59,155,255,.18);--orange:#ffa53a;--orange-soft:rgba(255,159,10,.16);
-  --green:#3bd06a;--green-soft:rgba(48,209,88,.16);--red:#ff6259;--red-soft:rgba(255,69,58,.16);
-  --add:rgba(48,209,88,.14);--add-g:rgba(48,209,88,.28);--del:rgba(255,69,58,.14);--del-g:rgba(255,69,58,.28);
-  --code-bg:#28282c;--glass:rgba(50,50,54,.72);--glass-b:rgba(255,255,255,.1);
-  --kw:#ff7ab2;--str:#ff8170;--num:#d9c97c;--fn:#67b7a4;--com:#7f8c98;--ty:#5dd8ff;
-}
+.dark{--side-b:rgba(255,255,255,.07)}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:1520px;height:980px;overflow:hidden}
 body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;font-size:13px;line-height:1.45;color:var(--text);

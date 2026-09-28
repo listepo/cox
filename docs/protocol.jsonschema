@@ -2824,7 +2824,7 @@
             }
           },
           "confirm_think": {
-            "description": "Required to be `true` for the turn to route to `Tier::Think` (plan.md invariant #9).",
+            "description": "`true` runs this one turn on `Tier::Think` (`/think`, the think\ntoggle, `--deep`), confirming its gate (plan.md invariant #9); the\nnext turn without it goes back to the session's tier (D5, A103).",
             "type": "boolean"
           },
           "type": {

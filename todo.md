@@ -21,15 +21,13 @@
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
-- T37.24.11. `/think` and the think toggle run their turn on the think tier
-- T37.28.4. Line comments sent to the agent
 - T37.29.3. Inspector Context & Cost tab
 - T37.29.3.2. Context tab: per-turn cost history
 - T37.29.3.3. Context tab: project totals
 - T37.29.3.4. Context tab: budget cap and how close it is
+- T37.29.3.5. Context tab: cache hit per turn or per session, Compact now waits for the turn
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
-- T37.17.2. `letterSpacing` in em, mockups on `tokens.css`
 - T37.19.5. Foundation tokens: on-accent text, dark highlight, disabled controls
 - T37.20.5. Atom tokens: project purple, RiskChip colours, named constants
 - T37.21.11. Molecule legibility and small fixes

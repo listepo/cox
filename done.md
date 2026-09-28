@@ -5378,3 +5378,61 @@ Check:
 - `reverting_one_file_restores_it_and_leaves_the_other`, `revert_file_restores_only_that_file`, `every_intent_maps_to_its_submission`; clippy and fmt clean; a real-binary scripted write under a scratch `COX_HOME`.
 - After merging into `p37-desktop` (merge 8944da74): `just test --changed-since` 1521 passed, 5 skipped; clippy on cox-core, cox-app, cox-ffi and cox-protocol clean; CoxCore 12, CoxModel 59.
 Not done: the headless surface has no way to send a revert, so the real-binary run covered the checkpoint, not the revert.
+
+#### T37.24.11 `/think` and the think toggle run their turn on the think tier
+
+Depends: T37.24.10 · Size: ~60 · Files: `crates/cox-core/src/router.rs`, `crates/cox-core/src/session.rs`
+Goal: D5 and A103 — `UserTurn { confirm_think: true }` routes that one turn's main request to `Tier::Think`, then the session goes back to its own tier. Today `Router::pick` takes the main tier from the session override or the session tier and uses `confirm_think` only to pass the confirmation gate, so `/think` and the desktop toggle on a code-tier session still run on code; only `--deep` reaches think, through a session-wide `SwitchModel`. Architect mode (which already sets `confirm_think` while on the think tier) must keep working.
+Check: a cox-core test that a code-tier session's `confirm_think` turn requests the think model and the next plain turn requests the code model again.
+Status: done 2026-09-28
+Result:
+- `crates/cox-core/src/session.rs`: a turn with `confirm_think` on a session whose main tier is not think puts `Tier::Think` into `Inner::routed`, the per-turn slot `route` advice (T33.20) uses. Every request of that turn, tool-call follow-ups included, runs on think. `run_turn` clears the slot, so the next plain turn is back on the session tier. No `ModelSwitched` event. Ledger rows keep `job = main` with the think tier and model (commit ec852097).
+- A session already on think (`--deep`, architect mode) gets no slot; its requests and cache prefix are unchanged.
+- The `Router::pick`, `Inner::routed` and `confirm_think` docs are updated, and `docs/protocol.jsonschema` is regenerated.
+Deviations: the fix is in `session.rs`, not `router.rs`. `step` and `switch_model` call `Router::pick` with `confirm_think = true` on every main request, so routing there would move every such request.
+Check:
+- `crates/cox-core/tests/router.rs` `confirm_think_runs_one_turn_on_think_then_the_session_tier_again`: it fails without the change. cox-core router 8/8.
+- Protocol schema drift test passed.
+- clippy and fmt are clean.
+- Real binary, scripted provider: a plain run started on code, and a `--deep` run on think.
+- After merging into `p37-desktop`: `just test --changed-since` 1522 passed, 5 skipped.
+Not done:
+- No real-binary run of a `confirm_think` turn on a code-tier session: only the TUI can send one.
+- A think turn's thinking blocks stay in history for the next code-tier turn, the same as a turn `route` advice sent to cheap (T33.40.8).
+
+#### T37.28.4 Line comments sent to the agent
+
+Depends: T37.28.2 · Size: ~150 · Files: `…/Organisms/ReviewPane.swift`, `crates/cox-app/src/review.rs`
+Goal: clicking a line number adds a comment to a draft; "Send to agent" posts one `Intent::Send` with `file:line` anchors, the message formatted in cox-app.
+Check: a cox-app test of the message; a snapshot of a draft.
+Status: done 2026-09-28
+Result:
+- cox-app `review.rs`: `LineComment { path, line, removed, text }` and `message(&[LineComment]) -> Option<String>`, the prompt with one `` `path:line` `` bullet per comment in draft order. A removed line is marked, and blank comments are skipped. cox-ffi has the record and a one-expression `review_message` forwarder (commit 8b532490).
+- CoxClient `LineComment` and `SessionClient.reviewMessage`. CoxModel `ReviewDraft` (`pick`, `save`, `remove`) lives in `SessionStore.reviewDraft`, so it survives switching files. `sendReview()` posts one `Intent.send` and empties the draft.
+- CoxUI `ReviewPane` has a draft panel under the diff with the anchors, a comment field, a count and "Send to agent". `DiffHunkView`/`DiffLineView` take a tap on the line number, with an accessibility action.
+Deviations: 15 files. The message crosses from cox-app to Swift through the FFI record, the client protocol and its two conformers, the model and two molecules.
+Check:
+- In the branch: cox-app and cox-ffi 89 passed (`review::tests`); clippy and fmt clean; CoxModel 62, CoxCore 12, CoxUI 165, CoxTranscript 48; swiftlint and swift-format clean.
+- After merging into `p37-desktop`: `just test --changed-since` 89 passed; CoxCore 12, CoxModel 62, CoxTranscript 48, CoxUI Review/Diff 5.
+Not done:
+- App wiring of the draft into `ReviewPane.State` waits for T37.32.
+- Open question: "Send to agent" always sends; the composer queues a prompt while a turn runs. Should review comments queue too?
+
+#### T37.17.2 `letterSpacing` in em, mockups on `tokens.css`
+
+Depends: — · Size: ~40 · Files: `desktop/design/tokens/*.json`, `desktop/design/style-dictionary.config.*`, `desktop/design/mockups.html`
+Goal: `letterSpacing` tokens say em, which is what they mean; `mockups.html` reads the generated `tokens.css` instead of its inline variables, as its README promises.
+Check: generated `Tokens.swift` values are unchanged or the changed snapshots are re-recorded on purpose; the mockups render the same by eye.
+Status: done 2026-09-28
+Result:
+- All 15 typography `letterSpacing` values in `desktop/design/tokens/base.json` say `em` (commit 01b7fc3f). `style-dictionary.config.mjs` has an `em()` helper for the Swift tracking value that fails the build on any other unit; a missing value still gives 0.
+- `desktop/design/mockups/mockups.html` links `../tokens/tokens.css`, and its short colour names point at the `--c-*` tokens on both `:root` and `.dark`. Values with no token stay inline: wallpaper, window shadow, sidebar border, `--purple` and the glass materials. The mockups README says so.
+Deviations:
+- The mockups were compared with the project's `render.sh` and a byte comparison of the PNGs, not by eye.
+- In dark mode `--blue` now follows the dark `status.plan` token; no screen shows it in dark mode.
+Check:
+- `just desktop-tokens`: both high-contrast checks pass (189 pairs each); `Tokens.swift`, `Colors.xcassets` and `tokens.css` are byte-identical to before.
+- Negative check: a `rem` value fails the build naming the token.
+- All 30 mockup screens render byte-identical before and after.
+- No Swift tests: no generated Swift changed.
+Not done: none.

@@ -30,10 +30,13 @@ public struct DiffLineView: View {
   let line: Line
   /// The widest number in the hunk, so every gutter in it has one width at any text size.
   let widestNumber: String
+  /// Review's click on the number (T37.28.4); `nil` where a line takes no comment.
+  let comment: (@MainActor () -> Void)?
 
-  init(_ line: Line, widestNumber: String? = nil) {
+  init(_ line: Line, widestNumber: String? = nil, comment: (@MainActor () -> Void)? = nil) {
     self.line = line
     self.widestNumber = widestNumber ?? line.number
+    self.comment = comment
   }
 
   /// The sign and the runs; a changed word takes the gutter's tint.
@@ -43,15 +46,11 @@ public struct DiffLineView: View {
 
   public var body: some View {
     HStack(spacing: 0) {
-      ZStack(alignment: .trailing) {
-        Text(widestNumber).hidden()
-        Text(line.number)
+      if let comment {
+        gutter.contentShape(Rectangle()).onTapGesture(perform: comment)
+      } else {
+        gutter
       }
-      .foregroundStyle(line.kind == .context ? Color(.textSecondary) : Color(.textPrimary))
-      .padding(.leading, Space.m)
-      .padding(.trailing, Space.ml)
-      .frame(maxHeight: .infinity)
-      .background(line.kind.gutter)
       Text(code)
         .foregroundStyle(Color(.textPrimary))
         .padding(.leading, Space.m)
@@ -66,6 +65,21 @@ public struct DiffLineView: View {
     .fixedSize(horizontal: false, vertical: true)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("\(line.kind.label) \(line.number): \(line.runs.map(\.text).joined())")
+    .accessibilityActions {
+      if let comment { Button("Comment", action: comment) }
+    }
+  }
+
+  private var gutter: some View {
+    ZStack(alignment: .trailing) {
+      Text(widestNumber).hidden()
+      Text(line.number)
+    }
+    .foregroundStyle(line.kind == .context ? Color(.textSecondary) : Color(.textPrimary))
+    .padding(.leading, Space.m)
+    .padding(.trailing, Space.ml)
+    .frame(maxHeight: .infinity)
+    .background(line.kind.gutter)
   }
 }
 

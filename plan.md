@@ -27,16 +27,14 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.24.11 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.28.4 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.29.3 | todo | P2 | 4 | 25% | |
 | T37.29.3.2 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.29.3.3 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.29.3.4 | todo | P3 | 2 | 0% | |
+| T37.29.3.5 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.17.2 | todo | P3 | 1 | 0% | |
-| T37.19.5 | todo | P2 | 3 | 0% | |
+| T37.19.5 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.20.5 | todo | P2 | 2 | 0% | |
 | T37.21.11 | todo | P2 | 2 | 0% | |
 | T37.22.3 | todo | P1 | 2 | 0% | |
@@ -2744,18 +2742,6 @@ Every card in this phase:
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
 
-#### T37.24.11 `/think` and the think toggle run their turn on the think tier
-
-Depends: T37.24.10 · Size: ~60 · Files: `crates/cox-core/src/router.rs`, `crates/cox-core/src/session.rs`
-Goal: D5 and A103 — `UserTurn { confirm_think: true }` routes that one turn's main request to `Tier::Think`, then the session goes back to its own tier. Today `Router::pick` takes the main tier from the session override or the session tier and uses `confirm_think` only to pass the confirmation gate, so `/think` and the desktop toggle on a code-tier session still run on code; only `--deep` reaches think, through a session-wide `SwitchModel`. Architect mode (which already sets `confirm_think` while on the think tier) must keep working.
-Check: a cox-core test that a code-tier session's `confirm_think` turn requests the think model and the next plain turn requests the code model again.
-
-#### T37.28.4 Line comments sent to the agent
-
-Depends: T37.28.2 · Size: ~150 · Files: `…/Organisms/ReviewPane.swift`, `crates/cox-app/src/review.rs`
-Goal: clicking a line number adds a comment to a draft; "Send to agent" posts one `Intent::Send` with `file:line` anchors, the message formatted in cox-app.
-Check: a cox-app test of the message; a snapshot of a draft.
-
 #### T37.29.3 Inspector Context & Cost tab
 
 Depends: T37.25.1 · Size: split into T37.29.3.1–T37.29.3.4 · Files: see the sub-cards
@@ -2777,8 +2763,14 @@ Check: a cox-store or cox-app test; a snapshot.
 #### T37.29.3.4 Context tab: budget cap and how close it is
 
 Depends: T37.29.3.2 · Size: ~120 · Files: `crates/cox-app/…`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`
-Goal: the configured cap and the spend as `$0.42 of $5.00` with a gauge. Needs the creator's choice before it is claimed: where the cap comes from (a config key or the existing budget setting), whether it is per session or per day, and what the tab shows with no cap.
+Goal: the configured cap and the spend as `$0.42 of $5.00` with a gauge. On hold by the creator (2026-09-28). Needs the creator's choice before it is claimed: where the cap comes from (a config key or the existing budget setting), whether it is per session or per day, and what the tab shows with no cap.
 Check: a cox-app test for the figure; snapshots with and without a cap.
+
+#### T37.29.3.5 Context tab: cache hit per turn or per session, Compact now waits for the turn
+
+Depends: T37.29.3.2 · Size: ~120 · Files: `crates/cox-app/src/meter_text.rs`, `crates/cox-config/…`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`
+Goal: A104 — cox-app formats the cache hit for the turn and for the session (from the ledger's `usage` rows); a config key owned by `cox-config` (schema, drift test, so the generated Settings window shows it) picks which one the tab shows, per turn by default. A105 — Compact now is disabled while a turn runs, read from the session status the tab already has.
+Check: a cox-app test of both figures over a scripted two-turn session; the config drift test; CoxUI snapshots of the session figure and of a disabled Compact now.
 
 #### T37.32 Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 
@@ -2791,12 +2783,6 @@ Check: `spctl --assess` accepts the release build; the appcast validates.
 Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
-
-#### T37.17.2 `letterSpacing` in em, mockups on `tokens.css`
-
-Depends: — · Size: ~40 · Files: `desktop/design/tokens/*.json`, `desktop/design/style-dictionary.config.*`, `desktop/design/mockups.html`
-Goal: `letterSpacing` tokens say em, which is what they mean; `mockups.html` reads the generated `tokens.css` instead of its inline variables, as its README promises.
-Check: generated `Tokens.swift` values are unchanged or the changed snapshots are re-recorded on purpose; the mockups render the same by eye.
 
 #### T37.19.5 Foundation tokens: on-accent text, dark highlight, disabled controls
 
@@ -2986,6 +2972,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A101 T37.28.2, T37.28.3, T37.28.5 — review and rewind, by the creator (2026-09-28): the Changes tab's plain Rewind restores code only; after a code-only rewind Review shows the net diff between the checkpoint copy and disk; a new `Submission` reverts one file to before turn N, checkpointing it first; a skipped restore carries its real reason instead of "too large". Why: the recommendations of T37.28.1's report, accepted as proposed.
 - A102 T37.23.18 — Edit and resend fills the composer and rewinds the conversation only (not code) to before that prompt, by the creator (2026-09-28). Why: DT§5.2's rewind, without silently discarding file changes; code is restored only from the timeline.
 - A103 T37.24.10 — the composer's think toggle routes one turn to the think tier through the existing `/think` (`confirm_think`) and then turns off, by the creator (2026-09-28). Why: it reuses what the core has, and the costly tier never stays on by accident; sticky or a model-level extended-thinking switch were the other options.
+- A104 T37.29.3.5 — the Context tab's cache hit is available both per turn and per session; a setting picks which one the tab shows (per turn by default), by the creator (2026-09-28). Why: a turn's hit shows what the last request reused, the session's shows whether the cache-stable prefix pays off overall.
+- A105 T37.29.3.5 — Compact now is disabled while a turn runs, by the creator (2026-09-28). Why: compaction rewrites the context the running turn is using; the core would refuse or race it.
 
 ## 7. Risk register
 
