@@ -3463,3 +3463,23 @@ Check output:
 - Deviations: `default.toml` has no `servers = {}` line (TOML cannot extend an inline table with `[lsp.servers.<name>]` headers); the `source_of` leaf-key fix was not in the card but is needed for `cox config show --sources` to report the reverted servers truthfully.
 - Check output summary: `cargo nextest run -p cox-protocol -E 'test(lsp)'` 1 passed; `cargo nextest run -p cox-config -E 'test(lsp) | test(schema)'` 2 passed; `cargo nextest run -p cox-protocol -p cox-config` 106 passed; `cargo nextest run -p cox -E 'test(config)'` 12 passed; `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean. Real binary, scratch `COX_HOME=/tmp/cox-t41.1` and a project `.cox/config.toml` setting `lsp.timeout_s = 10` and `lsp.servers.rust.command = "./evil"`: `cox config show --sources` warned `project config ignores lsp.servers = rust (guard); using go, python, rust, typescript`, showed `lsp.servers.rust.command = "rust-analyzer"  # default` and `lsp.timeout_s = 10  # project`; scratch removed.
 - Status: done 2026-09-28
+
+### T50.7. `scrub` redacts Anthropic `sk-ant-…` keys in full
+
+Model: mid-tier · Status: done 2026-09-28 · Depends: — · Size: ~20 · Files: `crates/cox-sanitize/src/redact.rs`
+
+Goal: `cox_sanitize::redact::scrub` redacts an Anthropic-shaped key (`sk-ant-api03-…`) whole. Today the `sk-` body is alphanumeric only, so the scan stops at the first `-` after `sk-`: `ant` is below the 8-byte floor and the key leaks verbatim into rollouts, logs and headless output. Other `sk-` keys (`sk-abc…`, `sk-proj-…`) keep being redacted and short `sk-` words stay verbatim.
+
+Plan:
+1. `redact.rs`: let `prefixed` take the body predicate; the `sk-` arm accepts ASCII alphanumerics plus `-` and `_` (the Anthropic and OpenAI project-key alphabets), the other arms stay alphanumeric only.
+2. Regression test `scrub_redacts_an_anthropic_key_whole` in the same file's `mod tests`: a `sk-ant-api03-…` key with `-` and `_` in its body, embedded in a line, becomes one `«redacted»` with the surrounding text intact.
+
+Check: `mise exec -- cargo nextest run -p cox-sanitize` (the new test fails on current `main`), clippy for the crate with `-D warnings`, `cargo fmt --check`.
+
+Done when: the Check passes.
+
+Out of scope: the separate cassette redactor in `cox-provider-testkit/src/replay.rs`.
+
+- Result: `crates/cox-sanitize/src/redact.rs`: `prefixed` takes the body predicate; the `sk-` arm accepts ASCII alphanumerics plus `-` and `_`, `AKIA` and `ghp_` stay alphanumeric only. Before the fix a `sk-ant-…` key matched nothing at all (`ant` is below the 8-byte floor), so the whole key survived.
+- Tests: `scrub_redacts_an_anthropic_key_whole` fails on the old code (the line comes back unchanged); `redact_table` still passes, so `sk-abc…` keys stay redacted and `sk-shrt` stays verbatim.
+- Check output summary: `cargo nextest run -p cox-sanitize` 6 passed; `cargo clippy -p cox-sanitize --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
