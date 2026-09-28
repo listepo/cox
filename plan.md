@@ -33,9 +33,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.27 | todo | P0 | 3 | 0% | |
 | T37.28 | todo | P1 | 4 | 0% | |
 | T37.29 | todo | P1 | 3 | 0% | |
-| T37.30.3 | todo | P1 | 3 | 0% | |
-| T37.30.4 | todo | P2 | 2 | 0% | |
-| T37.31 | todo | P2 | 2 | 0% | |
+| T37.30.3 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.30.4 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.31 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.17.2 | todo | P3 | 1 | 0% | |
@@ -43,8 +43,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.19.6 | todo | P2 | 2 | 0% | |
 | T37.20.5 | todo | P2 | 2 | 0% | |
 | T37.21.11 | todo | P2 | 2 | 0% | |
-| T37.22.1 | todo | P2 | 2 | 0% | |
-| T37.22.2 | todo | P1 | 2 | 0% | |
+| T37.22.1 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.22.2 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.22.3 | todo | P1 | 2 | 0% | |
 | T37.42.1 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.42.2 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
