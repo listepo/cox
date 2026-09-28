@@ -21,7 +21,6 @@
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
-- T35.14. Sandboxed plugin and external-agent programs may live under `/tmp`
 - T37.14. `cox-ffi`: UniFFI exports, runtime, `Host`; fixture recorder
 - T37.15. XCFramework script, `just` recipes, macOS CI job
 - T37.16. Swift: `CoxCore`, `CoreClient`, fixture client; `CoxModel` stores

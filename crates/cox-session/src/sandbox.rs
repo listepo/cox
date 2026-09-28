@@ -66,7 +66,32 @@ pub fn sandboxed_argv(
         .chain(cmd.get_args())
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
+    // bwrap's private `/tmp` would hide a program, plugin package or
+    // `COX_HOME` that lives there. Mount that directory back, read-only,
+    // and leave every sibling in `/tmp` hidden.
+    if matches!(sandbox::backend(policy.linux_backend), Some(Backend::Bwrap)) {
+        sandbox::bwrap::expose_under_private_tmp(&mut argv, &[host_program(program)]);
+    }
     argv.push(program.to_string_lossy().into_owned());
     argv.extend(args.iter().cloned());
     Ok(argv)
+}
+
+/// A bare `PATH` name resolved to the file the host would exec. Anything
+/// with a directory stays as given: the sandbox still execs the original
+/// string, and this path only decides which `/tmp` directory to mount back.
+fn host_program(program: &Path) -> PathBuf {
+    if program.components().count() != 1 {
+        return program.to_path_buf();
+    }
+    let Some(paths) = std::env::var_os("PATH") else {
+        return program.to_path_buf();
+    };
+    for dir in std::env::split_paths(&paths) {
+        let candidate = dir.join(program);
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    program.to_path_buf()
 }

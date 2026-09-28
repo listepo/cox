@@ -1,4 +1,18 @@
 
+#### T35.14 Sandboxed plugin and external-agent programs may live under `/tmp`
+
+Model: Cursor / grok 4.7 · Status: done 2026-09-27 · Depends: none · Size: ~200 · Priority: P2 · Complexity: 3
+Goal: on Linux, bwrap gives a wrapped program a private `/tmp`, so a plugin's `[[mcp]]` server, an external agent or a PATH directory under `/tmp` cannot be found inside the sandbox. The directory that holds the spawned program (the plugin package or `COX_HOME` when the program lives there) is bound read-only, and the rest of the host `/tmp` stays hidden. Landlock and Seatbelt are unchanged.
+Files: `crates/cox-sandbox/src/sandbox/bwrap.rs`, `crates/cox/src/session.rs`, `AGENTS.md`.
+What landed: `expose_under_private_tmp` inserts one `--ro-bind` before `--` for the highest directory under `/tmp` that contains the program. It never binds `/tmp` itself. A program already inside a writable `--bind` is left alone, and the climb stops before a wider mount would hide another writable bind. `sandboxed_argv` resolves a bare PATH name and passes that file in when the backend is bwrap. `AGENTS.md` notes that a `COX_HOME` or plugin program under `/tmp` is mounted back that way.
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-sandbox -E 'test(expose_) or test(bwrap_)'
+6 tests run: 6 passed, 8 skipped
+$ mise exec -- cargo clippy -p cox-sandbox -p cox --all-targets -- -D warnings
+Finished `dev` profile
+```
+The Linux exec test `bwrap_runs_a_program_from_a_private_tmp_dir_and_hides_siblings` is `#[cfg(target_os = "linux")]` and was not run on this Mac.
 
 #### T30.8 Tests for the eval package
 
@@ -2946,6 +2960,56 @@ Check:
 - e2e `an_assignment_prefix_asks_instead_of_auto_allowing` (scenario `bash_assignment_prefix.toml`): the real binary in a scratch `COX_HOME` denies `GIT_PAGER='touch x' git log` headless, exit 2, `x` not created.
 - In the worktree: nextest 1307 passed, 4 skipped; fmt, clippy and the slim build clean.
 - On main after landing: nextest 1307 passed, 4 skipped; fmt, clippy and the slim build clean.
+
+#### T38.1 OpenAI Chat wire emits `ToolUseEnd`
+
+Model: Claude Code / opus-5.5 · Status: done 2026-09-28 · Depends: — · Size: ~150 · Files: `crates/cox-provider-openai/src/chat.rs` (+ a fixture under its tests)
+
+Goal: a tool call streamed over the Chat Completions wire (OpenAI Chat, Ollama, vLLM, LM Studio, OpenRouter) reaches the core. Today `chat.rs` emits `ToolUseStart` and input deltas but never `ToolUseEnd`, and `turn::consume_provider` commits a call only on `ToolUseEnd` — the bug T30.6 fixed for Anthropic. Chat interleaves parallel calls by `index`, so each call's start, deltas and end must come out in order (buffer per index, flush on `finish_reason`).
+
+Check: a scripted Chat SSE stream with two interleaved parallel tool calls yields, per call, `ToolUseStart` → its deltas → `ToolUseEnd`, and a core-level test commits both calls; the regression test fails without the fix.
+
+Execution plan:
+
+1. Tests first. `chat.rs`: `chat_stream_parallel_tool_calls_by_index` asserts the exact order Start(0) → delta(0, whole arguments) → End → Start(1) → delta(1) → End → Stop over the existing interleaved fixture `fixtures/openai-chat/parallel_tool_calls.sse`. New `crates/cox-core/tests/chat_wire.rs`: a `Provider` that feeds an inline Chat SSE body with two interleaved `echo` calls through `cox_provider::openai::chat::OpenAiChatStream` (then a plain-text reply), and asserts both calls reach `ToolCallDone` with their own input. Both fail on `main`.
+2. Fix in `chat.rs`: `on_tool_call_chunk` only accumulates per wire index (no events); a `flush` drains the accumulators in index order as `ToolUseStart` → one `ToolUseInputDelta` (the whole arguments, when non-empty) → `ToolUseEnd`. It runs before `Stop` on any `finish_reason`, and once more after the SSE body ends (`finish`, called from `stream_once`) for a server that closes without a `finish_reason`. The `started` flag goes away.
+3. Accept the changed `chat_stream_one_tool_call`/`chat_stream_parallel_tool_calls` snapshots; run fmt, clippy, nextest.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: live recording against a paid key; the Responses wire (already correct).
+Status: done 2026-09-28
+Result: `OpenAiChatStream` (`crates/cox-provider-openai/src/chat.rs`) now only accumulates tool-call chunks per wire index; `flush` emits the batch in index order, each call as `ToolUseStart` → one `ToolUseInputDelta` with its whole arguments → `ToolUseEnd`, before `Stop` on any `finish_reason`, and `finish` flushes once more when the SSE body ends without one (`stream_once` calls it). The `started` flag is gone. No new dependency.
+Check:
+- `chat_stream_parallel_tool_calls_come_out_whole_each_ending_before_the_next` (interleaved fixture `fixtures/openai-chat/parallel_tool_calls.sse`), `chat_stream_calls_left_open_by_a_body_without_finish_reason_end_on_finish` (chat.rs); snapshots `chat_stream_one_tool_call`/`chat_stream_parallel_tool_calls` gained `tool_use_end`.
+- Core level: `chat_wire_parallel_calls_both_commit_and_run` (`crates/cox-core/tests/chat_wire.rs`) runs two interleaved `echo` calls through the real `OpenAiChatStream` into the loop; both reach `ToolCallDone`.
+- Without the fix all three failed (core test: no `ToolCallDone` at all).
+- In the worktree: nextest 1313 passed, 4 skipped; fmt and clippy clean.
+
+#### T38.2 Detached `bash` from an older turn is killed on quit
+
+Model: Claude Code / opus-5.5 · Depends: — · Size: ~180 · Files: `crates/cox-tools` (bash spawn/cancel), `crates/cox-core` (session-scoped token), `crates/cox` or `crates/cox-tui` (quit path)
+
+Goal: no orphaned shell after cox exits. Cancellation is turn-scoped (T34.11 follow-up), so once the user sends another prompt, `interrupt()` at TUI quit no longer reaches a detached shell's `ToolCx::cancel`; `wait_tasks_cleared` gives up after `SHELL_CANCEL_GRACE` and the process is orphaned (reproduced with `sleep 4003`, ppid 1). A session-scoped token that detached shell tasks also watch closes it for TUI quit, headless `--loop`, `/clear`, fork and handoff alike.
+
+Check: a test starts a detached `bash` in turn 1, runs turn 2, ends the session, and asserts the shell's process group is gone within the grace period; it fails without the fix. Manual: the `sleep 4003` repro against a `COX_HOME` scratch tree leaves no process with ppid 1.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: changing turn-scoped cancellation for foreground tools.
+
+Plan:
+1. `crates/cox-core/src/session.rs`: a session-scoped `CancellationToken` (`ended`) next to the turn token. Every turn token becomes `ended.child_token()` (at build and at each reset: `run_turn_inner`, `user_shell`, and `ToolInvoker::invoke` in `plugin_model.rs`, through one `renew_cancel` helper), so a detached shell's `ToolCx::cancel` clone from any older turn is still a descendant of `ended`. `pub fn end()` cancels it; `interrupt()` stays turn-scoped. `spawn_child` roots a child's `ended` under the parent's, so a subagent's detached shell dies too.
+2. `crates/cox/src/run.rs` and `crates/cox/src/session.rs`: the two session-exit sites (headless `run`/`--loop`; TUI quit, `/clear`, fork, handoff) call `end()` instead of `interrupt()` before `wait_tasks_cleared(SHELL_CANCEL_GRACE)`; comments that describe the old limit are corrected. The bash kill-group path (`cox-tools` `bash::run`) is reused as is: it already SIGTERM→SIGKILLs the group when its token fires.
+3. Regression test `ending_the_session_kills_a_shell_detached_in_an_older_turn` in `crates/cox-core/tests/bash_tasks.rs` (real `BashTool`, scripted provider): turn 1 detaches `sleep 4011.<test pid>` (a command line unique to the run), turn 2 runs, `end()` + `wait_tasks_cleared`, then `pgrep -f` is polled with a deadline of the grace period; any leftover is killed before the assert. Run once with `end()` aliased to `interrupt()` to see it fail.
+4. Verify: the Check test, the manual `sleep 4003` repro with the real binary against a scratch `COX_HOME`, then fmt, clippy, nextest.
+Status: done 2026-09-28
+Result: a session-scoped `CancellationToken` (`Session::ended`, `crates/cox-core/src/session.rs`) is now the parent of every turn token (`renew_cancel` replaces the three `CancellationToken::new()` resets: `run_turn_inner`, `user_shell`, `ToolInvoker::invoke`). `Session::end()` cancels it, so the `ToolCx::cancel` a shell detached in any older turn cloned fires too and the bash tool's own SIGTERM→SIGKILL of the process group runs; `interrupt()` stays turn-scoped. `spawn_child` roots a subagent's token under its parent's. Headless `run`/`--loop` and the TUI exit path (quit, `/clear`, fork, handoff) call `end()` instead of `interrupt()` before `wait_tasks_cleared(SHELL_CANCEL_GRACE)`. No new kill path; sandbox and permission guards untouched.
+Deviations: 6 files instead of ≤3, all small: the core token (`session.rs`), the one reset in `plugin_model.rs` (else a plugin-invoked detached shell would escape `end`), doc-only corrections in `tasks.rs`, one call site each in `crates/cox/src/run.rs` and `crates/cox/src/session.rs`, and the test. About 80 LOC without the test.
+Check output:
+- `ending_the_session_kills_a_shell_detached_in_an_older_turn` (`crates/cox-core/tests/bash_tasks.rs`): failed with `end()` aliased to `interrupt()` (`sleep 4011.<pid>` outlived the session after 10 s), passes with the fix.
+- Manual, real binary, `COX_HOME=/tmp/cox-t38.2`, scripted provider, `sleep 4003` detached in turn 1: headless `run --loop 1s --max-iterations 2` exits about 2 s later and leaves no `sleep 4003`; TUI (PTY) with two prompts then Ctrl+C ×2 exits in 0.6 s and leaves no `sleep 4003` (before the fix it survived with ppid 1, T34.11).
+- nextest 1312 passed, 4 skipped; fmt and clippy clean.
 
 #### T37.0 Land the desktop design docs and tokens
 

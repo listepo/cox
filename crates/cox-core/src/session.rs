@@ -158,7 +158,13 @@ pub struct Session {
     pub(crate) preset: Option<String>,
     /// Root of every turn/provider/tool span emitted by this session.
     pub(crate) telemetry_span: tracing::Span,
+    /// The current turn's token; each turn replaces it (`renew_cancel`)
+    /// with a fresh child of `ended`.
     pub(crate) cancel: Arc<StdMutex<CancellationToken>>,
+    /// Session-scoped (T38.2): the parent of every turn token this session
+    /// hands out, so `end` reaches a shell detached in an older turn, whose
+    /// `ToolCx::cancel` `interrupt` no longer reaches.
+    pub(crate) ended: CancellationToken,
     /// The hook runner, installed once by the surface and shared with
     /// children so a subagent's calls run the same hooks.
     hook: Arc<OnceLock<Arc<dyn Hook>>>,
@@ -363,6 +369,9 @@ impl Session {
         // T34.9: share this session's name→TaskId registry so the child can
         // resolve a sibling by name itself (`resolve_name_or_id`).
         child.task_names = self.task_names.clone();
+        // T38.2: ending this session also ends the child's detached shells.
+        child.ended = self.ended.child_token();
+        child.renew_cancel();
         Ok(child)
     }
 
@@ -437,6 +446,7 @@ impl Session {
             cox.tier = ?tier,
             cox.cwd = %cwd.display(),
         );
+        let ended = CancellationToken::new();
         let session = Self {
             id,
             config,
@@ -451,7 +461,8 @@ impl Session {
             agent,
             preset,
             telemetry_span,
-            cancel: Arc::new(StdMutex::new(CancellationToken::new())),
+            cancel: Arc::new(StdMutex::new(ended.child_token())),
+            ended,
             hook: Arc::new(OnceLock::new()),
             checkpointer: Arc::new(OnceLock::new()),
             writable_roots: Arc::new(OnceLock::new()),
@@ -611,6 +622,20 @@ impl Session {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .cancel();
+    }
+
+    /// Ends the session's work for good (T38.2): cancels every turn token
+    /// it ever handed out, so a `bash` detached in any turn is killed, not
+    /// orphaned. For a surface leaving the session (quit, `/clear`, fork,
+    /// handoff, headless exit); `interrupt` stays turn-scoped.
+    pub fn end(&self) {
+        self.ended.cancel();
+    }
+
+    /// A fresh turn token under `ended`: a previous `Esc` may have left
+    /// the old one cancelled.
+    pub(crate) fn renew_cancel(&self) {
+        *self.cancel.lock().unwrap_or_else(|e| e.into_inner()) = self.ended.child_token();
     }
 
     pub(crate) fn cancel_token(&self) -> CancellationToken {
@@ -1081,10 +1106,7 @@ impl Session {
         attachments: Vec<Attachment>,
         confirm_think: bool,
     ) -> Result<(), CoreError> {
-        {
-            let mut c = self.cancel.lock().unwrap_or_else(|e| e.into_inner());
-            *c = CancellationToken::new();
-        }
+        self.renew_cancel();
         let user_item = ItemId::new();
         // §1.8 step 1: a hook may block or rewrite the prompt before it
         // touches history; a blocked prompt is still a (refused) turn so
@@ -1745,11 +1767,7 @@ impl Session {
                 })
                 .await;
         }
-        {
-            // A previous `Esc` left the token cancelled.
-            let mut c = self.cancel.lock().unwrap_or_else(|e| e.into_inner());
-            *c = CancellationToken::new();
-        }
+        self.renew_cancel();
         let input = serde_json::json!({ "command": command });
         let ran = run_tools(
             self,

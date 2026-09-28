@@ -28,8 +28,8 @@ pub const EXIT_OK: i32 = 0;
 /// `bash` tool's own SIGTERM→SIGKILL grace (`crates/cox-tools/src/bash/
 /// mod.rs`'s `TERM_GRACE` plus its PTY-drain `REAP_GRACE`, ~2.5s) so
 /// `Session::wait_tasks_cleared` (T34.9 follow-up) cannot hang the
-/// headless exit (or the TUI's, T34.11) on a `TaskKind::Shell` task this
-/// session's own `interrupt()` cannot reach.
+/// headless exit (or the TUI's, T34.11) on a `TaskKind::Shell` task that
+/// does not die in time.
 pub(crate) const SHELL_CANCEL_GRACE: Duration = Duration::from_secs(5);
 pub const EXIT_ERROR: i32 = 1;
 pub const EXIT_DENIED: i32 = 2;
@@ -244,16 +244,14 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
         // A `TaskKind::Shell` task (a detached `bash`) is deliberately not
         // waited for there, but leaving it running and only abandoning the
         // OS process (`shutdown_background`, in `run`) leaks it as an
-        // orphan once this process exits. `interrupt()` is the same
-        // cancellation Ctrl+B/session cancel already use; for a shell task
-        // detached in this same turn (the common case, and the only one
-        // `--loop`'s last iteration leaves outstanding) it reaches the
-        // exact token that call's `ToolCx::cancel` cloned, which trips the
-        // shell tool's own SIGTERM-then-SIGKILL logic
-        // (`crates/cox-tools/src/bash/mod.rs`) and kills its process
-        // group. `wait_tasks_cleared` then waits for that kill to actually
-        // land before `shutdown_background` runs.
-        session.interrupt();
+        // orphan once this process exits. `end()` cancels the parent of
+        // every turn token (T38.2), so it reaches the token each detached
+        // call's `ToolCx::cancel` cloned — including one from an older
+        // `--loop` iteration — which trips the shell tool's own
+        // SIGTERM-then-SIGKILL logic (`crates/cox-tools/src/bash/mod.rs`)
+        // and kills its process group. `wait_tasks_cleared` then waits for
+        // that kill to actually land before `shutdown_background` runs.
+        session.end();
         session.wait_tasks_cleared(SHELL_CANCEL_GRACE).await;
         outcome
     })?;
@@ -270,16 +268,15 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
     }
     // By this point every `TaskKind::Agent` chain is done (`wait_idle`)
     // and any `TaskKind::Shell` task this same session could still reach
-    // has already been cancelled and killed (`interrupt` +
+    // has already been cancelled and killed (`end` +
     // `wait_tasks_cleared`, above) — so nothing meaningful is left
     // outstanding. `rt`'s own `Drop` does not know that: left to run
     // normally, it shuts down by "waiting until all [spawned] tasks have
     // completed" (`tokio::runtime::Runtime`'s own docs), which would hang
-    // this process on a genuinely unreachable leftover (an older, already-
-    // rotated turn's background shell in a `--loop` run — the one case
-    // `wait_tasks_cleared`'s own deadline gives up on). `shutdown_background`
-    // returns immediately instead, abandoning only that one, already-rare
-    // edge case rather than every ordinary exit.
+    // this process on a leftover `wait_tasks_cleared`'s own deadline gave
+    // up on (a shell that did not die in time). `shutdown_background`
+    // returns immediately instead, abandoning only that rare case rather
+    // than every ordinary exit.
     rt.shutdown_background();
     Ok(outcome.exit_code())
 }
