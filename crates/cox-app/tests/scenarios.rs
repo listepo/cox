@@ -1,19 +1,25 @@
-//! The timeline fold over real event streams (T37.8, DT§8): each scripted
-//! scenario runs a live cox-core session over the Scripted provider, its
-//! patches are snapshotted, and the rollout read back through JSONL — as
-//! `cox resume` reads it — folds to the very same patches.
+//! The timeline fold over real event streams (T37.8, T37.38, DT§8): each
+//! scripted scenario runs a live cox-core session over the Scripted
+//! provider, its patches are snapshotted, and the rollout read back through
+//! JSONL — as `cox resume` reads it — folds to the very same patches.
 
 #[path = "../../cox-core/tests/common/mod.rs"]
 mod common;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use cox_app::{Timeline, TimelinePatch};
-use cox_protocol::Config;
-use cox_protocol::traits::Store;
-use cox_protocol::types::{Decision, Event, Submission};
-use serde_json::Value;
+use cox_core::{MemoryStore, Session};
+use cox_protocol::errors::ToolError;
+use cox_protocol::traits::{Store, Tool, ToolCx};
+use cox_protocol::types::{Concurrency, Decision, Event, Risk, Submission, ToolOutput, ToolSpec};
+use cox_protocol::{Before, Change, Checkpointer, Config, PreImage, Snapshot};
+use cox_provider::scripted::Scripted;
+use serde_json::{Value, json};
+use tokio::sync::mpsc;
 
 /// What the test does when the turn stops for the person.
 #[derive(Clone)]
@@ -21,57 +27,175 @@ enum Act {
     Nothing,
     Approve(Decision),
     InterruptAtFirstCall,
+    /// Runs a second user turn, then rewinds code and conversation to it.
+    RewindSecondTurn,
+}
+
+struct Case {
+    name: &'static str,
+    /// The crate whose `tests/scenarios` holds the TOML.
+    home: &'static str,
+    config: Config,
+    act: Act,
+}
+
+fn core(name: &'static str, config: Config, act: Act) -> Case {
+    let home = "cox-core";
+    Case {
+        name,
+        home,
+        config,
+        act,
+    }
 }
 
 /// Scenarios from `crates/cox-core/tests/scenarios`, with the config and
-/// reaction their own core tests use.
-fn cases() -> Vec<(&'static str, Config, Act)> {
+/// reaction their own core tests use, then this crate's own.
+fn cases() -> Vec<Case> {
     let mut big = Config::default();
     big.context.tool_output_visible_bytes = 120;
     big.context.tool_output_head_lines = 2;
     big.context.tool_output_tail_lines = 2;
     let mut one_turn = Config::default();
     one_turn.core.max_turns = 1;
+    let mut writes = Config::default();
+    writes.permissions.allow = vec!["touch".into()];
     let plain = Config::default;
+    let deny = Decision::Deny {
+        reason: "no".into(),
+    };
     vec![
-        ("text_only", plain(), Act::Nothing),
-        ("one_tool", plain(), Act::Nothing),
-        ("three_parallel", plain(), Act::Nothing),
-        ("big_tool_output", big, Act::Nothing),
-        ("provider_error", plain(), Act::Nothing),
-        ("max_turns", one_turn, Act::Nothing),
-        ("interrupt", plain(), Act::InterruptAtFirstCall),
-        ("ask_then_approve", plain(), Act::Approve(Decision::Allow)),
-        (
-            "ask_then_deny",
-            plain(),
-            Act::Approve(Decision::Deny {
-                reason: "no".into(),
-            }),
-        ),
-        (
+        core("text_only", plain(), Act::Nothing),
+        core("one_tool", plain(), Act::Nothing),
+        core("three_parallel", plain(), Act::Nothing),
+        core("big_tool_output", big, Act::Nothing),
+        core("provider_error", plain(), Act::Nothing),
+        core("max_turns", one_turn, Act::Nothing),
+        core("interrupt", plain(), Act::InterruptAtFirstCall),
+        core("ask_then_approve", plain(), Act::Approve(Decision::Allow)),
+        core("ask_then_deny", plain(), Act::Approve(deny)),
+        core(
             "allow_for_session",
             plain(),
             Act::Approve(Decision::AllowForSession),
         ),
+        core("subagent_explore", plain(), Act::Nothing),
+        Case {
+            home: "cox-app",
+            ..core("explore", plain(), Act::Nothing)
+        },
+        Case {
+            home: "cox-app",
+            ..core("checkpoint_rewind", writes, Act::RewindSecondTurn)
+        },
     ]
 }
 
-/// One user turn over scenario `name`: the live events, then the rollout.
-async fn run(name: &str, config: Config, act: Act) -> (Vec<Event>, Vec<Event>) {
+/// A read-only stub under a real tool's name, whose `structured` payload is
+/// the one the real tool sends (`cox-tools` `read`/`grep`).
+struct Stub {
+    name: &'static str,
+    structured: Value,
+}
+
+#[async_trait]
+impl Tool for Stub {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec {
+            name: self.name.into(),
+            description: "exploring stub".into(),
+            input_schema: json!({"type": "object"}),
+            deferred: false,
+            risk: Risk::ReadOnly,
+            concurrency: Concurrency::Parallel,
+        }
+    }
+    fn subject(&self, input: &Value) -> String {
+        let field = input.get("path").or_else(|| input.get("pattern"));
+        field.and_then(Value::as_str).unwrap_or("").into()
+    }
+    async fn call(&self, _input: Value, _cx: &ToolCx) -> Result<ToolOutput, ToolError> {
+        Ok(ToolOutput {
+            text: "1\tfn main() {}".into(),
+            is_error: false,
+            diff: None,
+            structured: Some(self.structured.clone()),
+        })
+    }
+}
+
+/// Every path held "old"; restoring always works; no shell snapshots.
+struct Fake;
+
+#[async_trait]
+impl Checkpointer for Fake {
+    async fn preimages(&self, roots: &[PathBuf], _cwd: &Path, paths: &[String]) -> Vec<PreImage> {
+        let image = |p: &String| PreImage {
+            path: roots[0].join(p),
+            before: Before::Bytes(b"old".to_vec()),
+        };
+        paths.iter().map(image).collect()
+    }
+    async fn snapshot(&self, _roots: &[PathBuf]) -> Result<Snapshot, ToolError> {
+        Ok(Snapshot { trees: vec![] })
+    }
+    async fn changes(&self, _: &Snapshot, _: &Snapshot) -> Result<Vec<Change>, ToolError> {
+        Ok(vec![])
+    }
+    async fn restore(
+        &self,
+        _roots: &[PathBuf],
+        _cwd: &Path,
+        _path: &Path,
+        _bytes: Option<&[u8]>,
+    ) -> Result<(), ToolError> {
+        Ok(())
+    }
+}
+
+/// `common::open` plus the exploring stubs and, for the rewind case, the
+/// fake checkpointer.
+fn open(case: &Case) -> (Session, Arc<MemoryStore>, mpsc::Receiver<Event>) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../cox-core/tests/scenarios")
-        .join(format!("{name}.toml"));
+        .join(format!("../{}/tests/scenarios", case.home))
+        .join(format!("{}.toml", case.name));
     let toml = std::fs::read_to_string(&path).expect("scenario file");
-    let (session, store, mut rx) = common::open(&toml, config);
-    let running = common::spawn_turn(&session, name);
+    let mut config = case.config.clone();
+    config.core.workspace_roots = vec![PathBuf::from("/tmp/cox-turn")];
+    let provider = Arc::new(Scripted::from_toml(&toml, "").expect("scenario"));
+    let mut tools = common::tools();
+    tools.push(Arc::new(Stub {
+        name: "read",
+        structured: json!({"lines": 1}),
+    }));
+    tools.push(Arc::new(Stub {
+        name: "grep",
+        structured: json!({"matches": 1}),
+    }));
+    let store = Arc::new(MemoryStore::new());
+    let cwd = PathBuf::from("/tmp/cox-turn");
+    let session =
+        Session::new(config, provider, tools, store.clone(), store.clone(), cwd).expect("session");
+    // The other scenarios keep the default checkpointer, as in cox-core.
+    if matches!(case.act, Act::RewindSecondTurn) {
+        session.set_checkpointer(Arc::new(Fake));
+    }
+    let rx = session.events().expect("events once");
+    (session, store, rx)
+}
+
+/// The scenario's user turns: the live events, then the rollout.
+async fn run(case: &Case) -> (Vec<Event>, Vec<Event>) {
+    let (session, store, mut rx) = open(case);
+    let mut running = common::spawn_turn(&session, case.name);
     let mut live = Vec::new();
+    let mut turns = 0;
     loop {
         let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
             .await
             .expect("event timeout")
             .expect("event stream open");
-        match (&event, &act) {
+        match (&event, &case.act) {
             (Event::ApprovalRequired { call, .. }, Act::Approve(decision)) => {
                 let approve = Submission::Approve {
                     call_id: call.id,
@@ -88,12 +212,31 @@ async fn run(name: &str, config: Config, act: Act) -> (Vec<Event>, Vec<Event>) {
             _ => {}
         }
         let done = matches!(event, Event::TurnDone { .. });
+        // A rewind ends with the `Notice` that says what it did.
+        let rewound = matches!(event, Event::Notice { .. })
+            && live.iter().any(|e| matches!(e, Event::Rewound { .. }));
         live.push(event);
-        if done {
+        if rewound {
             break;
         }
+        if !done {
+            continue;
+        }
+        let _ = (&mut running).await.expect("join");
+        turns += 1;
+        match (&case.act, turns) {
+            (Act::RewindSecondTurn, 1) => running = common::spawn_turn(&session, "second turn"),
+            (Act::RewindSecondTurn, _) => {
+                let rewind = Submission::Rewind {
+                    to_turn: 2,
+                    code: true,
+                    conversation: true,
+                };
+                session.submit(rewind).await.expect("rewind");
+            }
+            _ => break,
+        }
     }
-    let _ = running.await.expect("join");
     let rollout = store.rollout_read(&session.id()).expect("rollout");
     (live, rollout)
 }
@@ -159,20 +302,21 @@ fn normalize(value: &mut Value, ids: &mut Vec<String>) {
 
 #[tokio::test]
 async fn replay_equals_live() {
-    for (name, config, act) in cases() {
-        let (live, rollout) = run(name, config, act).await;
+    for case in cases() {
+        let (live, rollout) = run(&case).await;
         assert_eq!(
             fold(&live),
             fold(&through_jsonl(&rollout)),
-            "{name}: the replayed rollout folds differently"
+            "{}: the replayed rollout folds differently",
+            case.name
         );
     }
 }
 
 #[tokio::test]
 async fn patches_match_snapshot_per_scenario() {
-    for (name, config, act) in cases() {
-        let (live, _) = run(name, config, act).await;
+    for case in cases() {
+        let (live, _) = run(&case).await;
         let mut ids = Vec::new();
         let lines: Vec<String> = fold(&live)
             .iter()
@@ -182,6 +326,6 @@ async fn patches_match_snapshot_per_scenario() {
                 value.to_string()
             })
             .collect();
-        insta::assert_snapshot!(name, lines.join("\n"));
+        insta::assert_snapshot!(case.name, lines.join("\n"));
     }
 }

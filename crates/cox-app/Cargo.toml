@@ -15,6 +15,8 @@ cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
 # The neutral `StyledDoc` half only; the ratatui layout stays in the TUI.
 cox-render = { path = "../cox-render", version = "0.1.2", default-features = false }
 serde = { workspace = true }
+# Tool inputs and `ToolResult.structured` are JSON values (`summary.rs`).
+serde_json = { workspace = true }
 
 [dev-dependencies]
 # The scenario tests run a real session over the Scripted provider and
@@ -23,5 +25,4 @@ cox-core = { path = "../cox-core", version = "0.1.2" }
 cox-provider = { path = "../cox-provider", version = "0.1.2" }
 async-trait = { workspace = true }
 insta = { workspace = true }
-serde_json = { workspace = true }
 tokio = { workspace = true }

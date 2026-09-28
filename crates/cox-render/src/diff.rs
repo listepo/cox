@@ -13,6 +13,7 @@ use similar::{ChangeTag, TextDiff};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::Look;
+pub use crate::diffstat::counts;
 use crate::markdown;
 
 /// Below this many columns a pane is too narrow to read a line of code, so
@@ -67,21 +68,6 @@ impl Layout {
             right: usable - left,
         }
     }
-}
-
-/// Added and removed line counts of a unified diff; file markers do not count.
-pub fn counts(unified: &str) -> (usize, usize) {
-    unified.lines().fold((0, 0), |(a, r), l| {
-        if l.starts_with("+++") || l.starts_with("---") {
-            (a, r)
-        } else if l.starts_with('+') {
-            (a + 1, r)
-        } else if l.starts_with('-') {
-            (a, r + 1)
-        } else {
-            (a, r)
-        }
-    })
 }
 
 /// A hunk line that carries file content: its marker and the source under it.

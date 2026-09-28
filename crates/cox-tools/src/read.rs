@@ -115,11 +115,13 @@ impl Tool for ReadTool {
             render_text(&content, total_lines, input.lines.as_deref())
         };
 
+        // The file's line count as data (DT G3): a summary says "120
+        // lines" without parsing the footer.
         Ok(ToolOutput {
             text,
             is_error: false,
             diff: None,
-            structured: None,
+            structured: Some(serde_json::json!({ "lines": total_lines })),
         })
     }
 }
@@ -254,6 +256,7 @@ mod tests {
         assert!(!out.text.contains("line1\n"), "{}", out.text);
         assert!(!out.text.contains("line6"), "{}", out.text);
         assert!(out.text.contains("lines 3-5 of 10 total"), "{}", out.text);
+        assert_eq!(out.structured, Some(serde_json::json!({ "lines": 10 })));
     }
 
     #[tokio::test]

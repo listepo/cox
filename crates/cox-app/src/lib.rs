@@ -4,7 +4,9 @@
 //! toolkit leaks in (`crates/cox/tests/deps.rs`).
 
 pub mod patch;
+pub mod summary;
 pub mod timeline;
 
 pub use patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
+pub use summary::Icon;
 pub use timeline::Timeline;

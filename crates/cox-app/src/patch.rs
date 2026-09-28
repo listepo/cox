@@ -13,6 +13,8 @@ use cox_protocol::types::{
 use cox_render::doc::{Block as DocBlock, StyledDoc};
 use serde::{Deserialize, Serialize};
 
+use crate::summary::Icon;
+
 /// How many trailing lines of output a running `Tool` block keeps.
 pub const TAIL_LINES: usize = 5;
 
@@ -51,7 +53,9 @@ pub enum BlockKind {
     },
     Tool {
         tool: String,
+        /// The one-line summary (`summary::summary`), past tense once done.
         summary: String,
+        icon: Icon,
         risk: Risk,
         state: ToolState,
         /// The last `TAIL_LINES` lines of output.
@@ -59,6 +63,15 @@ pub enum BlockKind {
         archive: Option<ArchiveRef>,
         diff: Option<Diff>,
         duration_ms: u64,
+    },
+    /// Consecutive read/grep/glob/outline calls of one step: "Explored 3
+    /// files". The children stay `Tool` blocks right after this one, so
+    /// their patches are unchanged; a UI shows them when it expands.
+    ToolGroup {
+        summary: String,
+        children: Vec<BlockId>,
+        /// `Running` while any child runs, else `Failed` if any failed.
+        state: ToolState,
     },
     Approval {
         call: CallId,
@@ -89,6 +102,9 @@ pub enum BlockKind {
         before_tokens: u32,
         after_tokens: u32,
         reason: CompactReason,
+        /// The summary that replaced the dropped turns; `None` when the
+        /// stream did not carry its `Summary` item.
+        summary: Option<String>,
     },
     Checkpoint {
         files: Vec<PathBuf>,

@@ -5,11 +5,13 @@
 
 use std::fmt::Display;
 
-use cox_protocol::types::{Event, ItemKind, Usage};
+use cox_protocol::ids::{CallId, ItemId};
+use cox_protocol::types::{Event, ItemKind, ToolCall, Usage};
 use cox_render::glyph::UNICODE;
 use cox_render::markdown;
 
 use crate::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState, tail};
+use crate::summary::{self, Explore, one_line};
 
 /// The block list of one session and what folds events into it.
 #[derive(Debug, Clone, Default)]
@@ -21,6 +23,22 @@ pub struct Timeline {
     seq: u64,
     /// The syntect theme code blocks are highlighted with.
     theme: String,
+    /// Calls not done yet: their input writes the done summary.
+    calls: Vec<ToolCall>,
+    /// The exploring calls since the last other block.
+    explore: Option<Run>,
+    /// A `Summary` item's text until its `Compacted` arrives.
+    summary: Option<(ItemId, String)>,
+}
+
+/// A run of consecutive exploring calls; from its second call on it shows
+/// as a `ToolGroup` keyed by the first call, so replay keys it the same.
+#[derive(Debug, Clone)]
+struct Run {
+    group: BlockId,
+    children: Vec<BlockId>,
+    files: Vec<String>,
+    searches: usize,
 }
 
 fn key(kind: &str, id: impl Display) -> BlockId {
@@ -82,11 +100,13 @@ impl Timeline {
                         level: *level,
                         text: text.clone(),
                     },
-                    // Calls and results arrive as their own events; a
-                    // summary is shown by its `Compacted`.
-                    ItemKind::ToolCall { .. }
-                    | ItemKind::ToolResult { .. }
-                    | ItemKind::Summary { .. } => return vec![],
+                    // A summary is shown by its `Compacted`, which follows.
+                    ItemKind::Summary { text } => {
+                        self.summary = Some((*item, text.clone()));
+                        return vec![];
+                    }
+                    // Calls and results arrive as their own events.
+                    ItemKind::ToolCall { .. } | ItemKind::ToolResult { .. } => return vec![],
                 };
                 self.insert(key("item", item), kind)
             }
@@ -106,7 +126,8 @@ impl Timeline {
             Event::ToolCallRequested { call } => {
                 let kind = BlockKind::Tool {
                     tool: call.name.clone(),
-                    summary: one_line(&call.subject),
+                    summary: summary::summary(call, None),
+                    icon: summary::icon(&call.name),
                     risk: call.risk,
                     state: ToolState::Running,
                     tail: String::new(),
@@ -114,7 +135,18 @@ impl Timeline {
                     diff: None,
                     duration_ms: 0,
                 };
-                self.insert(key("call", call.id), kind)
+                let run = self.explore.take();
+                let id = key("call", call.id);
+                let mut out = self.insert(id.clone(), kind);
+                if out.is_empty() {
+                    self.explore = run;
+                    return out;
+                }
+                self.calls.push(call.clone());
+                if let Some(target) = summary::explore(call) {
+                    out.extend(self.explore(run, call.id, id, target));
+                }
+                out
             }
             Event::ToolCallOutput { call_id, delta } => self.append(key("call", call_id), delta),
             Event::ToolCallDone { call_id, result } => {
@@ -123,8 +155,15 @@ impl Timeline {
                         *answer = Some(result.visible.clone());
                     }
                 });
-                out.extend(self.update(&key("call", call_id), |k| {
+                let call = self
+                    .calls
+                    .iter()
+                    .position(|c| c.id == *call_id)
+                    .map(|i| self.calls.swap_remove(i));
+                let id = key("call", call_id);
+                out.extend(self.update(&id, |k| {
                     if let BlockKind::Tool {
+                        summary: s,
                         state,
                         tail: t,
                         archive,
@@ -142,8 +181,12 @@ impl Timeline {
                         *archive = result.archive.clone();
                         *diff = result.diff.clone();
                         *duration_ms = result.duration_ms;
+                        if let Some(call) = &call {
+                            *s = summary::summary(call, Some(result));
+                        }
                     }
                 }));
+                out.extend(self.refresh_group(&id));
                 out
             }
             Event::ApprovalRequired { call, why, source } => {
@@ -199,10 +242,12 @@ impl Timeline {
                 reason,
                 ..
             } => {
+                let text = self.summary.take().filter(|(id, _)| id == summary);
                 let kind = BlockKind::Compaction {
                     before_tokens: *before_tokens,
                     after_tokens: *after_tokens,
                     reason: *reason,
+                    summary: text.map(|(_, text)| text),
                 };
                 self.insert(key("compaction", summary), kind)
             }
@@ -215,9 +260,13 @@ impl Timeline {
                 conversation: true,
                 ..
             } => {
+                // `to_turn` itself is undone too (`Submission::Rewind`), so
+                // what follows belongs to the turn before it.
+                self.explore = None;
+                self.turn = to_turn.saturating_sub(1);
                 let (gone, kept): (Vec<Block>, Vec<Block>) = std::mem::take(&mut self.blocks)
                     .into_iter()
-                    .partition(|b| b.turn > *to_turn);
+                    .partition(|b| b.turn >= *to_turn);
                 self.blocks = kept;
                 gone.into_iter()
                     .map(|b| TimelinePatch::Remove { id: b.id })
@@ -280,13 +329,105 @@ impl Timeline {
         }]
     }
 
+    /// Appends a new block; any new block ends a run of exploring calls.
     fn insert(&mut self, id: BlockId, kind: BlockKind) -> Vec<TimelinePatch> {
         if self.find(&id).is_some() {
             return vec![];
         }
+        self.explore = None;
         let turn = self.turn;
         self.blocks.push(Block { id, turn, kind });
         self.upsert(self.blocks.len() - 1)
+    }
+
+    /// Adds an exploring call to the run; from the second call on the run's
+    /// `ToolGroup` is upserted, inserted in front of its first call.
+    fn explore(
+        &mut self,
+        run: Option<Run>,
+        call: CallId,
+        id: BlockId,
+        target: Explore,
+    ) -> Vec<TimelinePatch> {
+        let mut run = run.unwrap_or_else(|| Run {
+            group: key("group", call),
+            children: vec![],
+            files: vec![],
+            searches: 0,
+        });
+        run.children.push(id);
+        match target {
+            Explore::File(path) if !run.files.contains(&path) => run.files.push(path),
+            Explore::File(_) => {}
+            Explore::Search => run.searches += 1,
+        }
+        let kind = BlockKind::ToolGroup {
+            summary: summary::explored(run.files.len(), run.searches),
+            children: run.children.clone(),
+            state: self.group_state(&run.children),
+        };
+        let at = match self.find(&run.group) {
+            Some(i) => Some(i),
+            None if run.children.len() > 1 => self.find(&run.children[0]).inspect(|&i| {
+                let (id, turn) = (run.group.clone(), self.turn);
+                self.blocks.insert(
+                    i,
+                    Block {
+                        id,
+                        turn,
+                        kind: kind.clone(),
+                    },
+                );
+            }),
+            None => None,
+        };
+        self.explore = Some(run);
+        let Some(i) = at else {
+            return vec![];
+        };
+        self.blocks[i].kind = kind;
+        self.upsert(i)
+    }
+
+    /// Re-sends the group holding `child` when its state changed.
+    fn refresh_group(&mut self, child: &BlockId) -> Vec<TimelinePatch> {
+        let found = self
+            .blocks
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(i, b)| match &b.kind {
+                BlockKind::ToolGroup { children, .. } if children.contains(child) => {
+                    Some((i, children.clone()))
+                }
+                _ => None,
+            });
+        let Some((i, children)) = found else {
+            return vec![];
+        };
+        let next = self.group_state(&children);
+        match &mut self.blocks[i].kind {
+            BlockKind::ToolGroup { state, .. } if *state != next => *state = next,
+            _ => return vec![],
+        }
+        self.upsert(i)
+    }
+
+    fn group_state(&self, children: &[BlockId]) -> ToolState {
+        let states: Vec<ToolState> = children
+            .iter()
+            .filter_map(|c| match &self.blocks[self.find(c)?].kind {
+                BlockKind::Tool { state, .. } => Some(*state),
+                _ => None,
+            })
+            .collect();
+        if states.contains(&ToolState::Running) {
+            ToolState::Running
+        } else if states.contains(&ToolState::Failed) {
+            ToolState::Failed
+        } else {
+            ToolState::Done
+        }
     }
 
     fn update(&mut self, id: &BlockId, f: impl FnOnce(&mut BlockKind)) -> Vec<TimelinePatch> {
@@ -339,12 +480,6 @@ impl Timeline {
     }
 }
 
-/// A multi-line subject (a heredoc command, a whole echoed text) shows its
-/// first line; the full input is in the call.
-fn one_line(subject: &str) -> String {
-    subject.lines().next().unwrap_or_default().to_owned()
-}
-
 fn add(a: Usage, b: &Usage) -> Usage {
     Usage {
         input_tokens: a.input_tokens.saturating_add(b.input_tokens),
@@ -359,8 +494,9 @@ fn add(a: Usage, b: &Usage) -> Usage {
 
 #[cfg(test)]
 mod tests {
-    use cox_protocol::ids::{CallId, ItemId, TurnId};
-    use cox_protocol::types::{Job, ModelId, Risk, Tier, ToolCall};
+    use cox_protocol::ids::TurnId;
+    use cox_protocol::types::{CompactReason, Job, ModelId, Risk, Tier};
+    use serde_json::json;
 
     use super::*;
 
@@ -420,7 +556,7 @@ mod tests {
         };
         assert_eq!(
             (tail.as_str(), summary.as_str()),
-            ("3\n4\n5\n6\n7\n", "seq 1 7")
+            ("3\n4\n5\n6\n7\n", "Running `seq 1 7`")
         );
     }
 
@@ -431,7 +567,7 @@ mod tests {
             started(&mut timeline, seq);
         }
         let patches = timeline.apply(&Event::Rewound {
-            to_turn: 1,
+            to_turn: 2,
             code: false,
             conversation: true,
             restored: vec![],
@@ -444,5 +580,69 @@ mod tests {
                 .all(|p| matches!(p, TimelinePatch::Remove { .. }))
         );
         assert_eq!(timeline.blocks().len(), 1);
+    }
+
+    fn request(timeline: &mut Timeline, name: &str, input: serde_json::Value) {
+        let call = ToolCall {
+            id: CallId::new(),
+            name: name.into(),
+            input,
+            risk: Risk::ReadOnly,
+            subject: String::new(),
+            segments: None,
+        };
+        timeline.apply(&Event::ToolCallRequested { call });
+    }
+
+    #[test]
+    fn a_non_exploring_call_ends_the_group() {
+        let mut timeline = Timeline::default();
+        request(&mut timeline, "read", json!({"path": "a.rs"}));
+        request(&mut timeline, "glob", json!({"pattern": "*.rs"}));
+        request(&mut timeline, "bash", json!({"command": "ls"}));
+        request(&mut timeline, "read", json!({"path": "b.rs"}));
+        let kinds: Vec<&str> = timeline
+            .blocks()
+            .iter()
+            .map(|b| match &b.kind {
+                BlockKind::ToolGroup {
+                    summary, children, ..
+                } => {
+                    assert_eq!(
+                        (summary.as_str(), children.len()),
+                        ("Explored 1 file, 1 search", 2)
+                    );
+                    "group"
+                }
+                BlockKind::Tool { tool, .. } => tool.as_str(),
+                _ => "other",
+            })
+            .collect();
+        assert_eq!(kinds, ["group", "read", "glob", "bash", "read"]);
+    }
+
+    #[test]
+    fn compaction_carries_its_summary_item_text() {
+        let mut timeline = Timeline::default();
+        let item = ItemId::new();
+        let kind = ItemKind::Summary {
+            text: "we fixed the login".into(),
+        };
+        assert!(
+            timeline
+                .apply(&Event::ItemStarted { item, kind })
+                .is_empty()
+        );
+        timeline.apply(&Event::Compacted {
+            summary: item,
+            dropped: vec![],
+            before_tokens: 9000,
+            after_tokens: 1200,
+            reason: CompactReason::PreCall,
+        });
+        let BlockKind::Compaction { summary, .. } = &timeline.blocks()[0].kind else {
+            panic!("expected a compaction block");
+        };
+        assert_eq!(summary.as_deref(), Some("we fixed the login"));
     }
 }
