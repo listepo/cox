@@ -341,6 +341,10 @@ pub fn breakdown(req: &Request, total: u32, last_usage: Option<&Usage>) -> Break
     // estimator's byte term is itself a heuristic, so attributing each
     // content by its rendered JSON length is close enough for the split.
     let mut w = [0u64; 9];
+    // T40.3: an image has no bytes to weigh; the estimator prices it flat,
+    // so the same flat cost goes to its message's segment before the byte
+    // split shares out the rest.
+    let mut images = [0u64; 9];
     for (i, block) in req.system.iter().enumerate() {
         let seg = match i {
             0 => 0, // tool specs
@@ -359,23 +363,33 @@ pub fn breakdown(req: &Request, total: u32, last_usage: Option<&Usage>) -> Break
         for c in &msg.content {
             let seg = match c {
                 Content::Pointer { .. } => 7,
-                Content::Image { .. } => continue,
+                Content::Image { .. } => {
+                    images[verbatim] += image::IMAGE_TOKEN_ESTIMATE;
+                    continue;
+                }
                 _ => verbatim,
             };
             w[seg] += serde_json::to_string(c).map_or(0, |s| s.len() as u64);
         }
+    }
+    // Capped so the shares still sum to `total` when it came from
+    // somewhere that priced images lower.
+    let mut rest = u64::from(total);
+    for n in &mut images {
+        *n = (*n).min(rest);
+        rest -= *n;
     }
     let sum: u64 = w.iter().sum();
     let mut shares = [0u32; 9];
     let (mut acc, mut prev) = (0u64, 0u64);
     for (i, weight) in w.iter().enumerate() {
         acc += weight;
-        let cum = u64::from(total) * acc / sum.max(1);
-        shares[i] = (cum - prev) as u32;
+        let cum = rest * acc / sum.max(1);
+        shares[i] = (cum - prev + images[i]) as u32;
         prev = cum;
     }
     if sum == 0 {
-        shares[5] = total; // a byte-free request still costs; volatile is the catch-all
+        shares[5] += rest as u32; // a byte-free request still costs; volatile is the catch-all
     }
     Breakdown {
         tools: shares[0],
@@ -616,6 +630,45 @@ mod tests {
         );
         assert!(b.summary > 0 && b.history_pointers > 0 && b.instructions > 0);
         assert_eq!(b.cached_estimate, usage.cache_read_tokens);
+    }
+
+    /// T40.3: an image counts `IMAGE_TOKEN_ESTIMATE` in its message's
+    /// segment, and the shares still sum to the estimate.
+    #[test]
+    fn breakdown_counts_images() {
+        let history = vec![Message {
+            role: cox_protocol::types::Role::User,
+            content: vec![
+                Content::Image {
+                    media_type: "image/png".into(),
+                    data_b64: "iVBORw==".into(),
+                },
+                Content::Text {
+                    text: "look".into(),
+                },
+            ],
+        }];
+        let config = cox_protocol::Config::default();
+        let req = assemble(&history, &config, &[], Path::new("/w"), "2026-09-28");
+        let estimated = cox_provider::tokens::estimate(&req).tokens;
+        let b = breakdown(&req, estimated, None);
+        assert!(
+            u64::from(b.history_verbatim) >= image::IMAGE_TOKEN_ESTIMATE,
+            "{}",
+            b.history_verbatim
+        );
+        assert_eq!(
+            b.tools
+                + b.system
+                + b.instructions
+                + b.skills
+                + b.memory
+                + b.volatile
+                + b.history_verbatim
+                + b.history_pointers
+                + b.summary,
+            estimated
+        );
     }
 
     /// T30.1: the minimal profile holds its tool list, prompt and discovery
