@@ -5720,3 +5720,18 @@ Deviations: `--crop-*` (snapshots carry a 20 pt wallpaper margin, mockups 40 px 
 Check: `npm test` 11/11 (a synthetic pair differing in one rectangle reports exactly `{13,7,21×9}`), `npm run check` passes, `npm run build` leaves no changes. Real run `mainScreen-_.light-frosted.png` vs `28-main-glass-frosted.png` cropped: 80.44 % at threshold 0.1 (glass tint), 8.36 % at 0.3 with regions at the toolbar, inspector/popover, the missing terminal block and the sidebar rows (drifted row spacing). On the merged tree: `npm test` 11/11.
 
 Not done: nothing.
+
+#### T37.22.14 Transcript card placement is safe on macOS 26
+
+Depends: T37.22.10 · Size: ~40 · Files: `CoxTranscriptText/TranscriptCards.swift`, its tests
+Goal: T37.22.10 re-places cards from an override of `textViewportLayoutControllerDidLayout`, which the SDK declares on `NSTextView` only from macOS 27, while the deployment target is macOS 26 (`project.yml`, `Package.swift`). On macOS 26 the override may never run (cards stay missing) or its `super` call may reach a selector `NSTextView` does not implement. Make the placement pass run on macOS 26 and 27 without calling an unimplemented `super` (an availability or `instancesRespond(to:)` guard, or a hook both versions have), keeping T37.22.10's behaviour on 27.
+Check: the SDK declaration and its availability quoted in the commit body; a test that the placement pass runs through the macOS 26 path; CoxTranscriptText and CoxTranscript tests pass; swift-format and swiftlint strict clean.
+Plan: read the SDK header (`xcrun --show-sdk-path`) for the method's availability, choose the guard or an older hook, add the test, verify with CoxTranscriptText and CoxTranscript tests and the linters.
+Status: done 2026-09-28
+Result: the macOS 27 SDK declares `textViewportLayoutControllerDidLayout` on `NSTextView` as `API_AVAILABLE(macos(27.0)) NS_REQUIRES_SUPER` (`NSTextView.h:512`), while the protocol method is `@optional` since macOS 12 and the 26.5 SDK's `NSTextView` lists neither. `TranscriptCards.swift`'s override now goes through `viewportDidLayout(_:superLaysOut:)`, calling `super` only when `NSTextView.instancesRespond(to:)` finds the method (`static let superLaysOut`), then `placeCards()`; macOS 27 behaves as before.
+
+Deviations: none.
+
+Check: new `withoutNSTextViewsOwnPassCardsArePlacedAndSuperIsNotCalled` runs the macOS 26 path and asserts the viewport controller's delegate is the view; a probe on macOS 27 showed `-[NSTextView layout]` → `layoutViewport` → the override; CoxTranscriptText 38/38, CoxTranscript 51/52 (`streamingAtTwoHundredTokensASecondKeepsTheMainThreadMostlyFree` is a frame-time benchmark that failed at load ~45 and passes alone); swift-format and swiftlint strict clean.
+
+Not done: no run on a real macOS 26 system; that the delegate is the text view on 26 is inferred from the SDK, and the new test's delegate assertion would fail on a macOS 26 runner if it is wrong.
