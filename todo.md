@@ -28,7 +28,6 @@
 - T39.5. `[providers.gemini]` preset and vendored model rows
 - T39.6. Offline end-to-end: a Gemini-shaped two-round tool loop
 - T39.7. Optional: live check against the real Gemini endpoint (needs the creator's key)
-- T40.1. `cox_protocol::image`: sniff, cap and encode
 - T40.2. Core carries user attachments into history and the rollout
 - T40.3. Token estimate and context breakdown count images
 - T40.4. `read` returns an image instead of refusing it

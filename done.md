@@ -3052,3 +3052,40 @@ Check output:
 - In the worktree: nextest 1316 passed, 4 skipped; fmt and clippy clean.
 - Not run: the real binary. Headless runs cannot change the mode mid-session, so the bug needs the TUI's Shift+Tab; the core tests drive the same `SetPermissionMode` submission the TUI sends.
 Follow-ups found (not in this card): a finished child woken by `TaskMessage` is restarted from its rollout (`subagent.rs` `restart`), and `History::from_events` always returns `PermissionMode::Default` because mode changes are not recorded, so a child of a plan-mode parent wakes in `Default`; the same applies to resuming any session. The parent's own volatile system block (`context.rs`) also renders `config.permissions.mode`, not the live mode.
+
+#### T40.1 `cox_protocol::image`: sniff, cap and encode
+
+- Model: Claude Code / opus-5.5 (card: sonnet)
+- Depends: -
+- Size: ~140
+- Priority: P1
+- Complexity: 2
+- Goal: one pure helper decides whether bytes are an image cox accepts, and turns them into a checked `Attachment` or tool-output payload. Surfaces, `read` and the core share it, with no second check anywhere.
+- Files: `crates/cox-protocol/src/image.rs` (new), `crates/cox-protocol/src/lib.rs`. Manifests: root `Cargo.toml`, `crates/cox-protocol/Cargo.toml`.
+- Steps:
+  1. `sniff(bytes) -> Option<&'static str>` by magic bytes: PNG `89 50 4E 47`, JPEG `FF D8 FF`, GIF `GIF87a`/`GIF89a`, WebP `RIFF....WEBP`.
+  2. `pub const MAX_IMAGE_BYTES: usize = 3_750_000` (why: the smallest documented per-image limit, 5 MB base64; see the phase intro).
+  3. `pub const IMAGE_TOKEN_ESTIMATE: u64 = 1600` (why: the standard-tier cap of 1568 visual tokens, rounded; provider-reported usage corrects it).
+  4. `ImageError` (thiserror): `NotAnImage`, `TooLarge { bytes, cap }`, `MediaTypeMismatch { declared, sniffed }`, `BadBase64`.
+  5. `attachment(name, bytes) -> Result<Attachment, ImageError>` and `validate(&Attachment) -> Result<(), ImageError>`. The latter decodes only enough to sniff, and checks the declared type and the decoded length.
+  6. `to_structured(media_type, bytes) -> Value` and `take_structured(&mut ToolOutput) -> Option<(String, String)>`, keyed `structured["image"]`. `ToolOutput` has 69 literal constructions, so no new field.
+  7. Base64: needs the new dependency `base64` (see Open questions). Alternative with no new dependency: move `base64_encode` out of `crates/cox-tui/src/term.rs:247` into this module, add a matching decoder, and have `term.rs` call it (3 files, ~40 LOC more).
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-protocol -E 'test(image)'
+  ```
+- Done when: there is a test per format, one for the cap, one for mismatch and one for bad base64. Any new dependency has its row in §1.1 and a reason in the commit.
+- Out of scope: resizing or downscaling (no image crate; see open questions).
+- Plan:
+  1. Manifests: `base64 = "0.23"` in root `[workspace.dependencies]` (creator-approved, A81; already in `Cargo.lock` as 0.23.1, the latest on crates.io 2026-09-28), `base64 = { workspace = true }` in `cox-protocol`. Rows in §1.1 (`cox-protocol`, `cox-tui`) and `toolchain.md`; `rust.md` already lists `base64`.
+  2. Tests first in `crates/cox-protocol/src/image.rs` against stub bodies, and watch them fail: one `sniff` case per format (PNG, JPEG, GIF87a, GIF89a, WebP), a non-image and a non-WebP RIFF, the cap (at the cap accepted, one byte over refused, an over-cap base64 refused before decoding), a declared/sniffed mismatch, bad base64, an `attachment` → `validate` round trip, and `take_structured` returning the pair and dropping an emptied payload while keeping other keys.
+  3. Implement per steps 1–6. `validate` bounds the decoded length from the base64 length first, then decodes the whole string (allocation bounded by the cap), so bad base64 anywhere is caught, not only in the sniffed prefix. `pub mod image` plus its line in the `lib.rs` header.
+  4. A81: a second small commit replaces `base64_encode` in `crates/cox-tui/src/term.rs` with `base64::engine::general_purpose::STANDARD` (+ `crates/cox-tui/Cargo.toml`); the known-vector test moves onto `copy` so the OSC 52 bytes stay identical. Separate because it would take the card past three files.
+  5. Verify: the Check, then `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run --workspace`, `cargo deny check`.
+
+Status: done 2026-09-28
+Result: `crates/cox-protocol/src/image.rs` (new, 140 lines without tests): `sniff` by magic bytes, `MAX_IMAGE_BYTES`, `IMAGE_TOKEN_ESTIMATE`, `ImageError`, `attachment`, `validate`, `to_structured`, `take_structured` (keyed `structured["image"]`; an emptied payload becomes `None`). `validate` refuses an oversized image from the base64 length before allocating, then decodes the whole string, so bad base64 after a valid prefix is caught too; the declared type is compared case-insensitively. New workspace dependency `base64` 0.23 (0.23.1, already in `Cargo.lock` transitively; creator-approved in A81), rows in §1.1 and `toolchain.md`; `rust.md` already listed it. A81's replacement of the hand-rolled encoder in `crates/cox-tui/src/term.rs` is the next commit.
+Deviations: step 5 — `validate` decodes the whole string instead of only the sniffed prefix (bounded by the cap), so a corrupt tail cannot reach a wire; same errors, same signature. The `term.rs` switch is a separate commit to keep this one within three code files.
+Check output:
+- `cargo nextest run -p cox-protocol -E 'test(image)'`: 18 passed — `sniff_names_each_accepted_format` (png, jpeg, gif87a, gif89a, webp), `sniff_refuses_anything_else` (text, empty, riff_wave, truncated_png), `attachment_at_the_cap_is_accepted_and_one_byte_over_is_too_large`, `attachment_refuses_bytes_that_are_not_an_image`, `attachment_round_trips_through_validate`, `validate_refuses_over_cap_base64`, `validate_refuses_a_declared_type_the_bytes_contradict`, `validate_refuses_bad_base64_even_after_a_valid_prefix`, `validate_refuses_encoded_bytes_that_are_not_an_image`, `take_structured_returns_the_image_and_drops_the_emptied_payload`, `take_structured_keeps_other_keys_and_ignores_outputs_without_an_image`. Against stub bodies 11 of them failed first.
+- Workspace (with the `term.rs` switch applied): fmt and clippy `-D warnings` clean; `cargo deny check`: advisories, bans, licenses, sources ok; nextest 1331 passed, 1 failed, 4 skipped — the failure, `cox::subagent_messaging headless_run_does_not_wait_for_a_background_shell`, touches neither base64 nor images and passed 3 of 3 runs alone (timing under full-workspace load).

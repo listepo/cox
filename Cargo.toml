@@ -36,6 +36,8 @@ schemars = "1"
 thiserror = "2"
 ulid = { version = "3", features = ["serde"] }
 tokio-util = "0.7"
+# T40.1 (A81): image payloads decode and encode base64 in `cox_protocol::image`.
+base64 = "0.23"
 
 # cox-core
 tokio = { version = "1", features = ["full"] }

@@ -12,6 +12,7 @@ cox-plugin-api = { path = "../cox-plugin-api", version = "0.1.2" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+base64 = { workspace = true }
 async-trait = { workspace = true }
 schemars = { workspace = true }
 ulid = { workspace = true }

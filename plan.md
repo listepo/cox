@@ -34,7 +34,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T39.5 | todo | P1 | 2 | 0% | |
 | T39.6 | todo | P1 | 3 | 0% | |
 | T39.7 | todo | P3 | 2 | 0% | |
-| T40.1 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T40.2 | todo | P1 | 4 | 0% | |
 | T40.3 | todo | P2 | 2 | 0% | |
 | T40.4 | todo | P1 | 2 | 0% | |
@@ -150,7 +149,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 |-------|------|------|
 | `cox` | clap surface, dispatch, `doctor`, `config` (printing, and the flag layer built from `Cli`), `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, anyhow, dotenvy 0.15 |
 | `cox-config` | the one config owner (T32.16; split out of `cox`): figment layering (default/user/project/env/flag), validation, `cox config set` editing and the `docs/config.jsonschema` drift test. Errors are a `thiserror` enum | figment, toml_edit 0.25, thiserror |
-| `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
+| `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2, base64 0.23 (`image`, T40.1) |
 | `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1 |
 | `cox-models` | the model catalog: id → context window, max output, efforts, capabilities, price; built-in rows < config < user `prices.toml` (T30.24). Pure: parses embedded or caller-supplied strings only | serde, thiserror, figment |
 | `cox-provider` | the provider registry and `from_env`; `Scripted` and `Replay` (the `Provider` glue over `cox-provider-testkit`); usage extraction; re-exports the wires at the old `anthropic` and `openai` paths | reqwest 0.12 (rustls) |
@@ -1342,36 +1341,6 @@ cox caps one image at 3,750,000 raw bytes, which is 5,000,000 base64 bytes: the 
 Every card in this phase: same four bullets as P39.
 
 **Blockers:** T40.1 blocks everything. T40.5 lands before T40.6 (the strip filter is a no-op until tool images exist, so the order never breaks invariant 6).
-
-### T40.1. `cox_protocol::image`: sniff, cap and encode
-
-- Model: sonnet
-- Depends: -
-- Size: ~140
-- Priority: P1
-- Complexity: 2
-- Goal: one pure helper decides whether bytes are an image cox accepts, and turns them into a checked `Attachment` or tool-output payload. Surfaces, `read` and the core share it, with no second check anywhere.
-- Files: `crates/cox-protocol/src/image.rs` (new), `crates/cox-protocol/src/lib.rs`. Manifests: root `Cargo.toml`, `crates/cox-protocol/Cargo.toml`.
-- Steps:
-  1. `sniff(bytes) -> Option<&'static str>` by magic bytes: PNG `89 50 4E 47`, JPEG `FF D8 FF`, GIF `GIF87a`/`GIF89a`, WebP `RIFF....WEBP`.
-  2. `pub const MAX_IMAGE_BYTES: usize = 3_750_000` (why: the smallest documented per-image limit, 5 MB base64; see the phase intro).
-  3. `pub const IMAGE_TOKEN_ESTIMATE: u64 = 1600` (why: the standard-tier cap of 1568 visual tokens, rounded; provider-reported usage corrects it).
-  4. `ImageError` (thiserror): `NotAnImage`, `TooLarge { bytes, cap }`, `MediaTypeMismatch { declared, sniffed }`, `BadBase64`.
-  5. `attachment(name, bytes) -> Result<Attachment, ImageError>` and `validate(&Attachment) -> Result<(), ImageError>`. The latter decodes only enough to sniff, and checks the declared type and the decoded length.
-  6. `to_structured(media_type, bytes) -> Value` and `take_structured(&mut ToolOutput) -> Option<(String, String)>`, keyed `structured["image"]`. `ToolOutput` has 69 literal constructions, so no new field.
-  7. Base64: needs the new dependency `base64` (see Open questions). Alternative with no new dependency: move `base64_encode` out of `crates/cox-tui/src/term.rs:247` into this module, add a matching decoder, and have `term.rs` call it (3 files, ~40 LOC more).
-- Check:
-  ```bash
-  mise exec -- cargo nextest run -p cox-protocol -E 'test(image)'
-  ```
-- Done when: there is a test per format, one for the cap, one for mismatch and one for bad base64. Any new dependency has its row in §1.1 and a reason in the commit.
-- Out of scope: resizing or downscaling (no image crate; see open questions).
-- Plan:
-  1. Manifests: `base64 = "0.23"` in root `[workspace.dependencies]` (creator-approved, A81; already in `Cargo.lock` as 0.23.1, the latest on crates.io 2026-09-28), `base64 = { workspace = true }` in `cox-protocol`. Rows in §1.1 (`cox-protocol`, `cox-tui`) and `toolchain.md`; `rust.md` already lists `base64`.
-  2. Tests first in `crates/cox-protocol/src/image.rs` against stub bodies, and watch them fail: one `sniff` case per format (PNG, JPEG, GIF87a, GIF89a, WebP), a non-image and a non-WebP RIFF, the cap (at the cap accepted, one byte over refused, an over-cap base64 refused before decoding), a declared/sniffed mismatch, bad base64, an `attachment` → `validate` round trip, and `take_structured` returning the pair and dropping an emptied payload while keeping other keys.
-  3. Implement per steps 1–6. `validate` bounds the decoded length from the base64 length first, then decodes the whole string (allocation bounded by the cap), so bad base64 anywhere is caught, not only in the sniffed prefix. `pub mod image` plus its line in the `lib.rs` header.
-  4. A81: a second small commit replaces `base64_encode` in `crates/cox-tui/src/term.rs` with `base64::engine::general_purpose::STANDARD` (+ `crates/cox-tui/Cargo.toml`); the known-vector test moves onto `copy` so the OSC 52 bytes stay identical. Separate because it would take the card past three files.
-  5. Verify: the Check, then `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run --workspace`, `cargo deny check`.
 
 ### T40.2. Core carries user attachments into history and the rollout
 

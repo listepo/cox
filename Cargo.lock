@@ -1100,6 +1100,7 @@ name = "cox-protocol"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "cox-plugin-api",
  "figment",
  "insta",
