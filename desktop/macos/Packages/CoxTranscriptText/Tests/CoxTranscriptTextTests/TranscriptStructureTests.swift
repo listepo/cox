@@ -83,7 +83,7 @@ struct TranscriptStructureTests {
         .font, at: text.range(of: "Level \(level)").location, effectiveRange: nil) as? NSFont
     }
     let (h1, h3, h4) = (style.headings.h1, style.headings.h3, style.headings.h4)
-    #expect(fonts == [h1, h3, h4, h3, h3, h3], "DT§5.9 sizes levels 1–3; 4–6 keep h3")
+    #expect(fonts == [h1, h3, h4, h4, h4, h4], "DT§5.9 sizes levels 1–3; 4–6 take h4")
     let spacing = { (font: NSFont) in
       TranscriptStyle.lines(font, style.lineHeights.heading).lineSpacing
     }

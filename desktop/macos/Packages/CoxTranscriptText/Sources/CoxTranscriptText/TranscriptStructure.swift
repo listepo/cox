@@ -57,8 +57,8 @@ extension TranscriptStyle {
   }
 
   /// The heading token a Markdown heading's level takes: DT§5.9 sizes headings 17 / 15 / 13 pt,
-  /// levels 1, 2 and 3. It does not size levels 4–6, so they keep `h3`, every level's size
-  /// before A94.
+  /// levels 1, 2 and 3. It does not size levels 4–6; they take `h4` too, so no deeper
+  /// heading is larger than a shallower one (A94).
   enum HeadingSize: Int, CaseIterable {
     case h1, h3, h4
 
@@ -66,8 +66,8 @@ extension TranscriptStyle {
       self =
         switch level {
         case 1: .h1
-        case 3: .h4
-        default: .h3
+        case 2: .h3
+        default: .h4
         }
     }
   }

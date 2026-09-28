@@ -355,7 +355,7 @@
       },
       "h3": {
         "$type": "typography",
-        "$description": "Level-2 Markdown headings in the transcript, and levels 4-6, which DT§5.9 does not size (A94)",
+        "$description": "Level-2 Markdown headings in the transcript (DT§5.9, A94)",
         "$value": {
           "fontFamily": [
             "SF Pro Text",
@@ -376,7 +376,7 @@
       },
       "h4": {
         "$type": "typography",
-        "$description": "Level-3 Markdown headings in the transcript (DT§5.9, A94)",
+        "$description": "Level-3 Markdown headings in the transcript, and levels 4-6, which DT§5.9 does not size (A94)",
         "$value": {
           "fontFamily": [
             "SF Pro Text",

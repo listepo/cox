@@ -95,8 +95,8 @@ tok/s, timers) are always tabular (`.monospacedDigit()`).
 | `font.body` | Default UI text | 13 / regular |
 | `font.transcript` | Messages | 13.5 / regular, line height 1.55 |
 | `font.transcript.h1` | Markdown headings, level 1 (DT§5.9, A94) | 17 / semibold, line height 1.35 |
-| `font.transcript.h3` | Markdown headings, level 2, and levels 4–6, which DT§5.9 does not size | 15 / semibold, line height 1.35 |
-| `font.transcript.h4` | Markdown headings, level 3 | 13 / semibold, line height 1.35 |
+| `font.transcript.h3` | Markdown headings, level 2 | 15 / semibold, line height 1.35 |
+| `font.transcript.h4` | Markdown headings, level 3, and levels 4–6, which DT§5.9 does not size | 13 / semibold, line height 1.35 |
 | `font.control` | Buttons, capsules, segments | 12.5 / medium |
 | `font.caption` | Thinking line, notices | 12 / regular |
 | `font.footnote` | Tool status, meter, key–value rows | 11.5 / regular |
