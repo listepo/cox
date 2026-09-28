@@ -152,3 +152,4 @@ public struct TokenPopover: View {
 
 #Preview("streaming") { PreviewMatrix { TokenPopover(state: PreviewState.tokensStreaming) } }
 #Preview("idle") { PreviewMatrix { TokenPopover(state: PreviewState.tokensIdle) } }
+#Preview("live") { PreviewMatrix { TokenPopover(state: PreviewState.tokensLive) } }

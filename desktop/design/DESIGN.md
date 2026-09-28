@@ -368,8 +368,9 @@ mockup's welcome hero needs a title token and the app icon, which do not exist y
 - **tok/s** during streaming is estimated in `cox-app` from output deltas (`cox-tokens` estimate over a
   rolling window) and replaced by the exact figure when the request's usage arrives. The UI never
   computes it.
-- The context bar reuses the context breakdown the TUI already shows (P28): system, tools, instruction
-  files, history.
+- The context bar draws the core's context breakdown (A98: `Event::ContextBreakdown`, formatted by
+  `cox-app` into the share of the window and the system, tools, instruction files and history
+  parts), the same split the TUI's status line and `/context` overlay show (T37.25.3).
 
 ## 8. Accessibility
 

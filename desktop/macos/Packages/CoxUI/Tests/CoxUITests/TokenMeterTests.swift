@@ -1,6 +1,7 @@
 // `TokenMeter` and `TokenPopover`'s check (T37.25, DS§6.3–§6.4, mockup screen 30): snapshots of
-// the meter idle, streaming and open, the popover streaming and after the turn, and the composer
-// with the popover open, × light/dark × Solid/Frosted; and VoiceOver reading the three numbers.
+// the meter idle, streaming and open, the popover streaming, after the turn and fed with the
+// core's context split (T37.25.2), and the composer with the popover open, × light/dark ×
+// Solid/Frosted; and VoiceOver reading the three numbers.
 
 import SwiftUI
 import Testing
@@ -22,7 +23,10 @@ import Testing
   }
 
   @Test(arguments: Variant.all) func popover(_ variant: Variant) throws {
-    let looks = [("streaming", PreviewState.tokensStreaming), ("idle", PreviewState.tokensIdle)]
+    let looks = [
+      ("streaming", PreviewState.tokensStreaming), ("idle", PreviewState.tokensIdle),
+      ("live", PreviewState.tokensLive),
+    ]
     for (look, state) in looks {
       try assertCoxSnapshot(
         PreviewPane { TokenPopover(state: state).fixedSize() }, variant,
