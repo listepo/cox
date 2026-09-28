@@ -302,6 +302,7 @@ component.
 | `.glassPane(_ shape:, surface:, role:)` | Pane material: glass or solid per setting; `role: .readable` holds the readable floor | `material.*`, `surface.*` | `.glass .col`, `.sidebar`, `.insp` |
 | `.specular(_ strength:, in:)` | Diagonal highlight behind the content and over the surface, so text keeps its token colour (strong for Glossy, faint for Frosted, none for Solid or under Increase Contrast) | `material.*.specular` | `.window:after` |
 | `.hairline(_ edges:)`, `.hairline(in:, color:)` | 0.5 pt `separator` line on edges or around a shape; capsules pass `surface.capsuleBorder` | `size.hairline`, `separator`, `surface.capsuleBorder` | `border:.5px` |
+| `.dashedBorder(in:, color:)` | 1.5 pt dashed line (dash `space.s`, gap `space.xs`) just inside a shape: the outline of a drop target, `separator` at rest and `accent` while a drag hovers | `separator`, `accent`, `space.*` | `border:1.5px dashed` |
 | `.insetWell(_ surface:, cornerRadius:)` | Pressed-in look for terminal and fields | `surface.terminal`, inner shadow | `.tail`, `.filter` |
 | `.textStyle(_ token:, tabularDigits:)` | Font at the text size, line height, tracking, tabular digits | `font.*` | font rules |
 | `.symbolStyle(_ token:)` | An SF Symbol at a font token's size, weight medium, rendered hierarchical (§3.7) | `font.*` | `svg` icons |
@@ -356,6 +357,7 @@ component.
 | `SettingField(_ value, prompt:, isSecure:, commit:)` | text or `SecureField` in an `insetWell` on `fill.primary`, `size.sidebarWidth` wide; typing stays local until Return commits it; a secure field never shows what is stored and empties once sent. Its well is `settingWell(width:)`, which `KeySheet`'s field shares | text well |
 | `SettingPopUp(label, selection:, options:, title:)` | the selection's title in `font.control` and a micro `chevron.down` on `surface.window`, `radius.s`, a hairline, e1, `size.buttonHeightSmall` high; a menu with the selection checked. `SettingsStore` gives an enum with more than three options, or a tier's model from the catalog, this instead of CoxSegmented (T37.45.2) | `.sel` |
 | `ChecklistRow(title, detail:, status:, symbol:, action:, perform:)` | status symbol in its colour (passed `checkmark` in `status.success`, warning, missing `xmark.octagon` in `status.danger`, a step to take in `accent`) in one `size.iconTile` column, SettingLabel, then the fix button (`CoxButtonStyle` small: primary for a step, secondary for a fix); SettingRow's insets | onboarding `.group .gr` |
+| `ProjectDropZone(isTargeted:, send:)` | the Open a project `ChecklistRow` step (`folder` symbol, primary Choose Folder…) in a `.dashedBorder` on `radius.panel`, padded `space.m`; the border turns `accent` while a drag hovers (`Motion.durationFast`). A drop of exactly one local directory reports `openFolder(url)`, the intent the app sends for the folder its picker chose; a file, a web link or several items are refused (DT§5.8, T37.45.5) | `separator`, `accent`, `radius.panel`, `space.m` | onboarding dashed box |
 
 ### 6.4 Organisms
 
@@ -409,10 +411,11 @@ whose keys the project file tried to weaken opens with a `Dropped from the proje
 per value a `TitledSetting` with the key, the guard's reason and a warning `Badge` (`999 → 5`), from
 `SettingsStore.dropped(in:)`.
 
-`OnboardingScreen` = `ShellPane(.window)` holding a `SettingsGroupBox` with the Open a project step and
-one with a `ChecklistRow` per check (DT§5.8), neither headed, as in the mockup. It takes `OnboardingScreenState` (the rows `cox-app`'s
+`OnboardingScreen` = `ShellPane(.window)` holding the `ProjectDropZone` step and a `SettingsGroupBox`
+with a `ChecklistRow` per check (DT§5.8), neither headed, as in the mockup. It takes `OnboardingScreenState` (the rows `cox-app`'s
 `checklist` returns: provider key, git, sandbox, shell environment, each with what is missing and an
-optional fix) and reports `OnboardingScreenIntent` (`chooseFolder`, `openSettings`, `retry`). The
+optional fix) and reports `OnboardingScreenIntent` (`chooseFolder`, `openFolder(url)` for a dropped folder or the one
+the picker chose, `openSettings`, `retry`). The
 mockup's welcome hero needs a title token and the app icon, which do not exist yet.
 
 ## 7. Data shown in the token meter
