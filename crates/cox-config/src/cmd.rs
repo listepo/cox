@@ -140,6 +140,7 @@ pub fn set(key: &str, raw_value: &str) -> Result<PathBuf, ConfigError> {
 
 #[cfg(test)]
 mod tests {
+    use cox_protocol::CoreError;
     use tempfile::tempdir;
 
     use super::*;
@@ -188,5 +189,55 @@ mod tests {
         assert_eq!(path, nested.join("config.toml"));
         let contents = fs::read_to_string(&path).expect("file created");
         assert!(contents.contains("session_usd = 10"));
+    }
+
+    /// `set` then `load` in a scratch `COX_HOME`: the value `set` wrote is
+    /// what the effective config carries. `Err` is the load error.
+    fn set_then_load(key: &str, value: &str) -> Result<LoadedConfig, CoreError> {
+        let home = tempdir().expect("tempdir");
+        let cwd = tempdir().expect("tempdir");
+        let mut result = None;
+        crate::load::temp_env(&[("COX_HOME", home.path().to_str())], || {
+            set(key, value).expect("set succeeds");
+            result = Some(config_load::load(
+                cwd.path(),
+                &JsonValue::Object(Default::default()),
+                |_| None,
+            ));
+        });
+        result.expect("temp_env ran the closure")
+    }
+
+    #[test]
+    fn config_set_desktop_material_round_trips() {
+        let loaded = set_then_load("desktop.appearance.material", "glossy").expect("load succeeds");
+        let appearance = &loaded.config.desktop.appearance;
+        assert_eq!(appearance.material, cox_protocol::config::Material::Glossy);
+        assert_eq!(loaded.source_of("desktop.appearance.material"), "user");
+        assert_eq!(
+            appearance.opacity,
+            cox_protocol::config::DESKTOP_DEFAULT_OPACITY
+        );
+        assert!(loaded.config.desktop.transcript.cross_block_selection);
+    }
+
+    #[test]
+    fn config_rejects_out_of_range_desktop_appearance() {
+        for (key, value) in [
+            ("desktop.appearance.opacity", "1.5"),
+            ("desktop.appearance.depth", "-0.1"),
+            ("desktop.appearance.blur", "61"),
+        ] {
+            match set_then_load(key, value) {
+                Err(CoreError::Config { key: at, message }) => {
+                    assert_eq!(at, key);
+                    assert!(message.contains("out of range"), "{message}");
+                }
+                Err(other) => panic!("{key} = {value}: wrong error {other:?}"),
+                Ok(_) => panic!("{key} = {value} must be rejected"),
+            }
+        }
+        let loaded = set_then_load("desktop.appearance.blur", "60").expect("the bound loads");
+        assert_eq!(loaded.config.desktop.appearance.blur, 60.0);
     }
 }
