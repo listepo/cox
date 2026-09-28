@@ -160,6 +160,12 @@ public enum Decision: Equatable, Sendable {
   case edit(input: String)
 }
 
+extension Decision {
+  /// The TUI's deny (`cox-tui` `modal.rs`): the model reads the same words whether the person
+  /// denied from the card or from a notification.
+  public static let deniedByUser = Decision.deny(reason: "denied by user")
+}
+
 public enum Why: Equatable, Sendable {
   case ruleAsk(rule: String)
   case risk(risk: Risk)

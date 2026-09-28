@@ -49,12 +49,11 @@ extension TranscriptView where Approval == DecisionCard {
 }
 
 extension ApprovalCard.Action {
-  /// The TUI's deny reason (`cox-tui` `modal.rs`), so the model reads the same words.
   var decision: Decision {
     switch self {
     case .allow: .allow
     case .allowForSession: .allowForSession
-    case .deny: .deny(reason: "denied by user")
+    case .deny: .deniedByUser
     }
   }
 }
