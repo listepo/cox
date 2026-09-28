@@ -84,6 +84,9 @@ pub(crate) struct Inner {
     /// `call_id` → archived payload for microcompaction (T8.2): the request
     /// replaces old results with `Pointer`s, the stored history keeps them.
     pub(crate) archives: HashMap<CallId, ArchiveRef>,
+    /// This round's tool images (T40.5), already archived, waiting to join
+    /// the results message after every `ToolResult`.
+    tool_images: HashMap<CallId, Content>,
     /// Last request's prefix hashes + whether it hit the cache (T8.3).
     pub(crate) cache: CacheTracker,
     /// Last call's cache share, for the status line (T8.3 step 1).
@@ -540,6 +543,7 @@ impl Session {
                 discovered: Vec::new(),
                 turn_marks,
                 archives: HashMap::new(),
+                tool_images: HashMap::new(),
                 turn_seq: turns,
                 redone: None,
                 renamed: false,
@@ -1172,6 +1176,13 @@ impl Session {
         self.inner.lock().await.archives.insert(call, archive);
     }
 
+    /// Holds a tool's archived image for this round's results message
+    /// (T40.5). A field on the session, not on `ToolResult`, because that
+    /// type has dozens of literal constructions.
+    pub(crate) async fn remember_image(&self, call: CallId, image: Content) {
+        self.inner.lock().await.tool_images.insert(call, image);
+    }
+
     /// The live mode (`SetPermissionMode` changes it; the configured one
     /// is only the starting value), which a subagent inherits (T45.1).
     pub(crate) async fn permission_mode(&self) -> PermissionMode {
@@ -1353,12 +1364,14 @@ impl Session {
         if self.compact_now(due, last, max_context).await? {
             self.compact(compact::Trigger::Auto, None).await?;
         }
-        // T37.6: what the wire cannot take is held back with a notice
-        // rather than sent to a model that would reject the whole request.
-        let (content, held) = crate::context::user_content(
+        // T37.6, T40.2: an invalid image, or one the wire cannot take, is
+        // held back with a notice rather than sent to a model that would
+        // reject the whole request. Only what was sent is recorded, so the
+        // rollout rebuilds this exact message (invariant 6).
+        let (content, attachments, held) = crate::context::user_content(
             text.clone(),
             context,
-            &attachments,
+            attachments,
             &route.model.0,
             self.provider.accepts_images(&route.model.0),
         );
@@ -1562,6 +1575,12 @@ impl Session {
                 microcompact_after,
                 &archives,
             );
+            // T40.6: on every request, routed or not — an earlier turn's
+            // tool image is never resent, and never in a resumed request.
+            let req_messages = match marks.last() {
+                Some(start) => crate::context::strip_tool_images_before(req_messages, *start),
+                None => req_messages,
+            };
             let req_messages = match marks.last() {
                 Some(start) if routed => {
                     crate::context::strip_thinking_before(req_messages, *start)
@@ -1877,7 +1896,32 @@ impl Session {
             self.finish(turn, StopReason::Interrupted).await?;
             return Ok(Step::Done);
         }
-        let msg = results_message(results);
+        let order: Vec<CallId> = results.iter().map(|(id, _)| *id).collect();
+        let mut msg = results_message(results);
+        // T40.5: images follow every `ToolResult` (Anthropic wants the
+        // results first; the Chat wire sends images as a user message after
+        // the tool messages), in call order.
+        let images: Vec<Content> = {
+            // Taken whole, so an interrupted round leaves nothing behind.
+            let mut held = std::mem::take(&mut self.inner.lock().await.tool_images);
+            order.iter().filter_map(|id| held.remove(id)).collect()
+        };
+        if !images.is_empty() {
+            if self.provider.accepts_images(&route.model.0) {
+                msg.content.extend(images);
+            } else {
+                self.emit(Event::Notice {
+                    level: Level::Warn,
+                    text: format!(
+                        "{} tool image(s) not sent: {} does not take images on this provider; \
+                         each stays archived",
+                        images.len(),
+                        route.model
+                    ),
+                })
+                .await?;
+            }
+        }
         // T10.3: tool results are user-role text the user will grep for.
         let joined: String = msg
             .content
@@ -2379,13 +2423,39 @@ mod tests {
         (session, probe)
     }
 
-    /// T37.6 Check: a wire without image input gets the notice, the text
-    /// still goes, and the rollout keeps the attachment for every surface.
+    /// `Scripted` on a wire without image input: `Scripted` itself stands
+    /// in for a vision wire (T40.7), and `accepts_images` defaults to false.
+    struct TextOnly(Scripted);
+
+    #[async_trait::async_trait]
+    impl Provider for TextOnly {
+        fn id(&self) -> ProviderId {
+            self.0.id()
+        }
+        fn capabilities(&self) -> cox_protocol::types::Caps {
+            self.0.capabilities()
+        }
+        async fn stream(
+            &self,
+            req: Request,
+            sink: mpsc::Sender<cox_protocol::types::ProviderEvent>,
+            cancel: CancellationToken,
+        ) -> Result<cox_protocol::types::Usage, ProviderError> {
+            self.0.stream(req, sink, cancel).await
+        }
+        async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {
+            self.0.count_tokens(req).await
+        }
+    }
+
+    /// T37.6 Check: a wire without image input gets the notice and the text
+    /// still goes. T40.2: the rollout records only what was sent, so a
+    /// resumed session rebuilds the same text-only message.
     #[tokio::test]
     async fn image_on_a_text_only_wire_is_held_back_with_a_notice() {
         let store = Arc::new(MemoryStore::new());
-        let provider =
-            Arc::new(Scripted::from_toml("[[turn]]\ntext = \"ok\"\n", "").expect("scenario"));
+        let scripted = Scripted::from_toml("[[turn]]\ntext = \"ok\"\n", "").expect("scenario");
+        let provider = Arc::new(TextOnly(scripted));
         let session = Session::new(
             cox_protocol::Config::default(),
             provider,
@@ -2403,7 +2473,7 @@ mod tests {
         session
             .submit(Submission::UserTurn {
                 text: "look".into(),
-                attachments: vec![shot.clone()],
+                attachments: vec![shot],
                 confirm_think: false,
             })
             .await
@@ -2411,7 +2481,7 @@ mod tests {
         let events = store.rollout_read(&session.id()).expect("rollout");
         assert!(events.iter().any(|e| matches!(e,
             Event::ItemStarted { kind: ItemKind::UserMessage { attachments, .. }, .. }
-                if *attachments == vec![shot.clone()])));
+                if attachments.is_empty())));
         assert!(events.iter().any(|e| matches!(e,
             Event::Notice { level: Level::Warn, text } if text.contains("does not take images"))));
         let history = &session.inner.lock().await.history;

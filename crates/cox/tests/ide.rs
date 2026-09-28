@@ -48,9 +48,10 @@ fn cox(work: &Path, home: &Path, scenario: &str) -> Command {
 }
 
 /// Drives `cox acp` over newline-delimited JSON-RPC on its stdio through
-/// `initialize`, `session/new` and one `session/prompt`, and returns the
-/// agent's streamed text.
-fn acp_prompt_text(work: &Path, home: &Path, scenario: &str) -> String {
+/// `initialize`, `session/new` and one `session/prompt` of `prompt`'s
+/// content blocks, and returns the `initialize` result and the agent's
+/// streamed text.
+fn acp_prompt(work: &Path, home: &Path, scenario: &str, prompt: Value) -> (Value, String) {
     let mut child = cox(work, home, scenario)
         .arg("acp")
         .stdin(Stdio::piped())
@@ -88,7 +89,7 @@ fn acp_prompt_text(work: &Path, home: &Path, scenario: &str) -> String {
             }
         }
     };
-    request(
+    let init = request(
         1,
         "initialize",
         json!({"protocolVersion": 1, "clientCapabilities": {}}),
@@ -104,12 +105,12 @@ fn acp_prompt_text(work: &Path, home: &Path, scenario: &str) -> String {
     request(
         3,
         "session/prompt",
-        json!({"sessionId": id, "prompt": [{"type": "text", "text": "hi"}]}),
+        json!({"sessionId": id, "prompt": prompt}),
         &mut text,
     );
     let _ = child.kill();
     let _ = child.wait();
-    text
+    (init, text)
 }
 
 /// Gives `home` one MCP server — cox's own `cox mcp` — whose tools are
@@ -138,6 +139,64 @@ fn acp_session_offers_the_same_tools_as_run_p() {
     for name in ["read", "bash", "mcp__self__read"] {
         assert!(run_p.contains(&name), "{name} missing from {run_p:?}");
     }
-    let acp = acp_prompt_text(work.path(), home.path(), &scenario);
+    let hi = json!([{"type": "text", "text": "hi"}]);
+    let (_, acp) = acp_prompt(work.path(), home.path(), &scenario, hi);
     assert_eq!(acp.lines().collect::<Vec<_>>(), run_p);
+}
+
+/// Every event of every rollout under `home` (`$COX_HOME/sessions/<id>.jsonl`,
+/// one `{"seq", "ts", "event"}` line each), unwrapped.
+fn rollout_events(home: &Path) -> Vec<Value> {
+    let mut events = Vec::new();
+    for entry in std::fs::read_dir(home.join("sessions")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|e| e == "jsonl") {
+            let text = std::fs::read_to_string(&path).unwrap();
+            for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                let line: Value = serde_json::from_str(line).unwrap();
+                events.push(line["event"].clone());
+            }
+        }
+    }
+    events
+}
+
+/// T40.8: `initialize` advertises image prompts, and an image block in
+/// `session/prompt` reaches the scripted provider as an image: the rollout
+/// records it on the user message (only what was sent is recorded, T40.2),
+/// and the call's usage, the provider's own estimate of the request it
+/// received, prices it at `IMAGE_TOKEN_ESTIMATE` (T40.3).
+#[test]
+fn acp_image_block_reaches_the_provider_as_an_image() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let scenario = home.path().join("seen.toml");
+    std::fs::write(&scenario, "[[turn]]\ntext = \"seen\"\n").unwrap();
+    // `\x89PNG\r\n\x1a\n` in base64.
+    let png = "iVBORw0KGgo=";
+    let prompt = json!([
+        {"type": "text", "text": "look"},
+        {"type": "image", "data": png, "mimeType": "image/png"},
+    ]);
+    let (init, text) = acp_prompt(work.path(), home.path(), scenario.to_str().unwrap(), prompt);
+    assert_eq!(
+        init["agentCapabilities"]["promptCapabilities"]["image"],
+        true
+    );
+    assert_eq!(text, "seen");
+    let events = rollout_events(home.path());
+    let user = events
+        .iter()
+        .find(|e| e["type"] == "item_started" && e["kind"]["type"] == "user_message")
+        .expect("the user message");
+    assert_eq!(user["kind"]["attachments"][0]["media_type"], "image/png");
+    assert_eq!(user["kind"]["attachments"][0]["data_b64"], png);
+    let usage = events
+        .iter()
+        .find(|e| e["type"] == "usage")
+        .expect("a usage event");
+    let input = usage["usage"]["input_tokens"].as_u64().unwrap();
+    assert!(
+        input >= cox_protocol::image::IMAGE_TOKEN_ESTIMATE,
+        "{usage}"
+    );
 }

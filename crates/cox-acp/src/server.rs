@@ -21,7 +21,8 @@ use agent_client_protocol::schema::v1::{
 };
 use agent_client_protocol::{Agent, Client, ConnectionTo};
 use cox_protocol::ids::TaskId;
-use cox_protocol::types::{Decision, Event, Submission, ToolCall, Why};
+use cox_protocol::image;
+use cox_protocol::types::{Attachment, Decision, Event, Submission, ToolCall, Why};
 use tokio::sync::{broadcast, mpsc};
 
 use crate::client_tools::ClientLink;
@@ -179,6 +180,8 @@ fn handle_initialize(
     let version = ProtocolVersion::V1;
     let mut caps = agent_client_protocol::schema::v1::AgentCapabilities::new();
     caps.load_session = true;
+    // T40.8: an image block in a prompt becomes an attachment.
+    caps.prompt_capabilities.image = true;
     responder.respond(InitializeResponse::new(version).agent_capabilities(caps))
 }
 
@@ -305,16 +308,38 @@ async fn handle_prompt(
     Ok(())
 }
 
-/// Prompt text out of ACP content blocks; only text survives.
-fn prompt_text(prompt: &[ContentBlock]) -> String {
-    prompt
-        .iter()
-        .map(|block| match block {
-            ContentBlock::Text(text) => text.text.clone(),
-            _ => "[unsupported content block]".to_string(),
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+/// Prompt text and image attachments out of ACP content blocks (T40.8).
+/// An image that fails `image::validate` becomes a text note saying why,
+/// not a failed prompt; one given only by `uri` would need fetching and
+/// stays unsupported, as does every other non-text block.
+fn prompt_parts(prompt: &[ContentBlock]) -> (String, Vec<Attachment>) {
+    let mut lines = Vec::new();
+    let mut attachments = Vec::new();
+    for block in prompt {
+        match block {
+            ContentBlock::Text(text) => lines.push(text.text.clone()),
+            ContentBlock::Image(img) if img.data.is_empty() => {
+                lines.push("[unsupported content block: image by uri]".to_string());
+            }
+            ContentBlock::Image(img) => {
+                let name = img
+                    .uri
+                    .clone()
+                    .unwrap_or_else(|| format!("image {}", attachments.len() + 1));
+                let attachment = Attachment {
+                    name,
+                    media_type: img.mime_type.clone(),
+                    data_b64: img.data.clone(),
+                };
+                match image::validate(&attachment) {
+                    Ok(()) => attachments.push(attachment),
+                    Err(e) => lines.push(format!("[image {:?} dropped: {e}]", attachment.name)),
+                }
+            }
+            _ => lines.push("[unsupported content block]".to_string()),
+        }
+    }
+    (lines.join("\n"), attachments)
 }
 
 /// Submits the turn and drives it to `TurnDone`, answering approvals.
@@ -327,7 +352,7 @@ async fn drive_prompt(
 ) -> Result<PromptResponse, agent_client_protocol::Error> {
     let _guard = live.prompt_lock.lock().await;
     let mut bcast = live.bcast.subscribe();
-    let text = prompt_text(&req.prompt);
+    let (text, attachments) = prompt_parts(&req.prompt);
     // Labels of tasks created during this prompt, so a `TaskMessage` from a
     // sibling can be shown by name instead of its bare `TaskId` (SM§6).
     let mut task_labels: HashMap<TaskId, String> = HashMap::new();
@@ -337,7 +362,7 @@ async fn drive_prompt(
             live.cox
                 .submit(Submission::UserTurn {
                     text,
-                    attachments: Vec::new(),
+                    attachments,
                     confirm_think: false,
                 })
                 .await
@@ -580,6 +605,36 @@ mod tests {
             .expect("content text");
         assert!(content.contains("0.0042"), "{content}");
         assert!(content.contains("exit 1"), "{content}");
+    }
+
+    /// T40.8: a valid image block becomes an attachment, an invalid one a
+    /// note naming why, and a `uri`-only image or other block the old
+    /// placeholder; the text blocks stay in order.
+    #[test]
+    fn prompt_parts_turns_image_blocks_into_attachments() {
+        use agent_client_protocol::schema::v1::ImageContent;
+        // `\x89PNG\r\n\x1a\n` in base64.
+        let png = "iVBORw0KGgo=";
+        let prompt = vec![
+            ContentBlock::from("look"),
+            ContentBlock::Image(ImageContent::new(png, "image/png")),
+            ContentBlock::Image(ImageContent::new("aGVsbG8=", "image/png")),
+            ContentBlock::Image(ImageContent::new("", "image/png").uri("https://x/y.png")),
+        ];
+        let (text, attachments) = prompt_parts(&prompt);
+        assert_eq!(
+            attachments,
+            vec![Attachment {
+                name: "image 1".into(),
+                media_type: "image/png".into(),
+                data_b64: png.into(),
+            }]
+        );
+        assert_eq!(
+            text,
+            "look\n[image \"image 2\" dropped: not a PNG, JPEG, GIF or WebP image]\n\
+             [unsupported content block: image by uri]"
+        );
     }
 
     /// T34.8 Check: a delivered `TaskMessage` renders as an agent-message

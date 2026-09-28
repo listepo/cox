@@ -48,12 +48,26 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 /// Translates a `Request` into the JSON body for `POST /v1/chat/completions`.
-/// Errors only when history carries a signed thinking block that is not a
-/// tool call's signature (see module header) — every other shape
-/// translates unconditionally. `caps` is what the model's `models` entry
-/// declares: `reasoning_effort` goes out only when it declares the field
-/// (`cox_models::effort_for`).
+/// Errors when history carries a signed thinking block that is not a tool
+/// call's signature (see module header) or an image for a model declared
+/// `images = false` — every other shape translates unconditionally. `caps`
+/// is what the model's `models` entry declares: `reasoning_effort` goes out
+/// only when it declares the field (`cox_models::effort_for`).
 pub fn build_body(req: &Request, caps: &Capabilities) -> Result<Value, ProviderError> {
+    // The core already holds images back from a Chat model that does not
+    // declare them; this is the wire's own refusal, so a declared
+    // text-only model never gets a request it would reject after a
+    // network round-trip. Unset still sends and lets the server answer.
+    let has_image = req
+        .messages
+        .iter()
+        .flat_map(|m| &m.content)
+        .any(|c| matches!(c, Content::Image { .. }));
+    if has_image && caps.images == Some(false) {
+        return Err(ProviderError::Unsupported {
+            feature: format!("image input ({} is declared images = false)", req.model.0),
+        });
+    }
     let mut messages = Vec::new();
     // Chat takes one `system` message; the blocks are joined in order.
     if !req.system.is_empty() {
@@ -1348,6 +1362,44 @@ mod tests {
         assert!(client.accepts_images("llava"));
         assert!(!client.accepts_images("qwen3-coder"));
         assert!(!client.accepts_images("unlisted"));
+    }
+
+    /// T40.9 Check: an image aimed at a model declared text-only is refused
+    /// before any body exists; the same request to an undeclared model
+    /// still goes out, as today.
+    #[test]
+    fn chat_request_images_refused_for_text_only_model() {
+        use cox_protocol::config::ProviderModel;
+        let mut req = base("qwen3-coder");
+        req.messages = vec![Message {
+            role: Role::User,
+            content: vec![
+                Content::Image {
+                    media_type: "image/png".into(),
+                    data_b64: "iVBORw0KGgo=".into(),
+                },
+                Content::Text {
+                    text: "what is this?".into(),
+                },
+            ],
+        }];
+        let text_only = Capabilities::declared_by(&ProviderModel {
+            id: "qwen3-coder".into(),
+            images: Some(false),
+            ..Default::default()
+        });
+        let err = build_body(&req, &text_only).expect_err("text-only model refuses images");
+        match err {
+            ProviderError::Unsupported { feature } => {
+                assert!(feature.starts_with("image input"), "{feature}");
+                assert!(feature.contains("qwen3-coder"), "{feature}");
+            }
+            other => panic!("expected Unsupported, got {other:?}"),
+        }
+        let body = build_body(&req, &Capabilities::default()).expect("unset still sends");
+        assert_eq!(body["messages"][1]["content"][1]["type"], "image_url");
+        req.messages[0].content.remove(0);
+        build_body(&req, &text_only).expect("text alone is fine for a text-only model");
     }
 
     #[test]

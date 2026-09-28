@@ -184,6 +184,10 @@ pub struct RunArgs {
     /// Stop `--loop` after this many turns; required together with `--loop`.
     #[arg(long = "max-iterations", value_name = "N")]
     pub max_iterations: Option<u32>,
+    /// Attach an image (PNG, JPEG, GIF or WebP, at most 3.75 MB) to the
+    /// first turn; repeat for more. Checked before any request (T40.7).
+    #[arg(long = "image", value_name = "PATH")]
+    pub images: Vec<PathBuf>,
 }
 
 /// `cox stats` (plan.md §1.12/T1.7). Print usage and cost statistics.
