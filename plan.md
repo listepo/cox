@@ -86,13 +86,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T53.7 | todo | P3 | 2 | 0% | |
 | T53.8 | todo | P3 | 2 | 0% | |
 | T53.9 | todo | P3 | 1 | 0% | |
-| T54.1 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
-| T54.2 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T54.3 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T54.4 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
-| T54.5 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T54.6 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
-| T54.7 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T56.1 | todo | P3 | 2 | 0% | |
 | T56.2 | todo | P3 | 3 | 0% | |
 | T56.3 | todo | P3 | 3 | 0% | |
@@ -188,7 +181,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox-plugin-api` | plugin manifest (`plugin.toml`), ABI v1 payloads, TUI widget tree, capability names; schemas `docs/plugin.schema.json` and `docs/plugin-abi.schema.json` with drift tests. Pure; builds for `wasm32-unknown-unknown` so the guest SDK can use it; `cox-protocol` re-exports it as `plugin` (A52, P33) | serde, serde_json, schemars 1, thiserror |
 | `cox-plugin` | the WASM host: discovery, package digest, grant check, one worker per plugin, host functions (`cox:host/v1`), and the protocol-trait adapters `PluginHooks`, `WasmTool`, `PluginProvider`, `EventTap`, `Advisor` (A52, P33) | extism 1.30.0 (`default-features = false`: no ureq, no URL or file loading; `wasmtime-exceptions` on, A61), wasmtime 43 (declared only for the `anyhow` feature extism needs without its defaults), sha2 (package digest), figment (`plugin.toml`); linked into `crates/cox` behind the default-on `plugins` feature (A55) |
 | `cox-plugin-sdk` (`plugins/sdk`, the separate guest workspace, never a `crates/*` member) | the Rust guest SDK (T33.27): typed wrappers for every PL§4 export and `cox:host/v1` host function, the `register!` macro, and the wire (`{"Ok"\|"Err"}` host replies) that other-language guests copy; builds for `wasm32-unknown-unknown` | extism-pdk 1.4.1 (`default-features = false`: no extism `http`, no msgpack), cox-plugin-api (path) |
-| `cox-voice` | push-to-talk dictation (P54, A123; planned): `Transcriber` (whisper.cpp through `whisper-rs`, model loaded once), `Recorder` (default input device, mono, resampled to 16 kHz, capped length), and the `Dictation` impl the TUI receives. Its own crate under D1: a heavy C++ build and platform audio. Behind `crates/cox`'s `voice` feature, off by default; audio never leaves the process | whisper-rs 0.16.0 (Unlicense; whisper.cpp MIT; cmake), cpal 0.18.2 (Apache-2.0), rubato 5.0.0 (MIT OR Apache-2.0) |
+| `cox-voice` | push-to-talk dictation (P54, A123): `Transcriber` (whisper.cpp through `whisper-rs`, model loaded once), `Recorder` (default input device, mono, resampled to 16 kHz, capped length), and the `Dictation` impl the TUI receives. Its own crate under D1: a heavy C++ build and platform audio. Behind `crates/cox`'s `voice` feature, off by default; audio never leaves the process | whisper-rs 0.16.0 (Unlicense; whisper.cpp MIT; cmake), cpal 0.18.2 (Apache-2.0), rubato 5.0.0 (MIT OR Apache-2.0) |
 | `cox-cursor-cloud` | the Cursor Cloud Agents API client (P56, A123; planned, blocked on the creator's terms go-ahead): hand-written wire types (A40 step 3, never generated from or copied out of Cursor's unlicensed OpenAPI file), create/run/stream/cancel/usage. The one place a socket to `api.cursor.com` opens; not a `Provider`; the host driver that maps runs to task events lives in `cox-session` | cox-provider-http (reqwest, eventsource-stream), serde; no new dependency |
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, trycmd 1.2 (`cox run -p` output fixtures, P48), vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
@@ -1789,63 +1782,6 @@ Every card in this phase:
 - never downloads a model on its own: only `cox voice model download`, after the user confirms;
 - runs `cox_sanitize::sanitize` on a transcript before it reaches the composer; `cox_permission::Engine` is not involved (dictation calls no tool). No new guard;
 - adds its new dependency's `toolchain.md` row (and the workspace `rust.md` row when the crate is new there) in the same commit.
-
-#### T54.1 `cox-vendor whisper-models`: the pinned model table
-
-Depends: — · Size: ~120 · Files: `scripts/vendor/src/cox_vendor/whisper_models.py` (new), `scripts/vendor/src/cox_vendor/cli.py`, `scripts/vendor/tests/test_whisper_models.py` (new); output `crates/cox-voice/data/whisper-models.json` (data)
-Goal: a saved, tested script (A48) reads the Hugging Face API for `ggerganov/whisper.cpp` (`/api/models/ggerganov/whisper.cpp` and its `tree/main`) and writes one row per model cox offers (`tiny.en`, `base.en`, `small.en`, `tiny`, `base`, `small`): name, file, a download URL pinned to the repository commit (`…/resolve/<commit>/ggml-<name>.bin`), size in bytes, SHA-256 (the LFS oid) and licence. No hand-pasted row.
-Steps: 1. fetch both API documents; 2. refuse a file with no LFS oid or size; 3. write sorted, stable JSON with the commit and the date checked; 4. `--check` compares without writing.
-Check: `just vendor-test` (no network: the tests read a recorded API response under `scripts/vendor/tests/fixtures/`) with `test_table_pins_the_commit_in_every_url`, `test_rows_carry_sha256_and_size`, `test_file_without_lfs_oid_is_refused`, `test_output_is_stable`; `just vendor whisper-models` writes the file once.
-Done when: the table exists, written by the script; done.md carries the Check output.
-Out of scope: downloading a model; quantized (`-q5_1`, `-q8_0`) and Core ML files.
-
-#### T54.2 `cox-voice` crate: transcribe a 16 kHz buffer with `whisper-rs`
-
-Depends: — · Size: ~160 · Files: `crates/cox-voice/src/lib.rs` (new), `crates/cox-voice/src/transcribe.rs` (new), `crates/cox/tests/deps.rs`; manifests `crates/cox-voice/Cargo.toml`, the workspace `Cargo.toml`, `mise.toml` (`cmake`)
-Goal: `Transcriber::load(model: &Path) -> Result<Transcriber, VoiceError>` loads a ggml model once; `transcribe(&self, pcm_16k_mono: &[f32], language: Option<&str>) -> Result<String, VoiceError>` runs greedy decoding without timestamps and returns the trimmed text of all segments. whisper.cpp's own logging goes to `tracing`, never to stderr over the TUI. Errors are a `thiserror` enum (`ModelMissing`, `ModelInvalid`, `Whisper`). The crate is its own under D1 (a heavy C++ build, like the grammars in `cox-syntax`); rows in AGENTS.md Layout, `docs/design/crates.md`, §1.1 (already drafted by A123), `toolchain.md` (`whisper-rs`, `cmake`).
-Check: `mise exec -- cargo nextest run -p cox-voice transcriber_rejects_a_missing_model transcriber_rejects_a_file_that_is_not_ggml` and `mise exec -- cargo nextest run -p cox only_cox_voice_depends_on_whisper_cpal_and_rubato`; the opt-in `mise exec -- cargo nextest run -p cox-voice --run-ignored only transcribe_of_silence_is_empty` with `COX_WHISPER_MODEL` set to a downloaded model (never in CI).
-Done when: the crate builds under `mise exec`, the tests above pass, the deps rule holds.
-Out of scope: GPU features (`metal`, `coreml`, `cuda`); streaming or partial transcripts.
-
-#### T54.3 Microphone capture with `cpal`, resampled to 16 kHz with `rubato`
-
-Depends: T54.2 · Size: ~180 · Files: `crates/cox-voice/src/capture.rs` (new), `crates/cox-voice/src/lib.rs`; manifest `crates/cox-voice/Cargo.toml`
-Goal: `Recorder::start(max: Duration) -> Result<Recorder, VoiceError>` opens the default input device, converts any sample format to `f32`, downmixes to mono and keeps at most `max` of audio in memory; `stop(self) -> Result<Vec<f32>, VoiceError>` resamples to 16 kHz with `rubato`; dropping a recorder (cancel) discards the audio. No input device and a failed stream are typed errors whose text hints at the OS microphone permission (macOS asks for the terminal app on first use). The device-free steps are pure functions so they test without a microphone. Rows in `toolchain.md` (`cpal`, `rubato`) and the workspace `rust.md` (`cpal`).
-Check: `mise exec -- cargo nextest run -p cox-voice downmix_averages_the_channels resample_48k_to_16k_keeps_the_duration buffer_stops_growing_at_the_cap i16_and_u16_samples_convert_to_f32`.
-Done when: the tests pass; a manual `cox voice` run is not required here (T54.7).
-Out of scope: device selection (the default input only); voice-activity detection.
-
-#### T54.4 `[voice]` config and the `Dictation` trait
-
-Depends: — · Size: ~120 · Files: `crates/cox-protocol/src/config.rs`, `crates/cox-protocol/src/traits.rs`, `crates/cox-config/src/load.rs`; generated `docs/config.jsonschema`, `docs/config.md`
-Goal: `[voice]` with `enabled` (false), `model` (`"base.en"`), `language` (`"en"`), `key` (`"alt+v"`), `auto_submit` (true), `max_seconds` (120). A project `.cox/config.toml` cannot set any `voice.*` key (added to the project-config guard list): a cloned repository must not switch on the microphone or pick the model file. `trait Dictation: Send { fn start(&mut self) -> Result<(), DictationError>; async fn stop(&mut self) -> Result<String, DictationError>; fn cancel(&mut self); }` in `cox-protocol`, so `cox-tui` depends on the trait, never on `cox-voice`.
-Check: `mise exec -- cargo nextest run -p cox-config voice_defaults_are_off_with_auto_submit project_config_cannot_set_voice_keys` and `config_jsonschema_matches_committed_file`.
-Done when: the section loads, is documented through the generated schema, and the guard holds.
-Out of scope: any audio code.
-
-#### T54.5 `cox voice model list|download <name>`
-
-Depends: T54.1 · Size: ~180 · Files: `crates/cox/src/voice_cmd.rs` (new), `crates/cox/src/cli.rs`, `crates/cox/src/self_update.rs` (only if T53.2's shared fetch helper has not landed; otherwise `crates/cox/src/plugin_fetch.rs`)
-Goal: `list` prints each row of the vendored table with its size and whether it is present under `$COX_HOME/models/whisper/`. `download <name>` prints the URL and size and asks y/N on a TTY (without a TTY it refuses unless `--yes`), streams to a `.part` file, verifies the SHA-256 from the table, then renames; a mismatch deletes the part file; a present, verified file is a no-op. The reqwest client and SHA-256 helper are the ones `self_update` already has, extracted and shared, not copied. The request carries only the pinned URL and a `cox/<version>` User-Agent, never the user's name or email. Compiled only with the `voice` feature.
-Check: `mise exec -- cargo nextest run -p cox --features voice voice_model_download_verifies_sha256 voice_model_download_hash_mismatch_leaves_no_file voice_model_download_without_a_tty_needs_yes voice_model_list_marks_present_models` (wiremock, already a dev-dependency).
-Done when: the tests pass; `COX_HOME=/tmp/cox-scratch mise exec -- cargo run --features voice -- voice model list` prints the table.
-Out of scope: a model the table does not list; resumable downloads.
-
-#### T54.6 TUI push-to-talk with auto-submit
-
-Depends: T54.4 · Size: ~190 · Files: `crates/cox-tui/src/voice.rs` (new), `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/keymap.rs`; snapshots
-Goal: `app::run` takes an `Option<Box<dyn Dictation>>`. The `[voice] key` starts recording and pressing it again stops; where the terminal reports key releases (the P23 probe, kitty keyboard protocol), holding the key records and releasing it stops. `Esc` while recording cancels and inserts nothing. The status row shows `● rec 0:07`, then `transcribing…`. The transcript is sanitized and trimmed; an empty one inserts nothing and shows a dim notice; otherwise it is inserted at the cursor, and when the draft was empty before recording and `auto_submit` is on it is submitted as `Enter` would (queued while a turn runs, like `Enter`). Text added to a non-empty draft is never auto-submitted: the user reviews the combined text. With no `Dictation` the key shows one notice naming `cox voice`.
-Check: `mise exec -- cargo nextest run -p cox-tui voice_key_starts_and_stops_recording voice_release_stops_when_the_terminal_reports_releases voice_escape_cancels_without_inserting voice_transcript_auto_submits_an_empty_draft voice_transcript_into_a_non_empty_draft_does_not_submit voice_transcript_is_sanitized voice_without_dictation_shows_a_notice`; new `insta` snapshot `voice_recording_status_row` (a fake `Dictation`, no audio).
-Done when: the tests and snapshot pass; the key appears in the keymap help.
-Out of scope: the desktop app; `--plain`, headless and ACP surfaces (no push-to-talk there).
-
-#### T54.7 `crates/cox` wires dictation behind the `voice` feature
-
-Depends: T54.2, T54.3, T54.4, T54.5, T54.6 · Size: ~150 · Files: `crates/cox-voice/src/lib.rs`, `crates/cox/src/session.rs`, `crates/cox/src/doctor.rs`; manifest `crates/cox/Cargo.toml`; docs `docs/voice.md` (new)
-Goal: `cox-voice` implements `Dictation` over `Recorder` and `Transcriber` (the model loaded on the first press, transcription on a blocking thread). With the `voice` feature and `voice.enabled`, the TUI session passes it to `app::run`; a missing model is one warning naming `cox voice model download <model>` and the key stays off. `cox doctor` reports: feature built, enabled, model present, input device found. `docs/voice.md`: setup, the macOS microphone prompt, and what never happens (audio never leaves the machine, is never stored, never enters the rollout or the ledger).
-Check: `mise exec -- cargo nextest run -p cox --features voice doctor_reports_voice_model_missing voice_disabled_passes_no_dictation`; `mise exec -- cargo build` without the feature pulls no whisper (the `deps.rs` rule); a manual push-to-talk run in the TUI against `COX_HOME=/tmp/cox-scratch` with a downloaded `tiny.en` model, reported in done.md.
-Done when: the tests pass and the manual run is reported.
-Out of scope: turning the feature on in release builds (the creator decides, A123).
 
 ### P55 — MCP Apps, option (a) (goal: cox never advertises or renders an MCP App UI and shows the text and structured result of such a tool unchanged, test-backed)
 

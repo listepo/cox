@@ -3,11 +3,12 @@
 //! install <https-url>` and `cox voice model download` share, the `tar`
 //! shell-out the first two unpack with, and the staging directory a
 //! downloaded or cloned (`git+<url>`, T53.3) plugin lands in before the
-//! local install path (`plugin_cmd`) takes over. Separate from
-//! `plugin_cmd` so the self-update path reuses one fetch without the plugin host, and so every
-//! rule about an untrusted downloaded tree sits in one place: the hash is
-//! checked before a byte is unpacked, no entry may be a link or leave
-//! staging, nothing in the tree runs, and staging is removed on every exit.
+//! local install path (`plugin_cmd`) takes over. Separate from `plugin_cmd`
+//! so the self-update path reuses one fetch without the plugin host, and so
+//! every rule about an untrusted downloaded tree sits in one place: the
+//! hash is checked before a byte is unpacked, no entry may be a link or
+//! leave staging, nothing in the tree runs, and staging is removed on every
+//! exit.
 
 // The slim build (no `plugins` feature) uses only the self-update helpers.
 #![cfg_attr(not(feature = "plugins"), allow(dead_code))]

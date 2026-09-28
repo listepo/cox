@@ -7862,3 +7862,116 @@ Deviations: the URL scheme is not re-checked on update (install checked it befor
 Check (2026-09-29): `cargo nextest run -p cox` update tests 4/4; `test(plugin_install) | test(plugin_update)` 14/14; real binary (`COX_HOME=/tmp/cox-t53-4`): up to date, `--check` shows `+ kv (new)`, headless waits for approval, `--yes` switches and keeps the old version as previous. Commit 11223540.
 
 Not done: nothing. Note: branch t53.2 was cut before the verify fix (cox-tui serde_json dev-dep, cox-session RepoMapper lifetime); it builds once `verify` is merged.
+
+#### T54.1 `cox-vendor whisper-models`: the pinned model table
+
+Depends: — · Size: ~120 · Files: `scripts/vendor/src/cox_vendor/whisper_models.py` (new), `scripts/vendor/src/cox_vendor/cli.py`, `scripts/vendor/tests/test_whisper_models.py` (new); output `crates/cox-voice/data/whisper-models.json` (data)
+Goal: a saved, tested script (A48) reads the Hugging Face API for `ggerganov/whisper.cpp` (`/api/models/ggerganov/whisper.cpp` and its `tree/main`) and writes one row per model cox offers (`tiny.en`, `base.en`, `small.en`, `tiny`, `base`, `small`): name, file, a download URL pinned to the repository commit (`…/resolve/<commit>/ggml-<name>.bin`), size in bytes, SHA-256 (the LFS oid) and licence. No hand-pasted row.
+Steps: 1. fetch both API documents; 2. refuse a file with no LFS oid or size; 3. write sorted, stable JSON with the commit and the date checked; 4. `--check` compares without writing.
+Check: `just vendor-test` (no network: the tests read a recorded API response under `scripts/vendor/tests/fixtures/`) with `test_table_pins_the_commit_in_every_url`, `test_rows_carry_sha256_and_size`, `test_file_without_lfs_oid_is_refused`, `test_output_is_stable`; `just vendor whisper-models` writes the file once.
+Done when: the table exists, written by the script; done.md carries the Check output.
+Out of scope: downloading a model; quantized (`-q5_1`, `-q8_0`) and Core ML files.
+Status: done 2026-09-29
+Result: `scripts/vendor/src/cox_vendor/whisper_models.py` writes `crates/cox-voice/data/whisper-models.json`: six models pinned at Hugging Face commit `5359861c…`, each with SHA-256 and size, read from the file list at that commit so URLs and hashes always agree.
+
+Deviations: registered in `registry.py` (where vendor commands live), not `cli.py`.
+
+Check (2026-09-29): `just vendor-test` 57 passed; `just vendor whisper-models --check` up to date. Commit d323438d.
+
+Not done: nothing.
+
+#### T54.2 `cox-voice` crate: transcribe a 16 kHz buffer with `whisper-rs`
+
+Depends: — · Size: ~160 · Files: `crates/cox-voice/src/lib.rs` (new), `crates/cox-voice/src/transcribe.rs` (new), `crates/cox/tests/deps.rs`; manifests `crates/cox-voice/Cargo.toml`, the workspace `Cargo.toml`, `mise.toml` (`cmake`)
+Goal: `Transcriber::load(model: &Path) -> Result<Transcriber, VoiceError>` loads a ggml model once; `transcribe(&self, pcm_16k_mono: &[f32], language: Option<&str>) -> Result<String, VoiceError>` runs greedy decoding without timestamps and returns the trimmed text of all segments. whisper.cpp's own logging goes to `tracing`, never to stderr over the TUI. Errors are a `thiserror` enum (`ModelMissing`, `ModelInvalid`, `Whisper`). The crate is its own under D1 (a heavy C++ build, like the grammars in `cox-syntax`); rows in AGENTS.md Layout, `docs/design/crates.md`, §1.1 (already drafted by A123), `toolchain.md` (`whisper-rs`, `cmake`).
+Check: `mise exec -- cargo nextest run -p cox-voice transcriber_rejects_a_missing_model transcriber_rejects_a_file_that_is_not_ggml` and `mise exec -- cargo nextest run -p cox only_cox_voice_depends_on_whisper_cpal_and_rubato`; the opt-in `mise exec -- cargo nextest run -p cox-voice --run-ignored only transcribe_of_silence_is_empty` with `COX_WHISPER_MODEL` set to a downloaded model (never in CI).
+Done when: the crate builds under `mise exec`, the tests above pass, the deps rule holds.
+Out of scope: GPU features (`metal`, `coreml`, `cuda`); streaming or partial transcripts.
+Status: done 2026-09-29
+Result: new crate `crates/cox-voice` with `Transcriber` (whisper.cpp through whisper-rs 0.16, model loaded once, ggml magic checked, logs through tracing, `[..]`/`(..)` annotations dropped). `deps.rs` rule `only_cox_voice_depends_on_whisper_cpal_and_rubato`; cmake 3.31.12 in `mise.toml`; AGENTS.md and crates.md rows.
+
+Deviations: none.
+
+Check (2026-09-29): `cargo nextest run -p cox-voice` 3 passed, 1 ignored (`transcribe_of_silence_is_empty` needs `COX_WHISPER_MODEL`). Commit 6f26df2c.
+
+Not done: the opt-in real-model test (needs a downloaded model).
+
+#### T54.3 Microphone capture with `cpal`, resampled to 16 kHz with `rubato`
+
+Depends: T54.2 · Size: ~180 · Files: `crates/cox-voice/src/capture.rs` (new), `crates/cox-voice/src/lib.rs`; manifest `crates/cox-voice/Cargo.toml`
+Goal: `Recorder::start(max: Duration) -> Result<Recorder, VoiceError>` opens the default input device, converts any sample format to `f32`, downmixes to mono and keeps at most `max` of audio in memory; `stop(self) -> Result<Vec<f32>, VoiceError>` resamples to 16 kHz with `rubato`; dropping a recorder (cancel) discards the audio. No input device and a failed stream are typed errors whose text hints at the OS microphone permission (macOS asks for the terminal app on first use). The device-free steps are pure functions so they test without a microphone. Rows in `toolchain.md` (`cpal`, `rubato`) and the workspace `rust.md` (`cpal`).
+Check: `mise exec -- cargo nextest run -p cox-voice downmix_averages_the_channels resample_48k_to_16k_keeps_the_duration buffer_stops_growing_at_the_cap i16_and_u16_samples_convert_to_f32`.
+Done when: the tests pass; a manual `cox voice` run is not required here (T54.7).
+Out of scope: device selection (the default input only); voice-activity detection.
+Status: done 2026-09-29
+Result: `cox-voice` `Recorder`: records the default input device (cpal 0.18) on its own thread, downmixes to mono, caps the length, resamples to 16 kHz with rubato 5.
+
+Deviations: the cpal row went into the workspace `rust.md`, which is outside any git repository.
+
+Check (2026-09-29): `downmix_averages_the_channels`, `resample_48k_to_16k_keeps_the_duration`, `buffer_stops_growing_at_the_cap`, `i16_and_u16_samples_convert_to_f32` pass (no microphone). Commit c2c77025.
+
+Not done: nothing.
+
+#### T54.4 `[voice]` config and the `Dictation` trait
+
+Depends: — · Size: ~120 · Files: `crates/cox-protocol/src/config.rs`, `crates/cox-protocol/src/traits.rs`, `crates/cox-config/src/load.rs`; generated `docs/config.jsonschema`, `docs/config.md`
+Goal: `[voice]` with `enabled` (false), `model` (`"base.en"`), `language` (`"en"`), `key` (`"alt+v"`), `auto_submit` (true), `max_seconds` (120). A project `.cox/config.toml` cannot set any `voice.*` key (added to the project-config guard list): a cloned repository must not switch on the microphone or pick the model file. `trait Dictation: Send { fn start(&mut self) -> Result<(), DictationError>; async fn stop(&mut self) -> Result<String, DictationError>; fn cancel(&mut self); }` in `cox-protocol`, so `cox-tui` depends on the trait, never on `cox-voice`.
+Check: `mise exec -- cargo nextest run -p cox-config voice_defaults_are_off_with_auto_submit project_config_cannot_set_voice_keys` and `config_jsonschema_matches_committed_file`.
+Done when: the section loads, is documented through the generated schema, and the guard holds.
+Out of scope: any audio code.
+Status: done 2026-09-29
+Result: `[voice]` config (`enabled` false, `model` base.en, `language` en, `key` alt+v, `auto_submit` true, `max_seconds` 120); `Dictation` trait and `DictationError` in `cox-protocol`; a project config may not set any `voice` key; `docs/config.md` and `docs/config.jsonschema` regenerated.
+
+Deviations: none.
+
+Check (2026-09-29): `voice_defaults_are_off_with_auto_submit`, `project_config_cannot_set_voice_keys` pass. Commit 625c975f.
+
+Not done: nothing.
+
+#### T54.5 `cox voice model list|download <name>`
+
+Depends: T54.1 · Size: ~180 · Files: `crates/cox/src/voice_cmd.rs` (new), `crates/cox/src/cli.rs`, `crates/cox/src/self_update.rs` (only if T53.2's shared fetch helper has not landed; otherwise `crates/cox/src/plugin_fetch.rs`)
+Goal: `list` prints each row of the vendored table with its size and whether it is present under `$COX_HOME/models/whisper/`. `download <name>` prints the URL and size and asks y/N on a TTY (without a TTY it refuses unless `--yes`), streams to a `.part` file, verifies the SHA-256 from the table, then renames; a mismatch deletes the part file; a present, verified file is a no-op. The reqwest client and SHA-256 helper are the ones `self_update` already has, extracted and shared, not copied. The request carries only the pinned URL and a `cox/<version>` User-Agent, never the user's name or email. Compiled only with the `voice` feature.
+Check: `mise exec -- cargo nextest run -p cox --features voice voice_model_download_verifies_sha256 voice_model_download_hash_mismatch_leaves_no_file voice_model_download_without_a_tty_needs_yes voice_model_list_marks_present_models` (wiremock, already a dev-dependency).
+Done when: the tests pass; `COX_HOME=/tmp/cox-scratch mise exec -- cargo run --features voice -- voice model list` prints the table.
+Out of scope: a model the table does not list; resumable downloads.
+Status: done 2026-09-29
+Result: `cox voice model list|download <name> [--yes]` behind the `voice` feature (off by default): downloads to `.part`, renames only on a SHA-256 match, cuts a body past the pinned size, User-Agent `cox/<version>`. `confirm` moved to `main.rs` so plugin and voice commands share one y/N prompt; cox-voice exports `MODELS_JSON`.
+
+Deviations: the HTTP client and a streaming SHA-256 were extracted; at the merge with T53.2 they moved into `plugin_fetch` (`http_client`, `sha256_read`) beside T53.2's download helpers.
+
+Check (2026-09-29): the 4 card tests plus `the_embedded_table_parses` 5 passed; `deps` 10 passed; `cargo run --features voice -- voice model list` prints the table; `cargo check -p cox` without the feature ok. Commit 4e9ffbcc.
+
+Not done: nothing.
+
+#### T54.6 TUI push-to-talk with auto-submit
+
+Depends: T54.4 · Size: ~190 · Files: `crates/cox-tui/src/voice.rs` (new), `crates/cox-tui/src/app.rs`, `crates/cox-tui/src/keymap.rs`; snapshots
+Goal: `app::run` takes an `Option<Box<dyn Dictation>>`. The `[voice] key` starts recording and pressing it again stops; where the terminal reports key releases (the P23 probe, kitty keyboard protocol), holding the key records and releasing it stops. `Esc` while recording cancels and inserts nothing. The status row shows `● rec 0:07`, then `transcribing…`. The transcript is sanitized and trimmed; an empty one inserts nothing and shows a dim notice; otherwise it is inserted at the cursor, and when the draft was empty before recording and `auto_submit` is on it is submitted as `Enter` would (queued while a turn runs, like `Enter`). Text added to a non-empty draft is never auto-submitted: the user reviews the combined text. With no `Dictation` the key shows one notice naming `cox voice`.
+Check: `mise exec -- cargo nextest run -p cox-tui voice_key_starts_and_stops_recording voice_release_stops_when_the_terminal_reports_releases voice_escape_cancels_without_inserting voice_transcript_auto_submits_an_empty_draft voice_transcript_into_a_non_empty_draft_does_not_submit voice_transcript_is_sanitized voice_without_dictation_shows_a_notice`; new `insta` snapshot `voice_recording_status_row` (a fake `Dictation`, no audio).
+Done when: the tests and snapshot pass; the key appears in the keymap help.
+Out of scope: the desktop app; `--plain`, headless and ACP surfaces (no push-to-talk there).
+Status: done 2026-09-29
+Result: `cox-tui` `voice.rs`: pure `on_key`/`toggle`/`on_msg`/`status` plus a `Driver` task owning the `Dictation`; `app::run` takes `Option<Box<dyn Dictation>>` and forwards key releases only while recording; keymap row `Alt+V voice`. Auto-submit only when the draft is still empty when the transcript arrives.
+
+Deviations: also touched state.rs, status.rs, commands.rs, lib.rs, kitty_probe.rs, session.rs, `docs/getting-started.md` and the generated `voice` action list in config.md; extra test `voice_key_is_in_the_help`.
+
+Check (2026-09-29): the 7 card tests, the snapshot, `voice_key_is_in_the_help`, `every_action_is_documented_in_config_md`, `keymap_table_matches_docs` pass; cox-protocol 115 passed. Commit 97d08838.
+
+Not done: help-overlay snapshots that predate P54 fail on the p37 line; accepting them will also show `Alt+V voice` (verification pass).
+
+#### T54.7 `crates/cox` wires dictation behind the `voice` feature
+
+Depends: T54.2, T54.3, T54.4, T54.5, T54.6 · Size: ~150 · Files: `crates/cox-voice/src/lib.rs`, `crates/cox/src/session.rs`, `crates/cox/src/doctor.rs`; manifest `crates/cox/Cargo.toml`; docs `docs/voice.md` (new)
+Goal: `cox-voice` implements `Dictation` over `Recorder` and `Transcriber` (the model loaded on the first press, transcription on a blocking thread). With the `voice` feature and `voice.enabled`, the TUI session passes it to `app::run`; a missing model is one warning naming `cox voice model download <model>` and the key stays off. `cox doctor` reports: feature built, enabled, model present, input device found. `docs/voice.md`: setup, the macOS microphone prompt, and what never happens (audio never leaves the machine, is never stored, never enters the rollout or the ledger).
+Check: `mise exec -- cargo nextest run -p cox --features voice doctor_reports_voice_model_missing voice_disabled_passes_no_dictation`; `mise exec -- cargo build` without the feature pulls no whisper (the `deps.rs` rule); a manual push-to-talk run in the TUI against `COX_HOME=/tmp/cox-scratch` with a downloaded `tiny.en` model, reported in done.md.
+Done when: the tests pass and the manual run is reported.
+Out of scope: turning the feature on in release builds (the creator decides, A123).
+Status: done 2026-09-29
+Result: `PushToTalk` implements `Dictation`; the model loads on the first press on a blocking thread, a failed load retries on the next. The TUI session sets up voice; a missing model warns once naming `cox voice model download <model>`; a non-default `[voice] key` rebinds the action. `cox doctor` has a voice row; `docs/voice.md` is new.
+
+Deviations: none.
+
+Check (2026-09-29): `doctor_reports_voice_model_missing`, `voice_disabled_passes_no_dictation` pass; `-p cox-voice` 10 passed; `deps` 10 passed; `cargo build -p cox` without the feature ok; clippy clean for voice, default and `--no-default-features`; fmt clean; doctor prints "voice: ✓ built; off" with the feature and "not built" without. Commit 07116b03.
+
+Not done: the manual push-to-talk run (needs a microphone and a downloaded model — the creator's step).
