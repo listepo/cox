@@ -2,9 +2,12 @@
 //! for this platform from GitHub, verifies its `.sha256` checksum, and
 //! replaces the running binary. Refuses to install without a matching
 //! checksum; refuses Windows (rename-over-running needs a dance this does
-//! not do).
+//! not do). Also owns the HTTP client and SHA-256 helper every download of
+//! cox's own shares (`cox voice model download`, T54.5).
 
+use std::io::Read;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
@@ -23,6 +26,21 @@ fn target() -> anyhow::Result<&'static str> {
     }
 }
 
+/// Whole-request limit for a release archive or its checksum.
+const TIMEOUT: Duration = Duration::from_secs(120);
+
+/// The client cox's own downloads go through: a `cox/<version>`
+/// User-Agent and nothing else about the user. A whole-request limit is
+/// each caller's, since a voice model is hundreds of MB; a stalled read
+/// still fails.
+pub(crate) fn http_client() -> reqwest::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .user_agent(concat!("cox/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(Duration::from_secs(30))
+        .read_timeout(Duration::from_secs(60))
+        .build()
+}
+
 fn asset_base(tag: &str, target: &str) -> String {
     format!("https://github.com/{REPO}/releases/download/{tag}/cox-{target}.tar.xz")
 }
@@ -32,6 +50,7 @@ async fn latest_tag(client: &reqwest::Client) -> anyhow::Result<String> {
     let tag: serde_json::Value = client
         .get(format!("https://api.github.com/{REPO}/releases/latest"))
         .header("User-Agent", "cox-self-update")
+        .timeout(TIMEOUT)
         .send()
         .await?
         .error_for_status()?
@@ -43,11 +62,23 @@ async fn latest_tag(client: &reqwest::Client) -> anyhow::Result<String> {
         .ok_or_else(|| anyhow::anyhow!("latest release has no tag_name"))
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
+/// SHA-256 of everything `reader` yields, as lowercase hex; read in
+/// chunks so a model file is never held in memory whole.
+pub(crate) fn sha256_hex(mut reader: impl Read) -> std::io::Result<String> {
+    let mut hasher = Sha256::new();
+    let mut chunk = vec![0; 1 << 16];
+    loop {
+        let n = reader.read(&mut chunk)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&chunk[..n]);
+    }
+    Ok(hasher
+        .finalize()
         .iter()
         .map(|b| format!("{b:02x}"))
-        .collect()
+        .collect())
 }
 
 /// Downloads `url` fully.
@@ -55,6 +86,7 @@ async fn fetch(client: &reqwest::Client, url: &str) -> anyhow::Result<Vec<u8>> {
     Ok(client
         .get(url)
         .header("User-Agent", "cox-self-update")
+        .timeout(TIMEOUT)
         .send()
         .await?
         .error_for_status()?
@@ -70,9 +102,7 @@ pub async fn run(version: Option<String>) -> anyhow::Result<()> {
     }
     let target = target()?;
     let current = env!("CARGO_PKG_VERSION");
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()?;
+    let client = http_client()?;
     let tag = match version {
         Some(v) => v,
         None => latest_tag(&client).await?,
@@ -90,7 +120,7 @@ pub async fn run(version: Option<String>) -> anyhow::Result<()> {
         .split_whitespace()
         .next()
         .ok_or_else(|| anyhow::anyhow!("checksum file is empty"))?;
-    let got = sha256_hex(&archive);
+    let got = sha256_hex(archive.as_slice())?;
     if got != want {
         anyhow::bail!("checksum mismatch for {base}: expected {want}, got {got}");
     }

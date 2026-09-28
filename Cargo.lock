@@ -1139,6 +1139,7 @@ dependencies = [
  "cox-telemetry",
  "cox-tools",
  "cox-tui",
+ "cox-voice",
  "crossterm",
  "dotenvy",
  "insta",

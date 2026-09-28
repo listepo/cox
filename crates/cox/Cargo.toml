@@ -47,6 +47,10 @@ otel = ["cox-telemetry/otel"]
 # `--no-default-features --features otel`. Plugin code sits behind
 # `#[cfg(feature = "plugins")]`.
 plugins = ["dep:cox-plugin", "dep:cox-plugin-api", "cox-session/plugins"]
+# T54.5 (A123): push-to-talk dictation and `cox voice`. Off by default:
+# whisper.cpp is a C++ build (cmake) and audio capture links the platform's
+# sound stack (ALSA headers on Linux). `--features voice` turns it on.
+voice = ["dep:cox-voice"]
 
 [dependencies]
 clap = { workspace = true }
@@ -56,6 +60,9 @@ cox-plugin = { path = "../cox-plugin", version = "0.1.2", optional = true }
 # summarise a plugin without running it; `cox-plugin` (the extism host)
 # does not re-export the manifest/ABI types.
 cox-plugin-api = { path = "../cox-plugin-api", version = "0.1.2", optional = true }
+# T54.5: the pinned whisper model table (`cox voice model`); T54.7 adds
+# the dictation the TUI receives.
+cox-voice = { path = "../cox-voice", version = "0.1.2", optional = true }
 cox-core = { path = "../cox-core", version = "0.1.2" }
 cox-provider = { path = "../cox-provider", version = "0.1.2" }
 cox-tools = { path = "../cox-tools", version = "0.1.2" }

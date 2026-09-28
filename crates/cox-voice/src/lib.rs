@@ -13,6 +13,11 @@ use std::path::PathBuf;
 pub use capture::{Recorder, WHISPER_RATE};
 pub use transcribe::Transcriber;
 
+/// The pinned model table `cox-vendor whisper-models` writes (T54.1): per
+/// model its name, file, download URL at a fixed commit, SHA-256 and size.
+/// `cox voice model` reads it; this crate never downloads anything.
+pub const MODELS_JSON: &str = include_str!("../data/whisper-models.json");
+
 /// What can go wrong between a model file and a transcript.
 #[derive(Debug, thiserror::Error)]
 pub enum VoiceError {
