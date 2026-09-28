@@ -5,8 +5,8 @@
 import SwiftUI
 
 /// Running and waiting glow with a soft halo; idle is a hollow ring; error is a plain red dot.
-struct StatusDot: View {
-  enum Status: CaseIterable, Sendable {
+public struct StatusDot: View {
+  public enum Status: CaseIterable, Sendable {
     case running, waiting, idle, error
   }
 
@@ -16,7 +16,7 @@ struct StatusDot: View {
     self.status = status
   }
 
-  var body: some View {
+  public var body: some View {
     Group {
       if status == .idle {
         Circle().strokeBorder(Color(.textTertiary), lineWidth: Size.statusDotRing)

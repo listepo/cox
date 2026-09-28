@@ -73,6 +73,9 @@ public final class SettingsStore {
   public private(set) var view: SettingsView?
   /// Why the last load or edit failed; the next success clears it.
   public private(set) var failure: String?
+  /// The providers whose key the `SecretStore` holds, read again after each load, store and
+  /// removal so the Settings rows that show it redraw.
+  public private(set) var storedKeys: Set<String> = []
   /// The project whose layer applies.
   public let cwd: String
   @ObservationIgnored private let client: any SettingsClient
@@ -115,25 +118,30 @@ public final class SettingsStore {
     return Set(names).sorted()
   }
 
-  public func hasKey(for section: String) -> Bool {
-    ((try? secrets.secret(for: section)) ?? nil) != nil
-  }
+  public func hasKey(for section: String) -> Bool { storedKeys.contains(section) }
 
   public func storeKey(_ secret: String, for section: String) throws {
     let secret = secret.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !secret.isEmpty else { throw KeyError.empty }
     guard providers.contains(section) else { throw KeyError.unknownProvider(section) }
     try secrets.store(secret, for: section)
+    readKeys()
   }
 
   public func removeKey(for section: String) throws {
     try secrets.remove(for: section)
+    readKeys()
+  }
+
+  private func readKeys() {
+    storedKeys = Set(providers.filter { ((try? secrets.secret(for: $0)) ?? nil) != nil })
   }
 
   private func attempt(_ fetch: (SettingsStore) async throws -> SettingsView) async {
     do {
       view = try await fetch(self)
       failure = nil
+      readKeys()
     } catch {
       failure = String(describing: error)
     }

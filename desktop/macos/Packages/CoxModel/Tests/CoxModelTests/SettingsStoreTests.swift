@@ -90,9 +90,16 @@ func loadedStore(secrets: any SecretStore = MemorySecretStore()) async -> Loaded
   try store.storeKey("  sk-test \n", for: "anthropic")
   #expect(try secrets.secret(for: "anthropic") == "sk-test")
   #expect(store.hasKey(for: "anthropic"))
+  // Observed, so the Settings row that shows the key redraws.
+  #expect(store.storedKeys == ["anthropic"])
   #expect(throws: KeyError.empty) { try store.storeKey(" ", for: "anthropic") }
   #expect(throws: KeyError.unknownProvider("nope")) { try store.storeKey("k", for: "nope") }
 
   try store.removeKey(for: "anthropic")
   #expect(!store.hasKey(for: "anthropic"))
+  #expect(store.storedKeys.isEmpty)
+
+  try secrets.store("sk-elsewhere", for: "anthropic")
+  await store.load()
+  #expect(store.storedKeys == ["anthropic"])
 }

@@ -5,6 +5,7 @@
 
 import AppKit
 import CoxClient
+import CoxCore
 import CoxModel
 import CoxPlatform
 import SwiftUI
@@ -26,13 +27,17 @@ struct CoxApp: App {
   }
 }
 
-/// What every window of this launch shares: the core, one `SettingsStore` for the project, and
-/// the notification centre's delegate, which routes an action to the session it names.
+/// What every window of this launch shares: the core, one `SettingsStore` for the project, the
+/// session list, the login shell's environment read once, and the notification centre's
+/// delegate, which routes an action to the session it names.
 @MainActor
 final class AppModel {
   let launch: LaunchCore
   /// `nil` when the live core did not start; the windows say why.
   let settings: SettingsStore?
+  /// The sidebar's sessions: the live workspace's, or a fixture's inbox alone.
+  let sidebar: SidebarStore
+  private var loginEnv: Task<Void, Never>?
   private var sessions: [String: WeakSession] = [:]
   private var responder: NotificationResponder?
 
@@ -40,12 +45,24 @@ final class AppModel {
     self.launch = launch
     settings = try? SettingsStore(
       client: launch.live.get(), secrets: launch.secrets, cwd: LaunchCore.project())
+    sidebar = SidebarStore(
+      workspace: launch.isFixture ? nil : try? launch.live.get(),
+      inbox: (try? launch.core.get() as? any InboxClient).map { InboxStore(client: $0) })
     let responder = NotificationResponder(
       handle: { [weak self] route in Task { @MainActor in self?.route(route) } },
       show: { _ in Task { @MainActor in NSApp.activate() } })
     // The centre holds its delegate weakly; this model lives as long as the app.
     UNUserNotificationCenter.current().delegate = responder
     self.responder = responder
+  }
+
+  /// Reads the login shell's environment into the process once per launch, before the first
+  /// session opens (DT§4.8); every window waits on the same read. How it went is the checklist's
+  /// shell-environment row.
+  func loadLoginEnv() async {
+    let read = loginEnv ?? Task { _ = try? await LiveCoreClient.loadLoginEnv() }
+    loginEnv = read
+    await read.value
   }
 
   /// Makes `store` the target of the notifications for `session`.

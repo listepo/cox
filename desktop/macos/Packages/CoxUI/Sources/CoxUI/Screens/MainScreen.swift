@@ -1,16 +1,16 @@
 // `MainScreen` (DS§4, DS§6.5; DT§5.1): the window shell — the sidebar, the toolbar, the
 // transcript column and the inspector as floating panes on the window's glass. Composition
 // only (DS§5): the panes style themselves, and the transcript and inspector tabs are slots
-// their own cards fill (T37.23, T37.24, T37.29). The app binds `state` and `send` to its stores;
-// the types it names are public, the panes' own rows stay internal until the app fills them.
+// their own cards fill (T37.23, T37.24, T37.29). The app binds `state` and `send` to its stores
+// and fills the sidebar's and toolbar's values, which are public for it (T37.22.5).
 
 import AppKit
 import SwiftUI
 
 /// What the shell shows: each pane's state and which panes are out.
 public struct MainScreenState: Equatable, Sendable {
-  var sidebar = Sidebar.State()
-  var toolbar = SessionToolbar.State()
+  public var sidebar = Sidebar.State()
+  public var toolbar = SessionToolbar.State()
   public var isSidebarVisible = true
   public var isInspectorVisible = true
   public var inspectorTab = InspectorTab.changes

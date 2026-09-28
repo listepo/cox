@@ -1,0 +1,42 @@
+// The session toolbar's figures (DT§5.1 Toolbar, DS§6.4 `SessionToolbar`): the session's title and
+// where it lives, its cost and how full its context is, from the store's meter, the session's row
+// in `cox.db` and its Info. Here, not in CoxUI, because these decide what the bar shows (DS§1);
+// the app copies them into `SessionToolbar.State` field for field.
+
+import CoxClient
+import Foundation
+
+public struct ToolbarState: Equatable, Sendable {
+  /// The session's title; `New session` until the core titles it.
+  public var title = "New session"
+  /// The project's name and the linked worktree's branch, if any.
+  public var project = ""
+  public var branch: String?
+  /// `$0.42`, the session's cost so far.
+  public var cost = usd(0)
+  /// `38%` of the window, as the core formatted the share; `–` while the window is unknown.
+  public var context = "–"
+  /// The share the ring fills, 0…1: the split's parts laid end to end.
+  public var contextFraction = 0.0
+
+  public init() {}
+
+  /// `entry` is the session's row once `cox.db` has one; `info` what the session reported.
+  public init(usage: UsageView?, entry: (session: SessionEntry, project: Project)?, info: Info?) {
+    if let title = entry?.session.title { self.title = title }
+    let cwd = info?.cwd ?? entry?.session.cwd ?? ""
+    project = entry?.project.name ?? (cwd.isEmpty ? "" : URL(filePath: cwd).lastPathComponent)
+    branch = info?.worktree?.branch
+    guard let usage else { return }
+    cost = usd(usage.session.costUsd)
+    let split = ContextSplit(usage.text)
+    // `7.6% of 1M`: the percent the core formatted, without the window it is of.
+    if let percent = split.share.components(separatedBy: " of ").first, !percent.isEmpty {
+      context = percent
+    }
+    contextFraction = min(1, split.parts.reduce(0) { $0 + $1.fraction })
+  }
+}
+
+/// `$0.42`, as cox-app's meter and the TUI write a cost.
+func usd(_ amount: Double) -> String { String(format: "$%.2f", amount) }

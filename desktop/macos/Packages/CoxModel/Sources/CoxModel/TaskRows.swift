@@ -35,7 +35,7 @@ extension SessionStore {
         !done ? .running : (exitCode ?? 0) == 0 ? .succeeded : .failed
       return TaskRow(
         id: task, label: label, tier: tier.rawValue, kind: kind, state: state,
-        cost: done ? String(format: "$%.2f", costUsd) : nil)
+        cost: done ? usd(costUsd) : nil)
     }
   }
 

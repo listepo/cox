@@ -135,10 +135,22 @@ public struct SessionComposer: View {
 }
 
 extension SessionMode {
-  /// The core's mode as the composer names it: `default` is Ask.
-  init(_ mode: PermissionMode) {
+  /// The core's mode as the composer and the toolbar name it: `default` is Ask.
+  public init(_ mode: PermissionMode) {
     switch mode {
     case .default: self = .ask
+    case .plan: self = .plan
+    case .auto: self = .auto
+    case .bypass: self = .bypass
+    }
+  }
+}
+
+extension PermissionMode {
+  /// The toolbar's mode as the core names it: Ask is `default`.
+  public init(_ mode: SessionMode) {
+    switch mode {
+    case .ask: self = .default
     case .plan: self = .plan
     case .auto: self = .auto
     case .bypass: self = .bypass

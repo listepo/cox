@@ -6,15 +6,19 @@ import SwiftUI
 
 /// A `StatusDot` centred on the title line, the title over a subtitle, the cost at the far
 /// edge; the selected row sits on `accent.soft`, lifted to e1 (DS§3.4).
-struct SessionRow: View {
+public struct SessionRow: View {
   /// What the row shows, formatted by the core.
-  struct Item: Equatable, Sendable {
-    var status: StatusDot.Status
-    var title: String
+  public struct Item: Equatable, Sendable {
+    public var status: StatusDot.Status
+    public var title: String
     /// Project and activity, `cox · running cargo nextest`.
-    var subtitle: String
+    public var subtitle: String
     /// The session's cost, `$0.42`, or `nil` for none yet.
-    var cost: String?
+    public var cost: String?
+
+    public init(status: StatusDot.Status, title: String, subtitle: String, cost: String? = nil) {
+      (self.status, self.title, self.subtitle, self.cost) = (status, title, subtitle, cost)
+    }
   }
 
   let item: Item
@@ -25,7 +29,7 @@ struct SessionRow: View {
     self.isSelected = isSelected
   }
 
-  var body: some View {
+  public var body: some View {
     let shape = RoundedRectangle(cornerRadius: Radius.l, style: .continuous)
     HStack(alignment: .titleLine, spacing: Space.m) {
       StatusDot(item.status)

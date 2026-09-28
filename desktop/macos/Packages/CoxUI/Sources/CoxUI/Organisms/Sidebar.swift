@@ -12,29 +12,45 @@ public struct Sidebar: View {
   public struct Session: Equatable, Sendable, Identifiable {
     /// The session's stable id from Rust, or an inbox item's: one session can wait on several.
     public let id: String
-    var row: SessionRow.Item
+    public var row: SessionRow.Item
     /// The session an inbox item's row opens; `nil` when `id` is the session.
-    var session: ID?
+    public var session: ID?
     /// An expired inbox item: shown, but no longer answerable from this window.
-    var isReadOnly = false
+    public var isReadOnly: Bool
 
     var opens: ID { session ?? id }
+
+    public init(id: String, row: SessionRow.Item, session: ID? = nil, isReadOnly: Bool = false) {
+      (self.id, self.row, self.session, self.isReadOnly) = (id, row, session, isReadOnly)
+    }
   }
 
   public struct Group: Equatable, Sendable, Identifiable {
     public let id: String
-    var title: String
-    var kind: Kind
-    var sessions: [Session]
+    public var title: String
+    public var kind: Kind
+    public var sessions: [Session]
+
+    public init(id: String, title: String, kind: Kind, sessions: [Session]) {
+      (self.id, self.title, self.kind, self.sessions) = (id, title, kind, sessions)
+    }
   }
 
   public struct State: Equatable, Sendable {
-    var filter = ""
-    var groups: [Group] = []
-    var selection: Session.ID?
+    public var filter: String
+    public var groups: [Group]
+    public var selection: Session.ID?
     /// The providers' health as the core formats it, `3 providers`, and its dot.
-    var providers = ""
-    var providerStatus = StatusDot.Status.idle
+    public var providers: String
+    public var providerStatus: StatusDot.Status
+
+    public init(
+      filter: String = "", groups: [Group] = [], selection: Session.ID? = nil,
+      providers: String = "", providerStatus: StatusDot.Status = .idle
+    ) {
+      (self.filter, self.groups, self.selection) = (filter, groups, selection)
+      (self.providers, self.providerStatus) = (providers, providerStatus)
+    }
   }
 
   public enum Intent: Equatable, Sendable {
@@ -92,7 +108,7 @@ public struct Sidebar: View {
 }
 
 extension Sidebar.Group {
-  enum Kind: Equatable, Sendable {
+  public enum Kind: Equatable, Sendable {
     /// A status section with the count the core formats, or `nil` for none.
     case section(count: String?)
     /// A project, open or folded.

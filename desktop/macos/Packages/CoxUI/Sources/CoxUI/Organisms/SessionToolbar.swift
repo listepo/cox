@@ -16,18 +16,29 @@ public struct SessionToolbar: View {
   }
 
   public struct State: Equatable, Sendable {
-    var title = ""
-    var project = ""
-    var branch: String?
+    public var title: String
+    public var project: String
+    public var branch: String?
     /// The model and effort as the core formats them, `Sonnet 5 · high`.
-    var model = ""
-    var mode = ModeSegmented.Mode.ask
+    public var model: String
+    public var mode: SessionMode
     /// What the core formatted: `$0.42` and `38%`, and the share the ring fills.
-    var cost = ""
-    var context = ""
-    var contextFraction = 0.0
-    var isRunning = false
-    var popover: Popover?
+    public var cost: String
+    public var context: String
+    public var contextFraction: Double
+    public var isRunning: Bool
+    public var popover: Popover?
+
+    public init(
+      title: String = "", project: String = "", branch: String? = nil, model: String = "",
+      mode: SessionMode = .ask, cost: String = "", context: String = "",
+      contextFraction: Double = 0, isRunning: Bool = false, popover: Popover? = nil
+    ) {
+      (self.title, self.project, self.branch, self.model, self.mode) =
+        (title, project, branch, model, mode)
+      (self.cost, self.context, self.contextFraction) = (cost, context, contextFraction)
+      (self.isRunning, self.popover) = (isRunning, popover)
+    }
   }
 
   public enum Intent: Equatable, Sendable {

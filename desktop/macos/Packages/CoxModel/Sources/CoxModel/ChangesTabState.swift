@@ -56,8 +56,8 @@ public struct ChangesTabState: Equatable, Sendable {
     worktree.append(Fact(label: "Size", values: [Int64(clamping: tree.bytes).formatted(size)]))
   }
 
-  /// An RFC 3339 time as cox.db writes it, with or without milliseconds.
-  private static func date(_ text: String) -> Date? {
+  /// An RFC 3339 time as cox.db writes it, with or without milliseconds; the sidebar's too.
+  static func date(_ text: String) -> Date? {
     let withFraction = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
     return (try? withFraction.parse(text)) ?? (try? Date.ISO8601FormatStyle().parse(text))
   }
