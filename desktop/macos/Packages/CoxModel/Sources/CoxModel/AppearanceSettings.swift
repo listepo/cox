@@ -1,0 +1,88 @@
+// `[desktop.appearance]` (DS§3.5, T37.13) as the Appearance popover edits it: one edit per key,
+// written through `SettingsStore.set` like any other setting, and the section read back from
+// the settings view so the window redraws from what Rust stored (T37.26). Separate so the
+// popover's intents reach the config without a view naming a key; the app maps these plain
+// values to CoxUI's, which CoxModel does not import.
+
+import CoxClient
+import Foundation
+
+/// The window material, spelled as `desktop.appearance.material` stores it.
+public enum WindowMaterial: String, CaseIterable, Sendable {
+  case frosted, glossy, solid
+}
+
+/// One change the Appearance popover reports, as the key it writes.
+public enum AppearanceEdit: Equatable, Sendable {
+  case material(WindowMaterial)
+  /// Window and pane background opacity, 0 (clear) … 1 (opaque).
+  case opacity(Double)
+  /// Blur in pt for Frosted; Glossy reads it as reflection.
+  case blur(Double)
+  /// 0 (Flat) … 1 (3D).
+  case depth(Double)
+  case tint(Bool)
+
+  public var key: String {
+    let field =
+      switch self {
+      case .material: "material"
+      case .opacity: "opacity"
+      case .blur: "blur"
+      case .depth: "depth"
+      case .tint: "tint"
+      }
+    return DesktopAppearance.key(field)
+  }
+
+  var value: SettingValue {
+    switch self {
+    case .material(let material): .text(material.rawValue)
+    case .opacity(let number), .blur(let number), .depth(let number): .number(number)
+    case .tint(let isOn): .bool(isOn)
+    }
+  }
+}
+
+/// `[desktop.appearance]` as Rust stored it.
+public struct DesktopAppearance: Equatable, Sendable {
+  public var material: WindowMaterial
+  public var opacity: Double
+  public var blur: Double
+  /// The blur the schema allows: the slider's range.
+  public var blurRange: ClosedRange<Double>
+  public var depth: Double
+  public var tint: Bool
+
+  static func key(_ field: String) -> String { "desktop.appearance.\(field)" }
+}
+
+extension DesktopAppearance {
+  /// `nil` when a key is missing or holds a value of another type.
+  init?(_ settings: [Setting]) {
+    let rows = Dictionary(settings.map { ($0.key, $0) }) { first, _ in first }
+    func decode<Value: Decodable>(_ field: String) -> Value? {
+      rows[Self.key(field)].flatMap {
+        try? JSONDecoder().decode(Value.self, from: Data($0.value.utf8))
+      }
+    }
+    guard let name: String = decode("material"), let material = WindowMaterial(rawValue: name),
+      let opacity: Double = decode("opacity"), let blur: Double = decode("blur"),
+      let depth: Double = decode("depth"), let tint: Bool = decode("tint"),
+      case .number(let low?, let high?) = rows[Self.key("blur")]?.kind, low <= high
+    else { return nil }
+    (self.material, self.opacity, self.blur, self.depth, self.tint) =
+      (material, opacity, blur, depth, tint)
+    blurRange = low...high
+  }
+}
+
+extension SettingsStore {
+  /// `[desktop.appearance]` from the loaded view; `nil` before the first load.
+  public var appearance: DesktopAppearance? { view.flatMap { DesktopAppearance($0.settings) } }
+
+  /// Writes one popover change to the user's config; `appearance` follows Rust's answer.
+  public func apply(_ edit: AppearanceEdit) async {
+    await set(edit.key, to: edit.value)
+  }
+}

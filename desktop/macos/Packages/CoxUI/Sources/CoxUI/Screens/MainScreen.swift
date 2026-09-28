@@ -12,6 +12,8 @@ struct MainScreenState: Equatable, Sendable {
   var isSidebarVisible = true
   var isInspectorVisible = true
   var inspectorTab = InspectorTab.changes
+  /// Shown while the toolbar's `popover` is `.appearance`.
+  var appearance = AppearancePopover.State()
 }
 
 /// Every intent the shell reports, tagged by the pane it came from.
@@ -19,6 +21,7 @@ enum MainScreenIntent: Equatable, Sendable {
   case sidebar(Sidebar.Intent)
   case toolbar(SessionToolbar.Intent)
   case inspectorTab(InspectorTab)
+  case appearance(AppearancePopover.Intent)
 }
 
 /// The shell for one open session. The sidebar and inspector fold away as `state` says; the
@@ -63,6 +66,15 @@ struct MainScreen<Transcript: View, InspectorContent: View>: View {
           .padding([.trailing, .bottom], Size.paneGap)
           .padding(.leading, state.isSidebarVisible ? 0 : Size.paneGap)
         }
+      }
+    }
+    .overlay(alignment: .topTrailing) {
+      if state.toolbar.popover == .appearance {
+        // Under the toolbar's Appearance button: past the inspector button and the bar's
+        // trailing inset, as the mockup's `.appear` sits.
+        AppearancePopover(state: state.appearance) { send(.appearance($0)) }
+          .padding(.top, Size.toolbarHeight)
+          .padding(.trailing, Space.l + Size.capsuleHeight)
       }
     }
     .frame(minWidth: Size.windowMinWidth, minHeight: Size.windowMinHeight)
