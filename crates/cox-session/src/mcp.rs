@@ -26,6 +26,7 @@ pub fn mcp_auth(login: Option<cox_mcp::client::Prompt>) -> cox_mcp::client::Auth
     cox_mcp::client::Auth {
         secrets: Arc::new(cox_mcp::auth::Keyring),
         prompt: login,
+        ask: None,
     }
 }
 

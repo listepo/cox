@@ -6,9 +6,14 @@
 //! attached and refreshed silently; a 401 on the handshake asks for a login
 //! when a surface can run one, and is a notice naming `cox mcp login`
 //! otherwise — never a silent skip.
+//! [`CoxClient`] is the handler every session serves (T47.2): with a person
+//! present it answers a server's `elicitation/create` through the surface's
+//! question modal, and without one it declares nothing and declines.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::future::Future;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -16,17 +21,23 @@ use cox_protocol::config::{CHILD_ENV_ALLOWLIST, McpServerConfig};
 use cox_protocol::errors::ToolError;
 use cox_protocol::traits::{Tool, ToolCx};
 use cox_protocol::types::{Concurrency, Risk, ToolOutput, ToolSpec};
-use rmcp::model::{CallToolRequestParams, CallToolResult};
-use rmcp::service::{ClientInitializeError, RoleClient, RunningService};
+use rmcp::model::{
+    CallToolRequestParams, CallToolResult, ClientConfig, ElicitRequestParams, ElicitResult,
+    ElicitationAction, ElicitationCapability, ErrorData, FormElicitationCapability,
+};
+use rmcp::service::{ClientInitializeError, RequestContext, RoleClient, RunningService};
 use rmcp::transport::auth::{AuthClient, AuthError, CredentialStore, InMemoryCredentialStore};
 use rmcp::transport::streamable_http_client::{
     StreamableHttpClientTransport, StreamableHttpClientTransportConfig, StreamableHttpError,
 };
 use rmcp::transport::{IntoTransport, TokioChildProcess};
-use rmcp::{RmcpError, ServiceExt};
+use rmcp::{ClientHandler, RmcpError, ServiceExt};
 use serde_json::Value;
+use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 
 use crate::auth::{self, Secrets};
+use crate::elicit::{self, Asker};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
@@ -51,22 +62,157 @@ pub enum ClientError {
 /// How a surface hands the person the login URL to open.
 pub type Prompt = Arc<dyn Fn(&str) + Send + Sync>;
 
-/// What a surface brings to the OAuth flow: where tokens live and, when a
-/// person is present, how to hand them the URL to open. `None` means a 401
-/// is a notice, not a login.
+/// What a surface brings: where tokens live and, when a person is present,
+/// how to reach them — `prompt` hands them a login URL (T22.5), `ask` puts
+/// a server's elicitation questions to them (T47.2). `None` for either
+/// means nobody is there: a 401 is a notice, an elicitation is declined.
 #[derive(Clone)]
 pub struct Auth {
     pub secrets: Arc<dyn Secrets>,
     pub prompt: Option<Prompt>,
+    pub ask: Option<Asker>,
 }
 
 impl Auth {
-    /// No persistence and no prompt: stdio-only callers and tests.
+    /// No persistence, no prompt, no asker: stdio-only callers and tests.
     pub fn none() -> Self {
         Self {
             secrets: Arc::new(auth::Memory::default()),
             prompt: None,
+            ask: None,
         }
+    }
+}
+
+/// How many elicitations of one server wait for a person right now. A
+/// call's deadline stops while any does (A78: answering must not trip
+/// `mcp.timeout_s`), and a cancelled call aborts them.
+#[derive(Default)]
+struct Asking {
+    open: AtomicUsize,
+    changed: Notify,
+    abort: Mutex<CancellationToken>,
+}
+
+impl Asking {
+    fn busy(&self) -> bool {
+        self.open.load(Ordering::SeqCst) > 0
+    }
+
+    /// Counts one open elicitation until the guard drops, however the
+    /// handler's future ends.
+    fn enter(self: &Arc<Self>) -> Open {
+        self.open.fetch_add(1, Ordering::SeqCst);
+        self.changed.notify_waiters();
+        Open(self.clone())
+    }
+
+    /// The token the open elicitations watch.
+    fn abort_token(&self) -> CancellationToken {
+        self.abort
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Cancels every open elicitation; later ones get a fresh token.
+    fn abort_all(&self) {
+        let mut token = self.abort.lock().unwrap_or_else(PoisonError::into_inner);
+        token.cancel();
+        *token = CancellationToken::new();
+    }
+}
+
+struct Open(Arc<Asking>);
+
+impl Drop for Open {
+    fn drop(&mut self) {
+        self.0.open.fetch_sub(1, Ordering::SeqCst);
+        self.0.changed.notify_waiters();
+    }
+}
+
+/// Runs `fut` with a `timeout` that does not count while a question is
+/// open; each time the last question closes the full timeout starts again.
+/// `None` is a timeout.
+async fn within<F: Future>(asking: &Asking, timeout: Duration, fut: F) -> Option<F::Output> {
+    tokio::pin!(fut);
+    loop {
+        let changed = asking.changed.notified();
+        tokio::pin!(changed);
+        // Registered before `busy` is read, so a change in between still
+        // wakes this loop.
+        changed.as_mut().enable();
+        if asking.busy() {
+            tokio::select! {
+                out = &mut fut => return Some(out),
+                () = &mut changed => continue,
+            }
+        }
+        tokio::select! {
+            out = &mut fut => return Some(out),
+            () = tokio::time::sleep(timeout) => return None,
+            () = &mut changed => {}
+        }
+    }
+}
+
+/// The client side of every session (T47.2). Declares `elicitation.form`
+/// only when `ask` is set, and answers a form elicitation through it; a URL
+/// elicitation, or any elicitation without an asker, is declined.
+#[derive(Clone)]
+pub struct CoxClient {
+    server: String,
+    ask: Option<Asker>,
+    asking: Arc<Asking>,
+}
+
+impl CoxClient {
+    fn new(server: &str, ask: Option<Asker>) -> Self {
+        Self {
+            server: server.to_string(),
+            ask,
+            asking: Arc::default(),
+        }
+    }
+}
+
+impl ClientHandler for CoxClient {
+    fn get_info(&self) -> ClientConfig {
+        let mut info = ClientConfig::default();
+        if self.ask.is_some() {
+            info.capabilities.elicitation = Some(
+                ElicitationCapability::new()
+                    .with_form(FormElicitationCapability::new().with_schema_validation(true)),
+            );
+        }
+        info
+    }
+
+    async fn create_elicitation(
+        &self,
+        request: ElicitRequestParams,
+        context: RequestContext<RoleClient>,
+    ) -> Result<ElicitResult, ErrorData> {
+        let decline = ElicitResult::new(ElicitationAction::Decline);
+        let Some(asker) = &self.ask else {
+            return Ok(decline);
+        };
+        let ElicitRequestParams::FormElicitationParams {
+            message,
+            requested_schema,
+            ..
+        } = request
+        else {
+            return Ok(decline);
+        };
+        let _open = self.asking.enter();
+        let abort = self.asking.abort_token();
+        Ok(tokio::select! {
+            result = elicit::run_form(asker, &self.server, &message, &requested_schema) => result,
+            () = context.ct.cancelled() => ElicitResult::new(ElicitationAction::Cancel),
+            () = abort.cancelled() => ElicitResult::new(ElicitationAction::Cancel),
+        })
     }
 }
 
@@ -74,8 +220,9 @@ impl Auth {
 #[derive(Clone)]
 pub struct McpClient {
     name: String,
-    service: Arc<RunningService<RoleClient, ()>>,
+    service: Arc<RunningService<RoleClient, CoxClient>>,
     timeout: Duration,
+    asking: Arc<Asking>,
 }
 
 impl McpClient {
@@ -101,17 +248,18 @@ impl McpClient {
                         command: command.clone(),
                         source,
                     })?;
-                Self::from_transport(name, transport, timeout).await
+                Self::from_transport(name, transport, timeout, auth.ask.clone()).await
             }
             (None, Some(url)) => {
                 let store = usable(auth.secrets.store(name)).await;
-                match Self::connect_http(name, url, store.clone(), timeout).await {
+                let ask = auth.ask.clone();
+                match Self::connect_http(name, url, store.clone(), timeout, ask.clone()).await {
                     // One login per connect, then the handshake runs again
                     // with the token the login stored.
                     Err(Login { challenge, expired }) => match &auth.prompt {
                         Some(prompt) => {
                             auth::login(url, store.clone(), Some(challenge), &**prompt).await?;
-                            Self::connect_http(name, url, store, timeout)
+                            Self::connect_http(name, url, store, timeout, ask)
                                 .await
                                 .map_err(|e| e.into_client(name))
                         }
@@ -138,6 +286,7 @@ impl McpClient {
         url: &str,
         store: Arc<dyn CredentialStore>,
         timeout: Duration,
+        ask: Option<Asker>,
     ) -> Result<Self, HttpError> {
         let (manager, expired) = auth::manager(url, store).await?;
         let client = AuthClient::new(reqwest::Client::new(), manager);
@@ -145,7 +294,9 @@ impl McpClient {
             client,
             StreamableHttpClientTransportConfig::with_uri(url),
         );
-        let service = match ().serve(transport).await {
+        let handler = CoxClient::new(name, ask);
+        let asking = handler.asking.clone();
+        let service = match handler.serve(transport).await {
             Ok(service) => service,
             Err(e) => {
                 return Err(match challenge_of(&e) {
@@ -158,27 +309,33 @@ impl McpClient {
             name: name.to_string(),
             service: Arc::new(service),
             timeout,
+            asking,
         })
     }
 
     /// Handshakes over any rmcp transport (tests use an in-process duplex).
+    /// `ask` is the surface's asker, `None` when nobody can answer.
     pub async fn from_transport<T, E, A>(
         name: &str,
         transport: T,
         timeout: Duration,
+        ask: Option<Asker>,
     ) -> Result<Self, ClientError>
     where
         T: IntoTransport<RoleClient, E, A>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        let service =
-            ().serve(transport)
-                .await
-                .map_err(|e| ClientError::Handshake(Box::new(e.into())))?;
+        let handler = CoxClient::new(name, ask);
+        let asking = handler.asking.clone();
+        let service = handler
+            .serve(transport)
+            .await
+            .map_err(|e| ClientError::Handshake(Box::new(e.into())))?;
         Ok(Self {
             name: name.to_string(),
             service: Arc::new(service),
             timeout,
+            asking,
         })
     }
 
@@ -384,17 +541,23 @@ impl Tool for McpTool {
             params = params.with_arguments(args.clone());
         }
         let call = self.client.service.call_tool(params);
+        let asking = &self.client.asking;
         let result = tokio::select! {
-            _ = cx.cancel.cancelled() => return Err(ToolError::Cancelled),
-            r = tokio::time::timeout(self.client.timeout, call) => match r {
-                Ok(Ok(result)) => result,
-                Ok(Err(e)) => return Ok(ToolOutput {
+            _ = cx.cancel.cancelled() => {
+                // A question this server still has open would otherwise
+                // wait for an answer nobody needs.
+                asking.abort_all();
+                return Err(ToolError::Cancelled);
+            }
+            r = within(asking, self.client.timeout, call) => match r {
+                Some(Ok(result)) => result,
+                Some(Err(e)) => return Ok(ToolOutput {
                     text: format!("mcp server `{}`: {e}", self.client.name),
                     is_error: true,
                     diff: None,
                     structured: None,
                 }),
-                Err(_) => return Err(ToolError::Timeout),
+                None => return Err(ToolError::Timeout),
             },
         };
         Ok(output_of(result))
@@ -573,6 +736,7 @@ mod tests {
         let auth = Auth {
             secrets: secrets.clone(),
             prompt: Some(browser()),
+            ask: None,
         };
         let (clients, tools, notices) =
             connect_all(&servers(&server.uri()), Duration::from_secs(5), true, &auth).await;
@@ -610,6 +774,7 @@ mod tests {
         let auth = Auth {
             secrets,
             prompt: None,
+            ask: None,
         };
         // No prompt means no login allowance: the handshake timeout is the
         // whole budget, and a loaded machine stalled past 5 s turned this

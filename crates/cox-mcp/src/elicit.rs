@@ -4,13 +4,15 @@
 //! back to a JSON value the field accepts, and the review step the spec
 //! asks for before anything is sent. Separate from `client` because the
 //! handler and its tests share it, and it holds no rmcp service type and
-//! does no I/O.
+//! does no I/O. [`run_form`] (T47.2) drives those prompts through an
+//! [`Asker`], the channel a surface with a person present answers.
 
 use rmcp::model::{
-    ElicitationSchema, EnumSchema, MultiSelectEnumSchema, PrimitiveSchemaDefinition,
-    SingleSelectEnumSchema, StringFormat,
+    ElicitResult, ElicitationAction, ElicitationSchema, EnumSchema, MultiSelectEnumSchema,
+    PrimitiveSchemaDefinition, SingleSelectEnumSchema, StringFormat,
 };
 use serde_json::{Map, Value};
+use tokio::sync::{mpsc, oneshot};
 
 /// The string shapes the spec names; checked by hand, no new crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -498,6 +500,132 @@ pub fn review(message: &str, answers: &Map<String, Value>) -> (String, Vec<Strin
         format!("{message} — send {summary}?"),
         ["send", "edit", "decline"].map(String::from).to_vec(),
     )
+}
+
+/// One question for the person, from `server`'s elicitation (T47.2). The
+/// surface answers through `reply`; dropping it (Esc, a dismissed modal)
+/// cancels the whole elicitation.
+pub struct Ask {
+    pub server: String,
+    pub question: String,
+    pub options: Vec<String>,
+    pub reply: oneshot::Sender<String>,
+}
+
+/// Where a surface with a person present takes [`Ask`]s.
+pub type Asker = mpsc::Sender<Ask>;
+
+/// How often a bad answer or an unknown review choice is asked again, and
+/// how many `edit` rounds a form gets, before the elicitation gives up.
+const TRIES: usize = 3;
+
+fn with(action: ElicitationAction) -> ElicitResult {
+    ElicitResult::new(action)
+}
+
+/// One question; `None` when the person dismissed it or nobody listens.
+async fn ask(
+    asker: &Asker,
+    server: &str,
+    (question, options): (String, Vec<String>),
+) -> Option<String> {
+    let (reply, answer) = oneshot::channel();
+    asker
+        .send(Ask {
+            server: server.to_string(),
+            question,
+            options,
+            reply,
+        })
+        .await
+        .ok()?;
+    answer.await.ok()
+}
+
+/// How one field's questioning ended.
+enum Step {
+    Value(Option<Value>),
+    Cancel,
+    Decline,
+}
+
+async fn ask_field(asker: &Asker, server: &str, message: &str, field: &Field) -> Step {
+    let (base, options) = prompt(message, field);
+    let mut question = base.clone();
+    for _ in 0..TRIES {
+        let Some(text) = ask(asker, server, (question, options.clone())).await else {
+            return Step::Cancel;
+        };
+        match parse(field, &text) {
+            Ok(value) => return Step::Value(value),
+            Err(why) => question = format!("{base} — not accepted: {why}"),
+        }
+    }
+    Step::Decline
+}
+
+/// A form elicitation, asked field by field and then reviewed: `send`
+/// accepts with the answers, `decline` declines, `edit` asks again with the
+/// answers as defaults, a dismissed question cancels. A schema cox cannot
+/// map is declined without asking.
+pub async fn run_form(
+    asker: &Asker,
+    server: &str,
+    message: &str,
+    schema: &ElicitationSchema,
+) -> ElicitResult {
+    let Ok(mut fields) = fields(schema) else {
+        return with(ElicitationAction::Decline);
+    };
+    for _ in 0..TRIES {
+        let mut content = Map::new();
+        for field in &fields {
+            match ask_field(asker, server, message, field).await {
+                Step::Value(Some(value)) => {
+                    content.insert(field.key.clone(), value);
+                }
+                Step::Value(None) => {}
+                Step::Cancel => return with(ElicitationAction::Cancel),
+                Step::Decline => return with(ElicitationAction::Decline),
+            }
+        }
+        match choose(asker, server, review(message, &content)).await {
+            Some(Choice::Send) => {
+                return with(ElicitationAction::Accept).with_content(Value::Object(content));
+            }
+            Some(Choice::Decline) => return with(ElicitationAction::Decline),
+            Some(Choice::Edit) => {
+                for field in &mut fields {
+                    if let Some(value) = content.get(&field.key) {
+                        field.default = Some(value.clone());
+                    }
+                }
+            }
+            None => return with(ElicitationAction::Cancel),
+        }
+    }
+    with(ElicitationAction::Cancel)
+}
+
+enum Choice {
+    Send,
+    Edit,
+    Decline,
+}
+
+/// The review answer; an unknown one is asked again, a dismissed one is
+/// `None`.
+async fn choose(asker: &Asker, server: &str, review: (String, Vec<String>)) -> Option<Choice> {
+    for _ in 0..TRIES {
+        let text = ask(asker, server, review.clone()).await?;
+        match text.trim().to_ascii_lowercase().as_str() {
+            "send" => return Some(Choice::Send),
+            "edit" => return Some(Choice::Edit),
+            "decline" => return Some(Choice::Decline),
+            _ => {}
+        }
+    }
+    None
 }
 
 #[cfg(test)]
