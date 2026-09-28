@@ -13,11 +13,22 @@ public enum SettingControl: Equatable, Sendable {
   case toggle(Bool)
   /// A number the schema bounds on both ends, and the value as its JSON reads.
   case slider(Double, range: ClosedRange<Double>, text: String)
+  /// A few options side by side.
   case choice(String, options: [String])
+  /// A pop-up: more options than fit side by side, or a tier's model from the catalog.
+  case menu(String, options: [SettingOption])
   /// Text, or a number typed as text; `SettingsStore.edit` types it back.
   case field(String)
   /// A list or an open shape, as its JSON: Settings does not edit it.
   case json(String)
+}
+
+/// A pop-up's option: the value sent, and what the menu calls it.
+public struct SettingOption: Equatable, Sendable {
+  public let value: String
+  public let title: String
+
+  public init(value: String, title: String) { (self.value, self.title) = (value, title) }
 }
 
 public struct SettingsField: Identifiable, Equatable, Sendable {
@@ -53,7 +64,7 @@ extension SettingsStore {
         fields: settings.map {
           SettingsField(
             setting: $0, title: Self.title(of: $0.key), detail: detail(of: $0),
-            control: Self.control(of: $0))
+            control: control(of: $0))
         },
         provider: parts.count == 2 && parts[0] == "providers" ? String(parts[1]) : nil)
     }
@@ -85,7 +96,11 @@ extension SettingsStore {
     return words.prefix(1).uppercased() + words.dropFirst()
   }
 
-  private static func control(of setting: Setting) -> SettingControl {
+  /// More options than this take a pop-up rather than a segmented control, as mockup 18's
+  /// pop-ups and segments show.
+  static let segmentLimit = 3
+
+  private func control(of setting: Setting) -> SettingControl {
     let json = Data(setting.value.utf8)
     func decoded<T: Decodable>(_: T.Type) -> T? { try? JSONDecoder().decode(T.self, from: json) }
     switch setting.kind {
@@ -99,11 +114,32 @@ extension SettingsStore {
     case .integer, .number:
       return decoded(Double.self).map { _ in .field(setting.value) } ?? .field("")
     case .text:
-      return .field(decoded(String.self) ?? "")
+      let text = decoded(String.self) ?? ""
+      return modelMenu(setting.key, text) ?? .field(text)
+    case .choice(let options) where options.count > Self.segmentLimit:
+      return .menu(
+        decoded(String.self) ?? "", options: options.map { .init(value: $0, title: $0) })
     case .choice(let options):
       return .choice(decoded(String.self) ?? "", options: options)
     case .list, .other:
       return .json(setting.value)
     }
+  }
+
+  /// `tiers.<tier>.model` as a pop-up of the catalog's models for that tier, by the name the
+  /// toolbar shows; a value the catalog does not list stays first, so the pop-up shows it.
+  private func modelMenu(_ key: String, _ value: String) -> SettingControl? {
+    let parts = key.split(separator: ".")
+    guard parts.count == 3, parts[0] == "tiers", parts[2] == "model",
+      let tier = Tier(rawValue: String(parts[1]))
+    else { return nil }
+    var options = models.filter { $0.tier == tier }.map {
+      SettingOption(value: $0.id, title: ModelName.short($0.displayName, id: $0.id))
+    }
+    guard !options.isEmpty else { return nil }
+    if !value.isEmpty, !options.contains(where: { $0.value == value }) {
+      options.insert(.init(value: value, title: value), at: 0)
+    }
+    return .menu(value, options: options)
   }
 }

@@ -1,6 +1,6 @@
 // `SettingsScreen` (DS§6.5; DT§5.7): the Settings window — the page list, and the selected
 // page's config tables as boxes of `SettingRow`s, each value with the layer it comes from, and
-// a secure key field in each provider's box. Composition only (DS§5): what each field shows,
+// a key row in each provider's box (`SettingsScreen+Keys.swift`). Composition only (DS§5): what each field shows,
 // whether it is read-only and which file sets it arrive in `state`; the app binds `state` and
 // `send` to `SettingsStore`, through the public types below.
 
@@ -126,10 +126,21 @@ extension SettingsScreen {
   public enum Control: Equatable, Sendable {
     case toggle(Bool)
     case slider(Double, range: ClosedRange<Double>, text: String)
+    /// A few options, side by side.
     case choice(String, options: [String])
+    /// A pop-up of more options, each with the title the menu shows.
+    case menu(String, options: [Option])
     case field(String)
     /// A value Settings shows but does not edit.
     case json(String)
+  }
+
+  public struct Option: Hashable, Sendable {
+    /// What a pick sends.
+    var value: String
+    var title: String
+
+    public init(value: String, title: String) { (self.value, self.title) = (value, title) }
   }
 
   public enum Edit: Equatable, Sendable {
@@ -147,17 +158,7 @@ private struct TableBox: View {
 
   var body: some View {
     SettingsGroupBox(table.id) {
-      if let key = table.key {
-        TitledSetting(
-          title: "API key", detail: key.isStored ? "Stored in the Keychain" : "No key",
-          control: SettingField(
-            "", prompt: key.isStored ? "Replace key" : "Add key", isSecure: true
-          ) { send(.storeKey(provider: key.provider, secret: $0)) }
-        )
-        // `SettingRow`'s insets; a key has no config layer, so no badge.
-        .padding(.horizontal, Space.l)
-        .padding(.vertical, Space.ml)
-      }
+      if let key = table.key { KeyRow(key: key, send: send) }
       ForEach(table.fields) { FieldRow(field: $0, send: send) }
     }
   }
@@ -184,6 +185,13 @@ private struct FieldRow: View {
         CoxSegmented(
           LocalizedStringKey(field.title), selection: binding(selection) { .text($0) },
           options: options, title: { Text($0) })
+      }
+    case .menu(let selection, let options):
+      SettingRow(field.title, detail: field.detail, source: field.source) {
+        SettingPopUp(
+          LocalizedStringKey(field.title), selection: binding(selection) { .text($0) },
+          options: options.map(\.value),
+          title: { value in options.first { $0.value == value }?.title ?? value })
       }
     case .field(let text):
       SettingRow(field.title, detail: field.detail, source: field.source) {

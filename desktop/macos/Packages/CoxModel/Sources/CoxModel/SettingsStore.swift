@@ -1,8 +1,9 @@
 // The Settings window's state (DT§5.7): the view Rust built from the schema
 // and the config layers, grouped for the sidebar, plus provider keys through
-// a `SecretStore`. Every decision — the layer, the control, whether a field
-// is read-only, whether a value loads — already came from Rust; this store
-// sends edits and keeps the answer.
+// a `SecretStore` and each tier's models from the core's catalog. Every
+// decision — the layer, the control, whether a field is read-only, whether a
+// value loads — already came from Rust; this store sends edits and keeps the
+// answer.
 
 import CoxClient
 import Foundation
@@ -76,13 +77,20 @@ public final class SettingsStore {
   /// The providers whose key the `SecretStore` holds, read again after each load, store and
   /// removal so the Settings rows that show it redraw.
   public private(set) var storedKeys: Set<String> = []
+  /// Each tier's models as the core's catalog lists them, read again after each load and edit so
+  /// a tier's picker offers what its provider serves.
+  public private(set) var models: [ModelChoice] = []
   /// The project whose layer applies.
   public let cwd: String
   @ObservationIgnored private let client: any SettingsClient
   @ObservationIgnored private let secrets: any SecretStore
+  @ObservationIgnored private let catalog: (any ModelsClient)?
 
-  public init(client: any SettingsClient, secrets: any SecretStore, cwd: String) {
-    (self.client, self.secrets, self.cwd) = (client, secrets, cwd)
+  public init(
+    client: any SettingsClient, secrets: any SecretStore, catalog: (any ModelsClient)? = nil,
+    cwd: String
+  ) {
+    (self.client, self.secrets, self.catalog, self.cwd) = (client, secrets, catalog, cwd)
   }
 
   public func load() async {
@@ -142,6 +150,7 @@ public final class SettingsStore {
       view = try await fetch(self)
       failure = nil
       readKeys()
+      models = (try? catalog?.models(cwd: cwd)) ?? []
     } catch {
       failure = String(describing: error)
     }
