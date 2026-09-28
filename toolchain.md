@@ -123,6 +123,7 @@ Programs the project uses and the direct packages from its manifests.
 | vt100 | local | https://crates.io/crates/vt100 | Rust dependency |
 | wasmtime | local (`anyhow` feature only) | https://github.com/bytecodealliance/wasmtime | cox-plugin: the runtime under extism; declared only to enable the `anyhow` feature extism 1.30.0 needs with its default features off (T33.3) |
 | wiremock | local | https://crates.io/crates/wiremock | Rust dependency |
+| trycmd | local | https://github.com/assert-rs/trycmd | dev-dep: `cox run -p` output fixtures (P48) |
 
 ## pub (`plugins/templates/dart`, `plugins/examples/dart`)
 
