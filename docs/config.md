@@ -256,6 +256,9 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 ## `[desktop.context]`
 
 - `cache_hit` = `"turn"` — turn | session — the Context tab's cache hit: the last turn's reads, or every call's so far (A104)
+## `[desktop.review]`
+
+- `send` = `"queue"` — queue | now — the Review pane's "Send to agent" while a turn runs: queue it behind the turn like a prompt, or send it at once (A108)
 ## `~/.cox/keybindings.toml`
 
 Rebinds the TUI's keys (T25.5). Each line is an action id and a key, or a list of keys; dotted ids may be written as TOML tables. The keys you give replace the action's defaults, in every context the action has (`idle`, `running`), and take the key from whatever action held it by default. A missing file means the defaults in `docs/getting-started.md`.

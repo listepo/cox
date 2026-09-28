@@ -1300,6 +1300,8 @@ pub struct DesktopConfig {
     pub transcript: DesktopTranscriptConfig,
     /// `[desktop.context]`
     pub context: DesktopContextConfig,
+    /// `[desktop.review]`
+    pub review: DesktopReviewConfig,
 }
 
 /// The window's glass material (DS§3.5).
@@ -1397,6 +1399,26 @@ pub enum CacheHitScope {
 pub struct DesktopContextConfig {
     /// `turn` | `session`: the cache hit the tab shows.
     pub cache_hit: CacheHitScope,
+}
+
+/// When the Review pane's "Send to agent" posts its comments (A108).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewSend {
+    /// Behind the running turn, as the composer queues a prompt; at once
+    /// when no turn runs.
+    #[default]
+    Queue,
+    /// At once, even while a turn runs.
+    Now,
+}
+
+/// `[desktop.review]` (A108): the Review pane.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DesktopReviewConfig {
+    /// `queue` | `now`: when "Send to agent" posts while a turn runs.
+    pub send: ReviewSend,
 }
 
 /// A value in `0.0..=1.0`, or a load error naming the key (figment adds it).

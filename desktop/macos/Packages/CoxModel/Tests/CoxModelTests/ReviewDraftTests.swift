@@ -1,5 +1,6 @@
 // Review's line comments (T37.28.4): a click anchors the draft at the line's number, a removed
-// line at its old number, and Send posts the whole draft as one `Intent.send` and empties it.
+// line at its old number, and Send posts the whole draft as one `Intent.send` and empties it;
+// while a turn runs it queues, unless `[desktop.review] send = "now"` (A108).
 
 import CoxClient
 import Testing
@@ -59,4 +60,45 @@ private let retry = ReviewState(
   try await store.sendReview()
   #expect(session.sent == [.send(text: "a.rs:1 One.\nb.rs:2 Two.", attachments: [])])
   #expect(store.reviewDraft == ReviewDraft())
+}
+
+@MainActor
+@Test func whileATurnRunsSendQueuesByDefaultAndSendsAtOnceWithNow() async throws {
+  let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []))
+  let store = SessionStore(session: session)
+  let tally = Tally(
+    sent: 0, received: 0, cacheRead: 0, cacheWrite: 0, uncached: 0, costUsd: 0, calls: 0,
+    estimated: false)
+  let turn = TurnUsage(
+    turn: "t", tally: tally, thinkingTokens: 0, ttftMs: nil, tokPerS: nil, exact: false,
+    sparkline: [], done: false)
+  store.apply([.usage(usage: UsageView(session: tally, turn: turn, contextTokens: 0))])
+  let comment = [LineComment(path: "a.rs", line: 1, text: "One.")]
+  store.reviewDraft = ReviewDraft(comments: comment)
+  try await store.sendReview()
+  store.reviewDraft = ReviewDraft(comments: comment)
+  try await store.sendReview(.now)
+  #expect(
+    session.sent == [
+      .queue(text: "a.rs:1 One.", attachments: []), .send(text: "a.rs:1 One.", attachments: []),
+    ])
+  #expect(store.reviewDraft == ReviewDraft())
+}
+
+@MainActor
+@Test func theReviewSendSettingReadsBackFromTheSettings() async {
+  let view = SettingsView(
+    settings: [
+      Setting(
+        key: "desktop.review.send", value: "\"now\"", layer: .user, editable: true,
+        kind: .choice(options: ["queue", "now"]), description: "")
+    ],
+    userFile: "/home/.cox/config.toml")
+  let store = SettingsStore(
+    client: FixtureSettingsClient(view: view), secrets: MemorySecretStore(), cwd: "/project")
+  #expect(store.reviewSend == .queue)
+  await store.load()
+  #expect(store.reviewSend == .now)
+  await store.set("desktop.review.send", to: .text("queue"))
+  #expect(store.reviewSend == .queue)
 }
