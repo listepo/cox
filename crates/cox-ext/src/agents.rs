@@ -11,6 +11,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub use cox_protocol::agent::{AgentDef, tier_for};
+use cox_protocol::types::PermissionMode;
 use serde::Deserialize;
 
 use crate::frontmatter;
@@ -36,6 +37,9 @@ struct Header {
     /// T34.10: `disabled: true` hides the def from the model without
     /// removing it from disk or from `cox ext list`.
     disabled: Option<bool>,
+    /// T45.2: Claude Code's subagent field; it can only narrow the parent.
+    #[serde(rename = "permissionMode")]
+    permission_mode: Option<String>,
 }
 
 /// `~/.cox/agents`, `~/.claude/agents`, `.cox/agents`, `.claude/agents`.
@@ -63,7 +67,8 @@ pub fn discover(dirs: &[PathBuf]) -> Discovered {
     // them through the retain+push below, so users can replace either.
     let mut found = Discovered::default();
     for (name, text) in [("explore", EXPLORE_MD), ("shell", SHELL_MD)] {
-        match parse_agent_text(&PathBuf::from(format!("<embedded>/{name}.md")), text) {
+        let path = PathBuf::from(format!("<embedded>/{name}.md"));
+        match parse_agent_text(&path, text, &mut found.notices) {
             Ok(def) => found.agents.push(def),
             Err(reason) => found
                 .notices
@@ -81,7 +86,7 @@ pub fn discover(dirs: &[PathBuf]) -> Discovered {
             .collect();
         paths.sort();
         for path in paths {
-            match parse_agent(&path) {
+            match parse_agent(&path, &mut found.notices) {
                 Ok(def) => {
                     found.agents.retain(|a| a.name != def.name);
                     found.agents.push(def);
@@ -95,15 +100,31 @@ pub fn discover(dirs: &[PathBuf]) -> Discovered {
     found
 }
 
-fn parse_agent(path: &Path) -> Result<AgentDef, String> {
+fn parse_agent(path: &Path, notices: &mut Vec<String>) -> Result<AgentDef, String> {
     let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    parse_agent_text(path, &text)
+    parse_agent_text(path, &text, notices)
 }
 
-fn parse_agent_text(path: &Path, text: &str) -> Result<AgentDef, String> {
+/// A def that parses but carries something cox cannot honour (an unknown
+/// `permissionMode`) still loads, with a line in `notices` (fail open).
+fn parse_agent_text(
+    path: &Path,
+    text: &str,
+    notices: &mut Vec<String>,
+) -> Result<AgentDef, String> {
     let (header, body): (Header, &str) = frontmatter::parse(text).map_err(|e| e.to_string())?;
     let name = header.name.ok_or("missing `name`")?;
     let description = header.description.ok_or("missing `description`")?;
+    let permission_mode = header.permission_mode.as_deref().and_then(|raw| {
+        let mode = mode_of(raw);
+        if mode.is_none() {
+            notices.push(format!(
+                "agent {}: unknown permissionMode {raw:?} ignored; the parent's mode applies",
+                path.display()
+            ));
+        }
+        mode
+    });
     Ok(AgentDef {
         name,
         description: description.trim().to_string(),
@@ -112,7 +133,20 @@ fn parse_agent_text(path: &Path, text: &str) -> Result<AgentDef, String> {
         path: path.to_path_buf(),
         body: body.trim().to_string(),
         disabled: header.disabled.unwrap_or(false),
+        permission_mode,
     })
+}
+
+/// Claude Code's `permissionMode` values (plus cox's own `auto`) as cox
+/// modes; `acceptEdits` is cox's `auto` (writes run, `Exec` still asks).
+fn mode_of(raw: &str) -> Option<PermissionMode> {
+    match raw.trim() {
+        "default" => Some(PermissionMode::Default),
+        "plan" => Some(PermissionMode::Plan),
+        "acceptEdits" | "auto" => Some(PermissionMode::Auto),
+        "bypassPermissions" => Some(PermissionMode::Bypass),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -138,17 +172,66 @@ mod tests {
 
     #[test]
     fn agents_disabled_frontmatter_field_is_parsed() {
+        let mut notices = Vec::new();
         let def = parse_agent_text(
             &PathBuf::from("<test>/blocked.md"),
             "---\nname: blocked\ndescription: not for the model\ndisabled: true\n---\nbody",
+            &mut notices,
         )
         .unwrap();
         assert!(def.disabled);
         let enabled = parse_agent_text(
             &PathBuf::from("<test>/scout.md"),
             "---\nname: scout\ndescription: looks around\n---\nbody",
+            &mut notices,
         )
         .unwrap();
         assert!(!enabled.disabled);
+        assert!(notices.is_empty(), "{notices:?}");
+    }
+
+    #[test]
+    fn agents_permission_mode_frontmatter_is_parsed() {
+        let parse = |mode: &str| {
+            let mut notices = Vec::new();
+            let text = format!("---\nname: a\ndescription: d\npermissionMode: {mode}\n---\nbody");
+            let def = parse_agent_text(&PathBuf::from("<test>/a.md"), &text, &mut notices)
+                .unwrap()
+                .permission_mode;
+            assert!(notices.is_empty(), "{notices:?}");
+            def
+        };
+        assert_eq!(parse("default"), Some(PermissionMode::Default));
+        assert_eq!(parse("plan"), Some(PermissionMode::Plan));
+        assert_eq!(parse("acceptEdits"), Some(PermissionMode::Auto));
+        assert_eq!(parse("auto"), Some(PermissionMode::Auto));
+        assert_eq!(parse("bypassPermissions"), Some(PermissionMode::Bypass));
+        let mut notices = Vec::new();
+        let none = parse_agent_text(
+            &PathBuf::from("<test>/b.md"),
+            "---\nname: b\ndescription: d\n---\nbody",
+            &mut notices,
+        )
+        .unwrap();
+        assert_eq!(none.permission_mode, None);
+    }
+
+    #[test]
+    fn agents_unknown_permission_mode_is_a_notice() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("odd.md"),
+            "---\nname: odd\ndescription: d\npermissionMode: yolo\n---\nbody",
+        )
+        .unwrap();
+        let found = discover(&[dir.path().to_path_buf()]);
+        let odd = found.agents.iter().find(|a| a.name == "odd");
+        assert_eq!(
+            odd.map(|a| a.permission_mode),
+            Some(None),
+            "the def still loads, in the parent's mode"
+        );
+        assert_eq!(found.notices.len(), 1, "{:?}", found.notices);
+        assert!(found.notices[0].contains("\"yolo\""), "{:?}", found.notices);
     }
 }
