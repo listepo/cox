@@ -3089,3 +3089,40 @@ Deviations: step 5 — `validate` decodes the whole string instead of only the s
 Check output:
 - `cargo nextest run -p cox-protocol -E 'test(image)'`: 18 passed — `sniff_names_each_accepted_format` (png, jpeg, gif87a, gif89a, webp), `sniff_refuses_anything_else` (text, empty, riff_wave, truncated_png), `attachment_at_the_cap_is_accepted_and_one_byte_over_is_too_large`, `attachment_refuses_bytes_that_are_not_an_image`, `attachment_round_trips_through_validate`, `validate_refuses_over_cap_base64`, `validate_refuses_a_declared_type_the_bytes_contradict`, `validate_refuses_bad_base64_even_after_a_valid_prefix`, `validate_refuses_encoded_bytes_that_are_not_an_image`, `take_structured_returns_the_image_and_drops_the_emptied_payload`, `take_structured_keeps_other_keys_and_ignores_outputs_without_an_image`. Against stub bodies 11 of them failed first.
 - Workspace (with the `term.rs` switch applied): fmt and clippy `-D warnings` clean; `cargo deny check`: advisories, bans, licenses, sources ok; nextest 1331 passed, 1 failed, 4 skipped — the failure, `cox::subagent_messaging headless_run_does_not_wait_for_a_background_shell`, touches neither base64 nor images and passed 3 of 3 runs alone (timing under full-workspace load).
+
+#### T40.4 `read` returns an image instead of refusing it
+
+- Model: Claude Code / opus-5.5 (card: sonnet)
+- Depends: T40.1
+- Size: ~90
+- Priority: P1
+- Complexity: 2
+- Goal: `read` on a confined path whose bytes sniff as an accepted image returns a short text line (`image/png, 48.2 KiB`) plus the image in `structured["image"]`. Over the cap it returns `ToolError::TooLarge { bytes, cap }`. Other binary files still return `ToolError::Binary`.
+- Files: `crates/cox-tools/src/read.rs`. Docs: `docs/tools.md`, and the plan.md §1.11 `read` row ("images v0.2") is updated when the card closes.
+- Steps:
+  1. In `read.rs`, run `image::sniff` before the NUL-byte sniff. The path has already been confined by the existing `path::confine` call; no new guard.
+  2. Build the output with `image::to_structured`. `mode`, `offset` and `limit` are ignored for images and said so in the text line.
+  3. Update the tool description so the model knows images are readable.
+  4. Tests: `read_png_returns_structured_image`, `read_oversized_image_is_too_large`, and keep `read_binary_file_is_rejected_with_binary_error`.
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-tools -E 'test(read_)'
+  ```
+- Done when: the tests pass. `docs/tools.md` states the cap and the four formats.
+- Plan:
+  1. Tests first in `crates/cox-tools/src/read.rs`: `read_png_returns_structured_image` (a tiny PNG; text line `image/png, …`, `image::take_structured` yields the same media type and base64 of the file), `read_oversized_image_is_too_large` (a PNG header padded to `MAX_IMAGE_BYTES + 1` → `TooLarge { bytes, cap }`), and keep `read_binary_file_is_rejected_with_binary_error`. Watch the first two fail on current code (they hit `Binary`/text).
+  2. In `call`, after `confine` and the read, `image::sniff` the bytes before the NUL sniff. An image over `MAX_IMAGE_BYTES` → `ToolError::TooLarge`; otherwise text `<media_type>, <size>` (plus a note when `lines`/`mode` were passed, since they do not apply) and `structured = image::to_structured(..)`. No new path handling.
+  3. Tool description: images (PNG, JPEG, GIF, WebP, up to the cap) are returned as images; other binaries are still refused.
+  4. `docs/tools.md`: the `read` row and a line with the cap and the four formats. On close, the plan.md §1.11 `read` row drops "images v0.2".
+  5. Verify: the Check; the real binary with the scripted provider reading a PNG under `COX_HOME=/tmp/cox-t40.4` if a scenario can drive `read`; then fmt, clippy `-D warnings`, workspace nextest.
+- Out of scope:
+  - The ACP `FsReadTool` swap (it reads through the editor's text API; images there stay unsupported and say so).
+  - Forwarding the image to the model (T40.5).
+
+Status: done 2026-09-28
+Result: `crates/cox-tools/src/read.rs`: after `confine` and the read, `image::sniff` runs before the NUL sniff. An accepted image over `image::MAX_IMAGE_BYTES` returns `ToolError::TooLarge { bytes, cap }` before any encoding; otherwise the output is `<media type>, <size>` (e.g. `image/png, 16 B`, `48.2 KiB`), plus a note that `lines` and `mode` do not apply to images when either was passed, and `structured = image::to_structured(..)`. Other binaries still return `ToolError::Binary`. The tool description says images are returned. `docs/tools.md`: the `read` row plus a paragraph with the cap and the four formats. plan.md §1.11 `read` row: "images v0.2" replaced.
+Deviations: the card names `offset` and `limit`; `read` has `lines` and `mode`, so the note names those. The cap is compared in `read.rs` against the shared `MAX_IMAGE_BYTES` (not through `image::attachment`) so an image is base64-encoded once, only after the check.
+Check output:
+- `cargo nextest run -p cox-tools -E 'test(read_)'`: 14 passed, among them `read_png_returns_structured_image`, `read_oversized_image_is_too_large`, `read_binary_file_is_rejected_with_binary_error`. Before the change the two new tests failed (a PNG with NUL bytes was refused as `Binary`).
+- Real binary, scratch `COX_HOME=/tmp/cox-t40.4` (removed afterwards), scripted provider calling `read` on a 16-byte PNG, `--output-format stream-json`: `tool_call_done` with `"ok":true,"visible":"image/png, 16 B"`, run ended `done`, exit 0.
+- Workspace: `cargo fmt --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo nextest run --workspace`: 1336 passed, 4 skipped.

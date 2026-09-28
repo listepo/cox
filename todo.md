@@ -30,7 +30,6 @@
 - T39.7. Optional: live check against the real Gemini endpoint (needs the creator's key)
 - T40.2. Core carries user attachments into history and the rollout
 - T40.3. Token estimate and context breakdown count images
-- T40.4. `read` returns an image instead of refusing it
 - T40.5. Core forwards a tool's image to the model, archived first
 - T40.6. Tool images are visible only in their own turn
 - T40.7. Headless `--image <path>` (repeatable)

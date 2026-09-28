@@ -36,7 +36,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T39.7 | todo | P3 | 2 | 0% | |
 | T40.2 | todo | P1 | 4 | 0% | |
 | T40.3 | todo | P2 | 2 | 0% | |
-| T40.4 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T40.5 | todo | P1 | 3 | 0% | |
 | T40.6 | todo | P1 | 4 | 0% | |
 | T40.7 | todo | P2 | 2 | 0% | |
@@ -569,7 +568,7 @@ Microcompaction (no model call): when building a request, tool results older tha
 
 | Tool | Input schema (required first) | Risk | Output | Notes |
 |------|-------------------------------|------|--------|-------|
-| `read` | `path`; `lines: "a-b"`; `mode: "text"\|"outline"` | ReadOnly | text with line numbers, or outline | size cap → pointer; binary → refuse with hint; images v0.2 |
+| `read` | `path`; `lines: "a-b"`; `mode: "text"\|"outline"` | ReadOnly | text with line numbers, or outline | size cap → pointer; binary → refuse with hint; PNG/JPEG/GIF/WebP ≤ 3.75 MB → image (T40.4) |
 | `grep` | `pattern`; `path`; `glob`; `context: n`; `max_results` (100) | ReadOnly | `path:line: text` | ripgrep libs; respects `.gitignore`; cap → pointer |
 | `glob` | `pattern`; `path`; `limit` (200) | ReadOnly | paths sorted by mtime, nucleo-ranked when `query` given | |
 | `edit` | `path`, `old`, `new`; `replace_all: bool` | Write | unified diff | exact → whitespace-insensitive; ambiguity is an error listing match lines |
@@ -1391,36 +1390,6 @@ Every card in this phase: same four bullets as P39.
   ```
 - Done when: both tests pass.
 - Out of scope: dimension-based estimates (they would need image decoding).
-
-### T40.4. `read` returns an image instead of refusing it
-
-- Model: Claude Code / opus-5.5 (card: sonnet)
-- Status: in progress
-- Depends: T40.1
-- Size: ~90
-- Priority: P1
-- Complexity: 2
-- Goal: `read` on a confined path whose bytes sniff as an accepted image returns a short text line (`image/png, 48.2 KiB`) plus the image in `structured["image"]`. Over the cap it returns `ToolError::TooLarge { bytes, cap }`. Other binary files still return `ToolError::Binary`.
-- Files: `crates/cox-tools/src/read.rs`. Docs: `docs/tools.md`, and the plan.md §1.11 `read` row ("images v0.2") is updated when the card closes.
-- Steps:
-  1. In `read.rs`, run `image::sniff` before the NUL-byte sniff. The path has already been confined by the existing `path::confine` call; no new guard.
-  2. Build the output with `image::to_structured`. `mode`, `offset` and `limit` are ignored for images and said so in the text line.
-  3. Update the tool description so the model knows images are readable.
-  4. Tests: `read_png_returns_structured_image`, `read_oversized_image_is_too_large`, and keep `read_binary_file_is_rejected_with_binary_error`.
-- Check:
-  ```bash
-  mise exec -- cargo nextest run -p cox-tools -E 'test(read_)'
-  ```
-- Done when: the tests pass. `docs/tools.md` states the cap and the four formats.
-- Plan:
-  1. Tests first in `crates/cox-tools/src/read.rs`: `read_png_returns_structured_image` (a tiny PNG; text line `image/png, …`, `image::take_structured` yields the same media type and base64 of the file), `read_oversized_image_is_too_large` (a PNG header padded to `MAX_IMAGE_BYTES + 1` → `TooLarge { bytes, cap }`), and keep `read_binary_file_is_rejected_with_binary_error`. Watch the first two fail on current code (they hit `Binary`/text).
-  2. In `call`, after `confine` and the read, `image::sniff` the bytes before the NUL sniff. An image over `MAX_IMAGE_BYTES` → `ToolError::TooLarge`; otherwise text `<media_type>, <size>` (plus a note when `lines`/`mode` were passed, since they do not apply) and `structured = image::to_structured(..)`. No new path handling.
-  3. Tool description: images (PNG, JPEG, GIF, WebP, up to the cap) are returned as images; other binaries are still refused.
-  4. `docs/tools.md`: the `read` row and a line with the cap and the four formats. On close, the plan.md §1.11 `read` row drops "images v0.2".
-  5. Verify: the Check; the real binary with the scripted provider reading a PNG under `COX_HOME=/tmp/cox-t40.4` if a scenario can drive `read`; then fmt, clippy `-D warnings`, workspace nextest.
-- Out of scope:
-  - The ACP `FsReadTool` swap (it reads through the editor's text API; images there stay unsupported and say so).
-  - Forwarding the image to the model (T40.5).
 
 ### T40.5. Core forwards a tool's image to the model, archived first
 

@@ -1,11 +1,11 @@
 //! `read`: whole, ranged and outline reads of one confined file (plan.md
-//! T3.2, §1.11). Every path argument goes through `cox_tools::path::confine`
+//! T3.2, §1.11), and an image file returned as an image (T40.4). Every path argument goes through `cox_tools::path::confine`
 //! first (AGENTS.md trust boundary) — no other constructor for a `Path`
 //! from `input` exists in this file, so the `confine_is_the_only_path_
 //! constructor` grep guard in `tests/confine.rs` stays green.
 
 use async_trait::async_trait;
-use cox_protocol::{Concurrency, Risk, Tool, ToolCx, ToolError, ToolOutput, ToolSpec};
+use cox_protocol::{Concurrency, Risk, Tool, ToolCx, ToolError, ToolOutput, ToolSpec, image};
 use schemars::{JsonSchema, schema_for};
 use serde::Deserialize;
 use serde_json::Value;
@@ -59,7 +59,9 @@ impl Tool for ReadTool {
                 .rs/.ts/.tsx/.py/.go; markdown headings or definition-keyword lines for \
                 everything else). Use outline first on any file you have not read yet, \
                 especially a large one, then follow up with `lines=` on the range that actually \
-                matters. Refuses binary files."
+                matters. A PNG, JPEG, GIF or WebP file (up to 3.75 MB) comes back as the \
+                image itself, which you can see; `lines` and `mode` do not apply to it. Refuses \
+                other binary files."
                 .to_string(),
             input_schema,
             deferred: false,
@@ -95,6 +97,11 @@ impl Tool for ReadTool {
             }
         })?;
 
+        // Before the NUL sniff: every accepted image format carries NUL bytes.
+        if let Some(media_type) = image::sniff(&bytes) {
+            return read_image(media_type, &bytes, &input);
+        }
+
         let sniff_len = bytes.len().min(BINARY_SNIFF_BYTES);
         if bytes[..sniff_len].contains(&0) {
             return Err(ToolError::Binary);
@@ -121,6 +128,41 @@ impl Tool for ReadTool {
             diff: None,
             structured: None,
         })
+    }
+}
+
+/// An image comes back as one text line for the transcript plus the bytes
+/// in `structured`, which the core forwards to the model (T40.5). The cap is
+/// checked before encoding, so an oversized file costs no base64 copy.
+fn read_image(media_type: &str, bytes: &[u8], input: &ReadInput) -> Result<ToolOutput, ToolError> {
+    if bytes.len() > image::MAX_IMAGE_BYTES {
+        return Err(ToolError::TooLarge {
+            bytes: bytes.len() as u64,
+            cap: image::MAX_IMAGE_BYTES as u64,
+        });
+    }
+    let mut text = format!("{media_type}, {}", human_size(bytes.len()));
+    if input.lines.is_some() || input.mode.is_some() {
+        text.push_str(" (`lines` and `mode` do not apply to images)");
+    }
+    Ok(ToolOutput {
+        text,
+        is_error: false,
+        diff: None,
+        structured: Some(image::to_structured(media_type, bytes)),
+    })
+}
+
+/// `16 B`, `48.2 KiB`, `3.5 MiB`: short enough for the one image line.
+fn human_size(bytes: usize) -> String {
+    const KIB: f64 = 1024.0;
+    let b = bytes as f64;
+    if b < KIB {
+        format!("{bytes} B")
+    } else if b < KIB * KIB {
+        format!("{:.1} KiB", b / KIB)
+    } else {
+        format!("{:.1} MiB", b / (KIB * KIB))
     }
 }
 
@@ -269,6 +311,58 @@ mod tests {
             .expect_err("must reject binary");
 
         assert!(matches!(err, ToolError::Binary), "{err:?}");
+    }
+
+    /// A PNG signature and a NUL-bearing tail: without the image path it
+    /// would be refused as binary.
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";
+
+    #[tokio::test]
+    async fn read_png_returns_structured_image() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = std::fs::canonicalize(dir.path()).expect("canonicalize");
+        std::fs::write(root.join("shot.png"), PNG).expect("write fixture");
+
+        let cx = test_cx(vec![root.clone()], root.clone());
+        let mut out = ReadTool
+            .call(serde_json::json!({"path": "shot.png", "lines": "1-2"}), &cx)
+            .await
+            .expect("read image");
+
+        assert!(out.text.starts_with("image/png, 16 B"), "{}", out.text);
+        assert!(out.text.contains("`lines`"), "{}", out.text);
+        let (media_type, data_b64) =
+            cox_protocol::image::take_structured(&mut out).expect("structured image");
+        assert_eq!(media_type, "image/png");
+        let expected = cox_protocol::image::to_structured("image/png", PNG);
+        assert_eq!(
+            Some(data_b64.as_str()),
+            expected["image"]["data_b64"].as_str()
+        );
+    }
+
+    #[tokio::test]
+    async fn read_oversized_image_is_too_large() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = std::fs::canonicalize(dir.path()).expect("canonicalize");
+        let mut big = PNG.to_vec();
+        big.resize(cox_protocol::image::MAX_IMAGE_BYTES + 1, 0);
+        std::fs::write(root.join("big.png"), &big).expect("write fixture");
+
+        let cx = test_cx(vec![root.clone()], root.clone());
+        let err = ReadTool
+            .call(serde_json::json!({"path": "big.png"}), &cx)
+            .await
+            .expect_err("must refuse an oversized image");
+
+        let cap = cox_protocol::image::MAX_IMAGE_BYTES as u64;
+        assert_eq!(
+            err,
+            ToolError::TooLarge {
+                bytes: cap + 1,
+                cap
+            }
+        );
     }
 
     #[tokio::test]
