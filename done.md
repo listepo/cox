@@ -5705,3 +5705,18 @@ Deviations: > 3 files (Specular, GlassPane, CoxButtonStyle, TranscriptCards, DES
 Check: new `GlassContentTests` (fails without the sweep fix) and `aCardAViewportPassLeftOutIsLaidOutAgainOncePerTurn`; CoxTranscriptText 37/37, CoxUI 183/183 twice, CoxTranscript 50/52 (the two known load-flaky tests pass alone); swiftlint and swift-format strict clean; screenshot `t37.22.10-after.png` shows the tool block and "Allowed by you". Merged tree: 9 snapshot conflicts with T37.22.11 re-recorded, CoxUI 183 passed.
 
 Not done: the offscreen harness cannot reproduce the launch-time swap, so the test covers the follow-up pass; the override uses a method the SDK declares from macOS 27 and was not run on the macOS 26 deployment target.
+
+#### T37.44.4 Pixel diff of a CoxUI snapshot against its Figma or mockup frame
+
+Depends: — · Size: ~120 · Files: `desktop/design` (a script, its test, `package.json`), `DESIGN.md` §2
+Goal: A119. One command takes a CoxUI snapshot PNG and the matching frame (a Figma export or `mockups/screens/<id>.png`), scales them to the same size and writes a diff image plus a short report: the share of differing pixels and the bounding boxes of the largest differing regions, so an agent sees where spacing, colour or type drift without comparing by eye. Prefer a maintained library (e.g. `pixelmatch`) over custom code.
+Check: a test with two small PNGs that differ in one known rectangle reports that rectangle; the command runs on a real CoxUI snapshot and its mockup frame; `DESIGN.md` §2 says how to use it.
+Plan: pick a maintained PNG diff library (pixelmatch + pngjs) or an installed tool, add a `desktop/design` script and npm command that scales both images, writes a diff PNG and prints the differing share and largest regions; a node test with two synthetic PNGs; a DESIGN.md §2 paragraph; a toolchain.md row for any new package.
+Status: done 2026-09-28
+Result: `desktop/design/diff/pixel-diff.mjs` (`npm run diff`) crops both images on request, scales the frame to the snapshot (or `--scale-to frame`), writes a red-on-grey diff PNG to `desktop/design/diff/out/` (ignored) and prints the differing share and the largest regions (8 px cells joined to neighbours, exact pixel extents), warning on an aspect mismatch (A119). Usage: `mise exec -- npm --prefix desktop/design run diff -- <snapshot.png> <frame.png> [--out diff.png] [--scale-to snapshot|frame] [--crop-snapshot x,y,w,h] [--crop-frame x,y,w,h] [--threshold 0.1] [--cell 8] [--top 5] [--json]`. `DESIGN.md` §2 "Pixel diff"; `toolchain.md` npm rows for `pixelmatch` 7.2.0 and `sharp` 0.35.5 (sharp for decode, crop and a proper 2x→1x downscale).
+
+Deviations: `--crop-*` (snapshots carry a 20 pt wallpaper margin, mockups 40 px at 2x) and `--json` beyond the card; `.gitignore` and `toolchain.md` edits.
+
+Check: `npm test` 11/11 (a synthetic pair differing in one rectangle reports exactly `{13,7,21×9}`), `npm run check` passes, `npm run build` leaves no changes. Real run `mainScreen-_.light-frosted.png` vs `28-main-glass-frosted.png` cropped: 80.44 % at threshold 0.1 (glass tint), 8.36 % at 0.3 with regions at the toolbar, inspector/popover, the missing terminal block and the sidebar rows (drifted row spacing). On the merged tree: `npm test` 11/11.
+
+Not done: nothing.

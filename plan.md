@@ -34,7 +34,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.44.2 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
 | T37.44.3 | todo | P3 | 2 | 0% | |
-| T37.44.4 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T37.44.5 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.44.6 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.44.7 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
@@ -2788,13 +2787,6 @@ Plan: first run every Swift package's tests on the base (the merged T37.22.7/9/1
 Depends: the creator installs SF Pro and SF Mono (developer.apple.com/fonts) and opens the file in Figma desktop · Size: ~40 · Files: `desktop/design/figma/variables.mjs`
 Goal: A118. The generator's text styles use SF Pro and SF Mono (the three mono styles stop being skipped), and screen 28's text layers switch from the Roboto Mono stand-in; `unrenderedFonts` reports none.
 Check: `npm test` passes; `get_screenshot` of node 4:2 shows every text layer rendered; no layer flagged `hasMissingFont`.
-
-#### T37.44.4 Pixel diff of a CoxUI snapshot against its Figma or mockup frame
-
-Depends: — · Size: ~120 · Files: `desktop/design` (a script, its test, `package.json`), `DESIGN.md` §2
-Goal: A119. One command takes a CoxUI snapshot PNG and the matching frame (a Figma export or `mockups/screens/<id>.png`), scales them to the same size and writes a diff image plus a short report: the share of differing pixels and the bounding boxes of the largest differing regions, so an agent sees where spacing, colour or type drift without comparing by eye. Prefer a maintained library (e.g. `pixelmatch`) over custom code.
-Check: a test with two small PNGs that differ in one known rectangle reports that rectangle; the command runs on a real CoxUI snapshot and its mockup frame; `DESIGN.md` §2 says how to use it.
-Plan: pick a maintained PNG diff library (pixelmatch + pngjs) or an installed tool, add a `desktop/design` script and npm command that scales both images, writes a diff PNG and prints the differing share and largest regions; a node test with two synthetic PNGs; a DESIGN.md §2 paragraph; a toolchain.md row for any new package.
 
 #### T37.44.5 Settings and onboarding screens match the Figma frames
 
