@@ -3,9 +3,14 @@
 //! discovers servers from config, `.mcp.json` and `~/.claude.json`.
 //! T47.2: a server's `elicitation/create` reaches the person through the
 //! asker, and is declined when nobody can answer.
+//! T55.1 (A123, P55 option (a)): a tool's MCP App UI resource is ignored —
+//! the handshake declares no `io.modelcontextprotocol/ui` extension, a
+//! `ui://` resource is never fetched, and a tool with
+//! `_meta.ui.resourceUri` yields the same `ToolOutput` as its UI-less twin.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -23,8 +28,9 @@ use cox_protocol::types::{
 };
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ClientCapabilities, ClientResult,
-    ContentBlock, ElicitRequest, ElicitRequestParams, ListToolsResult, PaginatedRequestParams,
-    ServerCapabilities, ServerConfig, ServerRequest,
+    ContentBlock, ElicitRequest, ElicitRequestParams, ListToolsResult, MetaObject,
+    PaginatedRequestParams, ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult,
+    ResourceContents, ServerCapabilities, ServerConfig, ServerRequest,
 };
 use rmcp::service::{RequestContext, RoleServer};
 use rmcp::{ErrorData, ServerHandler};
@@ -454,4 +460,150 @@ async fn file_scheme_elicitation_is_declined_unasked() {
     .await;
     assert_eq!(answer.expect("call"), json!({ "action": "decline" }));
     assert!(seen.await.expect("person").is_empty());
+}
+
+/// T55.1: a server with two tools, `app` (carrying `_meta.ui.resourceUri`,
+/// per the MCP Apps extension) and `plain` (the same tool without it), both
+/// returning identical text and structured content. Advertises the
+/// `resources` capability so a client that wanted the UI resource could
+/// fetch it; records whether it ever did, and the capabilities the client
+/// declared at the handshake.
+#[derive(Clone, Default)]
+struct UiServer {
+    caps: Arc<Mutex<Option<ClientCapabilities>>>,
+    resource_reads: Arc<AtomicUsize>,
+}
+
+impl ServerHandler for UiServer {
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
+        )
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, ErrorData> {
+        if let Ok(mut caps) = self.caps.lock() {
+            *caps = context.peer.peer_info().map(|i| i.capabilities.clone());
+        }
+        let ui_meta = MetaObject(
+            json!({ "ui": { "resourceUri": "ui://widget" } })
+                .as_object()
+                .expect("object")
+                .clone(),
+        );
+        Ok(ListToolsResult::with_all_items(vec![
+            rmcp::model::Tool::new("app", "renders a widget", serde_json::Map::new())
+                .with_meta(ui_meta),
+            rmcp::model::Tool::new("plain", "renders a widget", serde_json::Map::new()),
+        ]))
+    }
+
+    async fn call_tool(
+        &self,
+        _request: CallToolRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        let mut result = CallToolResult::success(vec![ContentBlock::text("42")]);
+        result.structured_content = Some(json!({ "value": 42 }));
+        Ok(result.into())
+    }
+
+    async fn read_resource(
+        &self,
+        _request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResponse, ErrorData> {
+        self.resource_reads.fetch_add(1, Ordering::SeqCst);
+        Ok(
+            ReadResourceResult::new(vec![ResourceContents::text("<html></html>", "ui://widget")])
+                .into(),
+        )
+    }
+}
+
+/// A [`UiServer`] on one end of a duplex; returns the client, the server
+/// task, the resource-read counter and the capabilities the handshake
+/// recorded.
+async fn ui_server() -> (
+    McpClient,
+    tokio::task::JoinHandle<()>,
+    Arc<AtomicUsize>,
+    Arc<Mutex<Option<ClientCapabilities>>>,
+) {
+    let server = UiServer::default();
+    let resource_reads = server.resource_reads.clone();
+    let caps = server.caps.clone();
+    let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+    let task = tokio::spawn(async move {
+        use rmcp::ServiceExt;
+        let running = server
+            .serve(tokio::io::split(server_io))
+            .await
+            .expect("server handshake");
+        let _ = running.waiting().await;
+    });
+    let client = McpClient::from_transport(
+        "ui",
+        tokio::io::split(client_io),
+        Duration::from_secs(2),
+        None,
+    )
+    .await
+    .expect("client handshake");
+    (client, task, resource_reads, caps)
+}
+
+#[tokio::test]
+async fn mcp_app_tool_output_matches_the_same_tool_without_ui() {
+    let (client, task, _reads, _caps) = ui_server().await;
+    let tools = client.tools(false).await.expect("list");
+    let app = tools
+        .iter()
+        .find(|t| t.spec().name == "mcp__ui__app")
+        .expect("app tool");
+    let plain = tools
+        .iter()
+        .find(|t| t.spec().name == "mcp__ui__plain")
+        .expect("plain tool");
+    let app_out = app.call(json!({}), &cx()).await.expect("app call");
+    let plain_out = plain.call(json!({}), &cx()).await.expect("plain call");
+    assert!(!app_out.is_error, "{}", app_out.text);
+    assert_eq!(app_out, plain_out);
+    assert_eq!(app_out.structured, Some(json!({ "value": 42 })));
+    client.close().await;
+    task.abort();
+}
+
+#[tokio::test]
+async fn mcp_client_declares_no_ui_extension() {
+    let (client, task, _reads, caps) = ui_server().await;
+    let _ = client.tools(false).await.expect("list");
+    let caps = caps
+        .lock()
+        .expect("caps")
+        .clone()
+        .expect("client capabilities");
+    assert!(caps.extensions.is_none(), "{:?}", caps.extensions);
+    client.close().await;
+    task.abort();
+}
+
+#[tokio::test]
+async fn mcp_client_never_reads_a_ui_resource() {
+    let (client, task, reads, _caps) = ui_server().await;
+    let tools = client.tools(false).await.expect("list");
+    for tool in &tools {
+        let out = tool.call(json!({}), &cx()).await.expect("call");
+        assert!(!out.is_error, "{}", out.text);
+    }
+    assert_eq!(reads.load(Ordering::SeqCst), 0);
+    client.close().await;
+    task.abort();
 }
