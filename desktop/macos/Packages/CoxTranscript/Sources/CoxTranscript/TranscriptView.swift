@@ -40,6 +40,12 @@ public struct TranscriptView<Approval: View>: NSViewRepresentable {
     let text = TranscriptTextView.make(style: .cox(textScale: appearance.textScale))
     text.cards = TranscriptCards { [approval] block in
       CardAppearance(shared: shared) { TranscriptCard(block: block, approval: approval) }
+    } thumbnail: { name in
+      CardAppearance(shared: shared) { Thumbnail(name) }
+    } thinking: { open, toggle in
+      CardAppearance(shared: shared) {
+        ThinkingHeader("Thinking", isExpanded: open, action: toggle)
+      }
     }
     text.crossBlockSelection = crossBlockSelection
     text.drawsBackground = false
@@ -101,7 +107,8 @@ struct CardAppearance<Content: View>: View {
 extension TranscriptStyle {
   /// The transcript drawn with CoxUI's tokens: `font.transcript` prose and `font.mono.code`
   /// code at the user's text size, readable colours only (DS§8) — the status colours miss
-  /// 4.5:1 as text, so `ok`, `warn`, `error` and the diff tokens keep `text.primary`.
+  /// 4.5:1 as text, so `ok`, `warn`, `error` and the diff tokens keep `text.primary`. A prompt
+  /// sits on `UserBubble`'s face and a thought reads as `ThinkingDisclosure` (T37.21.5).
   @MainActor
   static func cox(textScale: Double) -> TranscriptStyle {
     let secondary = TextColour.secondary.nsColor
@@ -113,6 +120,14 @@ extension TranscriptStyle {
         .dim: secondary, .tool: secondary, .diffHunk: secondary,
         .accent: TextColour.accent.nsColor, .border: TextColour.tertiary.nsColor,
       ],
-      blockSpacing: Space.l, inset: NSSize(width: Space.xl, height: Space.xl))
+      blockSpacing: Space.l, inset: NSSize(width: Space.xl, height: Space.xl),
+      bubble: .init(
+        fill: SurfaceColour.fillPrimary.nsColor, radius: Radius.xl,
+        padding: NSSize(width: Space.l, height: Space.ml), gap: Space.m),
+      thought: .init(
+        font: NSFontManager.shared.convert(
+          FontToken.caption.nsFont(scale: textScale), toHaveTrait: .italicFontMask),
+        color: secondary, rule: SurfaceColour.separator.nsColor, ruleWidth: Size.hairline,
+        indent: Space.l))
   }
 }

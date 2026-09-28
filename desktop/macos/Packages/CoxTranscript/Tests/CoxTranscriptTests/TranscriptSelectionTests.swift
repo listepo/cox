@@ -84,12 +84,14 @@ struct TranscriptSelectionTests {
         tool: "bash", summary: "Running git status", icon: .shell, risk: .readOnly,
         state: .running, tail: "", archive: nil, diff: nil, durationMs: 0))
 
+    host.text.setThought("k", open: true)
     host.store.apply([
       .appendText(id: "k", text: " Then the docs."), .upsert(block: running, after: "k"),
     ])
 
     let thought = try #require(host.text.range(of: "k"))
-    #expect((host.text.string as NSString).substring(with: thought) == "Next turn. Then the docs.")
+    let shown = (host.text.string as NSString).substring(with: thought)
+    #expect(shown == "\u{FFFC}\nNext turn. Then the docs.", "the fold header, then the reasoning")
     #expect(host.text.range(of: "r")?.length == 1, "a card is one attachment character")
     #expect(host.text.blockRanges.ids == ["u", "t", "a", "k", "r"])
   }

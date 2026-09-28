@@ -49,10 +49,9 @@ extension TranscriptTextView {
   ) {
     guard let index = blockRanges.index(of: id) else { return }
     defer { blocks[id] = current(id) ?? blocks[id] }
-    if case .thinking = blocks[id]?.kind {
-      let end = NSRange(location: blockRanges.ranges[index].length, length: 0)
-      let attributes = look.plain(.dim, code: false).attributes
-      splice(index, end, with: NSAttributedString(string: text, attributes: attributes), look)
+    if case .thinking(let old)? = blocks[id]?.kind, var grown = blocks[id] {
+      grown.kind = .thinking(text: old + text)
+      thoughtGrew(index, by: text, to: current(id) ?? grown, look)
     } else if let block = current(id) {
       card(at: index)?.update(block)
     }
@@ -106,7 +105,7 @@ extension TranscriptTextView {
   /// first text gains the separator after it, or before it when no text
   /// follows; one losing its last text drops the same one. So a separator
   /// always inherits the block before it, as `build` gives it.
-  private func splice(
+  func splice(
     _ index: Int, _ local: NSRange, with text: NSAttributedString, spaced: Bool = false,
     _ look: TextLook
   ) {

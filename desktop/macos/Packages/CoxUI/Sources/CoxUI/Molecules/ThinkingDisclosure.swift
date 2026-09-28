@@ -22,19 +22,7 @@ struct ThinkingDisclosure: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
-      Button {
-        isExpanded.toggle()
-      } label: {
-        HStack(spacing: Space.s) {
-          Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-            .symbolStyle(.label)
-          Text(summary).textStyle(.caption)
-        }
-        .foregroundStyle(Color(.textSecondary))
-        .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .accessibilityValue(isExpanded ? "expanded" : "collapsed")
+      ThinkingHeader(summary, isExpanded: isExpanded) { isExpanded.toggle() }
       if isExpanded {
         Text(text)
           .italic()
@@ -49,6 +37,35 @@ struct ThinkingDisclosure: View {
       }
     }
     .animation(.cox(Motion.durationBase), value: isExpanded)
+  }
+}
+
+/// The disclosure's one-line row, the chevron and the summary, on its own so the transcript's
+/// text view (T37.23.4) can show a thought's fold above reasoning it draws as text; the caller
+/// owns whether it is open.
+public struct ThinkingHeader: View {
+  let summary: String
+  let isExpanded: Bool
+  let action: () -> Void
+
+  public init(_ summary: String, isExpanded: Bool, action: @escaping () -> Void) {
+    self.summary = summary
+    self.isExpanded = isExpanded
+    self.action = action
+  }
+
+  public var body: some View {
+    Button(action: action) {
+      HStack(spacing: Space.s) {
+        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+          .symbolStyle(.label)
+        Text(summary).textStyle(.caption)
+      }
+      .foregroundStyle(Color(.textSecondary))
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .accessibilityValue(isExpanded ? "expanded" : "collapsed")
   }
 }
 
