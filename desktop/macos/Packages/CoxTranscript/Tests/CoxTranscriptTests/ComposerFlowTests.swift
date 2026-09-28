@@ -35,6 +35,32 @@ import Testing
     #expect(session.sent == [.send(text: "@src/main.rs explain it", attachments: [])])
     #expect(host.editor.string.isEmpty)
   }
+
+  @Test func whileATurnRunsReturnQueuesAndCommandReturnInterruptsAndSends() async throws {
+    let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []))
+    let transcript = SessionStore(session: session)
+    let tally = Tally(
+      sent: 0, received: 0, cacheRead: 0, cacheWrite: 0, uncached: 0, costUsd: 0, calls: 0,
+      estimated: false)
+    let running = TurnUsage(
+      turn: "t1", tally: tally, thinkingTokens: 0, ttftMs: nil, tokPerS: nil, exact: false,
+      sparkline: [], done: false)
+    transcript.apply([.usage(usage: UsageView(session: tally, turn: running, contextTokens: 0))])
+    let store = ComposerStore(session: transcript)
+    let host = ComposerHost(SessionComposer(store: store))
+    defer { host.close() }
+
+    host.type("next")
+    host.press(.return)
+    await host.settle(until: { !session.sent.isEmpty })
+    #expect(session.sent == [.queue(text: "next")])
+    #expect(store.queued == 1)
+
+    host.type("now")
+    host.press(.commandReturn)
+    await host.settle(until: { session.sent.count == 3 })
+    #expect(session.sent.suffix(2) == [.interrupt, .send(text: "now", attachments: [])])
+  }
 }
 
 /// A view in a borderless window far off screen, with its text view first responder, so key
@@ -45,10 +71,17 @@ private final class ComposerHost {
   let editor: NSTextView
 
   enum Key {
-    case down, `return`
+    case down, `return`, commandReturn
 
     var code: UInt16 { self == .down ? 125 : 36 }
     var characters: String { self == .down ? "\u{F701}" : "\r" }
+    var modifiers: NSEvent.ModifierFlags {
+      switch self {
+      case .down: [.numericPad, .function]
+      case .return: []
+      case .commandReturn: .command
+      }
+    }
   }
 
   init(_ view: some View) {
@@ -77,7 +110,7 @@ private final class ComposerHost {
 
   func press(_ key: Key) {
     let event = NSEvent.keyEvent(
-      with: .keyDown, location: .zero, modifierFlags: key == .down ? [.numericPad, .function] : [],
+      with: .keyDown, location: .zero, modifierFlags: key.modifiers,
       timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
       context: nil, characters: key.characters, charactersIgnoringModifiers: key.characters,
       isARepeat: false, keyCode: key.code)

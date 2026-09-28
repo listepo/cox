@@ -53,6 +53,8 @@ public struct SessionComposer: View {
       return Composer.Attachment(id: String(index), name: file.name, image: image)
     }
     state.canSend = store.canSend
+    state.isRunning = store.isRunning
+    state.queued = store.queued
     return state
   }
 
@@ -69,7 +71,8 @@ public struct SessionComposer: View {
   private func draft(_ intent: Composer.Intent) {
     switch intent {
     case .edit(let text): store.edit(text)
-    case .submit, .submitNow: Task { await store.submit() }
+    case .submit: Task { await store.submit() }
+    case .submitNow: Task { await store.submitNow() }
     case .moveSelection(let step): store.moveSelection(by: step)
     case .pick(let index): store.pick(index)
     case .dismissCompletion: store.dismissCompletion()

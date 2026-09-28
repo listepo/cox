@@ -94,3 +94,61 @@ private func composer() -> (ComposerStore, FixtureSession) {
   #expect(session.sent == [.send(text: "", attachments: [sent])])
   #expect(store.attachments.isEmpty)
 }
+
+/// A usage view of a turn that runs (`done` false) or finished.
+private func usage(done: Bool) -> UsageView {
+  let tally = Tally(
+    sent: 0, received: 0, cacheRead: 0, cacheWrite: 0, uncached: 0, costUsd: 0, calls: 0,
+    estimated: false)
+  let turn = TurnUsage(
+    turn: "t", tally: tally, thinkingTokens: 0, ttftMs: nil, tokPerS: nil, exact: false,
+    sparkline: [], done: done)
+  return UsageView(session: tally, turn: turn, contextTokens: 0)
+}
+
+private func user(_ turn: UInt32) -> TimelinePatch {
+  .upsert(
+    block: Block(id: "u\(turn)", turn: turn, kind: .user(text: "", attachments: [])), after: nil)
+}
+
+@MainActor
+@Test func whileATurnRunsReturnQueuesAndTheCountDropsAsQueuedTurnsStart() async {
+  let (store, session) = composer()
+  store.session.apply([user(1), .usage(usage: usage(done: false))])
+  #expect(store.isRunning)
+
+  store.edit("next")
+  await store.submit()
+  store.edit("after that")
+  await store.submit()
+  #expect(session.sent == [.queue(text: "next"), .queue(text: "after that")])
+  #expect(store.queued == 2)
+
+  store.session.apply([
+    .upsert(
+      block: Block(id: "u2", turn: 2, kind: .user(text: "next", attachments: [])), after: "u1")
+  ])
+  #expect(store.queued == 1)
+  store.session.apply([.usage(usage: usage(done: true))])
+  #expect(!store.isRunning)
+}
+
+@MainActor
+@Test func commandReturnInterruptsAndSendsNowAndAttachmentsNeverQueue() async throws {
+  let (store, session) = composer()
+  store.session.apply([user(1), .usage(usage: usage(done: false))])
+  let file = FileManager.default.temporaryDirectory.appending(path: "cox-t37.24-\(UUID()).txt")
+  try Data("x".utf8).write(to: file)
+  defer { try? FileManager.default.removeItem(at: file) }
+  await store.attach([file])
+  store.edit("look")
+
+  await store.submit()
+  #expect(session.sent.isEmpty)
+  #expect(store.failure != nil)
+
+  await store.submitNow()
+  #expect(session.sent.first == .interrupt)
+  #expect(session.sent.count == 2)
+  #expect(store.queued == 0 && store.attachments.isEmpty)
+}
