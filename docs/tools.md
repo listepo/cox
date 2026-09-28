@@ -45,6 +45,14 @@ only where a person can:
   round repeats what was typed. Esc (in `--plain`, an empty line)
   cancels the whole request. While a question is open the call's
   `mcp.timeout_s` does not count.
+- URL mode (TUI and `--plain`, `elicitation.url`): one question shows the
+  message, the URL as it will be opened (normalized, so a non-ASCII host
+  appears as punycode), its host, and a warning for a punycode host or a
+  plain `http` URL; it offers `open` or `decline`. The browser opens only
+  on `open`, and the server gets `accept`; the flow's outcome itself stays
+  between the browser and the server. A URL that is not `http(s)`, names no
+  host or would not survive the opener unchanged is declined without
+  asking.
 - `cox run -p` declares no elicitation capability and never asks; a
   server that elicits anyway gets `decline`. `--answer` does not apply.
 - `cox acp` connects no MCP servers today, so there is nothing to answer.

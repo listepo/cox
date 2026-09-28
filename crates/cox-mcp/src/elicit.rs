@@ -5,7 +5,8 @@
 //! asks for before anything is sent. Separate from `client` because the
 //! handler and its tests share it, and it holds no rmcp service type and
 //! does no I/O. [`run_form`] (T47.2) drives those prompts through an
-//! [`Asker`], the channel a surface with a person present answers.
+//! [`Asker`], the channel a surface with a person present answers;
+//! [`run_url`] (T47.4) asks consent before a server's URL is opened.
 
 use rmcp::model::{
     ElicitResult, ElicitationAction, ElicitationSchema, EnumSchema, MultiSelectEnumSchema,
@@ -633,6 +634,86 @@ enum Choice {
     Decline,
 }
 
+/// Characters `cmd /C start`, the Windows opener, would read as syntax
+/// rather than as part of the URL.
+const CMD_SYNTAX: &[char] = &['&', '|', '^', '<', '>', '"', '%'];
+
+/// T47.4: the consent question for a URL elicitation, and the URL to open
+/// if the person agrees — the normalized form the question shows, so what
+/// is opened is exactly what was read. `Err` is why the URL is declined
+/// without asking: not http(s), no host, or characters that could hide
+/// where it leads.
+pub fn url_prompt(message: &str, url: &str) -> Result<(String, String, Vec<String>), String> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| format!("not a URL: {e}"))?;
+    let scheme = parsed.scheme();
+    if scheme != "https" && scheme != "http" {
+        return Err(format!("a `{scheme}:` URL is never opened"));
+    }
+    // The url crate writes a non-ASCII host as punycode and percent-encodes
+    // the rest, so a normalized URL is plain ASCII: anything else is odd.
+    let shown = parsed.as_str().to_string();
+    if !shown.is_ascii() || shown.chars().any(|c| c.is_ascii_control() || c == ' ') {
+        return Err("the URL has characters that could hide where it leads".into());
+    }
+    if cfg!(target_os = "windows") && shown.contains(CMD_SYNTAX) {
+        return Err("the URL has characters the Windows opener would run".into());
+    }
+    let Some(host) = parsed.host_str() else {
+        return Err("the URL names no host".into());
+    };
+    let mut question = format!("{message} · open {shown} · host: {host}");
+    if host
+        .split('.')
+        .any(|label| label.to_ascii_lowercase().starts_with("xn--"))
+    {
+        question.push_str(" · warning: punycode host, it may imitate another name");
+    }
+    if scheme == "http" {
+        question.push_str(" · warning: not https");
+    }
+    Ok((
+        shown,
+        question,
+        ["open", "decline"].map(String::from).to_vec(),
+    ))
+}
+
+/// The opener a URL elicitation uses; `auth::open_browser` outside tests.
+pub type Opener = std::sync::Arc<dyn Fn(&str) -> bool + Send + Sync>;
+
+/// A URL elicitation: the URL, its host and any warning are shown, and the
+/// browser opens only on an explicit `open` (accept); `decline` declines, a
+/// dismissed question cancels. Nothing is fetched before that answer.
+pub async fn run_url(
+    asker: &Asker,
+    server: &str,
+    message: &str,
+    url: &str,
+    open: &Opener,
+) -> ElicitResult {
+    let Ok((target, question, options)) = url_prompt(message, url) else {
+        return with(ElicitationAction::Decline);
+    };
+    for _ in 0..TRIES {
+        let Some(text) = ask(asker, server, (question.clone(), options.clone())).await else {
+            return with(ElicitationAction::Cancel);
+        };
+        match text.trim().to_ascii_lowercase().as_str() {
+            "open" => {
+                // The opener waits on a child process, so it runs off the
+                // async threads. The URL was on screen, so a missing browser
+                // still leaves the person able to open it by hand.
+                let open = open.clone();
+                let _ = tokio::task::spawn_blocking(move || open(&target)).await;
+                return with(ElicitationAction::Accept);
+            }
+            "decline" => return with(ElicitationAction::Decline),
+            _ => {}
+        }
+    }
+    with(ElicitationAction::Cancel)
+}
+
 /// The review answer; an unknown one is asked again, a dismissed one is
 /// `None`.
 async fn choose(asker: &Asker, server: &str, review: (String, Vec<String>)) -> Option<Choice> {
@@ -830,5 +911,107 @@ mod tests {
         assert_eq!(question, "Sign up — send name, tags?");
         assert!(!question.contains("Ada"));
         assert_eq!(options, ["send", "edit", "decline"]);
+    }
+
+    #[test]
+    fn url_prompt_shows_the_normalized_url_and_its_host() {
+        let (target, question, options) =
+            url_prompt("Link your account", "HTTPS://Example.COM/a?x=1").expect("prompt");
+        assert_eq!(target, "https://example.com/a?x=1");
+        assert_eq!(
+            question,
+            "Link your account · open https://example.com/a?x=1 · host: example.com"
+        );
+        assert_eq!(options, ["open", "decline"]);
+        let (_, plain, _) = url_prompt("m", "http://example.com/").expect("http");
+        assert!(plain.ends_with(" · warning: not https"), "{plain}");
+    }
+
+    #[test]
+    fn punycode_host_is_flagged() {
+        let (_, question, _) = url_prompt("m", "https://xn--pple-43d.com/").expect("puny");
+        assert!(question.contains("warning: punycode host"), "{question}");
+        // A Cyrillic "а" normalizes to punycode, so a homograph shows as one.
+        let (target, question, _) = url_prompt("m", "https://\u{0430}pple.com/").expect("cyr");
+        assert!(target.starts_with("https://xn--"), "{target}");
+        assert!(question.contains("warning: punycode host"), "{question}");
+        let (_, plain, _) = url_prompt("m", "https://apple.com/").expect("ascii");
+        assert!(!plain.contains("warning"), "{plain}");
+    }
+
+    #[test]
+    fn non_web_urls_are_declined() {
+        for url in [
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "data:text/html,hi",
+            "ssh://example.com",
+            "not a url",
+        ] {
+            assert!(url_prompt("m", url).is_err(), "{url}");
+        }
+    }
+
+    /// An opener that records instead of launching a browser.
+    fn recorder() -> (Opener, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        let opened = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = opened.clone();
+        let open: Opener = std::sync::Arc::new(move |url: &str| {
+            log.lock().expect("log").push(url.to_string());
+            true
+        });
+        (open, opened)
+    }
+
+    #[tokio::test]
+    async fn url_elicitation_opens_only_after_consent() {
+        for (answer, action, want) in [
+            (
+                "open",
+                ElicitationAction::Accept,
+                vec!["https://example.com/"],
+            ),
+            ("decline", ElicitationAction::Decline, vec![]),
+        ] {
+            let (open, opened) = recorder();
+            let (asker, mut asks) = mpsc::channel::<Ask>(1);
+            let seen = opened.clone();
+            let person = tokio::spawn(async move {
+                let ask = asks.recv().await.expect("ask");
+                // Nothing is opened while the question is on screen.
+                assert!(seen.lock().expect("log").is_empty());
+                let _ = ask.reply.send(answer.to_string());
+                ask.question
+            });
+            let result = run_url(&asker, "s", "Link", "https://example.com", &open).await;
+            assert_eq!(result.action, action);
+            assert!(
+                person
+                    .await
+                    .expect("person")
+                    .contains("https://example.com/")
+            );
+            assert_eq!(*opened.lock().expect("log"), want);
+        }
+    }
+
+    #[tokio::test]
+    async fn file_scheme_is_declined_unasked() {
+        let (open, opened) = recorder();
+        let (asker, mut asks) = mpsc::channel::<Ask>(1);
+        let result = run_url(&asker, "s", "Look", "file:///etc/passwd", &open).await;
+        assert_eq!(result.action, ElicitationAction::Decline);
+        assert!(asks.try_recv().is_err());
+        assert!(opened.lock().expect("log").is_empty());
+    }
+
+    #[tokio::test]
+    async fn dismissed_url_question_cancels_and_opens_nothing() {
+        let (open, opened) = recorder();
+        let (asker, mut asks) = mpsc::channel::<Ask>(1);
+        tokio::spawn(async move { drop(asks.recv().await) });
+        let result = run_url(&asker, "s", "Link", "https://example.com", &open).await;
+        assert_eq!(result.action, ElicitationAction::Cancel);
+        assert!(opened.lock().expect("log").is_empty());
     }
 }

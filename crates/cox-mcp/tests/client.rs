@@ -368,7 +368,9 @@ async fn form_elicitation_round_trips_through_the_asker() {
         json!({ "action": "accept", "content": { "name": "Ada", "age": 36 } })
     );
     let caps = caps.expect("client capabilities");
-    assert!(caps.elicitation.and_then(|e| e.form).is_some());
+    let elicitation = caps.elicitation.expect("elicitation");
+    assert!(elicitation.form.is_some());
+    assert!(elicitation.url.is_some());
     let seen = seen.await.expect("person");
     assert_eq!(seen.len(), 3);
     assert!(seen[0].starts_with("Sign up — name"), "{seen:?}");
@@ -410,4 +412,46 @@ async fn waiting_for_a_person_does_not_time_out_the_call() {
         answer.expect("no timeout while asking"),
         json!({ "action": "accept", "content": { "name": "Ada", "age": 7 } })
     );
+}
+
+/// A URL elicitation as a server sends it.
+fn url(target: &str) -> ElicitRequestParams {
+    serde_json::from_value(json!({
+        "mode": "url",
+        "message": "Link your account",
+        "url": target,
+        "elicitationId": "e1",
+    }))
+    .expect("url params")
+}
+
+#[tokio::test]
+async fn url_elicitation_shows_the_url_and_declines_on_decline() {
+    // Only `decline` is answered here: `open` would launch a real browser.
+    let (asker, seen) = person(vec![Some("decline")], Duration::ZERO);
+    let (answer, _) = elicit(
+        url("https://example.com/cb"),
+        Some(asker),
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_eq!(answer.expect("call"), json!({ "action": "decline" }));
+    let seen = seen.await.expect("person");
+    assert_eq!(
+        seen,
+        ["Link your account · open https://example.com/cb · host: example.com"]
+    );
+}
+
+#[tokio::test]
+async fn file_scheme_elicitation_is_declined_unasked() {
+    let (asker, seen) = person(vec![], Duration::ZERO);
+    let (answer, _) = elicit(
+        url("file:///etc/passwd"),
+        Some(asker),
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_eq!(answer.expect("call"), json!({ "action": "decline" }));
+    assert!(seen.await.expect("person").is_empty());
 }

@@ -24,6 +24,7 @@ use cox_protocol::types::{Concurrency, Risk, ToolOutput, ToolSpec};
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ClientConfig, ElicitRequestParams, ElicitResult,
     ElicitationAction, ElicitationCapability, ErrorData, FormElicitationCapability,
+    UrlElicitationCapability,
 };
 use rmcp::service::{ClientInitializeError, RequestContext, RoleClient, RunningService};
 use rmcp::transport::auth::{AuthClient, AuthError, CredentialStore, InMemoryCredentialStore};
@@ -37,7 +38,7 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use crate::auth::{self, Secrets};
-use crate::elicit::{self, Asker};
+use crate::elicit::{self, Asker, Opener};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
@@ -158,13 +159,15 @@ async fn within<F: Future>(asking: &Asking, timeout: Duration, fut: F) -> Option
 }
 
 /// The client side of every session (T47.2). Declares `elicitation.form`
-/// only when `ask` is set, and answers a form elicitation through it; a URL
-/// elicitation, or any elicitation without an asker, is declined.
+/// and `.url` (T47.4) only when `ask` is set, and answers through it; any
+/// elicitation without an asker is declined.
 #[derive(Clone)]
 pub struct CoxClient {
     server: String,
     ask: Option<Asker>,
     asking: Arc<Asking>,
+    /// The T22.5 opener; the one way cox opens a browser.
+    open: Opener,
 }
 
 impl CoxClient {
@@ -173,6 +176,7 @@ impl CoxClient {
             server: server.to_string(),
             ask,
             asking: Arc::default(),
+            open: Arc::new(auth::open_browser),
         }
     }
 }
@@ -183,7 +187,8 @@ impl ClientHandler for CoxClient {
         if self.ask.is_some() {
             info.capabilities.elicitation = Some(
                 ElicitationCapability::new()
-                    .with_form(FormElicitationCapability::new().with_schema_validation(true)),
+                    .with_form(FormElicitationCapability::new().with_schema_validation(true))
+                    .with_url(UrlElicitationCapability::new()),
             );
         }
         info
@@ -198,18 +203,23 @@ impl ClientHandler for CoxClient {
         let Some(asker) = &self.ask else {
             return Ok(decline);
         };
-        let ElicitRequestParams::FormElicitationParams {
-            message,
-            requested_schema,
-            ..
-        } = request
-        else {
-            return Ok(decline);
-        };
         let _open = self.asking.enter();
         let abort = self.asking.abort_token();
+        let answer = async {
+            match request {
+                ElicitRequestParams::FormElicitationParams {
+                    message,
+                    requested_schema,
+                    ..
+                } => elicit::run_form(asker, &self.server, &message, &requested_schema).await,
+                ElicitRequestParams::UrlElicitationParams { message, url, .. } => {
+                    elicit::run_url(asker, &self.server, &message, &url, &self.open).await
+                }
+                _ => decline,
+            }
+        };
         Ok(tokio::select! {
-            result = elicit::run_form(asker, &self.server, &message, &requested_schema) => result,
+            result = answer => result,
             () = context.ct.cancelled() => ElicitResult::new(ElicitationAction::Cancel),
             () = abort.cancelled() => ElicitResult::new(ElicitationAction::Cancel),
         })
