@@ -20,14 +20,17 @@ pub trait AppHost: Send + Sync {
     fn secret(&self, section: String) -> Option<String>;
 }
 
-/// What `cox_session::open_with_keys` asks for a key.
-pub(crate) fn keys(host: &Arc<dyn AppHost>) -> cox_session::Keys {
-    let host = Arc::clone(host);
-    Arc::new(move |section: &str| host.secret(section.to_string()))
-}
+/// The Swift host as `cox_app::app::Host`, which takes borrowed strings.
+pub(crate) struct Bridge(pub Arc<dyn AppHost>);
 
-/// What an MCP server's 401 hands its login URL to.
-pub(crate) fn login(host: &Arc<dyn AppHost>) -> Arc<dyn Fn(&str) + Send + Sync> {
-    let host = Arc::clone(host);
-    Arc::new(move |url: &str| host.open_url(url.to_string()))
+impl cox_app::app::Host for Bridge {
+    fn notify(&self, item: InboxItem, badge: u32) {
+        self.0.notify(item, badge);
+    }
+    fn open_url(&self, url: &str) {
+        self.0.open_url(url.to_string());
+    }
+    fn secret(&self, section: &str) -> Option<String> {
+        self.0.secret(section.to_string())
+    }
 }

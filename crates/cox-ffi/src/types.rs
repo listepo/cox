@@ -8,6 +8,9 @@
 
 use std::path::PathBuf;
 
+use cox_app::Holder;
+use cox_app::SessionInfo;
+use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind};
 use cox_app::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
 use cox_app::{
     Activity, Completion, Icon, InboxItem, Intent, Need, SearchHit, SessionEntry, Tally, TurnUsage,
@@ -20,9 +23,6 @@ use cox_protocol::types::{
     ApprovalPolicy, ArchiveRef, Attachment, CompactReason, DecidedBy, Decision, Diff, Effort,
     Level, ModelId, PermissionMode, Risk, Segments, Source, StopReason, Tier, ToolCall, Usage, Why,
 };
-use cox_render::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind};
-use cox_store::fts::SessionInfo;
-use cox_store::lock::Holder;
 use serde_json::Value;
 
 macro_rules! string_ids {

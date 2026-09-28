@@ -1,14 +1,16 @@
 //! `cox-app` (DT§4.3): the UI-agnostic application core the desktop app
-//! drives through `cox-ffi`: the pure fold over the core's `Event` stream and
-//! the drain task that feeds it (`controller`), kept
-//! out of every surface crate so the TUI could share it later and no UI
-//! toolkit leaks in (`crates/cox/tests/deps.rs`).
+//! drives through `cox-ffi`: the pure fold over the core's `Event` stream,
+//! the drain task that feeds it (`controller`) and the sessions themselves
+//! (`app`, `live`), kept out of every surface crate so the TUI could share
+//! it later and no UI toolkit leaks in (`crates/cox/tests/deps.rs`).
 
+pub mod app;
 pub mod coalesce;
 pub mod complete;
 pub mod controller;
 pub mod inbox;
 pub mod intent;
+pub mod live;
 pub mod patch;
 pub mod summary;
 pub mod timeline;
@@ -24,3 +26,9 @@ pub use summary::Icon;
 pub use timeline::Timeline;
 pub use usage::{Meter, Tally, TurnUsage, UsageView};
 pub use workspace::{ProjectRow, SearchHit, SessionEntry, Workspace, WorkspaceError};
+
+// What the exported types carry, named here so `cox-ffi` depends on no
+// other workspace crate (T37.39, DT§4.2).
+pub use cox_render::doc;
+pub use cox_store::fts::SessionInfo;
+pub use cox_store::lock::Holder;

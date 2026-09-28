@@ -27,17 +27,20 @@ cox-config = { path = "../cox-config", version = "0.1.2" }
 cox-ext = { path = "../cox-ext", version = "0.1.2" }
 cox-search = { path = "../cox-search", version = "0.1.2" }
 thiserror = { workspace = true }
+# T37.39 (A71): the app owns its sessions — `cox-session` builds, resumes,
+# forks and hands them off; `cox-core`'s `Session` is what it drives;
+# `cox-tools`'s `GitWorktrees` backs the workspace's worktree list.
+cox-session = { path = "../cox-session", version = "0.1.2" }
+cox-core = { path = "../cox-core", version = "0.1.2" }
+cox-tools = { path = "../cox-tools", version = "0.1.2" }
 
 [dev-dependencies]
 # The scenario tests run a real session over the Scripted provider and
 # reuse cox-core's test harness (`tests/scenarios.rs`).
-cox-core = { path = "../cox-core", version = "0.1.2" }
 cox-provider = { path = "../cox-provider", version = "0.1.2" }
 async-trait = { workspace = true }
 insta = { workspace = true }
 # Paused time: a consumer that naps 2 s per pull stays a fast test.
 tokio = { workspace = true, features = ["test-util"] }
-# T37.10: intents run against a scratch COX_HOME; `/fork` goes through
-# cox-session's lineage, as the controller will.
-cox-session = { path = "../cox-session", version = "0.1.2", default-features = false }
+# T37.10: intents run against a scratch COX_HOME.
 tempfile = { workspace = true }

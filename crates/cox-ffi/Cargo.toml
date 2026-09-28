@@ -8,8 +8,9 @@ repository.workspace = true
 publish = false
 
 # T37.14 (DT§4.4): the macOS app's in-process surface — UniFFI exports over
-# cox-app and cox-session, one tokio runtime, the Swift-implemented `Host`.
-# The only crate that depends on uniffi (`crates/cox/tests/deps.rs`).
+# cox-app, one tokio runtime, the Swift-implemented `Host`. The only crate
+# that depends on uniffi; among workspace crates only on cox-app and
+# cox-protocol (T37.39, `crates/cox/tests/deps.rs`).
 
 [lib]
 crate-type = ["staticlib", "lib"]
@@ -30,18 +31,9 @@ required-features = ["bindgen"]
 uniffi = { version = "0.32.2", default-features = false }
 cox-app = { path = "../cox-app", version = "0.1.2" }
 cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
-# Opens, resumes, forks and hands off sessions — `dispatch()` leaves
-# Fork/Handoff to its owner — and resolves the login-shell env (DT§4.8).
-cox-session = { path = "../cox-session", version = "0.1.2" }
-cox-core = { path = "../cox-core", version = "0.1.2" }
-cox-config = { path = "../cox-config", version = "0.1.2" }
-cox-store = { path = "../cox-store", version = "0.1.2" }
-# The neutral `StyledDoc` half only, as in cox-app.
-cox-render = { path = "../cox-render", version = "0.1.2", default-features = false }
-# `Workspace::worktrees` lists through `GitWorktrees`.
-cox-tools = { path = "../cox-tools", version = "0.1.2" }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+# The one runtime every session runs on (DT§4.5).
 tokio = { workspace = true }
 # A pull the app cancels aborts its task on the runtime (`on_runtime`).
 tokio-util = { workspace = true, features = ["rt"] }

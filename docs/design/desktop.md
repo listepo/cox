@@ -148,12 +148,13 @@ for that.
 | Crate | Owns | May depend on | Must not |
 | --- | --- | --- | --- |
 | `cox-session` | `open(SessionSpec) -> Result<Opened, SessionError>`: config → provider, tools, MCP, skills, agents, hooks, plugins, checkpointer, worktrees; `fork`, `handoff`, `resume`; login-shell environment resolution (DT§4.8). Warnings return as data, never printed | core, protocol, config, provider, tools, mcp, ext, store, plugin, sandbox | clap, anyhow, any `print`; cox-tui |
-| `cox-app` | The UI-agnostic application core (DT§4.3). Pure logic over events; the only async parts are the per-session drain task and the controller | session, core, protocol, store, config, render (neutral part), search | ratatui, crossterm, uniffi |
+| `cox-app` | The UI-agnostic application core (DT§4.3). Pure logic over events; the only async parts are the per-session drain task and the controller. Owns the live sessions (T37.39): opens, resumes, forks and hands them off through `cox-session`, with host-supplied keys through a plain `Host` trait | session, core, protocol, store, config, render (neutral part), search, ext, tools | ratatui, crossterm, uniffi anywhere in its tree; clap, anyhow directly |
 | `cox-ffi` | UniFFI records/enums mirroring `cox-app` types, the exported objects, the runtime, foreign traits (DT§4.4). `crate-type = ["staticlib", "lib"]` | app, protocol | anything else directly |
 
 `crates/cox/tests/deps.rs` gets one rule per crate in the same change
 (crates.md step 3), plus: `uniffi` only in `cox-ffi`; `cox-app` does not pull
-ratatui. The slim build of the `cox` binary does not link `cox-ffi`.
+ratatui; `cox-ffi`'s direct workspace dependencies are exactly `cox-app` and
+`cox-protocol`. The slim build of the `cox` binary does not link `cox-ffi`.
 
 `cox-render` today emits ratatui `Line`s. Its markdown and syntect
 highlighting gain a neutral output — `StyledDoc` (blocks of `StyledSpan{text,

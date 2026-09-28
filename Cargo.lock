@@ -1064,6 +1064,7 @@ dependencies = [
  "cox-search",
  "cox-session",
  "cox-store",
+ "cox-tools",
  "insta",
  "serde",
  "serde_json",
@@ -1135,13 +1136,7 @@ name = "cox-ffi"
 version = "0.1.2"
 dependencies = [
  "cox-app",
- "cox-config",
- "cox-core",
  "cox-protocol",
- "cox-render",
- "cox-session",
- "cox-store",
- "cox-tools",
  "serde_json",
  "tempfile",
  "thiserror 2.0.20",

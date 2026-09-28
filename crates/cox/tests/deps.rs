@@ -549,14 +549,32 @@ fn session_has_no_cli_or_terminal() {
 }
 
 /// T37.8 (DT§4.2): the application core is UI-agnostic — the desktop app
-/// links it through `cox-ffi`, so no terminal toolkit or CLI crate may reach
-/// it, not even through `cox-render`'s default `ratatui` feature.
+/// links it through `cox-ffi`, so no terminal toolkit may reach it, not even
+/// through `cox-render`'s default `ratatui` feature. D1 bans *depending on*
+/// `anyhow` and `clap`, so those are checked on its own manifest (T37.39):
+/// `cox-session` pulls `anyhow` transitively (tiktoken-rs, the ACP crate).
 #[test]
 fn app_has_no_terminal_or_cli() {
     let deps = tree("cox-app", &[]);
-    for banned in ["ratatui", "crossterm", "clap", "anyhow", "cox-tui"] {
+    for banned in ["ratatui", "crossterm", "cox-tui"] {
         assert!(!deps.contains(banned), "cox-app must not pull {banned}");
     }
+    let direct = &all_deps()["cox-app"];
+    for banned in ["clap", "anyhow"] {
+        assert!(
+            !direct.contains(banned),
+            "cox-app must not depend on {banned}"
+        );
+    }
+}
+
+/// T37.39 (D11, DT§4.2): the FFI only forwards — sessions are `cox-app`'s —
+/// so among workspace crates it reaches `cox-app` and `cox-protocol` alone.
+#[test]
+fn ffi_depends_only_on_app_and_protocol() {
+    let deps = &workspace_deps()["cox-ffi"];
+    let expected: HashSet<String> = ["cox-app", "cox-protocol"].map(String::from).into();
+    assert_eq!(deps, &expected, "cox-ffi's direct workspace dependencies");
 }
 
 /// T37.14 (D1, DT§4.2): the app's FFI layer is the one crate built on

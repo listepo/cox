@@ -1,23 +1,17 @@
 //! `cox-ffi` (DT§4.4, §4.5): the macOS app's surface — the fifth, beside the
-//! TUI, `run -p`, ACP and `cox mcp` (D11). UniFFI exports over `cox-app`
-//! and `cox-session`, linked into the app as a static library; the one
-//! tokio runtime every session runs on; the Swift-implemented [`AppHost`].
-//! Thin on purpose: the view model is `cox-app`'s and the session build is
-//! `cox-session`'s. Alone in depending on `uniffi` (`crates/cox/tests/deps.rs`).
+//! TUI, `run -p`, ACP and `cox mcp` (D11). UniFFI exports over `cox-app`,
+//! linked into the app as a static library; the one tokio runtime every
+//! session runs on; the Swift-implemented [`AppHost`]. A forwarder only:
+//! sessions are `cox-app`'s (T37.39), so its sole workspace dependencies are
+//! `cox-app` and `cox-protocol`, and it alone uses `uniffi` (`deps.rs`).
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
-use std::time::Duration;
+use std::sync::{Arc, OnceLock};
 
-use cox_app::{Activity, Inbox, InboxItem, IntentError, SearchHit, SessionEntry};
-use cox_app::{Workspace, WorkspaceError};
-use cox_protocol::StoreError;
-use cox_protocol::errors::CoreError;
+use cox_app::app::{App as Owner, AppError as OwnerError};
+use cox_app::{Activity, Holder, InboxItem, SearchHit, SessionEntry, WorkspaceError};
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::WorktreeInfo;
-use cox_protocol::types::Event;
-use cox_session::SessionError;
-use cox_store::lock::Holder;
 use tokio::runtime::Runtime;
 use tokio_util::task::AbortOnDropHandle;
 
@@ -29,9 +23,6 @@ pub use host::AppHost;
 pub use session::SessionHandle;
 
 uniffi::setup_scaffolding!();
-
-/// DT§4.8: how long the login shell may take before its env is skipped.
-const LOGIN_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Every failure the app sees, from the crates' own `thiserror` enums.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
@@ -49,28 +40,23 @@ pub enum AppError {
     Runtime { message: String },
 }
 
-impl From<SessionError> for AppError {
-    fn from(e: SessionError) -> Self {
+impl From<OwnerError> for AppError {
+    fn from(e: OwnerError) -> Self {
+        let message = e.to_string();
         match e {
-            SessionError::SessionBusy { id, holder } => Self::Busy { id, holder },
-            e => Self::Session {
-                message: e.to_string(),
-            },
+            OwnerError::Busy { id, holder } => Self::Busy { id, holder },
+            OwnerError::Intent(_) => Self::Intent { message },
+            OwnerError::Workspace(_) => Self::Workspace { message },
+            _ => Self::Session { message },
         }
     }
 }
 
-macro_rules! message_from {
-    ($($from:ty => $variant:ident),*) => {$(
-        impl From<$from> for AppError {
-            fn from(e: $from) -> Self {
-                Self::$variant { message: e.to_string() }
-            }
-        }
-    )*};
+impl From<WorkspaceError> for AppError {
+    fn from(e: WorkspaceError) -> Self {
+        OwnerError::from(e).into()
+    }
 }
-message_from!(CoreError => Session, StoreError => Session, IntentError => Intent,
-    WorkspaceError => Workspace);
 
 /// The one runtime (DT§4.5), made on first use; nothing blocks on it.
 fn runtime() -> Result<&'static Runtime, AppError> {
@@ -107,55 +93,7 @@ async fn on_runtime<T: Send + 'static>(
 /// the inherited environment, if it did.
 #[uniffi::export]
 pub async fn load_login_env() -> Result<Option<String>, AppError> {
-    let (env, warning) = on_runtime(cox_session::env::login_env(LOGIN_TIMEOUT)).await?;
-    for (key, value) in env {
-        // SAFETY: the one hazard is another thread reading the environment
-        // meanwhile. This runs once at launch, before any session exists,
-        // so cox's own threads are idle; Rust's env reads share std's lock.
-        unsafe { std::env::set_var(key, value) };
-    }
-    Ok(warning.map(|w| w.to_string()))
-}
-
-/// What the app and its sessions share.
-pub(crate) struct Shared {
-    pub home: PathBuf,
-    pub host: Arc<dyn AppHost>,
-    inbox: Mutex<Inbox>,
-}
-
-impl Shared {
-    fn inbox(&self) -> MutexGuard<'_, Inbox> {
-        self.inbox.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// Folds `event` into the inbox and tells the host about each new item,
-    /// outside the lock so Swift may read the inbox back.
-    pub fn apply(&self, session: SessionId, event: &Event) {
-        let (fresh, badge) = {
-            let mut inbox = self.inbox();
-            let last = inbox.items().iter().map(|i| i.seq).max();
-            inbox.apply(session, event);
-            let fresh: Vec<InboxItem> = inbox
-                .items()
-                .into_iter()
-                .filter(|i| last.is_none_or(|last| i.seq > last))
-                .cloned()
-                .collect();
-            (fresh, count(inbox.badge()))
-        };
-        for item in fresh {
-            self.host.notify(item, badge);
-        }
-    }
-
-    pub fn expire(&self, session: SessionId) {
-        self.inbox().expire(session);
-    }
-}
-
-fn count(n: usize) -> u32 {
-    u32::try_from(n).unwrap_or(u32::MAX)
+    on_runtime(cox_app::app::load_login_env()).await
 }
 
 /// One sidebar project (`cox_app::ProjectRow`, its count as `u64`).
@@ -180,8 +118,7 @@ pub struct OpenRequest {
 /// One per process: the workspace, the inbox across sessions, the host.
 #[derive(uniffi::Object)]
 pub struct App {
-    shared: Arc<Shared>,
-    workspace: Arc<Workspace>,
+    owner: Arc<Owner>,
 }
 
 #[uniffi::export]
@@ -189,21 +126,12 @@ impl App {
     /// `home` is `COX_HOME`; `None` means `~/.cox`.
     #[uniffi::constructor]
     pub fn new(home: Option<String>, host: Arc<dyn AppHost>) -> Result<Arc<Self>, AppError> {
-        let home = home.map_or_else(cox_config::load::cox_home, PathBuf::from);
-        let workspace = Workspace::open(&home, Arc::new(cox_tools::git::GitWorktrees))?;
-        let shared = Shared {
-            home,
-            host,
-            inbox: Mutex::default(),
-        };
-        Ok(Arc::new(Self {
-            shared: Arc::new(shared),
-            workspace: Arc::new(workspace),
-        }))
+        let owner = Owner::new(home.map(PathBuf::from), Arc::new(host::Bridge(host)))?;
+        Ok(Arc::new(Self { owner }))
     }
 
     pub fn projects(&self, limit: u32) -> Result<Vec<Project>, AppError> {
-        let rows = self.workspace.projects(i64::from(limit))?;
+        let rows = self.owner.workspace().projects(i64::from(limit))?;
         Ok(rows
             .into_iter()
             .map(|row| Project {
@@ -218,46 +146,44 @@ impl App {
 
     pub fn sessions(&self, project: String, limit: u32) -> Result<Vec<SessionEntry>, AppError> {
         let project = PathBuf::from(project);
-        Ok(self.workspace.sessions(&project, i64::from(limit))?)
+        Ok(self
+            .owner
+            .workspace()
+            .sessions(&project, i64::from(limit))?)
     }
 
     pub fn search(&self, query: String, limit: u32) -> Result<Vec<SearchHit>, AppError> {
-        Ok(self.workspace.search(&query, i64::from(limit))?)
+        Ok(self.owner.workspace().search(&query, i64::from(limit))?)
     }
 
     pub async fn worktrees(&self, project: String) -> Result<Vec<WorktreeInfo>, AppError> {
-        let workspace = Arc::clone(&self.workspace);
-        let listed = on_runtime(async move { workspace.worktrees(&PathBuf::from(project)).await });
-        Ok(listed.await??)
+        let owner = Arc::clone(&self.owner);
+        let project = PathBuf::from(project);
+        Ok(on_runtime(async move { owner.workspace().worktrees(&project).await }).await??)
     }
 
     /// Most urgent first, oldest first within a rank.
     pub fn inbox(&self) -> Vec<InboxItem> {
-        self.shared.inbox().items().into_iter().cloned().collect()
+        self.owner.inbox()
     }
 
     /// The Dock badge.
     pub fn badge(&self) -> u32 {
-        count(self.shared.inbox().badge())
+        self.owner.badge()
     }
 
     pub fn activity(&self, session: SessionId) -> Activity {
-        self.shared.inbox().activity(session)
+        self.owner.activity(session)
     }
 
     pub fn dismiss(&self, session: SessionId, seq: u64) {
-        self.shared.inbox().dismiss(session, seq);
+        self.owner.dismiss(session, seq);
     }
 
     pub async fn open(&self, request: OpenRequest) -> Result<Arc<SessionHandle>, AppError> {
-        let shared = Arc::clone(&self.shared);
-        on_runtime(async move {
-            let resume = match request.resume {
-                Some(id) => Some((id, cox_session::resume(&shared.home, id)?)),
-                None => None,
-            };
-            session::open(shared, PathBuf::from(request.cwd), resume, request.theme).await
-        })
-        .await?
+        let owner = Arc::clone(&self.owner);
+        let OpenRequest { cwd, resume, theme } = request;
+        let live = on_runtime(async move { owner.open(cwd.into(), resume, theme).await });
+        Ok(SessionHandle::new(live.await??))
     }
 }
