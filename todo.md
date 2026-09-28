@@ -34,7 +34,11 @@
 - T37.24.9. Caret-aware completion and the failure notice
 - T37.27. Approvals, questions, inbox, notifications with actions, Dock badge
 - T37.28. Review pane and rewind timeline
-- T37.29. Inspector tabs: Changes, Plan, Context & Cost, Tasks, Info
+- T37.29.1. `changes()` from cox-app for the Changes tab
+- T37.29.2. Inspector Plan tab
+- T37.29.3. Inspector Context & Cost tab
+- T37.29.4. Inspector Tasks tab
+- T37.29.5. Inspector Info tab
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.17.2. `letterSpacing` in em, mockups on `tokens.css`

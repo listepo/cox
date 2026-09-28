@@ -4576,3 +4576,26 @@ Check:
 - CoxTranscript: 11 tests in 5 suites. Streaming busy 16.1%, max 5.18 ms; scroll hitch 0.00% at load 25.8.
 - swiftlint and swift-format are clean.
 Not done: app wiring waits for T37.22.3.
+
+#### T37.29 Inspector tabs: Changes, Plan, Context & Cost, Tasks, Info
+
+Depends: T37.23, T37.21.9 · Size: split at claim · Files: `…/Organisms/Inspector.swift`, `…/Molecules/ChangedFileRow.swift`, `…/Molecules/CheckpointRow.swift`
+Goal: DT§5 inspector built from DS§6 rows.
+Check: snapshot per tab.
+Status: done 2026-09-28
+Result: first slice — the tab structure and the Changes tab.
+- `Inspector` puts every tab's content in one scrolling body.
+- `Organisms/ChangesTab.swift`, `ChangesTab(state:send:)`:
+  - Three sections: changed files under "Review ⌘⇧R", checkpoints, and worktree facts.
+  - Intents: `review`, `open(path)`, `revert(path)`, `rewind(checkpoint)`.
+  - An empty state.
+- `InspectorSection` is the section block the other tabs reuse. `CheckpointRow.Checkpoint` gains an `id`.
+- Fixtures are in `PreviewState+Inspector.swift`. DS§6.4 has a `ChangesTab` row.
+Deviations:
+- The tab takes plain fixture values; the cox-app call that feeds it is T37.29.1.
+- ⌘⇧R is shown but not bound; the menu owns it (T37.22.3).
+Check:
+- CoxUI: 121 tests, twice; the 5 new snapshots were recorded, and existing ones (`inspectorFrame`, `MainScreen`) are unchanged.
+- swiftlint and swift-format are clean.
+- After merging into `p37-desktop`, `swift build --build-tests` for CoxUI succeeds.
+Not done: the other tabs and the data calls are T37.29.1–T37.29.5.

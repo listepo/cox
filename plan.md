@@ -40,7 +40,11 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.24.9 | todo | P3 | 2 | 0% | |
 | T37.27 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.28 | todo | P1 | 4 | 0% | |
-| T37.29 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.29.1 | todo | P1 | 3 | 0% | |
+| T37.29.2 | todo | P2 | 3 | 0% | |
+| T37.29.3 | todo | P2 | 4 | 0% | |
+| T37.29.4 | todo | P2 | 3 | 0% | |
+| T37.29.5 | todo | P3 | 2 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.17.2 | todo | P3 | 1 | 0% | |
@@ -2831,11 +2835,35 @@ Depends: T37.23, T37.21.9 · Size: split at claim · Files: `…/Organisms/Revie
 Goal: DT§5 review of the session's changes and rewind to a checkpoint (code, conversation or both).
 Check: fixture rewind restores the expected files in a scratch worktree.
 
-#### T37.29 Inspector tabs: Changes, Plan, Context & Cost, Tasks, Info
+#### T37.29.1 `changes()` from cox-app for the Changes tab
 
-Depends: T37.23, T37.21.9 · Size: split at claim · Files: `…/Organisms/Inspector.swift`, `…/Molecules/ChangedFileRow.swift`, `…/Molecules/CheckpointRow.swift`
-Goal: DT§5 inspector built from DS§6 rows.
-Check: snapshot per tab.
+Depends: — · Size: ~150 · Files: `crates/cox-app/…`, `crates/cox-ffi/src/session.rs`, `desktop/macos/Packages/CoxModel/…`
+Goal: `SessionHandle::changes()` returns what `ChangesTab` shows: files with change kind, added/removed lines and the call that changed them; checkpoints with id, label and time; the worktree's branch and base commit. The FFI side is a one-expression forward (A90); CoxModel maps it to `ChangesTab`'s state.
+Check: a cox-app test over a scripted session with two edits and a checkpoint; a CoxModel test that the mapping fills the tab.
+
+#### T37.29.2 Inspector Plan tab
+
+Depends: — · Size: ~120 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/PlanTab.swift`, `crates/cox-app/…`
+Goal: the live todo list with statuses (DT§5), from the structured todo result (T37.3) through a cox-app view; a DS§6 row.
+Check: a snapshot per cell; a cox-app test that the latest todo result is the view.
+
+#### T37.29.3 Inspector Context & Cost tab
+
+Depends: — · Size: split at claim · Files: `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`, `crates/cox-app/…`
+Goal: the context window as a StackedBar by part, cache-hit %, Compact now, per-turn cost as a KeyValueGrid, session and project totals and the budget cap; the missing cox-app calls (context breakdown, per-turn history, project totals, budget) come with it.
+Check: a snapshot per cell; cox-app tests for each new call.
+
+#### T37.29.4 Inspector Tasks tab
+
+Depends: — · Size: ~120 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/TasksTab.swift`, `desktop/macos/Packages/CoxModel/…`
+Goal: subagent and background-call rows with label, tier, state and cost, fed from `BlockKind.task`; a click opens the child transcript (a session-open-by-task call in cox-app if one is missing).
+Check: a snapshot per cell; a test that a click sends the open intent with the child id.
+
+#### T37.29.5 Inspector Info tab
+
+Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/InfoTab.swift`, `crates/cox-app/…`, `crates/cox-ffi/src/session.rs`
+Goal: session id, cwd, worktree, config provenance and rollout path as a KeyValueGrid, from a new `SessionHandle::info()` forward.
+Check: a snapshot per cell; a cox-app test for `info()`.
 
 #### T37.32 Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 
