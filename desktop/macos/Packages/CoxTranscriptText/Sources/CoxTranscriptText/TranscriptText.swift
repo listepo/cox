@@ -14,6 +14,8 @@ import CoxClient
 public struct TranscriptStyle: Equatable {
   public var body: NSFont
   public var code: NSFont
+  /// A reply heading's, at every level: DS§3.2 has one heading token.
+  public var heading: NSFont
   /// The `.text` token's colour, and any token `colors` leaves out.
   public var text: NSColor
   /// Each Rust style token's colour (`StyleToken`, T37.7).
@@ -25,15 +27,20 @@ public struct TranscriptStyle: Equatable {
   /// A user prompt's bubble and a thought's look (`TranscriptDecor.swift`).
   public var bubble: Bubble
   public var thought: Thought
+  /// A list's indent, and the gap between a table's columns (`TranscriptStructure.swift`).
+  public var indent: CGFloat
 
   public init(
-    body: NSFont, code: NSFont, text: NSColor, colors: [StyleToken: NSColor] = [:],
-    blockSpacing: CGFloat, inset: NSSize, bubble: Bubble = .system, thought: Thought = .system
+    body: NSFont, code: NSFont, heading: NSFont? = nil, text: NSColor,
+    colors: [StyleToken: NSColor] = [:], blockSpacing: CGFloat, inset: NSSize,
+    bubble: Bubble = .system, thought: Thought = .system, indent: CGFloat = 0
   ) {
     (self.body, self.code, self.text, self.colors) = (body, code, text, colors)
+    self.heading = heading ?? NSFontManager.shared.convert(body, toHaveTrait: .boldFontMask)
     (self.blockSpacing, self.inset, self.bubble, self.thought) = (
       blockSpacing, inset, bubble, thought
     )
+    self.indent = indent
   }
 
   public static var system: TranscriptStyle {
@@ -72,6 +79,9 @@ struct TextLook {
   /// A prompt's and a thought's look, one `Decor` each (`TranscriptDecor.swift`).
   let prompt: [NSAttributedString.Key: Any]
   let thought: [NSAttributedString.Key: Any]
+  /// A reply's paragraph styles and its rule (`TranscriptStructure.swift`).
+  let paragraphs: Paragraphs
+  let rule: Look
   private let fonts: [NSFont]
   private let colors: [StyleToken: NSColor]
 
@@ -91,10 +101,15 @@ struct TextLook {
     let spacing = NSMutableParagraphStyle()
     spacing.paragraphSpacing = style.blockSpacing
     self.spacing = spacing
-    fonts = [style.body, style.code].flatMap { font in
+    // A heading is bold by its token's weight, so a bold span in it keeps that weight.
+    let faces = [(style.body, false), (style.code, false), (style.heading, true)]
+    fonts = faces.flatMap { font, heading in
       [[], [.bold], [.italic], [.bold, .italic]].map { (traits: NSFontDescriptor.SymbolicTraits) in
-        NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(traits), size: font.pointSize)
-          ?? font
+        let traits = heading ? traits.subtracting(.bold) : traits
+        return traits.isEmpty
+          ? font
+          : NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(traits), size: font.pointSize)
+            ?? font
       }
     }
     // One colour object per token, so equal runs merge (`Look.same`).
@@ -106,17 +121,22 @@ struct TextLook {
       .font: style.thought.font, .foregroundColor: style.thought.color,
       .transcriptDecor: Decor(.thought, style),
     ]
+    paragraphs = Paragraphs(style)
+    rule = Look(
+      font: style.body, color: style.text, extra: [.attachment: RuleAttachment(style.thought)])
   }
 
   func plain(_ token: StyleToken, code: Bool) -> Look {
     Look(font: code ? fonts[4] : fonts[0], color: colors[token] ?? style.text)
   }
 
+  enum Face: Int { case body, code, heading }
+
   /// A span's own look; its `rgb` is left to the token, so every colour
   /// comes from the style.
-  func look(_ span: Span, code: Bool) -> Look {
+  func look(_ span: Span, _ face: Face) -> Look {
     var look = Look(
-      font: fonts[(code ? 4 : 0) + (span.bold ? 1 : 0) + (span.italic ? 2 : 0)],
+      font: fonts[face.rawValue * 4 + (span.bold ? 1 : 0) + (span.italic ? 2 : 0)],
       color: colors[span.token] ?? style.text)
     if span.strike { look.extra[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
     if span.underline { look.extra[.underlineStyle] = NSUnderlineStyle.single.rawValue }
@@ -230,30 +250,55 @@ enum TranscriptText {
   static func doc(_ blocks: [DocBlock], _ look: TextLook, continuing: Bool) -> Doc {
     var out = Runs()
     var starts: [Int] = []
+    var paragraphs: [(NSRange, Paragraph)] = []
     for block in blocks {
       starts.append(out.length)
       let code = if case .code = block { true } else { false }
       if continuing || out.length > 0, hasText(block) {
         out.add(separator, look.plain(.text, code: code))
       }
-      styled(block, look, into: &out)
+      styled(block, look, into: &out, &paragraphs)
     }
-    return (out.make(), starts)
+    let text = out.make()
+    for (range, paragraph) in paragraphs {
+      text.addAttribute(.transcriptParagraph, value: paragraph, range: range)
+    }
+    return (text, starts)
   }
 
-  /// One doc block from its spans: the same characters as `run`.
-  static func styled(_ block: DocBlock, _ look: TextLook, into out: inout Runs) {
-    func lines(_ lines: [[Span]], code: Bool) {
+  /// One doc block from its spans: the same characters as `run`. Each line
+  /// with a paragraph style of its own notes it in `paragraphs`, over the line
+  /// and the separator that ends it, so the paragraph's first character has it.
+  static func styled(
+    _ block: DocBlock, _ look: TextLook, into out: inout Runs,
+    _ paragraphs: inout [(NSRange, Paragraph)]
+  ) {
+    func lines(_ lines: [[Span]], _ face: TextLook.Face, _ kind: TextKind?) {
+      var open: (start: Int, paragraph: Paragraph?)?
       for (index, line) in lines.enumerated() {
-        if index > 0 { out.add(separator, look.plain(.text, code: code)) }
-        for span in line { out.add(span.text, look.look(span, code: code)) }
+        if index > 0 { out.add(separator, look.plain(.text, code: face == .code)) }
+        if case (let start, let paragraph?)? = open {
+          paragraphs.append((NSRange(start..<out.length), paragraph))
+        }
+        open = (out.length, kind.flatMap { look.paragraphs.of($0, line, look) })
+        for span in line { out.add(span.text, look.look(span, face)) }
+      }
+      if case (let start, let paragraph?)? = open, out.length > start {
+        paragraphs.append((NSRange(start..<out.length), paragraph))
       }
     }
     switch block {
-    case .text(_, let spans): lines(spans, code: false)
-    case .code(_, let spans): lines(spans, code: true)
-    case .table, .rule:
-      if let run = run(block) { out.add(run.text, look.plain(.text, code: run.code)) }
+    case .text(let kind, let spans):
+      let heading = if case .heading = kind { true } else { false }
+      lines(spans, heading ? .heading : .body, kind)
+    case .code(_, let spans): lines(spans, .code, nil)
+    case .table(let rows):
+      let start = out.length
+      out.add(run(block).text, look.plain(.text, code: false))
+      if out.length > start {
+        paragraphs.append((NSRange(start..<out.length), look.paragraphs.table(rows)))
+      }
+    case .rule: out.add(run(block).text, look.rule)
     }
   }
 
@@ -261,7 +306,7 @@ enum TranscriptText {
     switch block {
     case .text(_, let lines), .code(_, let lines):
       lines.count > 1 || lines.first?.contains { !$0.text.isEmpty } == true
-    case .table, .rule: !(run(block)?.text.isEmpty ?? true)
+    case .table, .rule: !run(block).text.isEmpty
     }
   }
 
@@ -282,6 +327,10 @@ enum TranscriptText {
       for: NSRange(location: min(max(from, block.location), end), length: 0)
     ).location
     let spaced = NSRange(first..<NSMaxRange(last))
+    var plain = NSRange()
+    let own = text.attribute(
+      .transcriptParagraph, at: first, longestEffectiveRange: &plain, in: spaced)
+    if own != nil || plain != spaced { return restyle(text, spaced, last: last.location, look) }
     text.enumerateAttribute(.paragraphStyle, in: spaced) { value, range, _ in
       let inLast = NSIntersectionRange(range, last)
       let before = NSRange(range.location..<max(range.location, last.location))
@@ -313,8 +362,8 @@ enum TranscriptText {
     }
   }
 
-  /// A doc block's plain text, as `styled` draws it; `nil` for a rule.
-  static func run(_ block: DocBlock) -> (text: String, code: Bool)? {
+  /// A doc block's plain text, as `styled` draws it: a rule is its attachment's character.
+  static func run(_ block: DocBlock) -> (text: String, code: Bool) {
     func joined(_ lines: [[Span]]) -> String {
       lines.map { $0.map(\.text).joined() }.joined(separator: separator)
     }
@@ -323,7 +372,7 @@ enum TranscriptText {
     case .code(_, let lines): return (joined(lines), true)
     case .table(let rows):
       return (rows.map { $0.joined(separator: "\t") }.joined(separator: separator), false)
-    case .rule: return nil
+    case .rule: return (RuleAttachment.mark, false)
     }
   }
 }

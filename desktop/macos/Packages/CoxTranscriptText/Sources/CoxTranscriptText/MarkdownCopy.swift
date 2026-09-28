@@ -77,11 +77,13 @@ enum MarkdownCopy {
 
   /// A prompt's or a thought's text as the reader sees it: without the tiles'
   /// and the fold header's attachment characters (T37.23.4) or the line breaks
-  /// around them. Any other block's text as it is.
+  /// around them; a reply's without its rules' (T37.23.8). Any other block's
+  /// text as it is.
   static func shown(_ text: String, of kind: BlockKind?) -> String {
     switch kind {
     case .user?, .thinking?:
       text.replacing("\u{FFFC}", with: "").trimmingCharacters(in: .newlines)
+    case .assistant?: text.replacing(RuleAttachment.mark, with: "")
     default: text
     }
   }
@@ -107,7 +109,8 @@ enum MarkdownCopy {
     var out: [String] = []
     var location = start
     for block in doc.blocks {
-      guard let run = TranscriptText.run(block), !run.text.isEmpty else { continue }
+      let run = TranscriptText.run(block)
+      guard !run.text.isEmpty else { continue }
       let range = NSRange(location: location, length: (run.text as NSString).length)
       location = NSMaxRange(range) + (TranscriptText.separator as NSString).length
       let cut = NSIntersectionRange(range, part)
