@@ -1,8 +1,9 @@
 //! The host drivers behind `ExternalAgent` (T35.13, EA§4–§5): one per
 //! granted `[[external_agents]]` entry, each spawning T35.2's sandboxed
-//! `Command` for a turn. Here, in `crates/cox`, because a driver joins three
-//! crates that may not see each other: the stream-json mapper is in
-//! `cox-core`, the ACP client in `cox-acp`, the spawn spec in `cox-plugin`.
+//! `Command` for a turn. Here, in session assembly (T37.1; `crates/cox`
+//! before), because a driver joins three crates that may not see each
+//! other: the stream-json mapper is in `cox-core`, the ACP client in
+//! `cox-acp`, the spawn spec in `cox-plugin`.
 //!
 //! What stays out of a driver: the CLI's own tool calls are not judged per
 //! call by `cox_permission::Engine` or `PreToolUse` hooks (EA§2) — the
@@ -70,7 +71,7 @@ pub(crate) fn drivers(
             return (out, left_out);
         }
     };
-    let policy = crate::session::sandbox_policy(config);
+    let policy = crate::sandbox::sandbox_policy(config);
     let acp = Arc::new(AcpHost {
         roots: writable.to_vec(),
         cwd: cwd.to_path_buf(),
@@ -406,7 +407,7 @@ mod tests {
         let mut config = Config::default();
         config.core.workspace_roots = vec![ws.to_path_buf()];
         let roots = config.core.workspace_roots.clone();
-        let wrap = |p: &Path, a: &[String]| crate::session::sandboxed_argv(p, a, &config, &roots);
+        let wrap = |p: &Path, a: &[String]| crate::sandbox::sandboxed_argv(p, a, &config, &roots);
         let agent = ExternalAgentCommand::resolve("cur", pkg, &decl, wrap).ok()?;
         Some((agent, config))
     }

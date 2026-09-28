@@ -52,6 +52,7 @@ COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- doctor   # never against you
 | `crates/cox-ext` | instruction files (`AGENTS.md`/`CLAUDE.md` hierarchy), skills (`SKILL.md`), slash commands, subagent definitions, hook config |
 | `crates/cox-tui` | ratatui app in TEA form (`State`, `update`, `view`); all terminal output |
 | `crates/cox-acp` | Agent Client Protocol adapter over the same `Event` stream |
+| `crates/cox-session` | session assembly (T37.1, DT§4.2): `open(SessionSpec) -> Opened` turns an effective `Config` into a `Session` with its provider, tools, MCP servers, skills, subagent definitions, hooks, plugins, checkpointer and worktrees; also `fork`/`handoff`/`resume`, the sandbox argv wrap and the plugin grant check. No `clap`, no `anyhow`, no printing: errors are `SessionError`, skipped extensions come back as `Warning`s (`deps.rs` `session_has_no_cli_or_terminal`). Moved out of `crates/cox/src/session.rs`, which keeps the flag layer, the TUI loop and the printing and re-exports the old `session::` paths |
 | `tests/` | end-to-end runs of the real binary against `COX_HOME` scratch trees and a scripted provider |
 
 The rule that keeps crates honest: anything that talks to the network, the filesystem or a process lives behind a trait in `cox-protocol` and is implemented in `cox-provider`, `cox-tools`, `cox-mcp` or `cox-store`. If `cox-core` is about to open a socket or a file, you are in the wrong crate.

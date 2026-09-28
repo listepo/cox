@@ -11,8 +11,6 @@ mod config_load;
 mod doctor;
 mod expand_cmd;
 mod ext_cmd;
-#[cfg(feature = "plugins")]
-mod external_agents;
 mod mcp_cmd;
 mod plain;
 #[cfg(feature = "plugins")]
