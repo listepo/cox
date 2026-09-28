@@ -25,9 +25,9 @@ private let blocks: [Block] = [
   reply(
     "a",
     [
-      .text(kind: .heading(2), lines: [line("The fix")]),
-      .text(kind: .paragraph, lines: [line("The test raced the watcher; it now waits.")]),
-      .text(kind: .list, lines: [line("• wait for the first event"), line("• drop the sleep")]),
+      .text(kind: .heading(2), lines: [TextLine(line("The fix"))]),
+      .text(kind: .paragraph, lines: [TextLine(line("The test raced the watcher; it now waits."))]),
+      .text(kind: .list, lines: [TextLine(line("• wait for the first event")), TextLine(line("• drop the sleep"))]),
       .code(lang: "rust", lines: [line("let event = rx.recv().await?;")]),
     ]),
 ]
@@ -72,7 +72,7 @@ struct TranscriptTextSizeTests {
   @Test func aReaderAtTheBottomStaysThere() throws {
     let sentence = "The watcher test sleeps instead of waiting for the first event. "
     let earlier = (0..<12).map {
-      reply("b\($0)", [.text(kind: .paragraph, lines: [line(sentence)])])
+      reply("b\($0)", [.text(kind: .paragraph, lines: [TextLine(line(sentence))])])
     }
     let host = Host(earlier + blocks, size: size)
     defer { host.close() }

@@ -60,7 +60,7 @@ private func tool(_ id: BlockID, tail: String) -> Block {
 }
 
 private func paragraph(_ text: String) -> DocBlock {
-  .text(kind: .paragraph, lines: [[Span(text: text)]])
+  .text(kind: .paragraph, lines: [TextLine([Span(text: text)])])
 }
 
 @MainActor
@@ -116,10 +116,10 @@ private func paragraph(_ text: String) -> DocBlock {
   let store = SessionStore(session: FixtureSession(fixture: Fixture(batches: [], snapshot: [])))
   var bold = Span(text: "bold")
   bold.bold = true
-  let heading = DocBlock.text(kind: .heading(1), lines: [[Span(text: "Title")]])
-  let firstPara = DocBlock.text(kind: .paragraph, lines: [[Span(text: "first para")]])
+  let heading = DocBlock.text(kind: .heading(1), lines: [TextLine([Span(text: "Title")])])
+  let firstPara = DocBlock.text(kind: .paragraph, lines: [TextLine([Span(text: "first para")])])
   let fullPara = DocBlock.text(
-    kind: .paragraph, lines: [[Span(text: "first paragraph, "), bold]])
+    kind: .paragraph, lines: [TextLine([Span(text: "first paragraph, "), bold])])
   let code = DocBlock.code(lang: "swift", lines: [[Span(text: "let x = 1")]])
   let stream: [(TimelinePatch, String)] = [
     (.docTail(id: "m", from: 1, blocks: [firstPara]), "# Title\n\nfirst para"),

@@ -24,7 +24,7 @@ private let approveWrite = URL(filePath: #filePath)
   .appending(path: "Fixtures/approve-write.json")
 
 /// The call the fixture's write waits on.
-private let writeCall = "01M3KMRBATVYREMTC23NY1VBZR"
+private let writeCall = "01M3KQYX68XR1HVZJTMS7E29S8"
 
 @Test func onlyAWaitingApprovalOrQuestionPinsABar() {
   func approval(_ tool: String, decision: Decision? = nil) -> Block {

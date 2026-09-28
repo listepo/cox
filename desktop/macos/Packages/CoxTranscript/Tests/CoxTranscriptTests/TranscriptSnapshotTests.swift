@@ -12,13 +12,13 @@ import Testing
 private func line(_ text: String) -> [Span] { [Span(text: text)] }
 
 private let reply = StyledDoc(blocks: [
-  .text(kind: .heading(2), lines: [line("The fix")]),
-  .text(kind: .paragraph, lines: [line("The test raced the watcher; it now waits for the event.")]),
-  .text(kind: .list, lines: [line("wait for the first event"), line("drop the sleep")]),
+  .text(kind: .heading(2), lines: [TextLine(line("The fix"))]),
+  .text(kind: .paragraph, lines: [TextLine(line("The test raced the watcher; it now waits for the event."))]),
+  .text(kind: .list, lines: [TextLine(line("wait for the first event")), TextLine(line("drop the sleep"))]),
   .code(
     lang: "rust",
     lines: [line("let event = rx.recv().await?;"), line("assert_eq!(event.kind, Kind::Write);")]),
-  .text(kind: .quote, lines: [line("Flaky no more.")]),
+  .text(kind: .quote, lines: [TextLine(line("Flaky no more."))]),
 ])
 
 private let everyKind: [Block] = [

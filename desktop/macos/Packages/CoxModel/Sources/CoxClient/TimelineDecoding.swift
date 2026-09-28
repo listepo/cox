@@ -172,6 +172,16 @@ extension TextKind: Decodable {
   }
 }
 
+extension TextLine: Decodable {
+  /// serde omits `quote`, `depth` and `marker` at their defaults.
+  public init(from decoder: any Decoder) throws {
+    let keys = try decoder.fields()
+    try self.init(
+      keys("spans"), quote: keys.optional("quote") ?? 0, depth: keys.optional("depth") ?? 0,
+      marker: keys.optional("marker") ?? "")
+  }
+}
+
 extension Span: Decodable {
   /// serde omits every field left at its default; `rgb` is `[r, g, b]`.
   public init(from decoder: any Decoder) throws {

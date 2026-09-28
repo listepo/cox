@@ -89,7 +89,7 @@ func everyFixtureBlockMapsToItsRangeAndBack(url: URL) throws {
 @Test func codeLinesTakeTheCodeFont() throws {
   let style = TranscriptStyle.system
   let doc = StyledDoc(blocks: [
-    .text(kind: .paragraph, lines: [[Span(text: "Run:")]]),
+    .text(kind: .paragraph, lines: [TextLine([Span(text: "Run:")])]),
     .code(lang: "sh", lines: [[Span(text: "cargo")], [Span(text: "test")]]),
   ])
   let view = TranscriptTextView.make(style: style)

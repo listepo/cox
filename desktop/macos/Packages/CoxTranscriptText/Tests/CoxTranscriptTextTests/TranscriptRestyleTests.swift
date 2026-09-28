@@ -24,9 +24,9 @@ private let blocks: [Block] = [
     kind: .assistant(
       text: "",
       doc: StyledDoc(blocks: [
-        .text(kind: .heading(2), lines: [[span("## ", bold: true), span("Fix", bold: true)]]),
-        .text(kind: .list, lines: [[span("• "), span("wait for the event")]]),
-        .text(kind: .quote, lines: [[span("│ "), span("no more sleeps")]]),
+        .text(kind: .heading(2), lines: [TextLine([span("Fix", bold: true)])]),
+        .text(kind: .list, lines: [TextLine([span("wait for the event")], marker: "•")]),
+        .text(kind: .quote, lines: [TextLine([span("no more sleeps")], quote: 1)]),
         .code(lang: "rust", lines: [[span("rx.recv().await?;")]]),
         .rule,
         .table(rows: [["test", "state"], ["watcher", "ok"]]),

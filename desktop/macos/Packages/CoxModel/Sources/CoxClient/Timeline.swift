@@ -217,7 +217,7 @@ public struct StyledDoc: Equatable, Sendable, Decodable {
 }
 
 public enum DocBlock: Equatable, Sendable {
-  case text(kind: TextKind, lines: [[Span]])
+  case text(kind: TextKind, lines: [TextLine])
   case code(lang: String, lines: [[Span]])
   case table(rows: [[String]])
   case rule
@@ -226,6 +226,19 @@ public enum DocBlock: Equatable, Sendable {
 public enum TextKind: Equatable, Sendable {
   case paragraph, list, quote
   case heading(UInt8)
+}
+
+/// One line of a text block: its spans, and apart from them its quote depth (a bar each)
+/// and a list item's depth and marker (`•`, `3.`), which the view draws itself (A92).
+public struct TextLine: Equatable, Sendable {
+  public var spans: [Span]
+  public var quote: UInt8
+  public var depth: UInt8
+  public var marker: String
+
+  public init(_ spans: [Span], quote: UInt8 = 0, depth: UInt8 = 0, marker: String = "") {
+    (self.spans, self.quote, self.depth, self.marker) = (spans, quote, depth, marker)
+  }
 }
 
 /// A run of text with one style; `rgb` is a theme colour as `0xRRGGBB`.

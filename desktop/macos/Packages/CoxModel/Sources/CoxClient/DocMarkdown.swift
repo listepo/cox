@@ -1,10 +1,11 @@
-// A reply's `StyledDoc` back as Markdown (T37.42, T37.42.1), its list
-// bullets, quote rails and heading `#` run — text in the doc — back as
-// Markdown's own (T37.23.8). A streamed `docTail` carries doc blocks, not
-// source, so this is the one rendering the session store keeps a streaming
-// reply's text with and Copy as Markdown uses for a reply without its
-// source. Its own file because both packages need it and neither owns the
-// other: `CoxModel` and `CoxTranscriptText` meet only in these value types.
+// A reply's `StyledDoc` back as Markdown (T37.42, T37.42.1): a heading's level,
+// a list item's marker and a quote's depth, which the doc carries apart from the
+// text (A92), become Markdown's own `#`, `-` or number and `>`. A streamed
+// `docTail` carries doc blocks, not source, so this is the one rendering the
+// session store keeps a streaming reply's text with and Copy as Markdown uses for
+// a reply without its source. Its own file because both packages need it and
+// neither owns the other: `CoxModel` and `CoxTranscriptText` meet only in these
+// value types.
 
 extension StyledDoc {
   /// Every block as Markdown, joined by a blank line.
@@ -18,20 +19,9 @@ extension DocBlock {
       lines.map { $0.map(span).joined() }.joined(separator: "\n")
     }
     switch self {
-    case .text(.heading(let level), var lines):
-      if let first = lines.first, Self.marker(first)?.allSatisfy({ "# ".contains($0) }) == true {
-        lines[0].removeFirst()
-      }
-      // Bold by its level, so its spans' bold marks would only double it.
-      return String(repeating: "#", count: Int(level)) + " "
-        + joined(lines) { span in
-          var plain = span
-          plain.bold = false
-          return plain.markdown
-        }
-    case .text(let kind, let lines) where kind == .list || kind == .quote:
-      return lines.map { Self.markdown($0, quote: kind == .quote) }.joined(separator: "\n")
-    case .text(_, let lines): return joined(lines, \.markdown)
+    case .text(let kind, let lines):
+      return lines.enumerated().map { Self.markdown($1, kind, first: $0 == 0) }
+        .joined(separator: "\n")
     case .code(let lang, let lines): return Self.fence(lang, joined(lines, \.text))
     case .table(let rows):
       guard let head = rows.first else { return nil }
@@ -42,33 +32,23 @@ extension DocBlock {
     }
   }
 
-  /// A line's leading marker as `cox-render` lays it out — a heading's `#` run,
-  /// a list item's depth indent and bullet or number, a quote's rails — which
-  /// the doc carries as text (T37.23.8); `nil` when the line starts with its
-  /// content. A marker is the line's own first span, ends in a space and holds
-  /// no letter.
-  public static func marker(_ line: some Collection<Span>) -> String? {
-    guard line.count > 1, let text = line.first?.text, text.hasSuffix(" "),
-      text.contains(where: { !$0.isWhitespace }), !text.contains(where: \.isLetter)
-    else { return nil }
-    return text
-  }
-
-  /// A list or quote line as Markdown: rails as `>`, a bullet as `-`, a number
-  /// as it is, each item's depth indent kept.
-  static func markdown(_ line: [Span], quote: Bool) -> String {
-    var rest = line[...]
-    var head = ""
-    if quote, let rails = marker(rest) {
-      head = String(repeating: "> ", count: rails.count { !$0.isWhitespace })
-      rest = rest.dropFirst()
+  /// A text line as Markdown: its quotes as `>`, then an item's depth indent and
+  /// its number or `-`, or a heading's `#` run on its first line; a list line
+  /// that goes on an item indented under it.
+  static func markdown(_ line: TextLine, _ kind: TextKind, first: Bool) -> String {
+    var head = String(repeating: "> ", count: Int(line.quote))
+    var spans = line.spans
+    if !line.marker.isEmpty {
+      let number = line.marker.first?.isNumber == true
+      head += String(repeating: "  ", count: Int(line.depth)) + (number ? line.marker : "-") + " "
+    } else if kind == .list {
+      head += String(repeating: "  ", count: Int(line.depth) + 1)
+    } else if case .heading(let level) = kind {
+      if first { head += String(repeating: "#", count: Int(level)) + " " }
+      // Bold by its level, so its spans' bold marks would only double it.
+      for index in spans.indices { spans[index].bold = false }
     }
-    if let item = marker(rest) {
-      let glyph = item.trimmingCharacters(in: .whitespaces)
-      head += String(item.prefix { $0 == " " }) + (glyph.hasSuffix(".") ? glyph : "-") + " "
-      rest = rest.dropFirst()
-    }
-    return head + rest.map(\.markdown).joined()
+    return head + spans.map(\.markdown).joined()
   }
 
   /// `body` fenced as `lang`, with a fence longer than any backtick run inside it.

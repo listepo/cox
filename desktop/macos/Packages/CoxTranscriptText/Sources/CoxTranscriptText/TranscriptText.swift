@@ -266,22 +266,24 @@ enum TranscriptText {
     return (text, starts)
   }
 
-  /// One doc block from its spans: the same characters as `run`. Each line
-  /// with a paragraph style of its own notes it in `paragraphs`, over the line
-  /// and the separator that ends it, so the paragraph's first character has it.
+  /// One doc block from its spans: the same characters as `run`, a list
+  /// item's marker in front of its line (`TextLine.lead`). Each line with a
+  /// paragraph style of its own notes it in `paragraphs`, over the line and the
+  /// separator that ends it, so the paragraph's first character has it.
   static func styled(
     _ block: DocBlock, _ look: TextLook, into out: inout Runs,
     _ paragraphs: inout [(NSRange, Paragraph)]
   ) {
-    func lines(_ lines: [[Span]], _ face: TextLook.Face, _ kind: TextKind?) {
+    func lines(_ lines: [TextLine], _ face: TextLook.Face, _ kind: TextKind?) {
       var open: (start: Int, paragraph: Paragraph?)?
       for (index, line) in lines.enumerated() {
         if index > 0 { out.add(separator, look.plain(.text, code: face == .code)) }
         if case (let start, let paragraph?)? = open {
           paragraphs.append((NSRange(start..<out.length), paragraph))
         }
-        open = (out.length, kind.flatMap { look.paragraphs.of($0, line, look) })
-        for span in line { out.add(span.text, look.look(span, face)) }
+        open = (out.length, kind.flatMap { look.paragraphs.of($0, line) })
+        out.add(line.lead, look.plain(.text, code: false))
+        for span in line.spans { out.add(span.text, look.look(span, face)) }
       }
       if case (let start, let paragraph?)? = open, out.length > start {
         paragraphs.append((NSRange(start..<out.length), paragraph))
@@ -291,7 +293,7 @@ enum TranscriptText {
     case .text(let kind, let spans):
       let heading = if case .heading = kind { true } else { false }
       lines(spans, heading ? .heading : .body, kind)
-    case .code(_, let spans): lines(spans, .code, nil)
+    case .code(_, let spans): lines(spans.map { TextLine($0) }, .code, nil)
     case .table(let rows):
       let start = out.length
       out.add(run(block).text, look.plain(.text, code: false))
@@ -303,9 +305,11 @@ enum TranscriptText {
   }
 
   static func hasText(_ block: DocBlock) -> Bool {
-    switch block {
-    case .text(_, let lines), .code(_, let lines):
-      lines.count > 1 || lines.first?.contains { !$0.text.isEmpty } == true
+    func shows(_ spans: [Span]) -> Bool { spans.contains { !$0.text.isEmpty } }
+    return switch block {
+    case .text(_, let lines):
+      lines.count > 1 || lines.first.map { !$0.lead.isEmpty || shows($0.spans) } == true
+    case .code(_, let lines): lines.count > 1 || lines.first.map(shows) == true
     case .table, .rule: !run(block).text.isEmpty
     }
   }
@@ -368,7 +372,8 @@ enum TranscriptText {
       lines.map { $0.map(\.text).joined() }.joined(separator: separator)
     }
     switch block {
-    case .text(_, let lines): return (joined(lines), false)
+    case .text(_, let lines):
+      return (lines.map { $0.lead + $0.spans.map(\.text).joined() }.joined(separator: separator), false)
     case .code(_, let lines): return (joined(lines), true)
     case .table(let rows):
       return (rows.map { $0.joined(separator: "\t") }.joined(separator: separator), false)

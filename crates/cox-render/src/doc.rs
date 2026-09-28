@@ -21,10 +21,12 @@ pub type StyledLine = Vec<StyledSpan>;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Block {
-    /// Prose, laid out: list markers and quote bars are runs of their own.
+    /// Prose. A heading's `#` run, a list item's marker and a quote's bars
+    /// are not in the text: each surface draws them from `kind` and the
+    /// line's own fields (A92).
     Text {
         kind: TextKind,
-        lines: Vec<StyledLine>,
+        lines: Vec<TextLine>,
     },
     /// A fenced or indented block, highlighted line by line.
     Code {
@@ -45,6 +47,27 @@ pub enum TextKind {
     Heading(u8),
     List,
     Quote,
+}
+
+/// One line of a `Block::Text`: its runs and where it sits. A terminal
+/// prints the bars and the marker in front of the runs; a GUI draws a bar
+/// per quote and hangs the marker in a gutter. A heading's level is its
+/// block's `TextKind::Heading`, drawn on the block's first line only.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TextLine {
+    /// How many quotes the line sits in: one bar each.
+    #[serde(skip_serializing_if = "is_default")]
+    pub quote: u8,
+    /// How deep in nested lists the line is, 0 for a top-level item and
+    /// outside any list.
+    #[serde(skip_serializing_if = "is_default")]
+    pub depth: u8,
+    /// A list item's bullet glyph or number (`3.`) on the item's first
+    /// line; empty on any other line.
+    #[serde(skip_serializing_if = "is_default")]
+    pub marker: String,
+    pub spans: StyledLine,
 }
 
 /// A run of text with one style.
@@ -91,6 +114,7 @@ impl StyledSpan {
 
 #[cfg(test)]
 mod tests {
+    use super::{Block, TextKind};
     use crate::glyph::UNICODE;
     use crate::markdown::{parse, theme_name};
 
@@ -111,12 +135,60 @@ mod tests {
             .blocks
             .iter()
             .flat_map(|b| match b {
-                super::Block::Text { lines, .. } => lines.concat(),
+                super::Block::Text { lines, .. } => {
+                    lines.iter().flat_map(|l| l.spans.clone()).collect()
+                }
                 _ => Vec::new(),
             })
             .filter_map(|s| s.link.map(|l| (s.text, l)))
             .collect();
         let url = "https://x.dev/a".to_string();
         assert_eq!(links, [(url.clone(), url)]);
+    }
+
+    /// Each text line as (kind, quote, depth, marker, its runs' text).
+    fn lines(markdown: &str) -> Vec<(TextKind, u8, u8, String, String)> {
+        let doc = parse(markdown, theme_name(true, ""), &UNICODE);
+        doc.blocks
+            .into_iter()
+            .flat_map(|b| match b {
+                Block::Text { kind, lines } => lines
+                    .into_iter()
+                    .map(|l| {
+                        let text = l.spans.iter().map(|s| s.text.as_str()).collect();
+                        (kind, l.quote, l.depth, l.marker, text)
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn headings_quotes_and_items_carry_level_and_marker_apart_from_their_text() {
+        let s = String::from;
+        assert_eq!(
+            lines("## Plan\n\n> outer\n>\n> > inner\n\n- one\n  - two\n\n3. three"),
+            [
+                (TextKind::Heading(2), 0, 0, s(""), s("Plan")),
+                (TextKind::Quote, 1, 0, s(""), s("outer")),
+                (TextKind::Quote, 2, 0, s(""), s("inner")),
+                (TextKind::List, 0, 0, s("•"), s("one")),
+                (TextKind::List, 0, 1, s("•"), s("two")),
+                (TextKind::List, 0, 0, s("3."), s("three")),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_list_in_a_quote_keeps_its_bars_and_the_quote_resumes_after_it() {
+        let s = String::from;
+        assert_eq!(
+            lines("> - item\n>\n> after"),
+            [
+                (TextKind::List, 1, 0, s("•"), s("item")),
+                (TextKind::Quote, 1, 0, s(""), s("after")),
+            ]
+        );
     }
 }

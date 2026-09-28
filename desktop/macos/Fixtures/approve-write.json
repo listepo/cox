@@ -4,7 +4,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KMRBAQ71BPQSZN5C16YDA9",
+          "id": "turn:01M3KQYX650EQM0XC7HPKMNXWX",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -30,7 +30,7 @@
             "estimated": false
           },
           "turn": {
-            "turn": "01M3KMRBAQ71BPQSZN5C16YDA9",
+            "turn": "01M3KQYX650EQM0XC7HPKMNXWX",
             "tally": {
               "sent": 0,
               "received": 0,
@@ -110,7 +110,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KMRBAQ47X2B0ST7BYCXJYC",
+          "id": "item:01M3KQYX651EY0HQK957TX0CXH",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -118,12 +118,12 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3KMRBAQ71BPQSZN5C16YDA9"
+        "after": "turn:01M3KQYX650EQM0XC7HPKMNXWX"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KMRBASSDZ13XQY371BA8VW",
+          "id": "item:01M3KQYX68VB67WNTRFM1HD87V",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -133,14 +133,14 @@
             }
           }
         },
-        "after": "item:01M3KMRBAQ47X2B0ST7BYCXJYC"
+        "after": "item:01M3KQYX651EY0HQK957TX0CXH"
       }
     ],
     [
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KMRBAQ71BPQSZN5C16YDA9",
+          "id": "turn:01M3KQYX650EQM0XC7HPKMNXWX",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -174,7 +174,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KMRBAQ71BPQSZN5C16YDA9",
+            "turn": "01M3KQYX650EQM0XC7HPKMNXWX",
             "tally": {
               "sent": 3710,
               "received": 16,
@@ -187,7 +187,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 96168.29451540195,
+            "tok_per_s": 43691.017126878716,
             "exact": true,
             "sparkline": [],
             "done": false
@@ -196,12 +196,12 @@
           "text": {
             "sent": "3.7k",
             "received": "16",
-            "rate": "96168",
-            "spoken": "3.7 thousand tokens sent, 16 received, 96168 tokens per second",
+            "rate": "43691",
+            "spoken": "3.7 thousand tokens sent, 16 received, 43691 tokens per second",
             "heading": "This turn · 1 request",
             "phase": "streaming",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 96168 tok/s · first token 0 ms · peak 96168 tok/s",
+            "rate_detail": "avg 43691 tok/s · first token 0 ms · peak 43691 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -254,7 +254,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KMRBASSDZ13XQY371BA8VW",
+          "id": "item:01M3KQYX68VB67WNTRFM1HD87V",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -265,23 +265,25 @@
                   "type": "text",
                   "kind": "paragraph",
                   "lines": [
-                    [
-                      {
-                        "text": "Writing the summary."
-                      }
-                    ]
+                    {
+                      "spans": [
+                        {
+                          "text": "Writing the summary."
+                        }
+                      ]
+                    }
                   ]
                 }
               ]
             }
           }
         },
-        "after": "item:01M3KMRBAQ47X2B0ST7BYCXJYC"
+        "after": "item:01M3KQYX651EY0HQK957TX0CXH"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3KMRBATVYREMTC23NY1VBZR",
+          "id": "call:01M3KQYX68XR1HVZJTMS7E29S8",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -296,16 +298,16 @@
             "duration_ms": 0
           }
         },
-        "after": "item:01M3KMRBASSDZ13XQY371BA8VW"
+        "after": "item:01M3KQYX68VB67WNTRFM1HD87V"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "approval:01M3KMRBATVYREMTC23NY1VBZR",
+          "id": "approval:01M3KQYX68XR1HVZJTMS7E29S8",
           "turn": 1,
           "kind": {
             "type": "approval",
-            "call": "01M3KMRBATVYREMTC23NY1VBZR",
+            "call": "01M3KQYX68XR1HVZJTMS7E29S8",
             "tool": "write",
             "summary": "summary.md",
             "why": {
@@ -313,24 +315,24 @@
               "risk": "write"
             },
             "source": {
-              "session": "01M3KMRB6GA22HDG35GF8DW23H"
+              "session": "01M3KQYX13XBPNK66MNB1DCTAV"
             },
             "decision": null,
             "by": null
           }
         },
-        "after": "call:01M3KMRBATVYREMTC23NY1VBZR"
+        "after": "call:01M3KQYX68XR1HVZJTMS7E29S8"
       }
     ],
     [
       {
         "op": "upsert",
         "block": {
-          "id": "approval:01M3KMRBATVYREMTC23NY1VBZR",
+          "id": "approval:01M3KQYX68XR1HVZJTMS7E29S8",
           "turn": 1,
           "kind": {
             "type": "approval",
-            "call": "01M3KMRBATVYREMTC23NY1VBZR",
+            "call": "01M3KQYX68XR1HVZJTMS7E29S8",
             "tool": "write",
             "summary": "summary.md",
             "why": {
@@ -338,7 +340,7 @@
               "risk": "write"
             },
             "source": {
-              "session": "01M3KMRB6GA22HDG35GF8DW23H"
+              "session": "01M3KQYX13XBPNK66MNB1DCTAV"
             },
             "decision": {
               "type": "allow"
@@ -346,7 +348,7 @@
             "by": "user"
           }
         },
-        "after": "call:01M3KMRBATVYREMTC23NY1VBZR"
+        "after": "call:01M3KQYX68XR1HVZJTMS7E29S8"
       },
       {
         "op": "upsert",
@@ -360,12 +362,12 @@
             ]
           }
         },
-        "after": "approval:01M3KMRBATVYREMTC23NY1VBZR"
+        "after": "approval:01M3KQYX68XR1HVZJTMS7E29S8"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3KMRBATVYREMTC23NY1VBZR",
+          "id": "call:01M3KQYX68XR1HVZJTMS7E29S8",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -376,53 +378,36 @@
             "state": "done",
             "tail": "wrote /project/summary.md (6 bytes)",
             "archive": {
-              "id": "01M3KMRBBEZV94FZZNZ1FKKXC5",
+              "id": "01M3KQYX6XPB9T25ZM0JD83JMA",
               "bytes": 102
             },
             "diff": null,
-            "duration_ms": 1
+            "duration_ms": 2
           }
         },
-        "after": "item:01M3KMRBASSDZ13XQY371BA8VW"
+        "after": "item:01M3KQYX68VB67WNTRFM1HD87V"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KMRBBFWJ7STKAKV2686FAK",
+          "id": "item:01M3KQYX6ZGMBJV5ZTA5ZSV4F4",
           "turn": 1,
           "kind": {
             "type": "assistant",
-            "text": "Wrote `summary.md`.",
+            "text": "",
             "doc": {
-              "blocks": [
-                {
-                  "type": "text",
-                  "kind": "paragraph",
-                  "lines": [
-                    [
-                      {
-                        "text": "Wrote "
-                      },
-                      {
-                        "text": "summary.md",
-                        "token": "accent"
-                      },
-                      {
-                        "text": "."
-                      }
-                    ]
-                  ]
-                }
-              ]
+              "blocks": []
             }
           }
         },
         "after": "checkpoint:12"
-      },
+      }
+    ],
+    [
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KMRBAQ71BPQSZN5C16YDA9",
+          "id": "turn:01M3KQYX650EQM0XC7HPKMNXWX",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -445,6 +430,42 @@
         "after": null
       },
       {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3KQYX6ZGMBJV5ZTA5ZSV4F4",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "Wrote `summary.md`.",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    {
+                      "spans": [
+                        {
+                          "text": "Wrote "
+                        },
+                        {
+                          "text": "summary.md",
+                          "token": "accent"
+                        },
+                        {
+                          "text": "."
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "checkpoint:12"
+      },
+      {
         "op": "usage",
         "usage": {
           "session": {
@@ -458,7 +479,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KMRBAQ71BPQSZN5C16YDA9",
+            "turn": "01M3KQYX650EQM0XC7HPKMNXWX",
             "tally": {
               "sent": 7465,
               "received": 21,
@@ -471,7 +492,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 234378.66216659636,
+            "tok_per_s": 164387.1646501841,
             "exact": true,
             "sparkline": [],
             "done": true
@@ -480,12 +501,12 @@
           "text": {
             "sent": "7.5k",
             "received": "21",
-            "rate": "234379",
-            "spoken": "7.5 thousand tokens sent, 21 received, 234379 tokens per second",
+            "rate": "164387",
+            "spoken": "7.5 thousand tokens sent, 21 received, 164387 tokens per second",
             "heading": "Last turn · 2 requests",
             "phase": "done",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 111876 tok/s · first token 0 ms · peak 234379 tok/s",
+            "rate_detail": "avg 52947 tok/s · first token 0 ms · peak 164387 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -541,14 +562,14 @@
     {
       "batch": 1,
       "item": {
-        "session": "01M3KMRB6GA22HDG35GF8DW23H",
+        "session": "01M3KQYX13XBPNK66MNB1DCTAV",
         "source": {
-          "session": "01M3KMRB6GA22HDG35GF8DW23H"
+          "session": "01M3KQYX13XBPNK66MNB1DCTAV"
         },
         "need": {
           "type": "approval",
           "call": {
-            "id": "01M3KMRBATVYREMTC23NY1VBZR",
+            "id": "01M3KQYX68XR1HVZJTMS7E29S8",
             "name": "write",
             "input": {
               "content": "hello\n",
@@ -570,7 +591,7 @@
   ],
   "snapshot": [
     {
-      "id": "turn:01M3KMRBAQ71BPQSZN5C16YDA9",
+      "id": "turn:01M3KQYX650EQM0XC7HPKMNXWX",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -591,7 +612,7 @@
       }
     },
     {
-      "id": "item:01M3KMRBAQ47X2B0ST7BYCXJYC",
+      "id": "item:01M3KQYX651EY0HQK957TX0CXH",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -600,7 +621,7 @@
       }
     },
     {
-      "id": "item:01M3KMRBASSDZ13XQY371BA8VW",
+      "id": "item:01M3KQYX68VB67WNTRFM1HD87V",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -611,11 +632,13 @@
               "type": "text",
               "kind": "paragraph",
               "lines": [
-                [
-                  {
-                    "text": "Writing the summary."
-                  }
-                ]
+                {
+                  "spans": [
+                    {
+                      "text": "Writing the summary."
+                    }
+                  ]
+                }
               ]
             }
           ]
@@ -623,7 +646,7 @@
       }
     },
     {
-      "id": "call:01M3KMRBATVYREMTC23NY1VBZR",
+      "id": "call:01M3KQYX68XR1HVZJTMS7E29S8",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -634,19 +657,19 @@
         "state": "done",
         "tail": "wrote /project/summary.md (6 bytes)",
         "archive": {
-          "id": "01M3KMRBBEZV94FZZNZ1FKKXC5",
+          "id": "01M3KQYX6XPB9T25ZM0JD83JMA",
           "bytes": 102
         },
         "diff": null,
-        "duration_ms": 1
+        "duration_ms": 2
       }
     },
     {
-      "id": "approval:01M3KMRBATVYREMTC23NY1VBZR",
+      "id": "approval:01M3KQYX68XR1HVZJTMS7E29S8",
       "turn": 1,
       "kind": {
         "type": "approval",
-        "call": "01M3KMRBATVYREMTC23NY1VBZR",
+        "call": "01M3KQYX68XR1HVZJTMS7E29S8",
         "tool": "write",
         "summary": "summary.md",
         "why": {
@@ -654,7 +677,7 @@
           "risk": "write"
         },
         "source": {
-          "session": "01M3KMRB6GA22HDG35GF8DW23H"
+          "session": "01M3KQYX13XBPNK66MNB1DCTAV"
         },
         "decision": {
           "type": "allow"
@@ -673,7 +696,7 @@
       }
     },
     {
-      "id": "item:01M3KMRBBFWJ7STKAKV2686FAK",
+      "id": "item:01M3KQYX6ZGMBJV5ZTA5ZSV4F4",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -684,18 +707,20 @@
               "type": "text",
               "kind": "paragraph",
               "lines": [
-                [
-                  {
-                    "text": "Wrote "
-                  },
-                  {
-                    "text": "summary.md",
-                    "token": "accent"
-                  },
-                  {
-                    "text": "."
-                  }
-                ]
+                {
+                  "spans": [
+                    {
+                      "text": "Wrote "
+                    },
+                    {
+                      "text": "summary.md",
+                      "token": "accent"
+                    },
+                    {
+                      "text": "."
+                    }
+                  ]
+                }
               ]
             }
           ]

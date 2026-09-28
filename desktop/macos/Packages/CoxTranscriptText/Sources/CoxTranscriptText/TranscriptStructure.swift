@@ -1,9 +1,10 @@
 // A reply's structure in the transcript text (T37.23.8, DT§5.2): headings, list
 // items, quote lines, tables and rules stay text in the one text (A87), set by
 // paragraph styles rather than drawn as flat paragraphs. `cox-render` sends a
-// list's bullets, a quote's rails and a heading's `#` run as text, and they stay
-// as it laid them out (DT-3): a wrapped line hangs past them. Its own file
-// because it is the one place a doc block's kind becomes layout.
+// heading's level, a quote's depth and a list item's marker apart from the text
+// (A92): a heading shows without its `#` run, a quote line sits past a bar per
+// quote (`QuoteFragment`), and an item's marker hangs in the gutter before its
+// text. Its own file because it is the one place a doc block's kind becomes layout.
 
 import AppKit
 import CoxClient
@@ -13,57 +14,97 @@ extension NSAttributedString.Key {
   static let transcriptParagraph = NSAttributedString.Key("cox.transcript.paragraph")
 }
 
-/// A doc line's own paragraph style, and the same with the block spacing for
-/// when it is its block's last paragraph (`TranscriptText.respace`).
+extension TextLine {
+  /// What the text holds in front of the line's spans: an item's marker between
+  /// two tabs, so it sits right-aligned in the gutter and the text starts past it.
+  var lead: String { marker.isEmpty ? "" : "\t\(marker)\t" }
+}
+
+/// A doc line's own paragraph style, the same with the block spacing for when it
+/// is its block's last paragraph (`TranscriptText.respace`), and its quote bars.
 final class Paragraph: NSObject {
+  /// A bar per quote, `step` apart from the text column's edge, in a thought's rule.
+  struct Rails {
+    let count: Int
+    let step: CGFloat
+    let width: CGFloat
+    let color: NSColor
+  }
+
   let own: NSParagraphStyle
   let last: NSParagraphStyle
+  let rails: Rails?
 
-  init(_ own: NSMutableParagraphStyle, spacing: CGFloat) {
+  init(_ own: NSMutableParagraphStyle, spacing: CGFloat, rails: Rails? = nil) {
     let last = own.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
     last.paragraphSpacing += spacing
-    (self.own, self.last) = (own, last)
+    (self.own, self.last, self.rails) = (own, last, rails)
   }
 }
 
-/// A style's doc paragraphs, each made once: a heading's, and a hanging
-/// line's per indent. A table's tab stops follow its cells, so each table
-/// makes its own.
+/// A style's doc paragraphs, each made once per shape of line. A table's tab
+/// stops follow its cells, so each table makes its own.
 final class Paragraphs {
+  private struct Shape: Hashable {
+    let heading: Bool
+    let quote: UInt8
+    /// A list line's depth; `nil` outside a list.
+    let depth: UInt8?
+    /// Whether the line starts an item, its marker first.
+    let marked: Bool
+  }
+
   private let style: TranscriptStyle
   private let heading: Paragraph
-  private var hangs: [SIMD2<Double>: Paragraph] = [:]
+  /// Between an item's marker and its text: a space of body text.
+  private let gap: CGFloat
+  private var made: [Shape: Paragraph] = [:]
 
   init(_ style: TranscriptStyle) {
     self.style = style
     let heading = NSMutableParagraphStyle()
     heading.paragraphSpacingBefore = style.blockSpacing
     self.heading = Paragraph(heading, spacing: style.blockSpacing)
+    gap = (" " as NSString).size(withAttributes: [.font: style.body]).width.rounded(.up)
   }
 
-  /// A text line's paragraph: a heading's, or a list item's or quote line's
-  /// hang past its marker, a list indented by the style's indent; `nil` for prose.
-  func of(_ kind: TextKind, _ line: [Span], _ look: TextLook) -> Paragraph? {
-    switch kind {
-    case .paragraph: return nil
-    case .heading: return heading
-    case .list, .quote:
-      let first = kind == .list ? style.indent : 0
-      let marker = DocBlock.marker(line).map { marker in
-        let font = line.first.map { look.look($0, .body).font } ?? style.body
-        return (marker as NSString).size(withAttributes: [.font: font]).width.rounded(.up)
+  /// A text line's paragraph: a heading's; a quote line's past its bars, a
+  /// thought's indent each; a list line's past its depth's indents, the list's
+  /// own indent the gutter its marker sits in. `nil` for prose.
+  func of(_ kind: TextKind, _ line: TextLine) -> Paragraph? {
+    let heading = if case .heading = kind { true } else { false }
+    let depth = kind == .list ? line.depth : nil
+    let marked = depth != nil && !line.marker.isEmpty
+    guard heading || depth != nil || line.quote > 0 else { return nil }
+    if heading, line.quote == 0 { return self.heading }
+    let shape = Shape(heading: heading, quote: line.quote, depth: depth, marked: marked)
+    if let paragraph = made[shape] { return paragraph }
+    let paragraph =
+      heading
+      ? self.heading.own.mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+      : NSMutableParagraphStyle()
+    let base = CGFloat(line.quote) * style.thought.indent
+    (paragraph.firstLineHeadIndent, paragraph.headIndent) = (base, base)
+    if let depth {
+      let text = base + style.indent * CGFloat(Int(depth) + 1)
+      paragraph.firstLineHeadIndent = marked ? text - style.indent : text
+      paragraph.headIndent = text
+      if marked {
+        let marker = max(paragraph.firstLineHeadIndent, text - gap)
+        paragraph.tabStops = [
+          NSTextTab(textAlignment: .right, location: marker),
+          NSTextTab(textAlignment: .left, location: text),
+        ]
       }
-      return hang(first, first + (marker ?? 0))
     }
-  }
-
-  private func hang(_ first: CGFloat, _ head: CGFloat) -> Paragraph {
-    let key = SIMD2(Double(first), Double(head))
-    if let made = hangs[key] { return made }
-    let paragraph = NSMutableParagraphStyle()
-    (paragraph.firstLineHeadIndent, paragraph.headIndent) = (first, head)
-    let made = Paragraph(paragraph, spacing: style.blockSpacing)
-    hangs[key] = made
+    let thought = style.thought
+    let rails =
+      line.quote > 0
+      ? Paragraph.Rails(
+        count: Int(line.quote), step: thought.indent, width: thought.ruleWidth, color: thought.rule)
+      : nil
+    let made = Paragraph(paragraph, spacing: style.blockSpacing, rails: rails)
+    self.made[shape] = made
     return made
   }
 
@@ -120,6 +161,49 @@ final class RuleAttachment: NSTextAttachment {
     let middle = ((attributes[.font] as? NSFont)?.xHeight ?? 0) / 2
     return CGRect(
       x: 0, y: middle, width: max(0, proposedLineFragment.width - 2 * padding), height: thickness)
+  }
+}
+
+/// A quote line's layout: its bars at the text column's edge, under its text.
+final class QuoteFragment: NSTextLayoutFragment {
+  /// Whether `text`, a paragraph's, is a quote line's.
+  static func quoted(_ text: NSAttributedString?) -> Bool {
+    rails(text) != nil
+  }
+
+  private static func rails(_ text: NSAttributedString?) -> Paragraph.Rails? {
+    guard let text, text.length > 0 else { return nil }
+    return (text.attribute(.transcriptParagraph, at: 0, effectiveRange: nil) as? Paragraph)?.rails
+  }
+
+  /// Each bar in the fragment's coordinates: down its lines, and on through the
+  /// space under them unless that space ends its block.
+  private var bars: [(CGRect, NSColor)] {
+    let text = (textElement as? NSTextParagraph)?.attributedString
+    guard let rails = Self.rails(text), let text,
+      let last = textLineFragments.last?.typographicBounds
+    else { return [] }
+    let frame = layoutFragmentFrame
+    // The frame starts past the paragraph's indent; the bars start at the text column's edge.
+    let margin = (textLayoutManager?.textContainer?.lineFragmentPadding ?? 0) - frame.minX
+    let style = text.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+    let bottom = (style?.paragraphSpacing ?? 0) > 0 ? last.maxY : frame.height
+    return (0..<rails.count).map { index in
+      let x = margin + CGFloat(index) * rails.step
+      return (CGRect(x: x, y: 0, width: rails.width, height: bottom), rails.color)
+    }
+  }
+
+  override var renderingSurfaceBounds: CGRect {
+    bars.reduce(super.renderingSurfaceBounds) { $0.union($1.0) }
+  }
+
+  override func draw(at point: CGPoint, in context: CGContext) {
+    for (bar, color) in bars {
+      context.setFillColor(color.cgColor)
+      context.fill(bar.offsetBy(dx: point.x, dy: point.y))
+    }
+    super.draw(at: point, in: context)
   }
 }
 
