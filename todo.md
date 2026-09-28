@@ -22,7 +22,6 @@
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T37.23.6. Restyle the transcript when the text size changes
-- T37.23.8. Headings, lists and quotes in replies
 - T37.23.9. Prompt bubble glass, elevation and hover actions
 - T37.23.10. Thought duration in the thinking header
 - T37.23.11. Word-level diff in the desktop hunks

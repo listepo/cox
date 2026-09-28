@@ -28,7 +28,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.23.6 | todo | P1 | 2 | 0% | |
-| T37.23.8 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.23.9 | todo | P2 | 2 | 0% | |
 | T37.23.10 | todo | P2 | 2 | 0% | |
 | T37.23.11 | todo | P3 | 2 | 0% | |
@@ -2762,12 +2761,6 @@ Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same 
 Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxTranscriptText/…`, `desktop/macos/Packages/CoxTranscript/…`
 Goal: `TranscriptStyle` is rebuilt when `[desktop.transcript]` text size or line height changes, and the whole text restyles in place without losing the selection.
 Check: snapshots at two text sizes; a selection survives the change.
-
-#### T37.23.8 Headings, lists and quotes in replies
-
-Depends: — · Size: ~120 · Files: `desktop/macos/Packages/CoxTranscriptText/…`
-Goal: `StyledDoc` headings, lists, quotes, rules and tables render with their structure (indents, markers, heading sizes from tokens) instead of flat paragraphs.
-Check: a snapshot of a reply with each block kind; Copy as Markdown of it round-trips the structure.
 
 #### T37.23.9 Prompt bubble glass, elevation and hover actions
 

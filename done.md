@@ -4631,3 +4631,32 @@ Check:
 Not done:
 - CoxCore was not compiled; its names were checked against generated bindings.
 - Syntax roles for `CodeRun` wait on the creator: either `StyleToken` gets syntax roles, or the desktop uses theme colours.
+
+#### T37.23.8 Headings, lists and quotes in replies
+
+Depends: — · Size: ~120 · Files: `desktop/macos/Packages/CoxTranscriptText/…`
+Goal: `StyledDoc` headings, lists, quotes, rules and tables render with their structure (indents, markers, heading sizes from tokens) instead of flat paragraphs.
+Check: a snapshot of a reply with each block kind; Copy as Markdown of it round-trips the structure.
+Status: done 2026-09-28
+Result:
+- Reply structure is set by paragraph styles in the one transcript text (A87), in `CoxTranscriptText/TranscriptStructure.swift`:
+  - headings use `font.transcript.h3`, with block spacing above them;
+  - list and quote lines hang past the marker or rail that `cox-render` sends, and lists are indented by `space.xxl`;
+  - tables line up on tab stops;
+  - a rule is an attachment drawn with the thought's hairline.
+- A streamed reply ends with the same styles as a full load.
+- CoxModel's `DocMarkdown.swift` turns Rust-shaped docs back into clean Markdown (`-` bullets, `>` quotes, no doubled `##`). This also fixes the stored text of streamed replies.
+Deviations:
+- 5 source files and about 280 lines.
+- The `everyBlockKind` snapshots were re-recorded.
+- The `#` markers stay visible, as in the TUI, because the markers are text from Rust (DT-3).
+- One heading token is used for every level.
+Check:
+- `TranscriptReplyTests`: a light and dark snapshot with every block kind, and `copyAsMarkdownGivesTheStructureBack` for a whole reply and a partial selection.
+- CoxTranscriptText 29, CoxTranscript 10 (with the benchmark gates), CoxModel 20.
+- swiftlint and swift-format are clean.
+- After merging into `p37-desktop`: CoxModel 30/30, CoxTranscriptText 29/29, CoxTranscript 15/15.
+Not done:
+- Per-level heading sizes (DT§5.9's 17/15/13 pt) need two new tokens.
+- Hiding the markers needs `StyledDoc` to send depth and marker apart from the text.
+- Both are creator questions, recorded in `ideas.md`.
