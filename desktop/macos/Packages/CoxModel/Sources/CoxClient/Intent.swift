@@ -22,6 +22,8 @@ public enum Intent: Equatable, Sendable {
   case background(call: String)
   case shell(command: String, share: Bool)
   case command(line: String)
+  /// The person's title for the session (A113), as `/rename` sets it.
+  case rename(title: String)
 }
 
 public struct Attachment: Equatable, Sendable {

@@ -26,7 +26,7 @@ mod session;
 mod side;
 pub mod subagent;
 pub mod tasks;
-mod title;
+pub mod title;
 mod truncate;
 mod turn;
 

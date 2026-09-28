@@ -106,6 +106,17 @@ public final class SidebarStore {
     }
   }
 
+  /// Renames a session no window here has open (A113), then reads the list again.
+  public func rename(_ session: String, to title: String) {
+    guard let workspace else { return }
+    do {
+      _ = try workspace.rename(session: session, title: title)
+      refresh()
+    } catch {
+      failure = String(describing: error)
+    }
+  }
+
   public func toggle(_ project: String) {
     if folded.remove(project) == nil { folded.insert(project) }
   }

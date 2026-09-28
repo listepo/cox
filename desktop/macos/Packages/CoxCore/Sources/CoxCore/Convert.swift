@@ -376,6 +376,7 @@ extension CoxFFIBindings.Intent {
     case .background(let call): self = .background(call: call)
     case .shell(let command, let share): self = .shell(command: command, share: share)
     case .command(let line): self = .command(line: line)
+    case .rename(let title): self = .rename(title: title)
     }
   }
 }

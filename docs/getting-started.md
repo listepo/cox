@@ -133,10 +133,13 @@ One row under the composer, e.g.
   `/effort` overrode the tier default.
 - `↻ 4m12s` appears only while a `/loop` is running: the time left until its
   next turn. It disappears the moment no loop is active.
+- The session's title sits before the mode badge once it has one: generated
+  after the first turn (`[session] auto_title`) or set with `/rename <title>`,
+  which a generated title never replaces.
 - `cox --plain` prints the same segments as one `status: …` line per turn.
 
 Narrow terminals drop segments from the right in this order: loop countdown →
-git counts → cache → tasks → effort → sandbox → model → cost → ctx (the `ctx`
+title → git counts → cache → tasks → effort → sandbox → model → cost → ctx (the `ctx`
 bar and the mode badge never drop).
 
 ## Status

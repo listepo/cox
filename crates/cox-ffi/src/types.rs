@@ -482,6 +482,9 @@ pub enum Intent {
     Command {
         line: String,
     },
+    Rename {
+        title: String,
+    },
 }
 
 #[uniffi::remote(Record)]

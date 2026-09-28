@@ -4,9 +4,11 @@
 //! surface and, through the rollout, to `sessions.title`. Separate from the
 //! turn loop because it is a side request after the turn, not part of it:
 //! it never touches the history or the cache-stable prefix, and a failure
-//! is logged and skipped.
+//! is logged and skipped. A rename (`Submission::Rename`, T37.22.9) goes
+//! out as a `TitleSet` marked `by_user`, and no generated title follows it.
 
-use cox_protocol::types::{Event, Job};
+use cox_protocol::errors::CoreError;
+use cox_protocol::types::{Event, Job, Level};
 
 use crate::session::Session;
 use crate::side::Side;
@@ -22,12 +24,24 @@ const MAX_PROMPT_CHARS: usize = 2000;
 /// The longest title kept; a model that ignores "six words" is cut here.
 const MAX_TITLE_CHARS: usize = 80;
 
-/// The model's answer as a one-line title: the first non-empty line with
-/// escapes stripped and the quotes, heading marks and trailing period a
-/// model adds despite the prompt removed. `None` when nothing is left.
-pub(crate) fn clean(raw: &str) -> Option<String> {
+/// A title as the user typed it: the first non-empty line, escapes
+/// stripped, cut at [`MAX_TITLE_CHARS`]. `None` when nothing is left. The
+/// app renames a session no core runs through this too.
+pub fn user_title(raw: &str) -> Option<String> {
     let line = raw.lines().map(str::trim).find(|line| !line.is_empty())?;
-    let line = cox_sanitize::sanitize(line);
+    let title: String = cox_sanitize::sanitize(line)
+        .trim()
+        .chars()
+        .take(MAX_TITLE_CHARS)
+        .collect();
+    (!title.is_empty()).then_some(title)
+}
+
+/// The model's answer as a one-line title: [`user_title`] without the
+/// quotes, heading marks and trailing period a model adds despite the
+/// prompt. `None` when nothing is left.
+pub(crate) fn clean(raw: &str) -> Option<String> {
+    let line = user_title(raw)?;
     let title = line
         .trim_start_matches('#')
         .trim()
@@ -35,20 +49,41 @@ pub(crate) fn clean(raw: &str) -> Option<String> {
         .trim()
         .trim_end_matches('.')
         .trim();
-    let title: String = title.chars().take(MAX_TITLE_CHARS).collect();
-    (!title.is_empty()).then_some(title)
+    (!title.is_empty()).then(|| title.to_owned())
 }
 
 impl Session {
     /// `prompt`, kept for [`Session::auto_title`], when the turn about to
     /// run may name the session: a top-level session (subagents run other
-    /// jobs), the setting on, and no turn before it. A title the user set
-    /// is kept by the store (`TitleSource::User`), so this never asks.
+    /// jobs), the setting on, no turn before it and no rename yet.
     pub(crate) async fn title_prompt(&self, prompt: &str) -> Option<String> {
+        let inner = self.inner.lock().await;
         (self.job == Job::Main
             && self.config.session.auto_title
-            && self.inner.lock().await.turn_seq == 0)
+            && inner.turn_seq == 0
+            && !inner.renamed)
             .then(|| prompt.chars().take(MAX_PROMPT_CHARS).collect())
+    }
+
+    /// `Submission::Rename`: the user's title as a `TitleSet` marked
+    /// `by_user`, which the store keeps over a generated one; a rename
+    /// during the first turn also drops that turn's generated title.
+    pub(crate) async fn rename(&self, raw: &str) -> Result<(), CoreError> {
+        let Some(title) = user_title(raw) else {
+            let text = "/rename needs a title".to_owned();
+            return self
+                .emit(Event::Notice {
+                    level: Level::Warn,
+                    text,
+                })
+                .await;
+        };
+        self.inner.lock().await.renamed = true;
+        self.emit(Event::TitleSet {
+            title,
+            by_user: true,
+        })
+        .await
     }
 
     /// Asks the `title` job for a name for `prompt` and emits `TitleSet`,
@@ -75,7 +110,15 @@ impl Session {
             tracing::warn!("title job answered with no title");
             return;
         };
-        if let Err(error) = self.emit(Event::TitleSet { title }).await {
+        // The user renamed the session while the title job ran.
+        if self.inner.lock().await.renamed {
+            return;
+        }
+        let title_set = Event::TitleSet {
+            title,
+            by_user: false,
+        };
+        if let Err(error) = self.emit(title_set).await {
             tracing::warn!(error = %error, "session title not recorded");
         }
     }
@@ -128,11 +171,18 @@ mod tests {
             .expect("turn");
         let mut titles = Vec::new();
         while let Ok(ev) = rx.try_recv() {
-            if let Event::TitleSet { title } = ev {
+            if let Event::TitleSet { title, .. } = ev {
                 titles.push(title);
             }
         }
         titles
+    }
+
+    /// Every event emitted so far but the session's `SessionStarted`.
+    fn drained(rx: &mut mpsc::Receiver<Event>) -> Vec<Event> {
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .filter(|ev| !matches!(ev, Event::SessionStarted { .. }))
+            .collect()
     }
 
     #[test]
@@ -153,6 +203,51 @@ mod tests {
         assert!(turn(&session, &mut rx, "and test it").await.is_empty());
         let jobs: Vec<Job> = store.usage_rows().into_iter().map(|row| row.job).collect();
         assert_eq!(jobs.iter().filter(|job| **job == Job::Title).count(), 1);
+    }
+
+    #[tokio::test]
+    async fn rename_is_a_user_title_and_no_generated_title_follows() {
+        let (session, store, mut rx) = session(true);
+        session
+            .submit(Submission::Rename {
+                title: "  Mine \u{1b}[31m\nsecond line".into(),
+            })
+            .await
+            .expect("rename");
+        let renamed = drained(&mut rx);
+        assert_eq!(
+            renamed,
+            vec![Event::TitleSet {
+                title: "Mine".into(),
+                by_user: true
+            }]
+        );
+        assert!(
+            turn(&session, &mut rx, "fix the ledger sum")
+                .await
+                .is_empty()
+        );
+        let jobs: Vec<Job> = store.usage_rows().into_iter().map(|row| row.job).collect();
+        assert!(!jobs.contains(&Job::Title), "no title job after a rename");
+    }
+
+    #[tokio::test]
+    async fn rename_without_text_warns_and_sets_nothing() {
+        let (session, _store, mut rx) = session(false);
+        session
+            .submit(Submission::Rename {
+                title: " \n ".into(),
+            })
+            .await
+            .expect("rename");
+        let events = drained(&mut rx);
+        assert!(matches!(
+            events.as_slice(),
+            [Event::Notice {
+                level: Level::Warn,
+                ..
+            }]
+        ));
     }
 
     #[tokio::test]

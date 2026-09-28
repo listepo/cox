@@ -33,6 +33,10 @@ extension LiveCoreClient: WorkspaceClient {
 
   public func changed() async throws { try await app.workspaceChanged() }
 
+  public func rename(session: String, title: String) throws -> Bool {
+    try app.rename(session: session, title: title)
+  }
+
   /// Reads the login shell's environment into this process; call once at launch, before a
   /// session opens. Returns why it kept the inherited environment, if it did.
   public static func loadLoginEnv() async throws -> String? {

@@ -557,6 +557,26 @@ fn every_intent_maps_to_its_submission() {
             },
             Err(IntentError::NotACommand("hello".into())),
         ),
+        (
+            Intent::Rename {
+                title: "Fix the ledger".into(),
+            },
+            now(Submission::Rename {
+                title: "Fix the ledger".into(),
+            }),
+        ),
+        (
+            Intent::Command {
+                line: "/rename Fix  the ledger".into(),
+            },
+            now(Submission::Rename {
+                title: "Fix the ledger".into(),
+            }),
+        ),
+        (
+            Intent::Rename { title: " ".into() },
+            Err(IntentError::Empty),
+        ),
     ];
     for (intent, want) in cases {
         assert_eq!(dispatch(intent.clone()), want, "{intent:?}");

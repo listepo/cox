@@ -221,9 +221,10 @@ const CTX_CELLS: usize = 5;
 
 /// One status segment: its text and whether it survives narrowing. The order
 /// below is display order; `fit` drops from the right in the documented
-/// order (loop countdown → git counts → cache → tasks → effort → sandbox →
-/// model → cost → ctx), so the row reads `model · ctx · cost · sandbox ·
-/// effort · tasks · cache · loop countdown · mode` at full width, with the
+/// order (loop countdown → title → git counts → cache → tasks → effort →
+/// sandbox → model → cost → ctx), so the row reads `model · ctx · cost ·
+/// sandbox · effort · tasks · cache · title · loop countdown · mode` at full
+/// width, with the
 /// plugin `status.left` segments before it and `status.right` after.
 fn segments(state: &State) -> Vec<Seg> {
     let plugins = |slot: Slot| {
@@ -337,6 +338,11 @@ fn built_in_segments(state: &State) -> Vec<(bool, String)> {
     }
     out.push((false, tasks));
     out.push((false, cache));
+    // A113: the session's title, next to the mode badge; the first to go
+    // after the countdown, since the row's other segments steer the turn.
+    if let Some(title) = &state.title {
+        out.push((false, crate::text::sanitize(title)));
+    }
     // Right-most droppable: `fit` removes the last `false` segment first, so
     // the countdown is the first thing to go on a narrow line.
     if let Some(seg) = loop_countdown {

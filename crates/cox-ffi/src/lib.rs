@@ -201,6 +201,12 @@ impl App {
         )
     }
 
+    /// Renames a session no window here has open (A113); `false` when the
+    /// title has no text.
+    pub fn rename(&self, session: SessionId, title: String) -> Result<bool, AppError> {
+        Ok(self.owner.rename(session, &title)?)
+    }
+
     /// The toolbar's model popover for a session in `cwd` (T37.22.6).
     pub fn models(&self, cwd: String) -> Result<Vec<ModelChoice>, AppError> {
         Ok(self.owner.models(Path::new(&cwd))?)

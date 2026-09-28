@@ -112,6 +112,8 @@ pub(crate) struct Inner {
     /// The turn a `/redo` wrote its pre-images under (T26.4), so a second
     /// `/redo` does not undo the first.
     pub(crate) redone: Option<u32>,
+    /// The user titled the session (A113): no generated title follows.
+    pub(crate) renamed: bool,
     /// Context size of the last main call, for the §1.10 auto trigger.
     pub(crate) last_context_tokens: u32,
     /// The last main call's usage: `ContextBreakdown.cached` (A98).
@@ -515,6 +517,7 @@ impl Session {
                 archives: HashMap::new(),
                 turn_seq: turns,
                 redone: None,
+                renamed: false,
                 cache: CacheTracker::new(),
                 cache_ratio: 0.0,
                 overrides: Overrides::default(),
@@ -888,6 +891,7 @@ impl Session {
                 conversation,
             } => self.rewind(to_turn, code, conversation).await,
             Submission::Redo => self.redo().await,
+            Submission::Rename { title } => self.rename(&title).await,
             Submission::RevertFile { path, to_turn } => self.revert_file(&path, to_turn).await,
             Submission::Background { call_id } => self.background(call_id).await,
             Submission::UserShell { command, share } => self.user_shell(command, share).await,

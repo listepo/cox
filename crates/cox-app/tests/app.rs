@@ -360,6 +360,36 @@ async fn resume_reopens_the_session_with_its_blocks() {
     assert_eq!(texts(&resumed), before);
 }
 
+/// A113 (T37.22.9): the open session renames through its core; a closed
+/// one through `App::rename`; both land in the list the sidebar reads.
+#[tokio::test]
+async fn a_rename_reaches_the_session_list_open_or_closed() {
+    let dir = scratch(Some(READ_AND_REPLY));
+    let app = app(dir.path(), Arc::default());
+    let cwd = dir.path().join("project");
+    let session = app
+        .open(cwd.clone(), None, "base16-ocean.dark".into())
+        .await;
+    let session = session.expect("open");
+    let title = |app: &App| {
+        let rows = app.workspace().sessions(&cwd, 10).expect("sessions");
+        rows.into_iter()
+            .map(|row| row.info.title)
+            .collect::<Vec<_>>()
+    };
+    let rename = Intent::Rename {
+        title: "Fix the ledger".into(),
+    };
+    session.send(rename).await.expect("rename");
+    assert_eq!(title(&app), [Some("Fix the ledger".to_string())]);
+    let id = session.id();
+    session.end();
+    drop(session);
+    assert!(app.rename(id, " Ledger fix \n").expect("rename closed"));
+    assert!(!app.rename(id, "  ").expect("blank"));
+    assert_eq!(title(&app), [Some("Ledger fix".to_string())]);
+}
+
 #[tokio::test]
 async fn history_is_the_sessions_own_prompts_newest_first() {
     let dir = scratch(Some(TWO_REPLIES));

@@ -269,6 +269,10 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
         },
         "sessions" => Action::Sessions,
         "resume" => Action::Resume,
+        "rename" => match joined() {
+            Some(title) => Action::Submit(Submission::Rename { title }),
+            None => Action::Notice("/rename needs a title".into()),
+        },
         "rewind" => Action::Rewind,
         "undo" => Action::Undo,
         "redo" => Action::Redo,

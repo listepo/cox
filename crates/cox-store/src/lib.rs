@@ -364,10 +364,14 @@ impl StoreTrait for Store {
         drop(writers);
         match ev {
             Event::TurnDone { .. } => self.finish_session_turn(id)?,
-            // A113: the core's generated title; a rename (T37.22.9) calls
-            // `session_title_set` with `TitleSource::User` instead.
-            Event::TitleSet { title } => {
-                self.session_title_set(id, title, TitleSource::Auto)?;
+            // A113: the core's generated title, or a rename (T37.22.9).
+            Event::TitleSet { title, by_user } => {
+                let source = if *by_user {
+                    TitleSource::User
+                } else {
+                    TitleSource::Auto
+                };
+                self.session_title_set(id, title, source)?;
             }
             _ => {}
         }
@@ -1277,6 +1281,36 @@ mod tests {
         assert_eq!(store.latest_session_for_cwd(&cwd).expect("latest"), newer);
     }
 
+    /// T37.22.9: a rename reaches the store as a `TitleSet` marked
+    /// `by_user`; the title generated after it (a first turn that was
+    /// already running) leaves it in place.
+    #[test]
+    fn a_user_rename_survives_a_later_generated_title() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(dir.path()).expect("open store");
+        let id = SessionId::new();
+        store
+            .session_create(&SessionRow {
+                id,
+                created_at: String::new(),
+                cwd: PathBuf::from("/tmp"),
+                project_slug: String::new(),
+                title: None,
+                parent_id: None,
+                rollout_path: PathBuf::new(),
+            })
+            .expect("session");
+        for (title, by_user) in [("Mine", true), ("Fix the ledger", false)] {
+            let set = Event::TitleSet {
+                title: title.into(),
+                by_user,
+            };
+            store.rollout_append(&id, &set).expect("append");
+        }
+        let info = store.session_info(&id).expect("info");
+        assert_eq!(info.title.as_deref(), Some("Mine"));
+    }
+
     /// A113: a `TitleSet` in the rollout lands in `sessions.title`, where
     /// the session list reads it, and never replaces a user's title.
     #[test]
@@ -1299,6 +1333,7 @@ mod tests {
         }
         let generated = Event::TitleSet {
             title: "Fix the ledger".into(),
+            by_user: false,
         };
         store.rollout_append(&auto, &generated).expect("append");
         assert!(

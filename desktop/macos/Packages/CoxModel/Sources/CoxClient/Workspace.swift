@@ -50,6 +50,9 @@ public protocol WorkspaceClient: Sendable {
   /// Returns once the list may read differently: a commit to `cox.db` from another connection,
   /// or a session here that started, stopped or began to wait.
   func changed() async throws
+  /// Sets the title of a session no window here has open, as the person's (A113); an open one
+  /// renames through its `Intent.rename`. `false` when the title has no text.
+  func rename(session: String, title: String) throws -> Bool
 }
 
 /// Fixed projects, sessions and activity: enough to drive the sidebar in a test or preview.
@@ -76,4 +79,7 @@ public struct FixtureWorkspace: WorkspaceClient {
 
   /// A fixed workspace never changes: waits until cancelled.
   public func changed() async throws { try await Task.sleep(for: .seconds(86_400)) }
+
+  /// A fixed workspace keeps its titles.
+  public func rename(session: String, title: String) -> Bool { false }
 }
