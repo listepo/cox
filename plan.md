@@ -81,9 +81,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T52.20 | todo | P3 | 4 | 0% | |
 | T52.21 | todo | P3 | 3 | 0% | |
 | T52.22 | todo | P3 | 1 | 0% | |
-| T53.2 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T53.3 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T53.4 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T53.5 | todo | P3 | 3 | 0% | |
 | T53.6 | todo | P3 | 2 | 0% | |
 | T53.7 | todo | P3 | 2 | 0% | |
@@ -1747,24 +1744,6 @@ Every card in this phase:
 - ends every install in the existing local-directory install: validate the manifest, digest the tree, copy into `versions/<digest12>/`, ask for the grant — no second path, no plugin runs before its grant;
 - treats a downloaded or cloned tree as untrusted repository content: nothing in it runs during install, symlinks and paths that leave the staging directory are refused;
 - stops before anything outward-facing: no `cargo publish`, no tag push, no release — the card prepares metadata, docs and a dry run, and the creator publishes.
-
-#### T53.2 `cox plugin install <https-url> --sha256 <hex>`
-
-Depends: T53.1 · Size: ~170 · Files: `crates/cox/src/plugin_fetch.rs` (new), `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/cli.rs`
-Goal: download with the reqwest client and SHA-256 helper `self_update` already has (extracted into `plugin_fetch.rs` for both, not copied), refuse on a hash mismatch before anything is unpacked, extract with `tar` into the staging directory, refuse any symlink and any entry resolving outside staging, then hand the directory (without the archive) to `plugin_cmd::install`, recording `{kind: "url", url, sha256}`. Headless never approves (PL§1b), as for a folder.
-Check: `mise exec -- cargo nextest run -p cox plugin_install_url_rejects_a_hash_mismatch plugin_install_url_rejects_http plugin_install_url_rejects_a_symlink_entry plugin_install_url_rejects_dot_dot_entries plugin_install_url_records_the_source` (wiremock, already a dev-dependency); `COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- plugin install <local wiremock url> --sha256 <hex>` in the e2e test.
-
-#### T53.3 `cox plugin install git+<url> --rev <ref>`
-
-Depends: T53.1, T53.2 · Size: ~160 · Files: `crates/cox/src/plugin_fetch.rs`, `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/cli.rs`
-Goal: `git clone --depth 1 --no-recurse-submodules --branch <tag>` (or fetch of a commit) into staging with `GIT_TERMINAL_PROMPT=0`, resolve the commit, take `--path` confined inside the clone, copy the package tree without `.git` into the install path, record `{kind: "git", url, rev, commit, path}`; a branch name as `--rev` is refused; `git` is found once in the fixed directories, never through a repository's config.
-Check: `mise exec -- cargo nextest run -p cox plugin_install_git_from_a_local_bare_repo plugin_install_git_refuses_a_branch plugin_install_git_path_cannot_escape_the_clone plugin_install_git_digest_excludes_dot_git` (a `file://` bare repository the test creates).
-
-#### T53.4 `cox plugin update` for URL and git sources
-
-Depends: T53.2, T53.3 · Size: ~130 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/plugin_fetch.rs`
-Goal: PL§1b step 1 re-reads a URL source (the same URL and hash: a changed file at that URL is a mismatch, never a silent update; a new version is a new `install` with a new hash) and a git source (the same tag: a tag that moved yields a new digest and asks for the grant again, with the capability diff); `--check` fetches but changes nothing.
-Check: `mise exec -- cargo nextest run -p cox plugin_update_url_same_bytes_is_up_to_date plugin_update_url_changed_bytes_is_refused plugin_update_git_moved_tag_asks_again plugin_update_check_changes_nothing`.
 
 #### T53.5 Freeze ABI `api = 1`
 

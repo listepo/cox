@@ -74,9 +74,6 @@
 - T52.20. `cox-app` remote workspace over SSH
 - T52.21. Connect to a host from the app
 - T52.22. App-server and remote-session docs
-- T53.2. `cox plugin install <https-url> --sha256 <hex>`
-- T53.3. `cox plugin install git+<url> --rev <ref>`
-- T53.4. `cox plugin update` for URL and git sources
 - T53.5. Freeze ABI `api = 1`
 - T53.6. `cox-plugin-api` ready for crates.io
 - T53.7. `cox-plugin-sdk` ready for crates.io
