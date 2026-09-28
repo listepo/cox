@@ -28,7 +28,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.14 | todo | P2 | 3 | 0% | |
-| T37.10 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.12 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.14 | todo | P0 | 4 | 0% | |
 | T37.15 | todo | P0 | 3 | 0% | |
@@ -106,6 +105,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox` | clap surface, dispatch, `doctor`, `config` (printing, and the flag layer built from `Cli`), `stats`, `expand`, `record`, `sessions`, `self update` | clap 4.6, anyhow, dotenvy 0.15 |
 | `cox-config` | the one config owner (T32.16; split out of `cox`): figment layering (default/user/project/env/flag), validation, `cox config set` editing and the `docs/config.jsonschema` drift test. Errors are a `thiserror` enum | figment, toml_edit 0.25, thiserror |
 | `cox-session` | session assembly as a library (T37.1; split out of `cox`): `open(SessionSpec)` → session, effective config and typed `Warning`s — provider, tools, MCP, skills, hooks, plugins, fork/handoff/resume lineage, external agents; login-shell environment (T37.11). No clap, no anyhow, no printing | async-trait, tokio-util, agent-client-protocol (moved from `cox` with the external-agent code), nix `signal` (T37.11: process-group kill of a slow login shell) |
+| `cox-app` | the UI-agnostic app core (T37.8–T37.10, T37.38): `Timeline` fold to serde `TimelinePatch`es, tool summaries and `ToolGroup`, the coalescing `Controller`, `Workspace`, `Inbox`, `Intent`/`dispatch`, `Completer`. No terminal toolkit, no CLI crate | tokio (drain task), serde_json; cox-render without `ratatui` |
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
 | `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, base64 0.23 (T37.6: attached text files) |
 | `cox-models` | the model catalog: id → context window, max output, efforts, capabilities, price; built-in rows < config < user `prices.toml` (T30.24). Pure: parses embedded or caller-supplied strings only | serde, thiserror, figment |
@@ -1086,12 +1086,6 @@ Every card in this phase:
 - adds its crate's row to the `AGENTS.md` layout table when it creates a crate (T37.1, T37.8, T37.14); T37.14 also updates `AGENTS.md` "What this is" and `docs/how-it-works.md` "The four surfaces" to name the app.
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
-
-#### T37.10 `cox-app`: workspace, inbox, status, intents, completion
-
-Depends: T37.1, T37.8, T37.35 · Size: ~200 · Files: `crates/cox-app/src/workspace.rs`, `crates/cox-app/src/inbox.rs`, `crates/cox-app/src/intent.rs`
-Goal: projects, sessions, search, worktrees with disk size, the "needs you" inbox, and one intent enum the app sends (DT§4.3).
-Check: unit tests per intent against a scratch `COX_HOME`; inbox ordering test.
 
 #### T37.12 `cox-app`: usage and throughput view state
 
