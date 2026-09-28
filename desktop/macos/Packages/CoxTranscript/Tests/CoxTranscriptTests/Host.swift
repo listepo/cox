@@ -46,8 +46,8 @@ final class Host {
     flush()
   }
 
-  /// Hands the view a new setting, as the app does when the user flips it.
-  func show(crossBlockSelection: Bool) {
+  /// Hands the view a new setting, as the app does when the user flips it or the text size.
+  func show(crossBlockSelection: Bool, textScale: Double = 1) {
     let transcript =
       if let send {
         AnyView(TranscriptView(store: store, crossBlockSelection: crossBlockSelection, send: send))
@@ -59,7 +59,7 @@ final class Host {
       }
     hosting.rootView = AnyView(
       transcript
-        .environment(\.coxAppearance, Appearance(material: material))
+        .environment(\.coxAppearance, Appearance(material: material, textScale: textScale))
         // Durations read the same on every machine.
         .environment(\.locale, Locale(identifier: "en_US_POSIX")))
     flush()
