@@ -1,6 +1,6 @@
-// The token meter's text (T37.25, A98): `MeterText`, its grid rows and the context split, the
-// figures `cox_app::MeterText` formats for the meter and its popover, field for field as cox-ffi
-// exports them. Separate from `Timeline.swift` so the meter's values grow without that file.
+// The token meter's figures as `cox_app::MeterText` formats them (T37.25, A98): the popover's rows,
+// the context split and the cache hit, field for field. Separate from `Timeline.swift`, which
+// carries them inside `UsageView`, so the meter's text can grow without that file doing so.
 
 /// `cox_app::MeterText`: every figure of the token meter and popover as it is shown.
 public struct MeterText: Equatable, Sendable, Decodable {
@@ -8,10 +8,12 @@ public struct MeterText: Equatable, Sendable, Decodable {
   public var heading = "", phase = "", rateUnit = "", rateDetail = ""
   public var rows: [MeterRow] = []
   public var context = "", footnote = ""
-  /// `0.4% of 1M`, the context's share of the model's window; empty while the window is unknown.
-  public var contextShare = ""
-  /// System, tools, instructions and history, in that order; empty until the first request.
+  /// `7.6% of 1M` and `923.6k` free; empty while the window is unknown (A98).
+  public var contextShare = "", contextFree = ""
+  /// System, tools, instructions and history; empty until the first request.
   public var contextParts: [ContextPart] = []
+  /// `94% this turn`; empty before a turn sent anything.
+  public var cacheHit = ""
 
   public init() {}
 
@@ -20,17 +22,16 @@ public struct MeterText: Equatable, Sendable, Decodable {
     case rateUnit = "rate_unit"
     case rateDetail = "rate_detail"
     case contextShare = "context_share"
+    case contextFree = "context_free"
     case contextParts = "context_parts"
+    case cacheHit = "cache_hit"
   }
 }
 
-/// `cox_app::ContextPart`: one part of the context bar and its legend (A98).
+/// `cox_app::ContextPart`: a part of the context window, its tokens and its share of the bar.
 public struct ContextPart: Equatable, Sendable, Decodable {
-  /// `system`, `tools`, `instructions` or `history`: the part's colour role, `context.<kind>`.
-  public var kind: String
-  /// `System` and `3.5k`.
-  public var label, tokens: String
-  /// The part's width in the bar, a fraction of the window.
+  /// `system`, `tools`, `instructions` or `history`.
+  public var kind, label, tokens: String
   public var share: Double
 
   public init(kind: String, label: String, tokens: String, share: Double) {

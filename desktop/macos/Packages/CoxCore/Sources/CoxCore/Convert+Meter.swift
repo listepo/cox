@@ -1,6 +1,5 @@
-// Generated cox-ffi meter text ⇄ `CoxClient.MeterText` (T37.25, A98), field for field. Separate
-// from `Convert.swift` so the meter's fields, the context split among them, grow without that
-// file.
+// The token meter's generated `MeterText` ⇄ `CoxClient.MeterText`, field for field (T37.25, A98).
+// Separate from `Convert.swift` so the meter's text can grow without that file doing so.
 
 import CoxClient
 import CoxFFIBindings
@@ -16,7 +15,7 @@ extension CoxClient.MeterText {
       .init(label: $0.label, turn: $0.turn, session: $0.session, detail: $0.detail)
     }
     (context, footnote) = (value.context, value.footnote)
-    contextShare = value.contextShare
+    (contextShare, contextFree, cacheHit) = (value.contextShare, value.contextFree, value.cacheHit)
     contextParts = value.contextParts.map {
       .init(kind: $0.kind, label: $0.label, tokens: $0.tokens, share: $0.share)
     }

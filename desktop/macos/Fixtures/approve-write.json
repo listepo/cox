@@ -16,7 +16,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KZ24H3X34VEX829YC8R89R",
+          "id": "turn:01M3M0VWMQ5F50234GECA8CQ0H",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -39,7 +39,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KZ24H3M76Z8XVMF7YCEM1K",
+          "id": "item:01M3M0VWMQE75CFPP7RZVXRE1J",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -47,12 +47,12 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3KZ24H3X34VEX829YC8R89R"
+        "after": "turn:01M3M0VWMQ5F50234GECA8CQ0H"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KZ24H9YYQJ9RQ8HGQPQHPV",
+          "id": "item:01M3M0VWMVSCQH4VW5F9W7N3E5",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -76,7 +76,7 @@
             }
           }
         },
-        "after": "item:01M3KZ24H3M76Z8XVMF7YCEM1K"
+        "after": "item:01M3M0VWMQE75CFPP7RZVXRE1J"
       },
       {
         "op": "usage",
@@ -92,7 +92,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KZ24H3X34VEX829YC8R89R",
+            "turn": "01M3M0VWMQ5F50234GECA8CQ0H",
             "tally": {
               "sent": 3710,
               "received": 16,
@@ -105,7 +105,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 100972.49130689957,
+            "tok_per_s": 96024.00600150037,
             "exact": true,
             "sparkline": [],
             "done": false
@@ -114,12 +114,12 @@
           "text": {
             "sent": "3.7k",
             "received": "16",
-            "rate": "100972",
-            "spoken": "3.7 thousand tokens sent, 16 received, 100972 tokens per second",
+            "rate": "96024",
+            "spoken": "3.7 thousand tokens sent, 16 received, 96024 tokens per second",
             "heading": "This turn · 1 request",
             "phase": "streaming",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 100972 tok/s · first token 0 ms · peak 100972 tok/s",
+            "rate_detail": "avg 96024 tok/s · first token 0 ms · peak 96024 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -192,6 +192,8 @@
                 "share": 0.000013497920997920999
               }
             ],
+            "context_free": "996.3k",
+            "cache_hit": "0% this turn",
             "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
           }
         }
@@ -199,7 +201,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3KZ24HA5W68XKZW5J1A4S8S",
+          "id": "call:01M3M0VWMVPBMM3CV3N69H70ER",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -214,16 +216,16 @@
             "duration_ms": 0
           }
         },
-        "after": "item:01M3KZ24H9YYQJ9RQ8HGQPQHPV"
+        "after": "item:01M3M0VWMVSCQH4VW5F9W7N3E5"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "approval:01M3KZ24HA5W68XKZW5J1A4S8S",
+          "id": "approval:01M3M0VWMVPBMM3CV3N69H70ER",
           "turn": 1,
           "kind": {
             "type": "approval",
-            "call": "01M3KZ24HA5W68XKZW5J1A4S8S",
+            "call": "01M3M0VWMVPBMM3CV3N69H70ER",
             "tool": "write",
             "summary": "summary.md",
             "input": {
@@ -238,24 +240,24 @@
               "risk": "write"
             },
             "source": {
-              "session": "01M3KZ2449CCNEKGHY2MT8Q2W0"
+              "session": "01M3M0VVR4251X9AH83REG52V2"
             },
             "decision": null,
             "by": null
           }
         },
-        "after": "call:01M3KZ24HA5W68XKZW5J1A4S8S"
+        "after": "call:01M3M0VWMVPBMM3CV3N69H70ER"
       }
     ],
     [
       {
         "op": "upsert",
         "block": {
-          "id": "approval:01M3KZ24HA5W68XKZW5J1A4S8S",
+          "id": "approval:01M3M0VWMVPBMM3CV3N69H70ER",
           "turn": 1,
           "kind": {
             "type": "approval",
-            "call": "01M3KZ24HA5W68XKZW5J1A4S8S",
+            "call": "01M3M0VWMVPBMM3CV3N69H70ER",
             "tool": "write",
             "summary": "summary.md",
             "input": {
@@ -270,7 +272,7 @@
               "risk": "write"
             },
             "source": {
-              "session": "01M3KZ2449CCNEKGHY2MT8Q2W0"
+              "session": "01M3M0VVR4251X9AH83REG52V2"
             },
             "decision": {
               "type": "allow"
@@ -278,7 +280,7 @@
             "by": "user"
           }
         },
-        "after": "call:01M3KZ24HA5W68XKZW5J1A4S8S"
+        "after": "call:01M3M0VWMVPBMM3CV3N69H70ER"
       },
       {
         "op": "upsert",
@@ -292,12 +294,12 @@
             ]
           }
         },
-        "after": "approval:01M3KZ24HA5W68XKZW5J1A4S8S"
+        "after": "approval:01M3M0VWMVPBMM3CV3N69H70ER"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3KZ24HA5W68XKZW5J1A4S8S",
+          "id": "call:01M3M0VWMVPBMM3CV3N69H70ER",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -308,21 +310,19 @@
             "state": "done",
             "tail": "wrote /project/summary.md (6 bytes)",
             "archive": {
-              "id": "01M3KZ24HRMPAPBVJA5B34PRMZ",
+              "id": "01M3M0VWNA0M0QSYJ0K886N9GP",
               "bytes": 102
             },
             "diff": null,
-            "duration_ms": 3
+            "duration_ms": 1
           }
         },
-        "after": "item:01M3KZ24H9YYQJ9RQ8HGQPQHPV"
-      }
-    ],
-    [
+        "after": "item:01M3M0VWMVSCQH4VW5F9W7N3E5"
+      },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KZ24JBYJ3S48CAPN716X5S",
+          "id": "item:01M3M0VWNKRAA6FA9SZZPSKXN8",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -358,7 +358,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KZ24H3X34VEX829YC8R89R",
+          "id": "turn:01M3M0VWMQ5F50234GECA8CQ0H",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -394,7 +394,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KZ24H3X34VEX829YC8R89R",
+            "turn": "01M3M0VWMQ5F50234GECA8CQ0H",
             "tally": {
               "sent": 7465,
               "received": 21,
@@ -407,7 +407,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 29447.794949114214,
+            "tok_per_s": 199338.19718534464,
             "exact": true,
             "sparkline": [],
             "done": true
@@ -416,12 +416,12 @@
           "text": {
             "sent": "7.5k",
             "received": "21",
-            "rate": "29448",
-            "spoken": "7.5 thousand tokens sent, 21 received, 29448 tokens per second",
+            "rate": "199338",
+            "spoken": "7.5 thousand tokens sent, 21 received, 199338 tokens per second",
             "heading": "Last turn · 2 requests",
             "phase": "done",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 63975 tok/s · first token 0 ms · peak 100972 tok/s",
+            "rate_detail": "avg 109542 tok/s · first token 0 ms · peak 199338 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -494,6 +494,8 @@
                 "share": 0.00012906414837502125
               }
             ],
+            "context_free": "996.2k",
+            "cache_hit": "0% this turn",
             "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
           }
         }
@@ -504,14 +506,14 @@
     {
       "batch": 1,
       "item": {
-        "session": "01M3KZ2449CCNEKGHY2MT8Q2W0",
+        "session": "01M3M0VVR4251X9AH83REG52V2",
         "source": {
-          "session": "01M3KZ2449CCNEKGHY2MT8Q2W0"
+          "session": "01M3M0VVR4251X9AH83REG52V2"
         },
         "need": {
           "type": "approval",
           "call": {
-            "id": "01M3KZ24HA5W68XKZW5J1A4S8S",
+            "id": "01M3M0VWMVPBMM3CV3N69H70ER",
             "name": "write",
             "input": {
               "content": "hello\n",
@@ -533,7 +535,7 @@
   ],
   "snapshot": [
     {
-      "id": "turn:01M3KZ24H3X34VEX829YC8R89R",
+      "id": "turn:01M3M0VWMQ5F50234GECA8CQ0H",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -554,7 +556,7 @@
       }
     },
     {
-      "id": "item:01M3KZ24H3M76Z8XVMF7YCEM1K",
+      "id": "item:01M3M0VWMQE75CFPP7RZVXRE1J",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -563,7 +565,7 @@
       }
     },
     {
-      "id": "item:01M3KZ24H9YYQJ9RQ8HGQPQHPV",
+      "id": "item:01M3M0VWMVSCQH4VW5F9W7N3E5",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -588,7 +590,7 @@
       }
     },
     {
-      "id": "call:01M3KZ24HA5W68XKZW5J1A4S8S",
+      "id": "call:01M3M0VWMVPBMM3CV3N69H70ER",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -599,19 +601,19 @@
         "state": "done",
         "tail": "wrote /project/summary.md (6 bytes)",
         "archive": {
-          "id": "01M3KZ24HRMPAPBVJA5B34PRMZ",
+          "id": "01M3M0VWNA0M0QSYJ0K886N9GP",
           "bytes": 102
         },
         "diff": null,
-        "duration_ms": 3
+        "duration_ms": 1
       }
     },
     {
-      "id": "approval:01M3KZ24HA5W68XKZW5J1A4S8S",
+      "id": "approval:01M3M0VWMVPBMM3CV3N69H70ER",
       "turn": 1,
       "kind": {
         "type": "approval",
-        "call": "01M3KZ24HA5W68XKZW5J1A4S8S",
+        "call": "01M3M0VWMVPBMM3CV3N69H70ER",
         "tool": "write",
         "summary": "summary.md",
         "input": {
@@ -626,7 +628,7 @@
           "risk": "write"
         },
         "source": {
-          "session": "01M3KZ2449CCNEKGHY2MT8Q2W0"
+          "session": "01M3M0VVR4251X9AH83REG52V2"
         },
         "decision": {
           "type": "allow"
@@ -645,7 +647,7 @@
       }
     },
     {
-      "id": "item:01M3KZ24JBYJ3S48CAPN716X5S",
+      "id": "item:01M3M0VWNKRAA6FA9SZZPSKXN8",
       "turn": 1,
       "kind": {
         "type": "assistant",

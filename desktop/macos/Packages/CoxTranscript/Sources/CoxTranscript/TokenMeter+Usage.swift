@@ -1,10 +1,11 @@
 // The token meter and popover's values from the core's `UsageView` (T37.25, DS§7): the figures
 // `cox_app::MeterText` formatted, copied field by field. Here, beside `SessionComposer`, because
 // this package is where CoxUI's values and CoxClient's types meet; nothing here computes a
-// figure. The context split (A98, T37.25.2) maps in `TokenPopover.Part.init(_:)`, the one place a
-// core `ContextPart` becomes a bar segment and legend, for any view that draws the split.
+// figure. The context split (A98) comes from CoxModel's `ContextSplit`, the one mapping the popover
+// and the inspector's Context tab share; `TokenPopover.Part.init(_:)` only turns its part into CoxUI's.
 
 import CoxClient
+import CoxModel
 import CoxUI
 
 extension TokenMeter.State {
@@ -30,15 +31,15 @@ extension TokenPopover.State {
       TokenPopover.Row(label: $0.label, turn: $0.turn, session: $0.session, isDetail: $0.detail)
     }
     (context, contextShare, footnote) = (text.context, text.contextShare, text.footnote)
-    parts = text.contextParts.compactMap(TokenPopover.Part.init)
+    parts = ContextSplit(text).parts.compactMap(TokenPopover.Part.init)
   }
 }
 
 extension TokenPopover.Part {
-  /// The bar segment and legend (`System 3.5k`) of `part`; `nil` for a kind this build has no
-  /// colour role for, so a newer core's part is skipped rather than drawn in the wrong colour.
-  init?(_ part: ContextPart) {
-    guard let kind = StackedBar.Kind(rawValue: part.kind) else { return nil }
-    self.init(kind: kind, fraction: part.share, legend: "\(part.label) \(part.tokens)")
+  /// The bar segment and legend (`System 3.5k`) of `part`; `ContextSplit` already dropped a kind
+  /// the bar has no colour role for, so `nil` only if the two kind lists ever drift apart.
+  init?(_ part: ContextSplit.Part) {
+    guard let kind = StackedBar.Kind(rawValue: part.kind.rawValue) else { return nil }
+    self.init(kind: kind, fraction: part.fraction, legend: "\(part.label) \(part.tokens)")
   }
 }
