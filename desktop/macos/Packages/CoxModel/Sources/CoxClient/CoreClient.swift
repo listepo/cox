@@ -87,6 +87,8 @@ public struct FixtureCoreClient: CoreClient {
   public let completions: [Completion]
   let host: (any PlatformHost)?
   let waitsForYou: Bool
+  /// Shared by every session this client opens, as the core's inbox spans sessions.
+  let pending = FixtureInbox()
 
   /// `host` is told each recorded note as its batch is pulled. With `waitsForYou`, a batch
   /// that leaves an approval or question pending holds the next one until it is answered.
@@ -100,8 +102,13 @@ public struct FixtureCoreClient: CoreClient {
 
   public func open(_ request: OpenSession) async throws -> any SessionClient {
     FixtureSession(
-      fixture: fixture, completions: completions, host: host, waitsForYou: waitsForYou)
+      fixture: fixture, completions: completions, host: host, waitsForYou: waitsForYou,
+      inbox: pending)
   }
+}
+
+extension FixtureCoreClient: InboxClient {
+  public func inbox() -> [InboxItem] { pending.all }
 }
 
 /// Hands out the recorded batches one pull at a time and keeps what was
@@ -118,6 +125,7 @@ public final class FixtureSession: SessionClient {
   /// Newest first, as the core returns them.
   private let prompts: [String]
   private let fixedChanges: Changes
+  private let inbox: FixtureInbox
   private let state = Mutex(State())
 
   private struct State {
@@ -130,13 +138,22 @@ public final class FixtureSession: SessionClient {
     var parked: CheckedContinuation<Void, Never>?
   }
 
-  public init(
+  public convenience init(
     fixture: Fixture, completions: [Completion] = [], host: (any PlatformHost)? = nil,
     waitsForYou: Bool = false, prompts: [String] = [], changes: Changes = Changes()
   ) {
-    (self.fixture, self.completions, self.host, self.waitsForYou, self.prompts) =
-      (fixture, completions, host, waitsForYou, prompts)
-    fixedChanges = changes
+    self.init(
+      fixture: fixture, completions: completions, host: host, waitsForYou: waitsForYou,
+      prompts: prompts, changes: changes, inbox: FixtureInbox())
+  }
+
+  init(
+    fixture: Fixture, completions: [Completion], host: (any PlatformHost)?, waitsForYou: Bool,
+    prompts: [String] = [], changes: Changes = Changes(), inbox: FixtureInbox
+  ) {
+    (self.fixture, self.completions, self.host, self.waitsForYou) =
+      (fixture, completions, host, waitsForYou)
+    (self.prompts, fixedChanges, self.inbox) = (prompts, changes, inbox)
   }
 
   public var sent: [Intent] { state.withLock { $0.sent } }
@@ -154,12 +171,14 @@ public final class FixtureSession: SessionClient {
     }
     guard let pulled else { return nil }
     for note in fixture.notes where note.batch == pulled {
+      inbox.add(note.item)
       host?.notify(HostNote(note.item, badge: note.badge))
     }
     return fixture.batches[pulled]
   }
 
   public func send(_ intent: Intent) async throws -> (any SessionClient)? {
+    if let call = intent.answers { inbox.answer(call) }
     let resume = state.withLock { state in
       state.sent.append(intent)
       if let call = intent.answers { state.waiting.remove(call) }

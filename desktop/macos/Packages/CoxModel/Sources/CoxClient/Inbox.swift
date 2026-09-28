@@ -1,7 +1,10 @@
 // The "Needs you" inbox as Swift values (DT§4.3 Inbox): `InboxItem` and `Need`, cox-ffi's
 // records cut to what the app shows, and the one place an item becomes the `HostNote` a
 // notification and the Dock badge show. Here, not in CoxCore, so the fixture client hands its
-// recorded items to a `PlatformHost` exactly as `HostBridge` hands the live ones (T37.27).
+// recorded items to a `PlatformHost` exactly as `HostBridge` hands the live ones (T37.27), and
+// the `InboxClient` the sidebar's "Needs you" store reads it through (T37.27.7).
+
+import Synchronization
 
 /// One inbox row; `cox_app::InboxItem`.
 public struct InboxItem: Equatable, Sendable, Decodable {
@@ -30,6 +33,20 @@ public enum Need: Equatable, Sendable {
   /// A turn stopped on an error or a refusal.
   case failed(text: String)
   case taskDone(task: String, label: String, succeeded: Bool)
+
+  /// The approval or question an answer names; `nil` for news.
+  public var call: String? {
+    switch self {
+    case .approval(let call, _, _, _), .question(let call, _, _): call
+    case .failed, .taskDone: nil
+    }
+  }
+}
+
+/// The inbox across every session this process drives, as cox-ffi's `App.inbox`.
+public protocol InboxClient: Sendable {
+  /// Most urgent first, oldest first within a rank.
+  func inbox() -> [InboxItem]
 }
 
 extension HostNote {
@@ -47,6 +64,18 @@ extension HostNote {
       case .taskDone(_, let label, let succeeded): note(.taskDone(succeeded: succeeded), label)
       }
   }
+}
+
+/// The fixture client's inbox: each recorded note's item from the pull that brings it until
+/// its call is answered. Not the core's ranking: items stay in arrival order.
+final class FixtureInbox: Sendable {
+  private let items = Mutex<[InboxItem]>([])
+
+  var all: [InboxItem] { items.withLock { $0 } }
+
+  func add(_ item: InboxItem) { items.withLock { $0.append(item) } }
+
+  func answer(_ call: String) { items.withLock { $0.removeAll { $0.need.call == call } } }
 }
 
 extension Need: Decodable {
