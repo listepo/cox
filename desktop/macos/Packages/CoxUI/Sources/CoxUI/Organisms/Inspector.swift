@@ -5,7 +5,7 @@
 import SwiftUI
 
 /// A floating `ShellPane(.inspector)` of `Size.inspectorWidth`: the title, the tabs with the
-/// selected one lifted, then `content` for the selected tab.
+/// selected one lifted, then `content` for the selected tab (`ChangesTab`, …), scrolling.
 struct Inspector<Content: View>: View {
   let selection: InspectorTab
   let select: (InspectorTab) -> Void
@@ -35,7 +35,14 @@ struct Inspector<Content: View>: View {
         .padding(.bottom, Space.ml)
         .frame(maxWidth: .infinity, alignment: .leading)
         .hairline(.bottom)
-        content.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // The mockup's `.ib`: every tab scrolls in the same inset body.
+        ScrollView {
+          content
+            .padding(.horizontal, Space.xl)
+            .padding(.vertical, Space.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxHeight: .infinity)
       }
     }
     .frame(width: Size.inspectorWidth)

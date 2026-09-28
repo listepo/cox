@@ -9,6 +9,8 @@ import SwiftUI
 struct CheckpointRow: View {
   /// A checkpoint, formatted by the core.
   struct Checkpoint: Equatable, Sendable {
+    /// The core's id for it, which a rewind names.
+    var id: String
     /// `Turn 1 · before edit retry.rs`.
     var label: String
     /// When it was taken, `14:02`.

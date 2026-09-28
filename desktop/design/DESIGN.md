@@ -315,7 +315,8 @@ component.
 | `Composer` | text field, ComposerChip, TokenMeter, send button | `.composer` |
 | `TokenPopover` | metric, Sparkline, KeyValueGrid, StackedBar, legend | `.tokpop` |
 | `AppearancePopover(state:, send:)` | title and KeyCap, MaterialPicker, LabeledSlider ×3 (transparency; blur, or reflection for Glossy; Depth), LabeledToggle (tint), a note in footnote; readable `surface.popover` glass at e4. Solid disables transparency and blur; Reduce Transparency disables all but Depth and the note says why. Reports one intent per `[desktop.appearance]` key; the window draws from the same state | `.appear` |
-| `Inspector` | ShellPane, title, tab strip; each tab's content (ChangedFileRow, CheckpointRow, KeyValueGrid) is a slot | `.insp` |
+| `Inspector` | ShellPane, title, tab strip; each tab's content (ChangedFileRow, CheckpointRow, KeyValueGrid) is a slot, scrolling in one inset body | `.insp` |
+| `ChangesTab(state:, send:)` | the Changes tab (DT§5.1): `InspectorSection`s (SectionHeader over flush rows, shared by every tab) of ChangedFileRow under a `Review` link with its KeyCap (⌘⇧R, which the app's menu answers), CheckpointRow, and the worktree's KeyValueGrid; an empty section is left out, an empty tab says so. A row click opens Review at the file; the rows' actions report review, revert and rewind | `.ib`, `.ih`, `.fr` |
 | `SettingsSidebar(pages:, selection:, userFile:, projectFile:, select:)` | ShellPane(.sidebar); a plain `InspectorRow` per `SettingsPage` (General … Advanced, DT§5.7, with its §3.7 symbol), the selected one lifted; footer: each config file cut in the middle with its layer Badge | `.set-side` |
 | `SettingsGroupBox(title, content:)` | SectionHeader over the rows on `fill.primary` at `radius.xl`, a hairline between rows | `.gtitle`, `.group` |
 

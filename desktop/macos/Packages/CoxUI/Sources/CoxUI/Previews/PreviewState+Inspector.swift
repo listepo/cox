@@ -1,5 +1,5 @@
-// `PreviewState` fixtures for the inspector's rows (T37.21.9): the Changes tab's files and
-// checkpoints as the mockup's inspector shows them. Separate from `PreviewState.swift` so
+// `PreviewState` fixtures for the inspector's rows (T37.21.9) and tabs (T37.29): the Changes
+// tab's files, checkpoints and worktree as the mockup's inspector shows them. Separate from `PreviewState.swift` so
 // molecules built in parallel add their fixtures without editing one file.
 
 import SwiftUI
@@ -13,17 +13,27 @@ extension PreviewState {
   ]
 
   static let checkpoints: [CheckpointRow.Checkpoint] = [
-    .init(label: "Turn 1 · before edit retry.rs", time: "14:02"),
-    .init(label: "Turn 1 · before write backoff.rs", time: "14:03"),
+    .init(id: "cp-1", label: "Turn 1 · before edit retry.rs", time: "14:02"),
+    .init(id: "cp-2", label: "Turn 1 · before write backoff.rs", time: "14:03"),
   ]
+
+  /// The mockup's worktree facts.
+  static let worktree: [KeyValueGrid.Row] = [
+    .init(label: "Branch", values: ["wt/retry-jitter"]),
+    .init(label: "Base", values: ["main @ 4273daa"]),
+    .init(label: "Size", values: ["412 MB"]),
+    .init(label: "target/", values: ["398 MB"], isDetail: true),
+  ]
+
+  /// The mockup's Changes tab, with the first file open in Review.
+  static let changes = ChangesTab.State(
+    files: changedFiles, selection: changedFiles[0].path, checkpoints: checkpoints,
+    worktree: worktree)
 
   /// What you can do to a changed file.
-  static let fileActions = [
-    RowAction(title: "Review", symbol: "eye") {},
-    RowAction(title: "Revert", symbol: "arrow.uturn.backward") {},
-  ]
+  static let fileActions = ChangesTab.fileActions(changedFiles[0].path) { _ in }
 
-  static let checkpointActions = [RowAction(title: "Rewind", symbol: "arrow.uturn.backward") {}]
+  static let checkpointActions = ChangesTab.checkpointActions(checkpoints[0].id) { _ in }
 }
 
 /// The first changed file at the inspector's width, selected or not.
@@ -67,10 +77,20 @@ struct CheckpointSample: View {
 struct CheckpointList: View {
   var body: some View {
     VStack(spacing: 0) {
-      ForEach(PreviewState.checkpoints, id: \.label) {
+      ForEach(PreviewState.checkpoints, id: \.id) {
         CheckpointRow($0, actions: PreviewState.checkpointActions)
       }
     }
     .frame(width: Size.inspectorWidth)
+  }
+}
+
+/// The inspector on its Changes tab, as tall as the smallest window.
+struct ChangesInspectorSample: View {
+  let state: ChangesTab.State
+
+  var body: some View {
+    Inspector(selection: .changes, content: ChangesTab(state: state) { _ in }) { _ in }
+      .frame(height: Size.windowMinHeight)
   }
 }
