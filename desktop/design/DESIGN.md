@@ -200,8 +200,9 @@ names map one-to-one:
   sidebar is hidden. The app window hides its title bar and puts the behind-window blur under the
   window pane.
 - The reading column is `size.readingWidth` wide and centred; the composer shares its width.
-- Minimum window `size.windowMinWidth` × `size.windowMinHeight`. Below 1280 pt the inspector becomes
-  an overlay instead of a column.
+- Minimum window `size.windowMinWidth` × `size.windowMinHeight`. Below 1280 pt of window width the
+  inspector floats over the transcript column, `size.paneGap` in from its edges, instead of taking width
+  from it: the column keeps the width it has with the inspector hidden.
 
 ## 5. Swift package layout for the view layer
 

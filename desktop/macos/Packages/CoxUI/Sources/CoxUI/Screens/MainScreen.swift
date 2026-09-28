@@ -43,30 +43,13 @@ struct MainScreen<Transcript: View, InspectorContent: View>: View {
     self.inspector = inspector
   }
 
+  /// Below this window width the inspector floats over the transcript column instead of taking
+  /// width from it, so a small window keeps its reading room (DS§4).
+  static var inspectorFloatsBelow: CGFloat { 1280 }
+
   var body: some View {
-    ShellPane(.window) {
-      HStack(spacing: Size.paneGap) {
-        if state.isSidebarVisible {
-          Sidebar(state: state.sidebar) { send(.sidebar($0)) }
-            .padding([.leading, .vertical], Size.paneGap)
-        }
-        VStack(spacing: 0) {
-          SessionToolbar(
-            state: state.toolbar, isSidebarVisible: state.isSidebarVisible,
-            isInspectorVisible: state.isInspectorVisible
-          ) { send(.toolbar($0)) }
-          HStack(spacing: Size.paneGap) {
-            ShellPane(.column) { transcript.frame(maxWidth: .infinity, maxHeight: .infinity) }
-            if state.isInspectorVisible {
-              Inspector(selection: state.inspectorTab, content: inspector(state.inspectorTab)) {
-                send(.inspectorTab($0))
-              }
-            }
-          }
-          .padding([.trailing, .bottom], Size.paneGap)
-          .padding(.leading, state.isSidebarVisible ? 0 : Size.paneGap)
-        }
-      }
+    GeometryReader { window in
+      shell(inspectorFloats: window.size.width < Self.inspectorFloatsBelow)
     }
     .overlay(alignment: .topTrailing) {
       if state.toolbar.popover == .appearance {
@@ -80,6 +63,40 @@ struct MainScreen<Transcript: View, InspectorContent: View>: View {
     .frame(minWidth: Size.windowMinWidth, minHeight: Size.windowMinHeight)
     .animation(.cox(Motion.durationSlow), value: state.isSidebarVisible)
     .animation(.cox(Motion.durationSlow), value: state.isInspectorVisible)
+  }
+
+  private func shell(inspectorFloats: Bool) -> some View {
+    ShellPane(.window) {
+      HStack(spacing: Size.paneGap) {
+        if state.isSidebarVisible {
+          Sidebar(state: state.sidebar) { send(.sidebar($0)) }
+            .padding([.leading, .vertical], Size.paneGap)
+        }
+        VStack(spacing: 0) {
+          SessionToolbar(
+            state: state.toolbar, isSidebarVisible: state.isSidebarVisible,
+            isInspectorVisible: state.isInspectorVisible
+          ) { send(.toolbar($0)) }
+          HStack(spacing: Size.paneGap) {
+            ShellPane(.column) { transcript.frame(maxWidth: .infinity, maxHeight: .infinity) }
+            if state.isInspectorVisible, !inspectorFloats { inspectorPane }
+          }
+          .overlay(alignment: .trailing) {
+            if state.isInspectorVisible, inspectorFloats {
+              inspectorPane.padding([.vertical, .trailing], Size.paneGap)
+            }
+          }
+          .padding([.trailing, .bottom], Size.paneGap)
+          .padding(.leading, state.isSidebarVisible ? 0 : Size.paneGap)
+        }
+      }
+    }
+  }
+
+  private var inspectorPane: some View {
+    Inspector(selection: state.inspectorTab, content: inspector(state.inspectorTab)) {
+      send(.inspectorTab($0))
+    }
   }
 }
 
