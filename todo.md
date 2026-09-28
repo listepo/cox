@@ -22,7 +22,6 @@
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T35.14. Sandboxed plugin and external-agent programs may live under `/tmp`
-- T37.8. `cox-app`: timeline fold with snapshots per scripted scenario
 - T37.9. `cox-app`: drain task, coalescer, never-stall
 - T37.10. `cox-app`: workspace, inbox, status, intents, completion
 - T37.12. `cox-app`: usage and throughput view state
@@ -47,3 +46,4 @@
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.37. Spike: the cross-block selection engine
+- T37.38. `cox-app`: tool summaries, `ToolGroup`, compaction summary

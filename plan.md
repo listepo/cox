@@ -28,7 +28,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.14 | todo | P2 | 3 | 0% | |
-| T37.8 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.9 | todo | P0 | 3 | 0% | |
 | T37.10 | todo | P0 | 4 | 0% | |
 | T37.12 | todo | P1 | 3 | 0% | |
@@ -53,6 +52,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.37 | todo | P0 | 3 | 0% | |
+| T37.38 | todo | P1 | 3 | 0% | |
 
 ## Reference
 
@@ -1089,12 +1089,6 @@ Every card in this phase:
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
 
-#### T37.8 `cox-app`: timeline fold with snapshots per scripted scenario
-
-Depends: T37.3–T37.7 · Size: ~200 · Files: `crates/cox-app/src/timeline.rs`, `crates/cox-app/src/patch.rs`, `crates/cox-app/src/lib.rs`
-Goal: `Event` → keyed blocks → `TimelinePatch` (DT§4.3); replaying a rollout produces the same patches as the live run.
-Check: `insta` snapshot per scripted scenario; `replay_equals_live` holds for all of them.
-
 #### T37.9 `cox-app`: drain task, coalescer, never-stall
 
 Depends: T37.8 · Size: ~150 · Files: `crates/cox-app/src/controller.rs`, `crates/cox-app/src/patch.rs`
@@ -1239,6 +1233,12 @@ Depends: T37.16 · Size: ~200 (throwaway spike plus a result note) · Files: `de
 Goal: decide how the transcript selects text across blocks (A67). Build the same 2 000-block fixture (prose, code, diffs, tool cards) twice: with Textual 0.5.0 (MIT, R§9.5.10) and with our own TextKit 2 view — one `NSTextView` over the whole transcript with the cards as view-backed attachments. Measure: one continuous drag selects across blocks, copy keeps block order as Markdown, clamping to one block when `cross_block_selection = false`, first frame and scroll frame time against the DT§9 budget. If Textual passes, it is taken (§1.1 row); if not, our view becomes its own package `desktop/macos/Packages/CoxTranscriptText` with its own cards. STTextView is out (A68).
 Check: the result table with both measurements is in `research.md` §9.5; T37.23's card names the chosen engine.
 
+#### T37.38 `cox-app`: tool summaries, `ToolGroup`, compaction summary
+
+Depends: T37.8 · Size: ~150 · Files: `crates/cox-app/src/summary.rs`, `crates/cox-app/src/timeline.rs`, `crates/cox-app/src/patch.rs`
+Goal: the DT§4.3 rows T37.8 left out. Rust writes each tool's one-line summary ("Ran `cargo test` — exit 0 · 4.2 s", "Edited `crates/x.rs` +12 −3", "Read `a.rs` · 120 lines") with its icon key and duration, so Swift never parses tool output; consecutive read/grep/glob/outline calls fold into one `ToolGroup` block ("Explored 7 files") with the calls as children; the `Compaction` block carries before → after tokens, reason and the summary text. Also covers the scenarios T37.8 skipped: subagent, checkpoint and rewind.
+Check: the T37.8 scenario snapshots updated in one reviewed change; new scenarios for subagent, checkpoint/rewind and a read-grep-read run that folds into one group; `replay_equals_live` holds for all of them.
+
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
@@ -1368,6 +1368,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A66 §3 P35 (new T35.14), by the creator. Why: the PR #53 CI fix found that bwrap's private `/tmp` hides any sandboxed program under `/tmp` on Linux, including AGENTS.md's `COX_HOME=/tmp/cox-scratch` dev runs. Effect: one card; `cox_sandbox::sandbox::Policy` stays the single sandbox guard. No decision changes.
 - A67 §0 D1, D2, D11; §3 new P37 — native macOS client, M1, by the creator ("create the plan and tasks", 2026-09-28), after the desktop research (`research.md` §9) and the design `docs/design/desktop.md` with its view-layer guide `desktop/design/DESIGN.md`. Why: a desktop client that uses cox as a library, better than Claude, Codex and Cursor desktop apps on transparency (cost, tokens, context), review and native feel; SwiftUI views stay free of business logic, which lives in new crates `cox-session`, `cox-app` and `cox-ffi` (UniFFI, in-process). Effect: 38 cards T37.0–T37.37, including the design-system work the creator asked for — DTCG tokens generated into Swift and asset colours, a component catalogue decomposed into foundations, atoms, molecules and organisms, lint that forbids literals — plus adjustable glass (frosted, glossy, solid) with depth and a live token meter (sent, received, tok/s). New dependencies arrive with their cards: `uniffi` (T37.14), `style-dictionary` (T37.17), SwiftLint (T37.18), swift-snapshot-testing (T37.19), Sparkle (T37.32). §0 D1, D2 and D11 change as the creator chose (option A, 2026-09-28: in-process static library over a `cox app-server` subprocess or an ACP client, which would lack cost, checkpoints, worktrees and the inbox): D1 names the macOS app as the second artifact and the `uniffi`/`clap`/`anyhow` graph rules; D2 names the app as a consumer and makes `cox-app`'s fold a pure function of the stream (T37.8 `replay_equals_live`); D11 adds the app as a fifth surface with the 300-LOC limit on `cox-ffi`. Platform floor, by the creator (2026-09-28): macOS 26 or later on Apple Silicon only, no Intel — one `aarch64-apple-darwin` slice, no universal binary. Also by the creator (2026-09-28): the Swift code lives in this repository under `desktop/macos/`, under the repository's licence; cross-block text selection in the transcript is on by default with a setting to turn it off; the ACP host (M3) stays in `roadmap.md` and moves into this plan only when a planned card is blocked by it; Swift dependencies are chosen by the agent — the most used, best-maintained fit, otherwise our own code as a separate package with its own card. Concurrent writers on `cox.db`, by the creator (2026-09-28, option A of four — over a background daemon that owns the database, the app as server with the TUI as its client, or a separate app database that would split sessions and the cost ledger): one shared database; one process drives a session under an OS file lock and others follow it read-only or fork (T37.34); read-then-write transactions are IMMEDIATE and a `data_version` feed reports other processes' commits (T37.35); an older binary refuses a newer schema (T37.36). Swift dependencies (`research.md` §9.5): Sparkle, swift-snapshot-testing, SwiftLint with SwiftLintPlugins, swift-collections; SwiftTerm in M2; `swift-format` and the Security framework are native; STTextView is rejected because its GPL-only terms would take the royalty-free option away from the app (A68); cross-block selection is decided by a spike between Textual and our own TextKit 2 package (T37.37). M2 and M3 (DT§3.2–3.3) go to `roadmap.md`.
 - A68 `Cargo.toml` `license`, `crates/cox-plugin-api/Cargo.toml`, `deny.toml` — licence metadata matches the README, by the creator (2026-09-28): "GPLv3 and royalty-free", GPL-3.0-only rather than -or-later, and the plugin SDK stays MIT/Apache. Why: the workspace said `MIT OR Apache-2.0` while `LICENSE` and the README offer GPLv3, a royalty-free licence and a commercial one. Effect: workspace crates are `GPL-3.0-only OR LicenseRef-cox-Royalty-Free` (crates.io parses `LicenseRef-` ids: its `src/licenses.rs` uses `spdx` with `allow_unknown: false`, which rejects unknown names but lexes `LicenseRef-` as its own token, `spdx` 0.13.5 `src/lexer.rs:79`, checked 2026-09-28); `cox-plugin-api` stays `MIT OR Apache-2.0` because the guest SDK in `plugins/` depends on it; `deny.toml` allows only the ref, not GPL-3.0-only, so the royalty-free option cannot gain a GPL dependency. The commercial licence needs no SPDX id. No decision changes.
+- A69 §3 P37, T37.38 — T37.8 built the timeline fold without the DT§4.3 tool summaries, the `ToolGroup` row and the compaction summary, and no card claimed them. Why: they are part of the approved design (A67) and the Swift views must not parse tool output. Effect: one card T37.38 after T37.8; P37 now has 39 cards T37.0–T37.38.
 
 ## 7. Risk register
 
