@@ -38,26 +38,34 @@ struct SettingsWindow: View {
   }
 
   private func state(_ settings: SettingsStore) -> SettingsScreenState {
-    let section = settings.sections.first { $0.group.rawValue == page.rawValue }
+    let sections = settings.sections
+    let pages = sections.compactMap { SettingsPage(rawValue: $0.group.rawValue) }
+    // A search that hides the chosen page shows the first page it keeps.
+    let shown = pages.contains(page) ? page : pages.first ?? page
+    let section = sections.first { $0.group.rawValue == shown.rawValue }
     let tables = section.map { settings.tables(in: $0) } ?? []
+    // A search that keeps no page shows no page's logins or dropped values either.
+    let matchesNothing = section == nil && !settings.filter.isEmpty
+    let group = matchesNothing ? nil : SettingsGroup(rawValue: shown.rawValue)
     return SettingsScreenState(
-      pages: settings.sections.compactMap { SettingsPage(rawValue: $0.group.rawValue) },
-      selection: page,
+      pages: pages,
+      selection: shown,
       tables: tables.map { table in
         SettingsScreen.Table(
           id: table.name, fields: table.fields.map(field),
           key: table.provider.map { .init(provider: $0, isStored: settings.hasKey(for: $0)) })
       },
       userFile: settings.view?.userFile ?? "", projectFile: settings.view?.projectFile,
-      logins: page == .mcp
+      logins: shown == .mcp && !matchesNothing
         ? settings.logins.map {
           .init(
             id: $0.server, detail: $0.detail, action: action($0), status: Self.status($0.status),
             log: $0.log)
         } : [],
-      dropped: SettingsGroup(rawValue: page.rawValue).map { group in
+      dropped: group.map { group in
         settings.dropped(in: group).map { .init(id: $0.key, reason: $0.reason, change: $0.change) }
-      } ?? [])
+      } ?? [],
+      filter: settings.filter)
   }
 
   private func field(_ field: SettingsField) -> SettingsScreen.Field {
@@ -81,6 +89,7 @@ struct SettingsWindow: View {
   private func handle(_ intent: SettingsScreenIntent, _ settings: SettingsStore) {
     switch intent {
     case .select(let selected): page = selected
+    case .filter(let query): settings.filter = query
     case .set(let key, .number(let value)):
       dragged[key] = value
       sliderWrites.submit(key) { await settings.edit(key, .number(value)) }

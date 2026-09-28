@@ -91,7 +91,8 @@ extension SettingsStore {
     return setting.description.isEmpty ? nil : setting.description
   }
 
-  private static func title(of key: String) -> String {
+  /// The label a field shows, which `sections` also filters by.
+  static func title(of key: String) -> String {
     let words = (key.split(separator: ".").last ?? "").replacingOccurrences(of: "_", with: " ")
     return words.prefix(1).uppercased() + words.dropFirst()
   }

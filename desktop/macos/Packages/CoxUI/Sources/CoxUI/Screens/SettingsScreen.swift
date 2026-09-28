@@ -18,21 +18,26 @@ public struct SettingsScreenState: Equatable, Sendable {
   public var logins: [SettingsScreen.Login] = []
   /// The page's project values the guard list threw out.
   public var dropped: [SettingsScreen.DroppedValue] = []
+  /// The sidebar's search; `pages` and `tables` arrive narrowed to it, and labels mark it.
+  public var filter = ""
 
   public init(
     pages: [SettingsPage] = [], selection: SettingsPage = .general,
     tables: [SettingsScreen.Table] = [], userFile: String = "", projectFile: String? = nil,
-    logins: [SettingsScreen.Login] = [], dropped: [SettingsScreen.DroppedValue] = []
+    logins: [SettingsScreen.Login] = [], dropped: [SettingsScreen.DroppedValue] = [],
+    filter: String = ""
   ) {
     (self.pages, self.selection, self.tables) = (pages, selection, tables)
     (self.userFile, self.projectFile) = (userFile, projectFile)
-    (self.logins, self.dropped) = (logins, dropped)
+    (self.logins, self.dropped, self.filter) = (logins, dropped, filter)
   }
 }
 
 /// Every intent the Settings screen reports.
 public enum SettingsScreenIntent: Equatable, Sendable {
   case select(SettingsPage)
+  /// The search typed in the sidebar; Esc sends an empty one.
+  case filter(String)
   /// A new value for `key`; a slider reports it while it moves.
   case set(key: String, SettingsScreen.Edit)
   /// A key typed for a provider section, bound for its `SecretStore`.
@@ -56,8 +61,8 @@ public struct SettingsScreen: View {
       HStack(spacing: Size.paneGap) {
         SettingsSidebar(
           pages: state.pages, selection: state.selection, userFile: state.userFile,
-          projectFile: state.projectFile
-        ) { send(.select($0)) }
+          projectFile: state.projectFile, filter: state.filter, search: { send(.filter($0)) },
+          select: { send(.select($0)) })
         ShellPane(.column) {
           ScrollView {
             VStack(alignment: .leading, spacing: Space.xl) {
@@ -75,6 +80,7 @@ public struct SettingsScreen: View {
             .padding(Space.xxl)
             .frame(maxWidth: .infinity)
           }
+          .environment(\.settingsFilter, state.filter)
         }
       }
       .padding(Size.paneGap)
@@ -213,6 +219,13 @@ private struct FieldRow: View {
 
 #Preview("models") {
   SettingsScreen(state: PreviewState.settingsModels) { _ in }
+    .frame(width: Size.windowMinWidth, height: Size.windowMinHeight)
+    .padding(Space.xxl)
+    .background(PreviewBackdrop())
+}
+
+#Preview("filtered") {
+  SettingsScreen(state: PreviewState.settingsFiltered) { _ in }
     .frame(width: Size.windowMinWidth, height: Size.windowMinHeight)
     .padding(Space.xxl)
     .background(PreviewBackdrop())
