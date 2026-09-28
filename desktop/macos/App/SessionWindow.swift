@@ -11,8 +11,9 @@
 // shows the browser pane beside it (T51.10), plugin panels sit above the composer and a plugin
 // overlay shows as a sheet (T52.17), File › Connect to Host… lists a remote host's sessions in
 // the sidebar and opens one through that host (T52.21), New session asks which agent drives it
-// and an external agent's transcript opens with its ACP banner (T52.8), and the Appearance
-// popover writes `[desktop.appearance]`.
+// and an external agent's transcript opens with its ACP banner (T52.8), the composer offers
+// best of n and its compare sheet (T52.12), and the Appearance popover writes
+// `[desktop.appearance]`.
 // A popped-out window (T51.11) is the same view on one session with no sidebar; every window
 // on a session shares its stores through `AppStore`.
 
@@ -60,6 +61,8 @@ struct SessionWindow: View {
   @State private var connecting: ConnectHostSheet.State?
   /// The New-session sheet's agents, while it shows (T52.8).
   @State private var picking: AgentPicker?
+  /// The composer's best-of-n candidates and the group the compare sheet shows (T52.12).
+  @State private var bestOf = BestOfLauncher()
   @Environment(\.coxAppearance) private var base
   @Environment(\.openWindow) private var openWindow
 
@@ -104,6 +107,10 @@ struct SessionWindow: View {
       }
     }
     .newSessionSheet($picking) { agent in await open(resume: nil, agent: agent) }
+    .bestOfSheet(bestOf, workspace: try? model.launch.live.get()) { session in
+      handle(Sidebar.Intent.select(session))
+      reviewing = Reviewing(path: nil)
+    }
   }
 
   private var isConnecting: Binding<Bool> {
@@ -218,6 +225,11 @@ struct SessionWindow: View {
             .composer(showing.composer)
           let panels = PluginWidgets.panels(showing.store)
           if !panels.isEmpty { PluginPanel(panels).fixedSize(horizontal: false, vertical: true) }
+          BestOfBar(launcher: bestOf, open: showing, model: model) { sessions in
+            for session in sessions where opened[session.id] == nil {
+              opened[session.id] = OpenedSession(model.registry.adopt(session, window: windowID))
+            }
+          }
           // At its own height, so the transcript takes the rest of the column.
           SessionComposer(store: showing.composer).fixedSize(horizontal: false, vertical: true)
           if isTerminalShown {
