@@ -40,7 +40,9 @@ pub trait Process: Send + Sync {
 pub struct Pipes {
     pub reader: Box<dyn AsyncRead + Send + Unpin>,
     pub writer: Box<dyn AsyncWrite + Send + Unpin>,
-    pub process: Box<dyn Process>,
+    /// Shared so a caller can still read the stderr tail of a server
+    /// whose `initialize` failed.
+    pub process: Arc<dyn Process>,
 }
 
 /// Starts `argv` in `cwd` in its own process group, with only the child
@@ -80,7 +82,7 @@ pub fn spawn(argv: &[String], cwd: &Path) -> Result<Pipes, LspError> {
     Ok(Pipes {
         reader: Box::new(stdout),
         writer: Box::new(stdin),
-        process: Box::new(Child {
+        process: Arc::new(Child {
             pid: child.id(),
             child: Mutex::new(child),
             tail,
@@ -162,7 +164,7 @@ pub struct Report {
 /// One initialized language server.
 pub struct Server {
     client: Client,
-    process: Box<dyn Process>,
+    process: Arc<dyn Process>,
     /// One call at a time: document versions and the notification stream
     /// belong to the server, not to a call.
     state: tokio::sync::Mutex<State>,
@@ -478,7 +480,7 @@ pub(crate) mod tests {
         let pipes = Pipes {
             reader: Box::new(r),
             writer: Box::new(w),
-            process: Box::new(FakeProcess(killed.clone())),
+            process: Arc::new(FakeProcess(killed.clone())),
         };
         (pipes, BufReader::new(sr), sw, killed)
     }
