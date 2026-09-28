@@ -75,9 +75,11 @@ re-sync.
   its screen id. `Screen 28 · editable` rebuilds `28-main-glass-frosted` as auto-layout layers bound
   to the variables, derived from the mockup; values without a token (glass material fills, the
   wallpaper, the traffic lights) stay raw.
-- **Fonts.** Figma has no SF Mono, so the three mono text styles are skipped and the editable screen
-  uses Roboto Mono. SF Pro loads but does not render where the file is rendered; the generator
-  reports both lists (`missingFonts`, `unrenderedFonts`). Which fonts to use in Figma is open.
+- **Fonts.** The Figma file uses stand-ins (A125): Inter for SF Pro, Roboto Mono for SF Mono, at the
+  token's weight and size. `use_figma` lists SF Pro but does not render it, does not list SF Mono,
+  and shared fonts need an Organization plan. The product, CoxUI and the HTML renders use SF, so
+  compare type metrics against the renders, not Figma. The generator still reports any font Figma
+  lacks or cannot render (`missingFonts`, `unrenderedFonts`).
 
 Re-sync:
 
