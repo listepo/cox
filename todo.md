@@ -40,5 +40,3 @@
 - T37.22.1. Inspector as an overlay below 1280 pt
 - T37.22.2. Sidebar and inspector shortcuts; the bypass strip
 - T37.22.3. App window setup and the public CoxUI surface
-- T37.42.1. `SessionStore` keeps the reply text current while it streams
-- T37.42.2. "Copy as Markdown" menu item and ⇧-click block selection

@@ -3825,3 +3825,36 @@ Check:
 Not done:
 - `notify` and `open` are thin and untested: the notification centre needs an app bundle, and tests never post a notification or open a URL.
 - Notification authorization is asked on the first `notify`. There is no delegate yet for clicks or foreground display.
+
+#### T37.42.1 `SessionStore` keeps the reply text current while it streams
+
+Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxModel/Sources/CoxModel/SessionStore.swift`
+Goal: `Block.assistant.text` follows every `docTail` patch, so a whole-reply copy mid-stream returns the current source.
+Check: a test streams a scripted reply and copies it after every patch; each copy equals the text so far.
+Status: done 2026-09-28
+Result: after each `docTail`, `SessionStore` sets the reply's `text` to its doc rendered as Markdown. The text is always derived from the doc, so there is no second source of truth; the closing upsert still brings the real source. The doc-to-Markdown renderer moved from `MarkdownCopy` into `CoxModel/Sources/CoxClient/DocMarkdown.swift` (`StyledDoc.markdown`, `DocBlock.markdown`/`fence`, `Span.markdown`), and the store and Copy as Markdown share it.
+Deviations: 3 source files because of the move. While the reply streams, its text is the doc's Markdown rather than the raw source, which Rust does not send until the end. The copy is checked in CoxModel through the store's reply text, which is what a whole-reply copy returns.
+Check: `swift test` in CoxModel: 13/13. `aStreamedReplysTextIsTheTextSoFarAfterEveryDocTail` fails 3× without the fix. After merging into `p37-desktop`, CoxModel passes 20/20. `swiftlint --strict` and `swift-format lint --strict` are clean.
+Not done: none.
+
+#### T37.42.2 "Copy as Markdown" menu item and ⇧-click block selection
+
+Depends: — · Size: ~100 · Files: `desktop/macos/Packages/CoxTranscriptText/…`
+Goal: the transcript context menu offers "Copy as Markdown"; ⇧-click in the gutter selects whole blocks (DT§5.2).
+Check: a test invokes the menu item and reads Markdown from the pasteboard; a ⇧-click from block 2 to block 4 selects exactly those three blocks.
+Status: done 2026-09-28
+Result:
+- `MarkdownMenu.swift`: `menu(for:)` inserts "Copy as Markdown" after Copy. `copyAsMarkdown(_:)` writes the selection's `MarkdownCopy` Markdown as `.markdown` and `.string`. The item is disabled when nothing is selected.
+- `BlockSelection.swift`: the gutter is the text container's leading inset.
+  - A click in the gutter selects the block beside it.
+  - A ⇧-click selects every block from the anchor to the clicked block. The anchor is the last gutter-clicked block if the selection still covers it, otherwise the block where the selection starts.
+  - With `crossBlockSelection` off, the selection stays in the anchor block.
+- `TranscriptTextView.swift` gains `gutterAnchor`, `markdownPasteboard` and one line in `make`.
+Deviations: the gutter click is a gesture recognizer (`GutterClick`), not a `mouseDown` override: the override put `NSTextView` into its blocking tracking loop and hung the drag test. `SelectionTests`' `Host` and fixture are no longer private, so the new tests reuse them.
+Check: `swift test --no-parallel` in CoxTranscriptText: 23/23. `BlockSelectionTests` send real `NSEvent` clicks:
+- ⇧-click from block 2 to block 4 selects exactly those three blocks;
+- ⇧-click from a caret extends to the clicked block;
+- with the setting off, the selection clamps to one block;
+- the menu item is reached through a real right-click and read back from a private named pasteboard.
+The ⇧-click and menu tests fail with the extension disabled. `tenThousandBlocksBuiltPatchByPatchFitTheLaunchBudget` missed 400 ms once at load average 74, then passed alone and on a full rerun. Lints are clean.
+Not done: DT§4.6's CoxTranscriptText row is not updated.

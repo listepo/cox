@@ -46,8 +46,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.22.1 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.22.2 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.22.3 | todo | P1 | 2 | 0% | |
-| T37.42.1 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.42.2 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 
 ## Reference
 
@@ -1195,18 +1193,6 @@ Check: snapshot with bypass on; the toolbar tooltips name the shortcuts; DS§4 a
 Depends: T37.32 (the app target) · Size: ~100 · Files: `…/Screens/MainScreen.swift`, the app target
 Goal: the app window has a hidden title bar and a behind-window blur; the screen, state and intent types the app target needs are `public`. The app wires the Appearance popover (T37.26) to `SettingsStore`. It draws blur and wallpaper tint through the behind-window view. It fills the value texts and closes the popover on click-outside or Esc. Controls locked by a higher config layer are disabled, with the layer named. The Settings screen (T37.30.1) opens from the app menu, with slider writes coalesced. The app passes `HostBridge(MacHost())` (T37.30.2) to `LiveCoreClient`, and a notification delegate handles clicks and foreground display.
 Check: the app target builds against `CoxUI` with only public API; a screenshot of the running app matches mockup screen 28 by eye.
-
-#### T37.42.1 `SessionStore` keeps the reply text current while it streams
-
-Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxModel/Sources/CoxModel/SessionStore.swift`
-Goal: `Block.assistant.text` follows every `docTail` patch, so a whole-reply copy mid-stream returns the current source.
-Check: a test streams a scripted reply and copies it after every patch; each copy equals the text so far.
-
-#### T37.42.2 "Copy as Markdown" menu item and ⇧-click block selection
-
-Depends: — · Size: ~100 · Files: `desktop/macos/Packages/CoxTranscriptText/…`
-Goal: the transcript context menu offers "Copy as Markdown"; ⇧-click in the gutter selects whole blocks (DT§5.2).
-Check: a test invokes the menu item and reads Markdown from the pasteboard; a ⇧-click from block 2 to block 4 selects exactly those three blocks.
 
 ## 4. Definition of done for v0.1
 
