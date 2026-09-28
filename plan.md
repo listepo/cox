@@ -36,7 +36,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.10 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T37.44.11 | todo | P2 | 3 | 0% | |
 | T37.45.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
-| T37.45.5 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2849,12 +2848,6 @@ Depends: — · Size: ~200 · Files: CoxUI Permissions page, CoxModel, cox-app/c
 Goal: A120, mockup 19. The Permissions page lists the allow/ask/deny rules with the layer each comes from, lets the user add, edit and remove rules in their user config (a project config never gains a rule from the app, per the project-config guard), validates a rule with `cox_permission`'s grammar before saving, and lists the grants given for the open session ("allow for session") with a revoke. Writes go through `cox-config` `set`; the permission engine stays the one place a call is decided.
 Check: a cox-app or CoxModel test that an invalid rule is refused with the grammar's message and a valid one lands in the user layer only; a test that a revoked session grant asks again; CoxUI snapshots of the page.
 Plan: check what cox-app/cox-ffi expose for rules with their layers and session grants, add the missing calls (validated by `cox_permission`, written by `cox-config` set to the user layer, revoke through the session), then the Permissions page views, tests at the cox-app and CoxModel layers, snapshots.
-
-#### T37.45.5 Onboarding: drop a project folder
-
-Depends: — · Size: ~60 · Files: CoxUI onboarding view, `desktop/macos/App` first-run wiring
-Goal: A120, mockup 21, DT§ onboarding row ("Pick a folder"). The first-run window has the dashed drop zone: dropping a folder (only a directory is accepted) opens it as the project, the same as the folder picker; hover shows the accent outline.
-Check: a test that a dropped file is refused and a dropped directory reaches the same intent as the picker; CoxUI snapshots idle and hovered.
 
 ### P51 — Desktop M2 (goal: the rest of the terminal inside the app — a sandboxed terminal pane, a browser pane the agent can read and screenshot, pop-out windows and tabs, a menu-bar extra with a global hotkey, Spotlight and App Intents, and per-hunk revert — plus the dark glass look; DT§3.2)
 

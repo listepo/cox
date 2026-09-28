@@ -30,7 +30,6 @@
 - T37.44.10. Tokens for the type sizes and window sizes the mockups use
 - T37.44.11. The running app matches the mockups end to end
 - T37.45.3. Settings: permission rules editor and session grants
-- T37.45.5. Onboarding: drop a project folder
 - T39.3. Chat translator replays a signature as `extra_content` on its tool call
 - T39.4. Surfaces skip the empty signed thinking item
 - T39.5. `[providers.gemini]` preset and vendored model rows
