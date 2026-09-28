@@ -47,7 +47,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.37 | todo | P0 | 3 | 0% | |
-| T37.39 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 
 ## Reference
 
@@ -1199,12 +1198,6 @@ Check: the suite runs locally and in the nightly job; every budget has a measure
 Depends: T37.16 · Size: ~200 (throwaway spike plus a result note) · Files: `desktop/macos/Spikes/Selection/…`, `research.md`
 Goal: decide how the transcript selects text across blocks (A67). Build the same 2 000-block fixture (prose, code, diffs, tool cards) twice: with Textual 0.5.0 (MIT, R§9.5.10) and with our own TextKit 2 view — one `NSTextView` over the whole transcript with the cards as view-backed attachments. Measure: one continuous drag selects across blocks, copy keeps block order as Markdown, clamping to one block when `cross_block_selection = false`, first frame and scroll frame time against the DT§9 budget. If Textual passes, it is taken (§1.1 row); if not, our view becomes its own package `desktop/macos/Packages/CoxTranscriptText` with its own cards. STTextView is out (A68).
 Check: the result table with both measurements is in `research.md` §9.5; T37.23's card names the chosen engine.
-
-#### T37.39 Thin `cox-ffi`: session ownership moves into `cox-app`
-
-Depends: T37.14 · Size: ~200 (mostly moved) · Files: `crates/cox-app/src/app.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox/tests/deps.rs`
-Goal: `cox-ffi` back inside DT§4.2 and D11. T37.14 had to open, resume, fork and hand off sessions in `cox-ffi` because `cox-app` could not depend on `cox-session`: `deps.rs` `app_has_no_terminal_or_cli` bans `anyhow` over the whole resolved tree, while D1 only says `cox-app` does not *depend on* `anyhow` or `clap`, and `cox-session` pulls `anyhow` transitively through tiktoken-rs and agent-client-protocol. The rule checks direct dependencies for `anyhow`/`clap` and the resolved tree for ratatui/crossterm/cox-tui; `cox-app` gains an `App`/`SessionOwner` that owns sessions, runs `dispatch()`'s Fork/Handoff, takes host-supplied keys (`cox_session::open_with_keys`) and resolves the login env; `cox-ffi` depends only on `cox-app`, `cox-protocol` and `uniffi` and only forwards.
-Check: `deps.rs` asserts `cox-ffi`'s direct workspace dependencies are exactly `cox-app` and `cox-protocol`; the moved behaviour is tested in `cox-app` against a scratch `COX_HOME`; `cox-ffi` exports unchanged (the generated Swift still compiles); `cox-ffi`'s `lib.rs` + `session.rs` + `host.rs` ≤ 300 lines.
 
 ## 4. Definition of done for v0.1
 
