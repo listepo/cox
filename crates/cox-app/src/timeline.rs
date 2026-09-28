@@ -6,7 +6,7 @@
 use std::fmt::Display;
 
 use cox_protocol::ids::{CallId, ItemId};
-use cox_protocol::types::{Event, ItemKind, ToolCall};
+use cox_protocol::types::{Event, ItemKind, TodoItem, ToolCall};
 use cox_render::diffmodel;
 use cox_render::glyph::UNICODE;
 use cox_render::markdown;
@@ -32,6 +32,9 @@ pub struct Timeline {
     explore: Option<Run>,
     /// A `Summary` item's text until its `Compacted` arrives.
     summary: Option<(ItemId, String)>,
+    /// Each `todo` result's list with its turn, oldest first: the last is
+    /// the plan, and a rewind falls back to the one before it.
+    plans: Vec<(u32, Vec<TodoItem>)>,
 }
 
 /// A run of consecutive exploring calls; from its second call on it shows
@@ -58,6 +61,12 @@ impl Timeline {
 
     pub fn blocks(&self) -> &[Block] {
         &self.blocks
+    }
+
+    /// The inspector's Plan tab (DT§5.1, T37.29.2): the list the latest
+    /// `todo` call left, with each step's state; empty before one.
+    pub fn plan(&self) -> &[TodoItem] {
+        self.plans.last().map_or(&[], |(_, items)| items)
     }
 
     /// The whole list as one patch, to heal a consumer that missed some.
@@ -200,6 +209,11 @@ impl Timeline {
                         }
                     }
                 }));
+                if call.is_some_and(|c| c.name == "todo")
+                    && let Some(items) = result.todo_list()
+                {
+                    self.plans.push((self.turn, items));
+                }
                 out.extend(self.refresh_group(&id));
                 out
             }
@@ -277,6 +291,7 @@ impl Timeline {
                 // `to_turn` itself is undone too (`Submission::Rewind`), so
                 // what follows belongs to the turn before it.
                 self.explore = None;
+                self.plans.retain(|(turn, _)| turn < to_turn);
                 self.turn = to_turn.saturating_sub(1);
                 let (gone, kept): (Vec<Block>, Vec<Block>) = std::mem::take(&mut self.blocks)
                     .into_iter()
@@ -497,7 +512,7 @@ impl Timeline {
 #[cfg(test)]
 mod tests {
     use cox_protocol::ids::TurnId;
-    use cox_protocol::types::{CompactReason, Job, ModelId, Risk, Tier};
+    use cox_protocol::types::{CompactReason, Job, ModelId, Risk, Tier, TodoState, ToolResult};
     use serde_json::json;
 
     use super::*;
@@ -646,5 +661,61 @@ mod tests {
             panic!("expected a compaction block");
         };
         assert_eq!(summary.as_deref(), Some("we fixed the login"));
+    }
+
+    /// A call to `name` whose result carries `list` as its `structured`.
+    fn todo(timeline: &mut Timeline, name: &str, list: serde_json::Value) {
+        let call = ToolCall {
+            id: CallId::new(),
+            name: name.into(),
+            input: json!({}),
+            risk: Risk::ReadOnly,
+            subject: String::new(),
+            segments: None,
+        };
+        let call_id = call.id;
+        timeline.apply(&Event::ToolCallRequested { call });
+        let result = ToolResult {
+            ok: true,
+            visible: String::new(),
+            archive: None,
+            bytes: 0,
+            duration_ms: 0,
+            diff: None,
+            structured: Some(Box::new(list)),
+        };
+        timeline.apply(&Event::ToolCallDone { call_id, result });
+    }
+
+    #[test]
+    fn the_plan_is_the_latest_todo_result_and_a_rewind_restores_the_one_before() {
+        let mut timeline = Timeline::default();
+        assert!(timeline.plan().is_empty());
+        let step = |text: &str, state: &str| json!({"id": text, "text": text, "state": state});
+        started(&mut timeline, 1);
+        let first = json!([step("Read", "in_progress"), step("Test", "pending")]);
+        todo(&mut timeline, "todo", first);
+        started(&mut timeline, 2);
+        todo(
+            &mut timeline,
+            "todo",
+            json!([step("Read", "done"), step("Test", "in_progress")]),
+        );
+        // Another tool's payload of the same shape is not the plan.
+        todo(&mut timeline, "mcp__notes__todo", json!([]));
+        let states = |t: &Timeline| t.plan().iter().map(|i| i.state).collect::<Vec<_>>();
+        assert_eq!(states(&timeline), [TodoState::Done, TodoState::InProgress]);
+        assert_eq!(timeline.plan()[1].text, "Test");
+        timeline.apply(&Event::Rewound {
+            to_turn: 2,
+            code: false,
+            conversation: true,
+            restored: vec![],
+            skipped: vec![],
+        });
+        assert_eq!(
+            states(&timeline),
+            [TodoState::InProgress, TodoState::Pending]
+        );
     }
 }

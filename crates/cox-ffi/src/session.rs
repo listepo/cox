@@ -8,6 +8,7 @@ use std::sync::Arc;
 use cox_app::live::LiveSession;
 use cox_app::{Block, Changes, Completion, Intent, TimelinePatch};
 use cox_protocol::ids::SessionId;
+use cox_protocol::types::TodoItem;
 
 use crate::{AppError, on_runtime};
 
@@ -59,6 +60,11 @@ impl SessionHandle {
     /// What the inspector's Changes tab lists (T37.29.1).
     pub async fn changes(self: Arc<Self>) -> Result<Changes, AppError> {
         Ok(on_runtime(async move { self.live.changes().await }).await??)
+    }
+
+    /// What the inspector's Plan tab lists (T37.29.2).
+    pub fn plan(&self) -> Vec<TodoItem> {
+        self.live.plan()
     }
 
     /// `/` commands and `@` files for the composer's token.

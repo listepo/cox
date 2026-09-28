@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use cox_core::{History, Session};
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::Store as _;
-use cox_protocol::types::{Event, Submission};
+use cox_protocol::types::{Event, Submission, TodoItem};
 use cox_session::SessionSpec;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -142,6 +142,12 @@ impl LiveSession {
         // Checkpoint paths are confined, so canonical.
         let cwd = std::fs::canonicalize(&self.cwd).unwrap_or_else(|_| self.cwd.clone());
         Ok(changes::build(&self.snapshot(), &rows, &cwd, worktree))
+    }
+
+    /// What the inspector's Plan tab lists (T37.29.2): the todo list the
+    /// latest `todo` call left, as the timeline folded it.
+    pub fn plan(&self) -> Vec<TodoItem> {
+        self.controller.plan()
     }
 
     /// `/` commands and `@` files for the composer's token.

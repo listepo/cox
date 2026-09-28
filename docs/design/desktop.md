@@ -259,6 +259,7 @@ impl SessionHandle {
     pub async fn expand(&self, archive: String) -> Result<String, AppError>;
     pub fn complete(&self, prefix: String, kind: CompletionKind) -> Vec<Completion>;
     pub async fn changes(&self) -> Result<Changes, AppError>;   // the Changes tab (T37.29.1)
+    pub fn plan(&self) -> Vec<TodoItem>;                      // the Plan tab (T37.29.2)
     pub fn close(&self);
 }
 
