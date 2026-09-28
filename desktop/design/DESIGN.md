@@ -199,7 +199,8 @@ Packages/CoxUI/Sources/CoxUI/
 ├─ Tokens/        generated: Tokens.swift, Colors.xcassets — never edited by hand
 ├─ Foundations/   Appearance (the settings every modifier reads, with Reduce Transparency and Reduce
 │                 Motion applied once) and the ViewModifiers and styles: Elevation, GlassPane,
-│                 Specular, Hairline, InsetWell, TextStyle, CoxButtonStyle, CapsuleStyle,
+│                 Specular, Hairline, InsetWell, TextStyle, ControlState (rest, hovered, pressed,
+│                 disabled for every button-like style), CoxButtonStyle, CapsuleStyle,
 │                 SegmentedStyle, CoxToggleStyle, CoxSliderStyle
 ├─ Atoms/         one file per atom (§6.2)
 ├─ Molecules/     one file per molecule (§6.3)
@@ -230,8 +231,8 @@ component.
 | `.hairline(_ edges:)`, `.hairline(in:)` | 0.5 pt `separator` line on edges or around a shape | `size.hairline`, `separator` | `border:.5px` |
 | `.insetWell(_ surface:, cornerRadius:)` | Pressed-in look for terminal and fields | `surface.terminal`, inner shadow | `.tail`, `.filter` |
 | `.textStyle(_ token:, tabularDigits:)` | Font at the text size, line height, tracking, tabular digits | `font.*` | font rules |
-| `CoxButtonStyle(.primary/.secondary/.danger/.plain, size:)` | All push buttons | `size.button*`, `radius.m` | `.pb`, `.pri`, `.dan` |
-| `CapsuleStyle(.plain/.active)` | Toolbar capsules | `size.capsuleHeight`, `surface.capsule` | `.cap`, `.cap.hot` |
+| `CoxButtonStyle(.primary/.secondary/.danger/.plain, size: .regular/.small)` | All push buttons: e1 face with specular; hover tints, press sinks to e0; disabled keeps the readable floor and a `text.secondary` label | `size.button*`, `radius.m`, `font.control`, `fill.*` | `.pb`, `.pri`, `.dan` |
+| `CapsuleStyle(.plain/.active)` | Toolbar capsules and filter chips: readable glass face at e1 with a hairline; active takes `surface.window`, an `accent` label and an `accent.soft` halo; states as `CoxButtonStyle` | `size.capsuleHeight`, `radius.capsule`, `surface.capsule`, `font.control` | `.cap`, `.cap.hot` |
 | `SegmentedStyle` | Segmented control with lifted selection | `e1` | `.seg` |
 | `CoxToggleStyle`, `CoxSliderStyle` | Toggles and sliders with 3D knob | `e1`, `accent` | `.tog`, `.slider` |
 
