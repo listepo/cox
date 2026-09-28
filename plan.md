@@ -34,7 +34,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.21.11 | todo | P2 | 2 | 90% | |
 | T37.22.4 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.22.5 | in progress | P1 | 4 | 0% | Claude Code / Opus 5.5 |
+| T37.22.6 | todo | P2 | 3 | 0% | |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2785,11 +2785,11 @@ Depends: T37.22.3 · Size: ~150 · Files: `desktop/macos/App/WindowChrome.swift`
 Goal: fixes the running app's differences from mockup 28 that the creator's local look (2026-09-28) found. (1) The window strip behind the toolbar is fully clear: whatever is behind the window reads sharp through it; the behind-window blur and wallpaper tint must cover the whole window, as on the mockup. (2) The panes render nearly opaque white; they must follow `window transparency` (58 % on the mockup) and frost so the wallpaper colour shows through, while text blocks stay readable (the popover note: at least 80 % opaque). (3) The sidebar pane encloses the traffic lights, as on the mockup, and every pane keeps the mockup's margin to the window edges; the composer does not touch the bottom edge. (4) The composer's rate reads `183763 tok/s` on the approve-write fixture: a rate over a near-zero duration must not show (the mockup shows `71 tok/s` with its sparkline). (5) The model pill reads `claude-…t-5 · high`; it shows the catalog display name (`Sonnet 5 · high`).
 Check: a screenshot of the app on the approve-write fixture next to mockup 28 shows the glass, margins, rate and model name matching by eye; a unit test for the rate guard.
 
-#### T37.22.5 App wiring: toolbar, sidebar and inspector from the live stores
+#### T37.22.6 App wiring leftovers: model popover, session titles, provider count, live session list
 
-Depends: T37.22.3 · Size: ~200 · Files: `desktop/macos/App/SessionWindow.swift`, `…/Screens/MainScreen.swift`, CoxModel stores
-Goal: the parts of mockup 28 the app still shows empty (the creator's local look, 2026-09-28, and T37.22.3's Not done). Toolbar: the session title with project and worktree breadcrumb, the model pill with its popover, the cost and `ctx n%` meter (it shows an empty `· ctx`), Stop while a turn runs, the Appearance button; the `+` menu only if the mockup has it. Sidebar: the session list grouped as on the mockup (Needs you, Running, per project) with cost and status, and the providers footer. Inspector: the Changes, Plan, Context, Tasks and Info tabs read their stores; the Review pane sends through `SessionStore.sendReview(settings.reviewSend)` (A108). The app calls `loadLoginEnv` so the shell-environment row fills, and the stored-keys list refreshes after `storeKey`.
-Check: a screenshot of the app on a fixture with a few sessions matches mockup 28's toolbar, sidebar and inspector by eye; a CoxModel test for each new store read.
+Depends: T37.22.5 · Size: ~150 · Files: `crates/cox-ffi`, `crates/cox-app`, CoxClient, `…/Screens/…`
+Goal: what T37.22.5 left. The toolbar's model pill opens its popover from a model catalog `cox-ffi` exports (a one-expression forward, A90). A session gets a title the same way the TUI titles one, also for `cox run`; the toolbar and the sidebar name an untitled session the same way. The sidebar's footer counts the providers the user can use (a key present or a local server), not the configured sections (9 on defaults), pending the creator's confirmation. The session list follows app patches instead of a 2 s poll. A shell task's output opens in a viewer.
+Check: a screenshot on a live core with a few titled sessions; a test for each new FFI export and the provider count.
 
 ## 4. Definition of done for v0.1
 

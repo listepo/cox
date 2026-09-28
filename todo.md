@@ -28,7 +28,7 @@
 - T37.33. Performance budget suite
 - T37.21.11. Molecule legibility and small fixes
 - T37.22.4. App glass, window chrome and composer stats match mockup 28
-- T37.22.5. App wiring: toolbar, sidebar and inspector from the live stores
+- T37.22.6. App wiring leftovers: model popover, session titles, provider count, live session list
 - T39.3. Chat translator replays a signature as `extra_content` on its tool call
 - T39.4. Surfaces skip the empty signed thinking item
 - T39.5. `[providers.gemini]` preset and vendored model rows
