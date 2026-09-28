@@ -45,7 +45,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.17.2 | todo | P3 | 1 | 0% | |
 | T37.19.5 | todo | P2 | 3 | 0% | |
-| T37.19.6 | todo | P2 | 2 | 0% | |
+| T37.19.6 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.20.5 | todo | P2 | 2 | 0% | |
 | T37.21.11 | todo | P2 | 2 | 0% | |
 | T37.22.3 | todo | P1 | 2 | 0% | |
@@ -110,6 +110,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T49.5 | todo | P3 | 3 | 0% | |
 | T50.3 | todo | P2 | 1 | 0% | |
 | T50.5 | todo | P3 | 1 | 0% | |
+| T50.7 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 
 ## Reference
 
@@ -2735,6 +2736,16 @@ Done when: the Check passes and the three AGENTS.md commands are clean.
 
 Out of scope: the full TUI (already correct).
 
+### T50.7. `just test` runs only what a change can break
+
+Model: mid-tier · Status: in progress · Depends: — · Size: ~80 · Files: `justfile`, a script under `scripts/` if the recipe needs one, `AGENTS.md` (Commands), `toolchain.md` if a tool is added
+
+Goal (A99): `just test` runs the nextest tests of the workspace crates changed since a git ref — `just test --changed-since <ref>`, default the merge-base with `origin/main`, committed and uncommitted changes both — plus every crate that depends on them (nextest's `rdeps()` filterset over the packages `cargo metadata` says own the changed files). A change outside every crate that can affect all of them (`Cargo.toml`, `Cargo.lock`, `.cargo/`, `mise.toml`, `justfile`, `rust-toolchain*`) runs the whole workspace; a change that touches no crate runs nothing and says so. Prefer nextest's own filtersets or a maintained tool over custom mapping code. The old full run (`cargo nextest run --workspace`, then `dunnage`) becomes `just check-all`; CI keeps running the whole workspace. Swift packages are out of scope.
+
+Check: `just test --changed-since HEAD` with one edited leaf crate runs only it and its dependents; an edited `Cargo.lock` runs the workspace; `just check-all` runs the workspace; AGENTS.md lists both.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
 Rationale in §6 A50. T31.1–T31.5 are in `done.md`; T31.2 landed as a no-op (see A50 and its done.md card — T30.23 had already made Jev construction fallible). Still open against §4, all outside the code: the paid eval run and the cache-read ratio (T30.3, a funded `ANTHROPIC_API_KEY`), and a signed macOS release (the `MACOS_CERTIFICATE` / `MACOS_CERTIFICATE_PWD` repository secrets).
@@ -2863,7 +2874,7 @@ Check: snapshots re-recorded on purpose for the changed foundations, and every o
 #### T37.19.6 Increase Contrast in `Appearance`
 
 Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/Appearance.swift`
-Goal: when the system asks for more contrast (`colorSchemeContrast == .increased`), `Appearance` turns the specular sweep off and raises window and pane opacity, the part of A89's High Contrast rule that lives in `material.*` numbers rather than colour tokens (T37.17.1 did the colours).
+Goal (A100): when the system asks for more contrast (`colorSchemeContrast == .increased`), `Appearance` turns the specular sweep off (`MaterialToken.solidSpecular`) and raises window and pane opacity by A89's quarter rule — `opacity' = 1 − (1 − opacity) × glassKeep`, with a new `material.highContrast.glassKeep = 0.25` token in `base.json` regenerated into `MaterialToken`; Reduce Transparency still wins and forces Solid — the part of A89's High Contrast rule that lives in `material.*` numbers rather than colour tokens (T37.17.1 did the colours).
 Check: a snapshot per material with increased contrast shows no sweep and a more opaque glass; the default snapshots are unchanged.
 
 #### T37.20.5 Atom tokens: project purple, RiskChip colours, named constants
@@ -3043,6 +3054,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A96 T37.30.5 — `tile.settings.*` tokens mapped to macOS system colours for the Settings page tiles, by the creator (2026-09-28). Why: the mockup's coloured tiles, with colours that follow the system's light, dark and high-contrast variants.
 - A97 T37.23.17 — a `quote.bar` token (about 3 pt, a stronger colour with light, dark and high-contrast variants) for the transcript's quote bar, by the creator (2026-09-28). Why: the thought's 0.5 pt hairline T37.23.12 reused is barely visible in light mode.
 - A98 T37.25.1, T37.25.2, T37.25.3 — the core emits a new `Event::ContextBreakdown` (context window and its system, tools, instructions and history split) after assembling each request, and both the desktop and the TUI show it, by the creator (2026-09-28). Why: neither surface knew the window or the split; `cox_core::context::breakdown` existed but nothing called it. A separate event, not fields on the usage event, because the split is known before the request is sent and usage only after the reply.
+- A99 T50.7 — `just test` runs only the tests of the crates a change touches and their dependents (`--changed-since <ref>`, default the merge-base with `origin/main`); the full run becomes `just check-all`, by the creator (2026-09-28). Why: several agents share one machine, and a full workspace run per task wastes it; CI still runs everything.
+- A100 T37.19.6 — under Increase Contrast, window and pane glass keeps a quarter of its transparency (`material.highContrast.glassKeep = 0.25`), the rule A89 already applies to the palette, by the creator (2026-09-28). Why: one contrast rule for colours and materials; `material.readableFloor` (0.8) was the other option.
 
 ## 7. Risk register
 
