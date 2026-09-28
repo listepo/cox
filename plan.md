@@ -27,7 +27,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.14 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.15 | todo | P0 | 3 | 0% | |
 | T37.16 | todo | P0 | 3 | 0% | |
 | T37.17 | todo | P0 | 3 | 0% | |
@@ -48,6 +47,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.37 | todo | P0 | 3 | 0% | |
+| T37.39 | todo | P0 | 3 | 0% | |
 
 ## Reference
 
@@ -104,6 +104,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox-config` | the one config owner (T32.16; split out of `cox`): figment layering (default/user/project/env/flag), validation, `cox config set` editing and the `docs/config.jsonschema` drift test. Errors are a `thiserror` enum | figment, toml_edit 0.25, thiserror |
 | `cox-session` | session assembly as a library (T37.1; split out of `cox`): `open(SessionSpec)` → session, effective config and typed `Warning`s — provider, tools, MCP, skills, hooks, plugins, fork/handoff/resume lineage, external agents; login-shell environment (T37.11). No clap, no anyhow, no printing | async-trait, tokio-util, agent-client-protocol (moved from `cox` with the external-agent code), nix `signal` (T37.11: process-group kill of a slow login shell) |
 | `cox-app` | the UI-agnostic app core (T37.8–T37.10, T37.38): `Timeline` fold to serde `TimelinePatch`es, tool summaries and `ToolGroup`, the coalescing `Controller`, `Workspace`, `Inbox`, `Intent`/`dispatch`, `Completer`. No terminal toolkit, no CLI crate | tokio (drain task), serde_json; cox-render without `ratatui` |
+| `cox-ffi` | the macOS app's UniFFI surface (T37.14): one tokio runtime, `App` and `SessionHandle` objects, the foreign `AppHost` trait, `#[uniffi::remote]` mirrors of cox-app types, a fixture recorder. `staticlib` + `lib`; the only crate that depends on uniffi | uniffi 0.32.2 (proc-macros, no UDL; default features off) |
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2 |
 | `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, base64 0.23 (T37.6: attached text files) |
 | `cox-models` | the model catalog: id → context window, max output, efforts, capabilities, price; built-in rows < config < user `prices.toml` (T30.24). Pure: parses embedded or caller-supplied strings only | serde, thiserror, figment |
@@ -1079,12 +1080,6 @@ Every card in this phase:
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
 
-#### T37.14 `cox-ffi`: UniFFI exports, runtime, `Host`; fixture recorder
-
-Depends: T37.9, T37.10, T37.34, T37.36 · Size: ~200 · Files: `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/session.rs`, `crates/cox-ffi/src/host.rs`
-Goal: one tokio runtime; async `next_patches()`; foreign `Host` trait for notifications and secrets; a recorder that writes patch streams for Swift fixtures. New dependency `uniffi` (§1.1 row), only in `cox-ffi`.
-Check: generated Swift bindings compile in a scratch package; `deps.rs` asserts only `cox-ffi` depends on `uniffi`.
-
 #### T37.15 XCFramework script, `just` recipes, macOS CI job
 
 Depends: T37.14 · Size: ~120 · Files: `scripts/desktop/xcframework.sh`, `justfile`, `.github/workflows/ci.yml`
@@ -1204,6 +1199,12 @@ Check: the suite runs locally and in the nightly job; every budget has a measure
 Depends: T37.16 · Size: ~200 (throwaway spike plus a result note) · Files: `desktop/macos/Spikes/Selection/…`, `research.md`
 Goal: decide how the transcript selects text across blocks (A67). Build the same 2 000-block fixture (prose, code, diffs, tool cards) twice: with Textual 0.5.0 (MIT, R§9.5.10) and with our own TextKit 2 view — one `NSTextView` over the whole transcript with the cards as view-backed attachments. Measure: one continuous drag selects across blocks, copy keeps block order as Markdown, clamping to one block when `cross_block_selection = false`, first frame and scroll frame time against the DT§9 budget. If Textual passes, it is taken (§1.1 row); if not, our view becomes its own package `desktop/macos/Packages/CoxTranscriptText` with its own cards. STTextView is out (A68).
 Check: the result table with both measurements is in `research.md` §9.5; T37.23's card names the chosen engine.
+
+#### T37.39 Thin `cox-ffi`: session ownership moves into `cox-app`
+
+Depends: T37.14 · Size: ~200 (mostly moved) · Files: `crates/cox-app/src/app.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox/tests/deps.rs`
+Goal: `cox-ffi` back inside DT§4.2 and D11. T37.14 had to open, resume, fork and hand off sessions in `cox-ffi` because `cox-app` could not depend on `cox-session`: `deps.rs` `app_has_no_terminal_or_cli` bans `anyhow` over the whole resolved tree, while D1 only says `cox-app` does not *depend on* `anyhow` or `clap`, and `cox-session` pulls `anyhow` transitively through tiktoken-rs and agent-client-protocol. The rule checks direct dependencies for `anyhow`/`clap` and the resolved tree for ratatui/crossterm/cox-tui; `cox-app` gains an `App`/`SessionOwner` that owns sessions, runs `dispatch()`'s Fork/Handoff, takes host-supplied keys (`cox_session::open_with_keys`) and resolves the login env; `cox-ffi` depends only on `cox-app`, `cox-protocol` and `uniffi` and only forwards.
+Check: `deps.rs` asserts `cox-ffi`'s direct workspace dependencies are exactly `cox-app` and `cox-protocol`; the moved behaviour is tested in `cox-app` against a scratch `COX_HOME`; `cox-ffi` exports unchanged (the generated Swift still compiles); `cox-ffi`'s `lib.rs` + `session.rs` + `host.rs` ≤ 300 lines.
 
 ## 4. Definition of done for v0.1
 
@@ -1336,6 +1337,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A68 `Cargo.toml` `license`, `crates/cox-plugin-api/Cargo.toml`, `deny.toml` — licence metadata matches the README, by the creator (2026-09-28): "GPLv3 and royalty-free", GPL-3.0-only rather than -or-later, and the plugin SDK stays MIT/Apache. Why: the workspace said `MIT OR Apache-2.0` while `LICENSE` and the README offer GPLv3, a royalty-free licence and a commercial one. Effect: workspace crates are `GPL-3.0-only OR LicenseRef-cox-Royalty-Free` (crates.io parses `LicenseRef-` ids: its `src/licenses.rs` uses `spdx` with `allow_unknown: false`, which rejects unknown names but lexes `LicenseRef-` as its own token, `spdx` 0.13.5 `src/lexer.rs:79`, checked 2026-09-28); `cox-plugin-api` stays `MIT OR Apache-2.0` because the guest SDK in `plugins/` depends on it; `deny.toml` allows only the ref, not GPL-3.0-only, so the royalty-free option cannot gain a GPL dependency. The commercial licence needs no SPDX id. No decision changes.
 - A69 §3 (new P38: T38.1–T38.3), by the creator on 2026-09-28. Why: every open P33 card waits on T33.43 (no extism release after 1.30.0 pins wasmtime ≥ 48; checked on crates.io 2026-09-28) or on the creator's key, and the creator asked to fill the slots from `ideas.md`, excluding benchmarks and comparisons with other agents. Effect: three ideas move to P38 and leave `ideas.md`: the OpenAI Chat `ToolUseEnd` bug, the orphaned detached `bash` on quit and `adaptive_thinking` from models.dev. T38.3 (`adaptive_thinking`) went back to `ideas.md` the same day: models.dev `reasoning_options` has only `effort`, `toggle` and `budget_tokens` and no adaptive marker (https://models.dev/api.json and `packages/core/src/schema.ts` in sst/models.dev at `6947a51`, checked 2026-09-28), so the flag cannot be vendored without guessing. No decision changes.
 - A70 §3 P37, T37.38 — T37.8 built the timeline fold without the DT§4.3 tool summaries, the `ToolGroup` row and the compaction summary, and no card claimed them. Why: they are part of the approved design (A67) and the Swift views must not parse tool output. Effect: one card T37.38 after T37.8; P37 now has 39 cards T37.0–T37.38.
+- A71 §3 P37, T37.39 — T37.14 put session ownership in `cox-ffi` (it depends on cox-session, core, config, store, render, tools; lib + session + host = 499 lines against D11's 300) because `deps.rs` banned `anyhow` from `cox-app`'s resolved tree, stricter than D1's "depend on". Why: D11 and DT§4.2 keep the FFI a thin forwarder so logic is tested in Rust once. Effect: T37.39 narrows the rule to direct dependencies and moves the ownership into `cox-app`.
 
 ## 7. Risk register
 
