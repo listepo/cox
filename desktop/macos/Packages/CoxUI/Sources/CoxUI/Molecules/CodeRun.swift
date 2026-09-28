@@ -13,25 +13,30 @@ public struct CodeRun: Equatable, Sendable {
 
   public var text: String
   public var role: Role
+  /// A word the core's word diff found changed in a replaced line pair (T37.23.11).
+  public var isChanged: Bool
 
-  public init(_ text: String, _ role: Role = .plain) {
+  public init(_ text: String, _ role: Role = .plain, isChanged: Bool = false) {
     self.text = text
     self.role = role
+    self.isChanged = isChanged
   }
 
-  /// Lines of runs as one attributed string, so one `Text` draws a whole block.
-  static func attributed(_ lines: [[CodeRun]]) -> AttributedString {
+  /// Lines of runs as one attributed string, so one `Text` draws a whole block; a changed run
+  /// sits on `mark`.
+  static func attributed(_ lines: [[CodeRun]], mark: Color? = nil) -> AttributedString {
     var joined = AttributedString()
     for (index, line) in lines.enumerated() {
       if index > 0 { joined.append(AttributedString("\n")) }
-      for run in line { joined.append(run.attributed) }
+      for run in line { joined.append(run.attributed(mark: mark)) }
     }
     return joined
   }
 
-  private var attributed: AttributedString {
+  private func attributed(mark: Color?) -> AttributedString {
     var text = AttributedString(self.text)
     text.foregroundColor = role.colour
+    if isChanged { text.backgroundColor = mark }
     return text
   }
 }

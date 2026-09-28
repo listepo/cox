@@ -128,12 +128,24 @@ public struct DiffLine: Equatable, Sendable, Decodable {
   public var old: UInt32?
   /// The number after the edit; `nil` for a removed line.
   public var new: UInt32?
-  /// The body without its marker.
+  /// The body without its marker, cut at every `words` edge.
   public var spans: [Span]
+  /// The changed words of a replaced line pair (T37.23.11); empty on any other line.
+  public var words: [WordRange]
 
-  public init(kind: DiffLineKind, old: UInt32?, new: UInt32?, spans: [Span]) {
-    (self.kind, self.old, self.new, self.spans) = (kind, old, new, spans)
+  public init(
+    kind: DiffLineKind, old: UInt32?, new: UInt32?, spans: [Span], words: [WordRange] = []
+  ) {
+    (self.kind, self.old, self.new, self.spans, self.words) = (kind, old, new, spans, words)
   }
+}
+
+/// A changed stretch of a diff line's body, as UTF-8 byte offsets.
+public struct WordRange: Equatable, Sendable, Decodable {
+  public var start: UInt32
+  public var end: UInt32
+
+  public init(start: UInt32, end: UInt32) { (self.start, self.end) = (start, end) }
 }
 
 public enum DiffLineKind: String, Equatable, Sendable, Decodable { case context, add, del }

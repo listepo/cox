@@ -44,4 +44,10 @@ import Testing
     let colours = text.runs.map(\.foregroundColor)
     #expect(colours == [Color(.syntaxKeyword), nil])
   }
+
+  @Test func onlyAChangedRunSitsOnTheMark() {
+    let text = CodeRun.attributed(
+      [[CodeRun("let "), CodeRun("new", isChanged: true), CodeRun(" = 1")]], mark: .red)
+    #expect(text.runs.map(\.backgroundColor) == [nil, .red, nil])
+  }
 }

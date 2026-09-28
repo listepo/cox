@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use cox_app::Holder;
 use cox_app::SessionInfo;
-use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel};
+use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange};
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind};
 use cox_app::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
 use cox_app::{
@@ -573,6 +573,13 @@ pub struct DiffLine {
     pub old: Option<u32>,
     pub new: Option<u32>,
     pub spans: Vec<StyledSpan>,
+    pub words: Vec<WordRange>,
+}
+
+#[uniffi::remote(Record)]
+pub struct WordRange {
+    pub start: u32,
+    pub end: u32,
 }
 
 #[uniffi::remote(Enum)]

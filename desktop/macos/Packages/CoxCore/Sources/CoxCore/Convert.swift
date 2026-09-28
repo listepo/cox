@@ -105,7 +105,8 @@ extension CoxClient.DiffLine {
       case .del: .del
       }
     self.init(
-      kind: kind, old: value.old, new: value.new, spans: value.spans.map { CoxClient.Span($0) })
+      kind: kind, old: value.old, new: value.new, spans: value.spans.map { CoxClient.Span($0) },
+      words: value.words.map { .init(start: $0.start, end: $0.end) })
   }
 }
 

@@ -2,13 +2,16 @@
 //! each with its kind, its old and new line numbers and its highlighted
 //! runs, so the desktop app draws an edit without parsing unified text.
 //! Also the unified-text parse the TUI's `diff` draws from, so both surfaces
-//! read a hunk the same way. Outside `diff` because that module draws with
-//! ratatui, and `cox-app` builds without the `ratatui` feature.
+//! read a hunk the same way, and the one word diff of a replaced line pair
+//! both surfaces mark (T37.23.11). Outside `diff` because that module draws
+//! with ratatui, and `cox-app` builds without the `ratatui` feature.
 
+use std::ops::Range;
 use std::path::PathBuf;
 
 use cox_protocol::types::Diff;
 use serde::{Deserialize, Serialize};
+use similar::{ChangeTag, TextDiff};
 
 use crate::doc::{StyledLine, StyledSpan};
 use crate::markdown::highlight_runs;
@@ -36,7 +39,19 @@ pub struct DiffLine {
     /// The line's number after the edit; `None` for a removed line.
     pub new: Option<u32>,
     /// The body without its marker, highlighted by the file's extension.
+    /// Cut at every `words` edge, so a span is wholly inside or outside one.
     pub spans: StyledLine,
+    /// The words that changed, when this line is one side of a replaced
+    /// pair; empty otherwise, and for a pair past `WORD_DIFF_CAP`.
+    #[serde(default)]
+    pub words: Vec<WordRange>,
+}
+
+/// A changed stretch of a line's body, as UTF-8 byte offsets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WordRange {
+    pub start: u32,
+    pub end: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,6 +130,145 @@ pub(crate) fn parse(unified: &str) -> (Vec<Row<'_>>, Vec<&str>) {
     (rows, bodies)
 }
 
+/// A pair with a longer line gets no word diff: the diff's cost grows with
+/// the product of the two lengths, and a minified line would be noise word
+/// by word anyway.
+pub(crate) const WORD_DIFF_CAP: usize = 400;
+
+/// A side-by-side row: a whole-width meta line, or the rows (indices into
+/// the `Row` list) shown in the old and the new pane.
+pub(crate) enum Aligned {
+    /// Only the TUI's side-by-side layout prints a meta row by its index.
+    Meta(#[cfg_attr(not(feature = "ratatui"), allow(dead_code))] usize),
+    Pair(Option<usize>, Option<usize>),
+}
+
+/// Rows in pane order: a run of `-` lines and the `+` run right after it
+/// are zipped line by line, so the n-th removed line faces the n-th added
+/// one — that pair is also what the word diff compares.
+pub(crate) fn align(rows: &[Row<'_>]) -> Vec<Aligned> {
+    let marker = |i: usize| match rows.get(i) {
+        Some(Row::Body { marker, .. }) => Some(*marker),
+        _ => None,
+    };
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < rows.len() {
+        match marker(i) {
+            None => {
+                out.push(Aligned::Meta(i));
+                i += 1;
+            }
+            Some("-") | Some("+") => {
+                let dels = (i..).take_while(|&j| marker(j) == Some("-")).count();
+                let adds = (i + dels..).take_while(|&j| marker(j) == Some("+")).count();
+                for k in 0..dels.max(adds) {
+                    out.push(Aligned::Pair(
+                        (k < dels).then_some(i + k),
+                        (k < adds).then_some(i + dels + k),
+                    ));
+                }
+                i += dels + adds;
+            }
+            Some(_) => {
+                out.push(Aligned::Pair(Some(i), Some(i)));
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+/// Byte ranges of each side's changed words, adjacent ones merged.
+pub(crate) type Words = (Vec<Range<usize>>, Vec<Range<usize>>);
+
+/// A removed line facing an added one: their body indices and the words
+/// that changed, `None` when either is past `WORD_DIFF_CAP`.
+pub(crate) struct Replaced {
+    pub old: usize,
+    pub new: usize,
+    pub words: Option<Words>,
+}
+
+/// Every replaced pair `align` zipped, with its word diff.
+pub(crate) fn replaced(rows: &[Row<'_>], aligned: &[Aligned], texts: &[&str]) -> Vec<Replaced> {
+    let body_of = |i: usize| match rows.get(i) {
+        Some(Row::Body { body, .. }) => Some(*body),
+        _ => None,
+    };
+    let text = |i: usize| texts.get(i).copied().unwrap_or_default();
+    aligned
+        .iter()
+        .filter_map(|a| match *a {
+            Aligned::Pair(Some(l), Some(r)) if l != r => Some((body_of(l)?, body_of(r)?)),
+            _ => None,
+        })
+        .map(|(old, new)| {
+            let (o, n) = (text(old), text(new));
+            let within = o.len() <= WORD_DIFF_CAP && n.len() <= WORD_DIFF_CAP;
+            Replaced {
+                old,
+                new,
+                words: within.then(|| words(o, n)),
+            }
+        })
+        .collect()
+}
+
+/// The word diff itself, the one both surfaces draw from.
+fn words(old: &str, new: &str) -> Words {
+    let extend = |ranges: &mut Vec<Range<usize>>, at: &mut usize, len: usize| {
+        match ranges.last_mut() {
+            Some(last) if last.end == *at => last.end += len,
+            _ => ranges.push(*at..*at + len),
+        }
+        *at += len;
+    };
+    let (mut left, mut right) = (Vec::new(), Vec::new());
+    let (mut at_old, mut at_new) = (0, 0);
+    for c in TextDiff::from_words(old, new).iter_all_changes() {
+        let len = c.value().len();
+        match c.tag() {
+            _ if len == 0 => {}
+            ChangeTag::Equal => (at_old, at_new) = (at_old + len, at_new + len),
+            ChangeTag::Delete => extend(&mut left, &mut at_old, len),
+            ChangeTag::Insert => extend(&mut right, &mut at_new, len),
+        }
+    }
+    (left, right)
+}
+
+/// `spans` cut at every edge of `words`, so no span straddles one; an edge
+/// off a char boundary (never one `words` makes) is left uncut.
+fn cut(spans: StyledLine, words: &[Range<usize>]) -> StyledLine {
+    let mut edges = words.iter().flat_map(|w| [w.start, w.end]).peekable();
+    let (mut out, mut at) = (Vec::with_capacity(spans.len()), 0);
+    for mut span in spans {
+        let end = at + span.text.len();
+        while let Some(&edge) = edges.peek() {
+            if edge >= end {
+                break;
+            }
+            edges.next();
+            let Some((head, tail)) = span.text.split_at_checked(edge.saturating_sub(at)) else {
+                continue;
+            };
+            if head.is_empty() {
+                continue;
+            }
+            let (head, tail) = (head.to_owned(), tail.to_owned());
+            out.push(StyledSpan {
+                text: head,
+                ..span.clone()
+            });
+            (span.text, at) = (tail, edge);
+        }
+        at = end;
+        out.push(span);
+    }
+    out
+}
+
 /// `diff` as hunks. Bodies go through the one syntect pass the TUI's diff
 /// and fenced blocks use, highlighted by the file's extension with `theme`;
 /// a file without one stays plain, as it does in the TUI. File markers,
@@ -129,6 +283,12 @@ pub fn model(diff: &Diff, theme: &str) -> DiffModel {
     for (line, text) in spans.iter_mut().zip(&texts) {
         if line.is_empty() && !text.is_empty() {
             *line = vec![StyledSpan::plain(*text)];
+        }
+    }
+    let mut words = vec![Vec::new(); texts.len()];
+    for pair in replaced(&rows, &align(&rows), &texts) {
+        if let (Some((o, n)), true) = (pair.words, pair.new < words.len()) {
+            (words[pair.old], words[pair.new]) = (o, n);
         }
     }
     let mut hunks: Vec<DiffHunk> = Vec::new();
@@ -157,11 +317,23 @@ pub fn model(diff: &Diff, theme: &str) -> DiffModel {
                     "-" => DiffLineKind::Del,
                     _ => DiffLineKind::Context,
                 };
+                let changed = words.get_mut(body).map(std::mem::take).unwrap_or_default();
+                let offset = |at: usize| u32::try_from(at).unwrap_or(u32::MAX);
                 let line = DiffLine {
                     kind,
                     old,
                     new,
-                    spans: spans.get_mut(body).map(std::mem::take).unwrap_or_default(),
+                    spans: cut(
+                        spans.get_mut(body).map(std::mem::take).unwrap_or_default(),
+                        &changed,
+                    ),
+                    words: changed
+                        .iter()
+                        .map(|w| WordRange {
+                            start: offset(w.start),
+                            end: offset(w.end),
+                        })
+                        .collect(),
                 };
                 if let Some(hunk) = hunks.last_mut() {
                     hunk.lines.push(line);
@@ -233,6 +405,73 @@ mod tests {
         let text: String = spans.iter().map(|s| s.text.as_str()).collect();
         assert_eq!(text, "fn main() {}");
         assert!(spans.len() > 1 && spans.iter().all(|s| s.rgb.is_some()));
+    }
+
+    #[test]
+    fn a_one_word_change_marks_that_word_on_both_lines() {
+        let m = model(
+            &diff(
+                "x.rs",
+                "@@ -1 +1 @@\n-let a = old + 1;\n+let a = new + 1;\n",
+            ),
+            "base16-ocean.dark",
+        );
+        let lines = &m.hunks[0].lines;
+        let marked = |l: &DiffLine| -> Vec<String> {
+            let text: String = l.spans.iter().map(|s| s.text.as_str()).collect();
+            l.words
+                .iter()
+                .map(|w| text[w.start as usize..w.end as usize].to_owned())
+                .collect()
+        };
+        assert_eq!(marked(&lines[0]), ["old"]);
+        assert_eq!(marked(&lines[1]), ["new"]);
+        // A span ends at each edge, so a view marks whole spans.
+        let edges = |l: &DiffLine| {
+            let mut at = 0;
+            let mut ends = vec![0];
+            for s in &l.spans {
+                at += s.text.len() as u32;
+                ends.push(at);
+            }
+            l.words
+                .iter()
+                .all(|w| ends.contains(&w.start) && ends.contains(&w.end))
+        };
+        assert!(edges(&lines[0]) && edges(&lines[1]));
+    }
+
+    #[test]
+    fn only_a_paired_line_within_the_cap_carries_words() {
+        let long = "x".repeat(WORD_DIFF_CAP + 1);
+        let unified = format!("@@ -1,2 +1,3 @@\n ctx\n-{long}\n+{long}y\n+extra\n");
+        let m = model(&diff("NOTES", &unified), "base16-ocean.dark");
+        assert!(m.hunks[0].lines.iter().all(|l| l.words.is_empty()));
+        let m = model(&diff("NOTES", "@@ -1 +1,2 @@\n-a b\n+a c\n+d\n"), "x");
+        let words: Vec<_> = m.hunks[0].lines.iter().map(|l| l.words.len()).collect();
+        assert_eq!(words, [1, 1, 0]);
+    }
+
+    #[test]
+    fn align_zips_a_removed_run_against_the_added_run_after_it() {
+        let (rows, _) = parse("@@ -1,3 +1,2 @@\n-a\n-b\n-c\n+x\n+y\n k\n");
+        let pairs: Vec<_> = align(&rows)
+            .into_iter()
+            .map(|a| match a {
+                Aligned::Meta(i) => (Some(i), None),
+                Aligned::Pair(l, r) => (l, r),
+            })
+            .collect();
+        assert_eq!(
+            pairs,
+            vec![
+                (Some(0), None),
+                (Some(1), Some(4)),
+                (Some(2), Some(5)),
+                (Some(3), None),
+                (Some(6), Some(6)),
+            ]
+        );
     }
 
     #[test]
