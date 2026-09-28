@@ -100,6 +100,13 @@ release:
 desktop-xcframework:
     mise exec -- bash scripts/desktop/xcframework.sh
 
+# The macOS app, Debug and ad-hoc signed (T37.32.1, DT§7): the XCFramework, then XcodeGen's
+# thin Cox.xcodeproj from desktop/macos/project.yml, then desktop/macos/build/Cox.app. No
+# signing identity; Developer ID and notarization are T37.32.2. Run it on a fixture with
+# `desktop/macos/build/Cox.app/Contents/MacOS/Cox -CoxFixture desktop/macos/Fixtures/edit.json`.
+desktop-app: desktop-xcframework
+    mise exec -- bash scripts/desktop/app.sh
+
 # The desktop design tokens (T37.17, DS§2): Style Dictionary regenerates CoxUI's
 # Tokens.swift and Colors.xcassets and the mockups' tokens.css from
 # desktop/design/tokens/*.json. CI runs the same build and fails on any diff.

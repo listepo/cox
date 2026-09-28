@@ -205,17 +205,22 @@ jobs:
             fi
           done
 
+      # The app target is in no package, so no build-tool plugin lints it (T37.32.1).
+      - name: swiftlint app
+        working-directory: desktop/macos
+        run: swiftlint lint --strict --no-cache --quiet App
+
       - name: swift-format
         run: |
           set -euo pipefail
-          dirs=(desktop/macos/LintFixtures)
+          dirs=(desktop/macos/LintFixtures desktop/macos/App)
           if [ -d desktop/macos/Packages ]; then dirs+=(desktop/macos/Packages); fi
           xcrun swift-format lint --strict --recursive "${dirs[@]}"
 
   # The macOS app (T37.15, DT§7): CoxFFI.xcframework for Apple Silicon only
-  # (A67), then `swift test` for every package under desktop/macos/Packages
-  # (none until T37.16, so the loop is empty until then). macos-26 is the
-  # arm64 image whose Xcode 26 carries the macOS 26 SDK the app targets.
+  # (A67), then `swift test` for every package under desktop/macos/Packages,
+  # then the app target, unsigned (T37.32.1). macos-26 is the arm64 image
+  # whose Xcode 26 carries the macOS 26 SDK the app targets.
   desktop-macos:
     runs-on: macos-26
     steps:
@@ -246,6 +251,14 @@ jobs:
           for manifest in desktop/macos/Packages/*/Package.swift; do
             swift test --package-path "$(dirname "$manifest")"
           done
+
+      # The app target over those packages (T37.32.1): XcodeGen's Cox.xcodeproj, a Debug build
+      # with signing off — no identity or secret in this job.
+      - name: Cox.app
+        run: |
+          set -euo pipefail
+          mise install aqua:yonaskolb/XcodeGen
+          mise exec -- bash scripts/desktop/app.sh CODE_SIGNING_ALLOWED=NO
 
   # The desktop design tokens (T37.17, DS§2): regenerate Tokens.swift,
   # Colors.xcassets and tokens.css from desktop/design/tokens/*.json and fail
