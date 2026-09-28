@@ -90,7 +90,6 @@
 - T54.5. `cox voice model list|download <name>`
 - T54.6. TUI push-to-talk with auto-submit
 - T54.7. `crates/cox` wires dictation behind the `voice` feature
-- T55.1. A tool's MCP App UI is ignored; its text and structured result are kept
 - T56.1. `cox-cursor-cloud` crate: hand-written wire types
 - T56.2. Cloud Agents client: create, follow up, stream, cancel, usage
 - T56.3. `[[cloud_agents]]` manifest capability and its grant line

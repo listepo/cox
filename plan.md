@@ -96,7 +96,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T54.5 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T54.6 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
 | T54.7 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T55.1 | in progress | P3 | 2 | 0% | Claude Code / sonnet-5 |
 | T56.1 | todo | P3 | 2 | 0% | |
 | T56.2 | todo | P3 | 3 | 0% | |
 | T56.3 | todo | P3 | 3 | 0% | |
@@ -1871,14 +1870,6 @@ Out of scope: turning the feature on in release builds (the creator decides, A12
 ### P55 — MCP Apps, option (a) (goal: cox never advertises or renders an MCP App UI and shows the text and structured result of such a tool unchanged, test-backed)
 
 Rationale in §6 A123 (4). Design: `docs/design/v0.3-mcp-apps.md` option (a); (b) deferred, (c) waits for ACP.
-
-#### T55.1 A tool's MCP App UI is ignored; its text and structured result are kept
-
-Depends: — · Size: ~110 · Files: `crates/cox-mcp/src/client.rs` (tests only), `docs/compat.md`
-Goal: make today's behaviour explicit. A scripted in-process rmcp server exposes a tool whose `_meta.ui.resourceUri` is `ui://…` and returns text and structured content, and a twin without `_meta`; both produce the same `ToolOutput`. The client handshake declares no `extensions` entry for `io.modelcontextprotocol/ui`, and no `resources/read` for a `ui://` URI is ever sent. `docs/compat.md` says in one line that cox shows an MCP App tool's text and structured result only.
-Check: `mise exec -- cargo nextest run -p cox-mcp mcp_app_tool_output_matches_the_same_tool_without_ui mcp_client_declares_no_ui_extension mcp_client_never_reads_a_ui_resource`.
-Done when: the tests pass and the doc line exists.
-Out of scope: option (b) (browser page, loopback listener), option (c); any change to `output_of`; an rmcp bump.
 
 ### P56 — Cursor Cloud Agents as a background-task backend (goal: a granted plugin's `[[cloud_agents]]` entry runs a background task as a Cursor Cloud Agent run that survives the laptop closing, with the off-machine step approved through `Engine` and a $0 `billed_externally` usage row carrying Cursor's tokens)
 

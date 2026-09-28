@@ -7780,3 +7780,29 @@ Deviations: 8 files; the `Ctrl+E theme.edit` KEYMAP row is in commands.rs; `view
 Check: `cargo fmt` only (no-build rule, 2026-09-29). Commits mid-series do not compile alone (T46.3 adds `Ask::StatusLine`, handled from T46.4); the series does.
 
 Not done: the real-binary run; the verification pass runs `nextest -p cox-tui -E 'test(ctrl_e_opens) | test(editor_save) | test(saved_theme) | test(keymap_table_matches_docs) | test(every_action_has_a_keymap_row)'`, `-p cox -E 'test(save_theme_)'`, `-p cox-config -E 'test(config_set)'`, and re-records `help_overlay_snapshot`, `screen_help_overlay`, `screen_theme_picker_over_the_built_ins`.
+
+#### T55.1 A tool's MCP App UI is ignored; its text and structured result are kept
+
+Depends: — · Size: ~110 · Files: `crates/cox-mcp/src/client.rs` (tests only), `docs/compat.md`
+Goal: make today's behaviour explicit. A scripted in-process rmcp server exposes a tool whose `_meta.ui.resourceUri` is `ui://…` and returns text and structured content, and a twin without `_meta`; both produce the same `ToolOutput`. The client handshake declares no `extensions` entry for `io.modelcontextprotocol/ui`, and no `resources/read` for a `ui://` URI is ever sent. `docs/compat.md` says in one line that cox shows an MCP App tool's text and structured result only.
+Check: `mise exec -- cargo nextest run -p cox-mcp mcp_app_tool_output_matches_the_same_tool_without_ui mcp_client_declares_no_ui_extension mcp_client_never_reads_a_ui_resource`.
+Done when: the tests pass and the doc line exists.
+Out of scope: option (b) (browser page, loopback listener), option (c); any change to `output_of`; an rmcp bump.
+Status: done 2026-09-29
+Result: option (a) made explicit and test-backed, with no runtime change. `CoxClient` already declares no `extensions` capability, and `output_of` keeps only text and `structured_content` and never reads `_meta`.
+
+`crates/cox-mcp/tests/client.rs` gains an in-process `UiServer`. It has a tool carrying `_meta.ui.resourceUri` and the same tool without it, and it counts `resources/read`. Three tests:
+- `mcp_app_tool_output_matches_the_same_tool_without_ui`
+- `mcp_client_declares_no_ui_extension`
+- `mcp_client_never_reads_a_ui_resource`
+
+`docs/compat.md` has an MCP Apps row.
+
+Deviations: the tests live in the crate's integration test file (where its rmcp server harnesses are), not in `src/client.rs`.
+
+Check (2026-09-29):
+- `cargo nextest run -p cox-mcp`: 39/39 passed, the three new tests included.
+- `cargo clippy -p cox-mcp --all-targets -- -D warnings`: clean.
+- `cargo fmt --check`: clean.
+
+Not done: none.
