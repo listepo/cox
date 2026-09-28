@@ -5098,3 +5098,19 @@ Check:
 - `npm ci && npm run build`: light-hc and dark-hc 184 pairs pass, rebuild gives no diff; `npm run check` passes. `settingsSidebar` and every Settings window snapshot re-recorded on purpose; new `settingsSidebarInHighContrast`. CoxUI `Settings|AtomSnapshotTests|InspectorRow|ChangesTab|ToolMolecule` 31, `TasksTab|Inspector` 11; swiftlint and swift-format clean.
 - After merging into `p37-desktop`: CoxUI `Settings|InspectorRow|ChangesTab|TasksTab|Inspector|RewindTimeline|AtomSnapshotTests` 40/40.
 Not done: `mockups.html` keeps inline hex tile colours (T37.17.2).
+
+#### T37.23.13 Transcript text size and line height from config and tokens
+
+Depends: — · Size: ~100 · Files: `crates/cox-config/…` (`[desktop.transcript]`), `docs/config.jsonschema`, `docs/config.md`, `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxTranscriptText/…`
+Goal (A93): `[desktop.transcript]` gets `text_size` and `line_height`; the desktop builds `TranscriptStyle` from them together with `Appearance.textScale` (⌘+/⌘−) and applies the token line heights to the transcript text, restyling in place through T37.23.6's `restyle(_:)`.
+Check: the config-schema drift test; a CoxModel test that the keys reach the style; CoxTranscriptText snapshots at two sizes and line heights.
+Status: done 2026-09-28
+Result:
+- `[desktop.transcript]` gets `text_size` (points at 100 %, 10–24, default 13.5 — the `font.transcript` size) and `line_height` (a multiple of the size, 1–2.5, default 1.55) in `crates/cox-protocol/src/config.rs` and `default.toml` (A93), range-checked like the appearance keys; `docs/config.jsonschema` and `docs/config.md` regenerated.
+- CoxModel `TranscriptSettings.swift`: `DesktopTranscript` and `SettingsStore.transcript` read the settings view the way `[desktop.appearance]` does; one shared `SectionRows` decoder.
+- CoxTranscriptText `TranscriptLineHeights.swift`: `TranscriptStyle.LineHeights` (body, code, heading, thought) as paragraph line spacing, computed like CoxUI's `.textStyle`; every prose paragraph carries a paragraph style. CoxTranscript `TranscriptView.text(size:lineHeight:)` builds the style from textScale × text_size ÷ 13.5 and restyles in place through `restyle(_:)`.
+Deviations: more than 3 files; `Decor.init` gives the bubble and thought paragraphs their spacing; `TailFollow` lays out the viewport before scrolling to the true bottom (the last line now has spacing below it); six transcript snapshot pairs re-recorded; the units (points, a multiple of the size) are the agent's choice.
+Check:
+- `cargo nextest run -p cox-protocol -p cox-config`: 120/120 with both drift tests; `-p cox-app -E 'test(settings)'` 5/5; clippy and fmt clean. CoxModel 46, CoxTranscriptText 33, CoxTranscript 39 (`TranscriptLineHeightTests`, snapshots at 13.5/1.55 and 17/2.0). Real binary under a scratch `COX_HOME`: `config set`/`show` give `text_size = 16.0`, `line_height 3` is rejected.
+- After merging into `p37-desktop`: cox-protocol and cox-config 120/120; CoxModel 47, CoxTranscriptText 33, CoxTranscript 39.
+Not done: the benchmark (skipped) should re-check the per-batch viewport layout; the app passing `SettingsStore.transcript` into the view waits on T37.32.

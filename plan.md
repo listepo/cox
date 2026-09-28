@@ -28,7 +28,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.23.9 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.23.13 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.23.15 | todo | P3 | 2 | 0% | |
 | T37.23.16 | in progress | P3 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.23.17 | todo | P3 | 1 | 0% | |
@@ -2769,12 +2768,6 @@ Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same 
 Depends: — · Size: ~100 · Files: `desktop/macos/Packages/CoxTranscriptText/…`, `desktop/macos/Packages/CoxTranscript/…`
 Goal: the user bubble drawn by `DecorFragment` gets DS§6.3's glass sweep and e2 elevation from tokens, with a gap between the prompt text and its tile row; hovering a prompt shows its Edit-and-resend and Copy actions, which reach the composer and the pasteboard.
 Check: light/dark snapshots of a prompt at rest and hovered; a test that Copy puts the prompt text on the pasteboard and Edit fills the composer.
-
-#### T37.23.13 Transcript text size and line height from config and tokens
-
-Depends: — · Size: ~100 · Files: `crates/cox-config/…` (`[desktop.transcript]`), `docs/config.jsonschema`, `docs/config.md`, `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxTranscriptText/…`
-Goal (A93): `[desktop.transcript]` gets `text_size` and `line_height`; the desktop builds `TranscriptStyle` from them together with `Appearance.textScale` (⌘+/⌘−) and applies the token line heights to the transcript text, restyling in place through T37.23.6's `restyle(_:)`.
-Check: the config-schema drift test; a CoxModel test that the keys reach the style; CoxTranscriptText snapshots at two sizes and line heights.
 
 #### T37.23.15 Per-level transcript heading sizes
 
