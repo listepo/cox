@@ -35,7 +35,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.1 | in progress | P2 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.44.2 | todo | P2 | 4 | 0% | |
 | T37.22.7 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.22.9 | todo | P2 | 3 | 0% | |
+| T37.22.9 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.22.10 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
@@ -2796,6 +2796,7 @@ Check: the vendor script's tests; a cox-models test that `claude-sonnet-5` reads
 Depends: T37.22.8 · Size: ~150 · Files: `crates/cox-tui`, `crates/cox` (a `cox rename` or `/rename`), cox-app/cox-ffi, CoxModel, the app's toolbar and sidebar
 Goal: A113. The TUI shows the session title where it shows the session today and in the resume list; `/rename <title>` in the TUI and a rename in the app (double-click the toolbar title or a sidebar row's context menu) set it through one `Submission` that marks the title as the user's. The app's toolbar and sidebar read the title from the store and follow `TitleSet`.
 Check: a TUI snapshot with a title; a test that a user rename survives a later generated title; a screenshot of the app with titled sessions.
+Plan: add `Submission::Rename { title }` in cox-protocol → core stores it via `Store::session_title_set(.., User)` and emits `TitleSet`; TUI shows the title in the header and resume list and gets `/rename`; cox-app/cox-ffi expose rename and forward `TitleSet`; CoxModel updates the session title; the app renames by double-clicking the toolbar title and from a sidebar row's context menu. Verify: scoped nextest, a TUI insta snapshot, a store/core test that a user title survives a generated one, Swift tests of the touched packages, one app screenshot.
 
 #### T37.22.10 The running app draws pane content under the glass
 
