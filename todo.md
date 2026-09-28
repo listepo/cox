@@ -83,3 +83,21 @@
 - T53.7. `cox-plugin-sdk` ready for crates.io
 - T53.8. Go SDK module ready to tag
 - T53.9. Templates and docs use the published SDKs
+- T54.1. `cox-vendor whisper-models`: the pinned model table
+- T54.2. `cox-voice` crate: transcribe a 16 kHz buffer with `whisper-rs`
+- T54.3. Microphone capture with `cpal`, resampled to 16 kHz with `rubato`
+- T54.4. `[voice]` config and the `Dictation` trait
+- T54.5. `cox voice model list|download <name>`
+- T54.6. TUI push-to-talk with auto-submit
+- T54.7. `crates/cox` wires dictation behind the `voice` feature
+- T55.1. A tool's MCP App UI is ignored; its text and structured result are kept
+- T56.1. `cox-cursor-cloud` crate: hand-written wire types
+- T56.2. Cloud Agents client: create, follow up, stream, cancel, usage
+- T56.3. `[[cloud_agents]]` manifest capability and its grant line
+- T56.4. `Engine` asks before code leaves the machine: `CloudAgent(<repo>)`
+- T56.5. `cloud_runs` table: a run outlives the session that started it
+- T56.6. Host driver: a background task becomes a Cursor Cloud run
+- T56.7. Usage row and resume
+- T56.8. Offline end-to-end over hand-written fixtures
+- T56.9. Docs: cloud agents for users and in EA
+- T56.10. Optional: live check against a real Cursor account (needs the creator's key)
