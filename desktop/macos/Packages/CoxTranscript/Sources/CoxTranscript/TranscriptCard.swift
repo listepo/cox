@@ -1,0 +1,117 @@
+// The card a card block shows (T37.23, DT§5.2): a tool call, a tool group or a subagent task
+// as a CoxUI `ToolCard`, an approval or a question in the caller's slot (the `ApprovalCard`,
+// T37.27). Separate so the one place that reads a block's fields to fill a card is its own
+// file; every value it shows was decided in Rust — this maps enums to looks and lays out.
+
+import CoxClient
+import CoxUI
+import SwiftUI
+
+/// One card block's view, hosted in the transcript text as an attachment (T37.41).
+struct TranscriptCard<Approval: View>: View {
+  let block: Block
+  let approval: @MainActor (Block) -> Approval
+  @Environment(\.locale) private var locale
+
+  var body: some View {
+    if let content = ToolCard.Content(block, locale: locale) {
+      ToolCard(content)
+    } else {
+      approval(block)
+    }
+  }
+}
+
+extension ToolCard.Content {
+  /// The card of a tool call, tool group or task, its duration written as `locale` writes
+  /// it; `nil` for any other block.
+  init?(_ block: Block, locale: Locale) {
+    switch block.kind {
+    case .tool(_, let summary, let icon, let risk, let state, let tail, _, _, let durationMs):
+      let duration = state == .running ? nil : Self.seconds(durationMs, locale)
+      let header = ToolHeader.Item(
+        tile: icon.tile, symbol: icon.symbol, verb: summary, subject: "", risk: risk.chip,
+        state: state.header, duration: duration)
+      self.init(header: header, detail: Self.tail(tail, state: state, status: duration))
+    case .toolGroup(let summary, _, let state):
+      let header = ToolHeader.Item(
+        tile: Icon.search.tile, symbol: Icon.search.symbol, verb: summary, subject: "",
+        state: state.header)
+      self.init(header: header)
+    case .task(_, let label, let tier, let done, _, let exitCode):
+      let state: ToolState = !done ? .running : exitCode.map { $0 == 0 } ?? true ? .done : .failed
+      let header = ToolHeader.Item(
+        tile: Icon.agent.tile, symbol: Icon.agent.symbol, verb: label, subject: "",
+        detail: tier.rawValue, state: state.header)
+      self.init(header: header)
+    default:
+      return nil
+    }
+  }
+
+  /// The core's five-line tail, one string per line; none when the call printed nothing.
+  private static func tail(_ tail: String, state: ToolState, status: String?) -> ToolCard.Detail? {
+    let lines = tail.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    guard lines.contains(where: { !$0.isEmpty }) else { return nil }
+    let shown = lines.last == "" ? Array(lines.dropLast()) : lines
+    let exit: TerminalTail.Exit =
+      switch state {
+      case .running: .running
+      case .done: .succeeded(status ?? "")
+      case .failed: .failed(status ?? "")
+      }
+    return .tail(shown, exit: exit)
+  }
+
+  /// A duration as `locale` writes seconds, `1.2s`.
+  private static func seconds(_ milliseconds: UInt64, _ locale: Locale) -> String {
+    Duration.milliseconds(milliseconds).formatted(
+      .units(allowed: [.seconds], width: .narrow, fractionalPart: .show(length: 1))
+        .locale(locale))
+  }
+}
+
+extension Icon {
+  /// The tile colour and DS§3.7 symbol per icon, as DT§5.2 lists them.
+  var tile: IconTile.Kind {
+    switch self {
+    case .read: .write
+    case .edit: .edit
+    case .shell: .shell
+    case .search: .search
+    case .web, .todo, .ask, .agent, .mcp, .tool: .neutral
+    }
+  }
+
+  var symbol: String {
+    switch self {
+    case .read: "doc.text"
+    case .edit: "pencil"
+    case .shell: "terminal"
+    case .search: "magnifyingglass"
+    case .web: "globe"
+    case .todo: "checklist"
+    case .ask: "text.bubble"
+    case .agent: "person.2"
+    case .mcp: "bolt"
+    case .tool: "sparkle"
+    }
+  }
+}
+
+extension Risk {
+  /// Only a destructive call carries a chip (DT§5.2: high-risk calls carry a risk badge).
+  var chip: ToolHeader.Risk? {
+    self == .destructive ? ToolHeader.Risk(text: rawValue, level: .high) : nil
+  }
+}
+
+extension ToolState {
+  var header: ToolHeader.State {
+    switch self {
+    case .running: .running
+    case .done: .succeeded
+    case .failed: .failed
+    }
+  }
+}

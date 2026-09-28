@@ -45,6 +45,10 @@ final class CardAttachment: NSTextAttachment {
   init(_ block: Block, cards: TranscriptCards) {
     (self.block, self.cards) = (block, cards)
     super.init(data: nil, ofType: nil)
+    // An empty image, not none: with none TextKit draws its document placeholder under the
+    // view, and it shows through a card with no background of its own. (Overriding
+    // `image(for:)` instead turns the view provider off.)
+    image = NSImage()
   }
 
   nonisolated required init?(coder: NSCoder) { nil }

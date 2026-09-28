@@ -8,39 +8,61 @@ import SwiftUI
 /// An `IconTile`, the summary with its subject in bold, a `DiffStat`, a `RiskChip`, the state
 /// and duration in `text.secondary` and a disclosure chevron. The expanded header sits on
 /// `fill.primary` over a hairline, the mockup's `.tool.exp .h`; a collapsed one is flat (e0).
-struct ToolHeader: View {
+public struct ToolHeader: View {
   /// What the header shows; every string comes formatted from the core.
-  struct Item: Equatable, Sendable {
-    var tile: IconTile.Kind
+  public struct Item: Equatable, Sendable {
+    public var tile: IconTile.Kind
     /// An SF Symbol from the DS§3.7 map.
-    var symbol: String
+    public var symbol: String
     /// What the tool did, `Edited`.
-    var verb: String
+    public var verb: String
     /// What it did it to, `crates/cox-provider-http/src/retry.rs`, drawn in bold.
-    var subject: String
+    public var subject: String
     /// A command rather than a name: drawn monospaced, the mockup's `b.mono`.
-    var subjectIsCode = false
+    public var subjectIsCode: Bool
     /// More in `text.secondary`, `· retry.rs, http.rs +2`.
-    var detail: String?
-    var change: Change?
-    var risk: Risk?
-    var state: State
+    public var detail: String?
+    public var change: Change?
+    public var risk: Risk?
+    public var state: State
     /// How long it ran, `0.1 s`.
-    var duration: String?
+    public var duration: String?
+
+    public init(
+      tile: IconTile.Kind, symbol: String, verb: String, subject: String,
+      subjectIsCode: Bool = false, detail: String? = nil, change: Change? = nil, risk: Risk? = nil,
+      state: State, duration: String? = nil
+    ) {
+      (self.tile, self.symbol, self.verb, self.subject) = (tile, symbol, verb, subject)
+      (self.subjectIsCode, self.detail, self.change, self.risk) = (
+        subjectIsCode, detail, change, risk
+      )
+      (self.state, self.duration) = (state, duration)
+    }
   }
 
   /// The lines a file change adds and removes.
-  struct Change: Equatable, Sendable {
-    var added: Int
-    var removed: Int
+  public struct Change: Equatable, Sendable {
+    public var added: Int
+    public var removed: Int
+
+    public init(added: Int, removed: Int) {
+      self.added = added
+      self.removed = removed
+    }
   }
 
-  struct Risk: Equatable, Sendable {
-    var text: String
-    var level: RiskChip.Level
+  public struct Risk: Equatable, Sendable {
+    public var text: String
+    public var level: RiskChip.Level
+
+    public init(text: String, level: RiskChip.Level) {
+      self.text = text
+      self.level = level
+    }
   }
 
-  enum State: CaseIterable, Sendable {
+  public enum State: CaseIterable, Sendable {
     case running, succeeded, failed
   }
 
@@ -55,7 +77,7 @@ struct ToolHeader: View {
     self.toggle = toggle
   }
 
-  var body: some View {
+  public var body: some View {
     if let isExpanded {
       Button(action: toggle) { ToolHeaderRow(item: item, isExpanded: isExpanded) }
         .buttonStyle(ToolHeaderStyle(isExpanded: isExpanded))

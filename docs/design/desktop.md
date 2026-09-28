@@ -117,7 +117,9 @@ through a `cox app-server` that speaks the same patch protocol (DT§4.4).
 
 ```
 ┌──────────────────────── Cox.app (Swift) ─────────────────────────┐
-│ CoxUI        SwiftUI views, design tokens. Knows only CoxModel.   │
+│ CoxTranscript The transcript: CoxUI cards in the TextKit 2 view,  │
+│              bound to a SessionStore's patches.                   │
+│ CoxUI        SwiftUI views, design tokens. No other cox package.  │
 │ CoxPlatform  Notifications, Keychain bridge, Sparkle, OAuth,      │
 │              NSWorkspace, SwiftTerm, WebView. No business rules.  │
 │ CoxModel     @Observable stores; apply patches; send intents.     │
@@ -319,8 +321,9 @@ Rules:
 | --- | --- | --- |
 | `CoxCore` | `binaryTarget` `CoxFFI.xcframework`; generated `cox_ffi.swift` (target `CoxFFIBindings`, Swift 5 mode, a symlink into `build/bindings/`); `LiveCoreClient` converting its values to `CoxClient`'s | `CoxModel`'s `CoxClient` |
 | `CoxModel` | Target `CoxClient`: the timeline and intent values, the `CoreClient` protocol and `FixtureCoreClient` — here, not in `CoxCore`, because a package declaring the binary target does not load before the XCFramework is built (T37.16). Target `CoxModel`: `@Observable @MainActor` stores: `AppStore` (projects, sessions, inbox, badge), `SessionStore` (ordered blocks by id, status, composer draft), `SettingsStore`. `apply(_ patches:)` and `send(_ intent:)` only | swift-collections |
-| `CoxUI` | Views and the design system (DT§5.9) | `CoxModel`, `CoxTranscriptText` |
+| `CoxUI` | Views and the design system (DT§5.9); imports no other cox package, so a card is built from plain values | — |
 | `CoxTranscriptText` | `TranscriptTextView`: the transcript as one TextKit 2 `NSTextView`, every timeline block a tracked text range (`BlockRanges`: id → range, location → id), styled by a `TranscriptStyle` the caller builds from tokens (each Rust `StyleToken` maps to a style colour, never a literal); a reply's text is built from its `StyledDoc` spans, and `apply` splices each timeline patch into its own block's range instead of rebuilding the text (`AppendText`, `DocTail`, upsert, remove); tool, approval, question and subagent cards are view-backed attachments (one character each) hosting the SwiftUI views the caller passes as `TranscriptCards`, so it depends on no CoxUI (T37.40, T37.41, T37.43, DT§5.2, `research.md` §9.5.13) | `CoxModel`'s `CoxClient` |
+| `CoxTranscript` | `TranscriptView`: a `SessionStore`'s timeline in `CoxTranscriptText`'s view, a tool, tool-group or task block as CoxUI's `ToolCard`, an approval or question in a caller's slot, with `TranscriptStyle.cox` built from CoxUI's tokens; it follows the store through `SessionStore.didApply`, so each patch batch the store applies is spliced into the text. The one place the three meet, so CoxUI and `CoxTranscriptText` stay independent (T37.23) | `CoxModel`, `CoxTranscriptText`, `CoxUI` |
 | `CoxPlatform` | `Host` implementation, notifications with actions, Sparkle, OAuth handoff, `NSWorkspace` "open in editor", SwiftTerm and `WebView` panes (M2) | `CoxModel` |
 | App target | `@main`, scenes, menus, entitlements, Info.plist, assets | all |
 
@@ -579,6 +582,7 @@ apps/cox/
 │  │  ├─ CoxModel/                 stores + Tests/
 │  │  ├─ CoxUI/                    views, DesignSystem/ + Tests/ (snapshots)
 │  │  ├─ CoxTranscriptText/        TextKit 2 transcript view + Tests/
+│  │  ├─ CoxTranscript/            TranscriptView: CoxUI cards in the text view + Tests/ (snapshots, DT§9 gate)
 │  │  └─ CoxPlatform/              Host, notifications, Sparkle, terminal, web
 │  ├─ Fixtures/                    patch streams recorded from scripted scenarios
 │  └─ UITests/

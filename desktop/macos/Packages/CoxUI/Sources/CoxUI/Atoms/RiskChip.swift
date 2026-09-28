@@ -6,8 +6,8 @@
 import SwiftUI
 
 /// The reason text as a badge: low is quiet, medium warns, high is danger.
-struct RiskChip: View {
-  enum Level: CaseIterable, Sendable {
+public struct RiskChip: View {
+  public enum Level: CaseIterable, Sendable {
     case low, medium, high
   }
 
@@ -19,7 +19,7 @@ struct RiskChip: View {
     self.level = level
   }
 
-  var body: some View {
+  public var body: some View {
     Badge(text, kind: level.badge)
       .accessibilityElement(children: .ignore)
       .accessibilityLabel("\(level.label): \(text)")
