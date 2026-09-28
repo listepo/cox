@@ -22,8 +22,9 @@ let fixtures: [URL] = {
   return names.filter { $0.hasSuffix(".json") }.sorted().map { dir.appending(path: $0) }
 }()
 
+/// A block that is only its text.
 private func thinking(_ id: BlockID, _ text: String) -> Block {
-  Block(id: id, turn: 1, kind: .thinking(text: text))
+  Block(id: id, turn: 1, kind: .notice(level: .info, text: text))
 }
 
 @Test func fixturesAreFound() {

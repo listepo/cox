@@ -58,7 +58,8 @@ enum MarkdownCopy {
           plain.append(line)
           continue
         }
-        let selected = text.substring(with: part)
+        let selected = shown(text.substring(with: part), of: kind)
+        guard !selected.isEmpty else { continue }
         plain.append(selected)
         guard case .assistant(let source, let doc) = kind else {
           markdown.append(selected)
@@ -72,6 +73,17 @@ enum MarkdownCopy {
       }
     }
     return (markdown.joined(separator: "\n\n"), plain.joined(separator: "\n"))
+  }
+
+  /// A prompt's or a thought's text as the reader sees it: without the tiles'
+  /// and the fold header's attachment characters (T37.23.4) or the line breaks
+  /// around them. Any other block's text as it is.
+  static func shown(_ text: String, of kind: BlockKind?) -> String {
+    switch kind {
+    case .user?, .thinking?:
+      text.replacing("\u{FFFC}", with: "").trimmingCharacters(in: .newlines)
+    default: text
+    }
   }
 
   /// A card's summary line; `nil` for a block that is not a card.

@@ -9,16 +9,35 @@ import AppKit
 import CoxClient
 import SwiftUI
 
-/// The SwiftUI view each card block shows. CoxUI supplies its catalogue cards;
-/// `summary` draws the block's one-line summary for tests and previews.
+/// The SwiftUI view each card block shows, and the small views inside a prompt
+/// and a thought (T37.23.4): an attachment's tile and a thought's fold header,
+/// given whether it is open and what opens or folds it. CoxUI supplies its
+/// catalogue views; `summary` draws plain text for tests and previews.
 public struct TranscriptCards {
   let view: @MainActor (Block) -> AnyView
+  let thumbnail: @MainActor (String) -> AnyView
+  let header: @MainActor (_ open: Bool, _ toggle: @escaping @MainActor () -> Void) -> AnyView
   /// Set by the view that hosts the cards: a card's view was made (`false`)
   /// or its height changed (`true`).
   var changed: @MainActor (BlockID, _ resized: Bool) -> Void = { _, _ in }
+  /// Set by the view that hosts the cards: whether a thought is open, and its fold toggled.
+  var isOpen: @MainActor (BlockID) -> Bool = { _ in false }
+  var toggle: @MainActor (BlockID) -> Void = { _ in }
+
+  public init<Card: View, Tile: View, Header: View>(
+    _ view: @escaping @MainActor (Block) -> Card,
+    thumbnail: @escaping @MainActor (String) -> Tile,
+    thinking header: @escaping @MainActor (Bool, @escaping @MainActor () -> Void) -> Header
+  ) {
+    self.view = { AnyView(view($0)) }
+    self.thumbnail = { AnyView(thumbnail($0)) }
+    self.header = { AnyView(header($0, $1)) }
+  }
 
   public init<Card: View>(_ view: @escaping @MainActor (Block) -> Card) {
-    self.view = { AnyView(view($0)) }
+    self.init(
+      view, thumbnail: { Text($0) },
+      thinking: { open, toggle in Button(open ? "Fold" : "Thinking") { toggle() } })
   }
 
   public static var summary: TranscriptCards {
@@ -38,12 +57,19 @@ public struct TranscriptCards {
 /// text view lays out, hence `assumeIsolated` in the nonisolated overrides.
 @MainActor
 final class CardAttachment: NSTextAttachment {
+  /// A card fills its line; a prompt's tile and a thought's header take their own size.
+  enum Role: Equatable {
+    case card, header
+    case thumbnail(String)
+  }
+
   private(set) var block: Block
   private let cards: TranscriptCards
+  private let role: Role
   private var host: CardHost?
 
-  init(_ block: Block, cards: TranscriptCards) {
-    (self.block, self.cards) = (block, cards)
+  init(_ block: Block, cards: TranscriptCards, role: Role = .card) {
+    (self.block, self.cards, self.role) = (block, cards, role)
     super.init(data: nil, ofType: nil)
     // An empty image, not none: with none TextKit draws its document placeholder under the
     // view, and it shows through a card with no background of its own. (Overriding
@@ -57,12 +83,22 @@ final class CardAttachment: NSTextAttachment {
   /// own state; a new height re-lays the card out as any resize does.
   func update(_ block: Block) {
     self.block = block
-    host?.rootView.card = cards.view(block)
+    host?.rootView.card = view(block)
+  }
+
+  private func view(_ block: Block) -> AnyView {
+    switch role {
+    case .card: return cards.view(block)
+    case .thumbnail(let name): return cards.thumbnail(name)
+    case .header:
+      let (id, cards) = (block.id, cards)
+      return cards.header(cards.isOpen(id)) { cards.toggle(id) }
+    }
   }
 
   var hostView: CardHost {
     if let host { return host }
-    let made = CardHost(rootView: CardFrame(card: cards.view(block), width: 0))
+    let made = CardHost(rootView: CardFrame(card: view(block), width: role == .card ? 0 : nil))
     made.sizingOptions = [.intrinsicContentSize]
     made.onResize = { [weak self] in self.map { $0.cards.changed($0.block.id, true) } }
     host = made
@@ -84,8 +120,9 @@ final class CardAttachment: NSTextAttachment {
     return provider
   }
 
-  /// The full line width, as tall as the card is at that width; the bottom
-  /// sits on the descender so the line is no taller than the card.
+  /// A card: the full line width, as tall as the card is at that width. A tile
+  /// or a header: its own size. The bottom sits on the descender so the line is
+  /// no taller than the view.
   nonisolated override func attachmentBounds(
     for attributes: [NSAttributedString.Key: Any], location: any NSTextLocation,
     textContainer: NSTextContainer?, proposedLineFragment: CGRect, position: CGPoint
@@ -94,7 +131,9 @@ final class CardAttachment: NSTextAttachment {
     let width = max(0, proposedLineFragment.width - 2 * padding)
     let descender = (attributes[.font] as? NSFont)?.descender ?? 0
     nonisolated(unsafe) let attachment = self
-    let size = MainActor.assumeIsolated { attachment.hostView.size(width: width) }
+    let size = MainActor.assumeIsolated {
+      attachment.hostView.size(width: attachment.role == .card ? width : nil)
+    }
     return CGRect(x: 0, y: descender, width: size.width, height: size.height)
   }
 }
@@ -109,13 +148,14 @@ final class CardViewProvider: NSTextAttachmentViewProvider {
   }
 }
 
-/// The card at the width TextKit gives it: SwiftUI picks the height.
+/// The card at the width TextKit gives it (`nil`: its own width): SwiftUI picks the height.
 struct CardFrame: View {
   var card: AnyView
-  var width: CGFloat
+  var width: CGFloat?
 
   var body: some View {
-    card.frame(width: width, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+    card.frame(width: width, alignment: .leading)
+      .fixedSize(horizontal: width == nil, vertical: true)
   }
 }
 
@@ -127,11 +167,11 @@ final class CardHost: NSHostingView<CardFrame> {
   private var measured: CGFloat?
   private var pending = false
 
-  func size(width: CGFloat) -> NSSize {
+  func size(width: CGFloat?) -> NSSize {
     if rootView.width != width { rootView.width = width }
-    let height = intrinsicContentSize.height
-    measured = height
-    return NSSize(width: width, height: height)
+    let size = intrinsicContentSize
+    measured = size.height
+    return NSSize(width: width ?? size.width, height: size.height)
   }
 
   override func invalidateIntrinsicContentSize() {
@@ -168,6 +208,11 @@ extension TranscriptTextView {
   var hostedCards: TranscriptCards {
     var hosted = cards
     hosted.changed = { [weak self] in self?.cardChanged($0, resized: $1) }
+    hosted.isOpen = { [weak self] in self?.openThoughts.contains($0) ?? false }
+    // After the click that asked: the fold edits the text the header sits in.
+    hosted.toggle = { [weak self] id in
+      nextTurn { self.map { $0.setThought(id, open: !$0.openThoughts.contains(id)) } }
+    }
     return hosted
   }
 

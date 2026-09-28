@@ -469,6 +469,12 @@ Copy writes the selection twice, blocks in order: Markdown
 (`net.daringfireball.markdown`; a whole reply as its source, a card as its
 summary line, a code block cut short still fenced) and plain text; the view
 takes the setting as `crossBlockSelection` and never reads config (T37.42).
+A user prompt and a thought stay text in that view, so a drag can start
+partway through a prompt (T37.23.4): a layout fragment draws the bubble or the
+thought's rule behind their paragraphs, an attachment's tile and the thought's
+fold header are small view-backed attachments, and a thought folds by
+dropping the text after its header, its open state the view's own. They copy
+as the text shown: a prompt without its tiles, a folded thought as nothing.
 
 ### 5.3 Composer
 

@@ -1,8 +1,9 @@
 // The transcript as one attributed string (T37.40): timeline blocks → text and
 // the `BlockRanges` over it. Each block becomes one piece — a reply from the
-// Rust `StyledDoc` spans (T37.43), a card as one attachment (T37.41), anything
-// else as plain runs; pieces are joined and tracked here only, and patches
-// splice pieces into the text (`TranscriptPatches.swift`) with the same rules.
+// Rust `StyledDoc` spans (T37.43), a card as one attachment (T37.41), a prompt
+// or a thought as decorated text (T37.23.4), anything else as plain runs;
+// pieces are joined and tracked here only, and patches splice pieces into the
+// text (`TranscriptPatches.swift`) with the same rules.
 
 import AppKit
 import CoxClient
@@ -21,13 +22,18 @@ public struct TranscriptStyle: Equatable {
   public var blockSpacing: CGFloat
   /// The space between the text and the view's edges.
   public var inset: NSSize
+  /// A user prompt's bubble and a thought's look (`TranscriptDecor.swift`).
+  public var bubble: Bubble
+  public var thought: Thought
 
   public init(
     body: NSFont, code: NSFont, text: NSColor, colors: [StyleToken: NSColor] = [:],
-    blockSpacing: CGFloat, inset: NSSize
+    blockSpacing: CGFloat, inset: NSSize, bubble: Bubble = .system, thought: Thought = .system
   ) {
     (self.body, self.code, self.text, self.colors) = (body, code, text, colors)
-    (self.blockSpacing, self.inset) = (blockSpacing, inset)
+    (self.blockSpacing, self.inset, self.bubble, self.thought) = (
+      blockSpacing, inset, bubble, thought
+    )
   }
 
   public static var system: TranscriptStyle {
@@ -63,6 +69,9 @@ struct TextLook {
   let style: TranscriptStyle
   /// Only a block's last paragraph carries this (`TranscriptText.respace`).
   let spacing: NSParagraphStyle
+  /// A prompt's and a thought's look, one `Decor` each (`TranscriptDecor.swift`).
+  let prompt: [NSAttributedString.Key: Any]
+  let thought: [NSAttributedString.Key: Any]
   private let fonts: [NSFont]
   private let colors: [StyleToken: NSColor]
 
@@ -90,6 +99,13 @@ struct TextLook {
     }
     // One colour object per token, so equal runs merge (`Look.same`).
     colors = style.colors.merging([.text: style.text]) { own, _ in own }
+    prompt = [
+      .font: style.body, .foregroundColor: style.text, .transcriptDecor: Decor(.bubble, style),
+    ]
+    thought = [
+      .font: style.thought.font, .foregroundColor: style.thought.color,
+      .transcriptDecor: Decor(.thought, style),
+    ]
   }
 
   func plain(_ token: StyleToken, code: Bool) -> Look {
@@ -195,6 +211,8 @@ enum TranscriptText {
         look.plain(.text, code: false).attributes, range: NSRange(location: 0, length: out.length))
     } else if case .assistant(_, let doc) = block.kind {
       (out, starts) = self.doc(doc.blocks, look, continuing: false)
+    } else if let decorated = decorated(block, look, cards: cards) {
+      out = decorated
     } else {
       var plain = Runs()
       for run in runs(block.kind) where !run.text.isEmpty {
@@ -255,6 +273,8 @@ enum TranscriptText {
     _ text: NSMutableAttributedString, block: NSRange, from: Int, _ look: TextLook
   ) {
     guard block.length > 0 else { return }
+    let decor = text.attribute(.transcriptDecor, at: block.location, effectiveRange: nil)
+    if let decor = decor as? Decor { return decor.respace(text, block: block, from: from) }
     let string = text.mutableString
     let end = NSMaxRange(block) - 1
     let last = string.paragraphRange(for: NSRange(location: end, length: 0))
@@ -276,14 +296,13 @@ enum TranscriptText {
   /// meta line shows on hover (DT§5.2), so it has no text.
   static func runs(_ kind: BlockKind) -> [(text: String, token: StyleToken)] {
     switch kind {
-    case .user(let text, _), .notice(_, let text):
+    case .notice(_, let text):
       return [(text, .text)]
-    case .thinking(let text):
-      return [(text, .dim)]
     case .error(let text, _):
       return [(text, .error)]
-    case .tool, .toolGroup, .approval, .question, .task, .assistant:
-      // Cards: one attachment character (`TranscriptCards`); a reply: `doc`.
+    case .tool, .toolGroup, .approval, .question, .task, .assistant, .user, .thinking:
+      // Cards: one attachment character (`TranscriptCards`); a reply: `doc`; a prompt and a
+      // thought: `decorated`.
       return []
     case .compaction(_, _, _, let summary):
       return summary.map { [($0, .dim)] } ?? []

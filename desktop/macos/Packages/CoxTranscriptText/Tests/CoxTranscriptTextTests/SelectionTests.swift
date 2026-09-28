@@ -49,6 +49,8 @@ final class Host {
       styleMask: [.borderless], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.contentView = view.inScrollView(frame: NSRect(origin: .zero, size: window.frame.size))
+    // The last block is an open thought, so its reasoning is text to select and copy.
+    view.openThoughts = ["k"]
     view.load(transcript)
     window.orderFrontRegardless()
     window.layoutIfNeeded()
@@ -148,6 +150,7 @@ struct SelectionTests {
 
   @Test func wholeBlocksCopyAsTheirSourceAndCardsAsTheirSummary() {
     let view = TranscriptTextView.make()
+    view.openThoughts = ["k"]
     view.load(transcript)
     view.setSelectedRange(NSRange(location: 0, length: (view.string as NSString).length))
 

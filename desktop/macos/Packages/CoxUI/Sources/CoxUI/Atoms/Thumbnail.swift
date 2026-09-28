@@ -7,7 +7,7 @@ import SwiftUI
 
 /// An image attachment fills the tile with its picture; any other file shows the document
 /// symbol over its name. Both sit in a rounded tile with a hairline rim.
-struct Thumbnail: View {
+public struct Thumbnail: View {
   let name: String
   /// The picture of an image attachment; `nil` draws the file variant.
   let image: Image?
@@ -16,12 +16,12 @@ struct Thumbnail: View {
   private static let width: CGFloat = 92
   private static let height: CGFloat = 60
 
-  init(_ name: String, image: Image? = nil) {
+  public init(_ name: String, image: Image? = nil) {
     self.name = name
     self.image = image
   }
 
-  var body: some View {
+  public var body: some View {
     let shape = RoundedRectangle(cornerRadius: Radius.m, style: .continuous)
     Group {
       if let image {

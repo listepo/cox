@@ -79,6 +79,7 @@ private func looks(_ view: TranscriptTextView) -> [String] {
 @MainActor
 private func expectSameText(_ patched: TranscriptTextView, as blocks: [Block]) {
   let loaded = TranscriptTextView.make(style: patched.style)
+  loaded.openThoughts = patched.openThoughts
   loaded.load(blocks)
   #expect(patched.string == loaded.string)
   #expect(patched.blockRanges == loaded.blockRanges)
@@ -88,7 +89,7 @@ private func expectSameText(_ patched: TranscriptTextView, as blocks: [Block]) {
 
 /// Storage edits, as `NSTextStorage` reports them after each batch.
 @MainActor
-private final class Edits {
+final class Edits {
   var ranges: [NSRange] = []
   private var token: (any NSObjectProtocol)?
 
@@ -126,6 +127,8 @@ struct TranscriptPatchesTests {
 
   @Test func blocksGainingAndLosingTextKeepOneSeparator() {
     let view = TranscriptTextView.make(style: style)
+    // Open, so their reasoning is text that grows.
+    view.openThoughts = ["t", "u", "x"]
     let meta = Block(
       id: "m", turn: 1, kind: .turnMeta(model: "x", tier: .code, usage: nil, stop: nil))
     view.load([meta, thought("t", ""), reply("r", [])])
@@ -168,6 +171,7 @@ struct TranscriptPatchesTests {
     let blocks = [
       thought("a", "Before."), thought("t", "Thinking"), reply("r", [paragraph("After.")]),
     ]
+    view.openThoughts = ["t"]
     view.load(blocks)
     let storage = try #require(view.textStorage)
     let edits = Edits(storage)
@@ -177,7 +181,7 @@ struct TranscriptPatchesTests {
     view.apply([.appendText(id: "t", text: " harder")], current: { _ in nil })
 
     let block = try #require(view.range(of: "t"))
-    #expect((view.string as NSString).substring(with: block) == "Thinking harder")
+    #expect((view.string as NSString).substring(with: block) == "\u{FFFC}\nThinking harder")
     #expect(!edits.ranges.isEmpty)
     for edit in edits.ranges {
       #expect(NSIntersectionRange(edit, block) == edit, "edited \(edit) outside \(block)")

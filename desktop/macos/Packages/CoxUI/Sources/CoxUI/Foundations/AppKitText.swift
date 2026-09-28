@@ -21,6 +21,19 @@ public enum TextColour: CaseIterable, Sendable {
   }
 }
 
+/// The colours AppKit drawing behind text may take (T37.23.4): the user bubble's face and the
+/// hairline beside a thought, from the same assets as `Color(.fillPrimary)` and `.hairline`.
+public enum SurfaceColour: CaseIterable, Sendable {
+  case fillPrimary, separator
+
+  public var nsColor: NSColor {
+    switch self {
+    case .fillPrimary: NSColor(resource: .fillPrimary)
+    case .separator: NSColor(resource: .separator)
+    }
+  }
+}
+
 extension FontToken {
   /// The token's font for AppKit text at `scale`, the appearance's text size (DS§3.2).
   public func nsFont(scale: Double = 1) -> NSFont {

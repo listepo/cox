@@ -114,9 +114,9 @@ final class Offscreen {
 @Suite(.serialized)
 struct TranscriptCardsTests {
   let blocks = [
-    Block(id: "a", turn: 1, kind: .thinking(text: "Before the card, one line.")),
+    Block(id: "a", turn: 1, kind: .notice(level: .info, text: "Before the card, one line.")),
     tool("c", "cargo test"),
-    Block(id: "b", turn: 1, kind: .thinking(text: "After the card, one line.")),
+    Block(id: "b", turn: 1, kind: .notice(level: .info, text: "After the card, one line.")),
   ]
 
   @Test func cardIsOneAttachmentCharacterHostingItsView() throws {
