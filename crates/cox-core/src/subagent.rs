@@ -30,6 +30,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use async_trait::async_trait;
+use cox_permission::narrower;
 use cox_protocol::errors::{CoreError, ToolError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId};
 use cox_protocol::traits::{ExternalAgent, Relay, Tool, ToolCx, Worktree};
@@ -917,18 +918,6 @@ async fn restart(
     Ok(child)
 }
 
-/// The less permissive of `a` and `b` (T50.2), widest last:
-/// Plan < Default < Auto < Bypass.
-fn narrower(a: PermissionMode, b: PermissionMode) -> PermissionMode {
-    let width = |mode| match mode {
-        PermissionMode::Plan => 0,
-        PermissionMode::Default => 1,
-        PermissionMode::Auto => 2,
-        PermissionMode::Bypass => 3,
-    };
-    if width(b) < width(a) { b } else { a }
-}
-
 /// A child that could not be restored stops being addressable, loudly.
 /// Also closes its registry entry (T34.9): a failed `restart` never
 /// reaches its own `register_task` call, so whichever caller still had
@@ -1261,18 +1250,6 @@ mod tests {
     use cox_protocol::agent::AgentDef;
 
     use super::*;
-
-    #[test]
-    fn narrower_mode_is_the_less_permissive_of_the_two() {
-        use PermissionMode as M;
-        let widest_last = [M::Plan, M::Default, M::Auto, M::Bypass];
-        for (i, a) in widest_last.iter().enumerate() {
-            for b in &widest_last[i..] {
-                assert_eq!(narrower(*a, *b), *a, "{a:?} vs {b:?}");
-                assert_eq!(narrower(*b, *a), *a, "{b:?} vs {a:?}");
-            }
-        }
-    }
 
     /// An `AgentTool` over a throwaway session, for `resolve`'s own claims
     /// (unit-level, no turn ever runs). T34.1 made `resolve`/`preset`
