@@ -36,7 +36,8 @@ schemars = "1"
 thiserror = "2"
 ulid = { version = "3", features = ["serde"] }
 tokio-util = "0.7"
-# T40.1 (A81): image payloads decode and encode base64 in `cox_protocol::image`.
+# T40.1 (A81): image payloads decode and encode base64 in `cox_protocol::image`;
+# also `cox-tui`'s OSC 52 clipboard write, which replaced its own encoder.
 base64 = "0.23"
 
 # cox-core

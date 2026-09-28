@@ -23,6 +23,9 @@ nucleo = { workspace = true }
 similar = { workspace = true }
 unicode-width = { workspace = true }
 thiserror = { workspace = true }
+# A81: the OSC 52 clipboard payload (`term::copy`), replacing a hand-rolled
+# encoder now that `cox-protocol` depends on the crate anyway (T40.1).
+base64 = { workspace = true }
 tui-textarea-2 = { version = "0.13", default-features = false, features = ["crossterm"] }
 # T24.2: `~/.cox/themes/<name>.toml` parses with the same crate `cox config
 # set` already uses, so a theme file's own comments would survive an edit
