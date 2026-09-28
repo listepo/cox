@@ -22,11 +22,11 @@ use crate::path::confine;
 /// archiving and re-truncating it losslessly (plan.md §1.2/D6a); this cap
 /// only stops one huge file from ballooning a single call's output before
 /// that safety net runs.
-const VISIBLE_CAP_BYTES: usize = 64 * 1024;
+pub(crate) const VISIBLE_CAP_BYTES: usize = 64 * 1024;
 
 /// How many leading bytes are checked for a NUL byte to decide "binary"
 /// (plan.md T3.2 step 2).
-const BINARY_SNIFF_BYTES: usize = 8 * 1024;
+pub(crate) const BINARY_SNIFF_BYTES: usize = 8 * 1024;
 
 /// `read`: text, ranged, or outline reads of one file inside the workspace.
 pub struct ReadTool;
