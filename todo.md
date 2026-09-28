@@ -90,7 +90,6 @@
 - T52.20. `cox-app` remote workspace over SSH
 - T52.21. Connect to a host from the app
 - T52.22. App-server and remote-session docs
-- T53.1. Design: plugin install from git or a URL (PL§1, PL§12)
 - T53.2. `cox plugin install <https-url> --sha256 <hex>`
 - T53.3. `cox plugin install git+<url> --rev <ref>`
 - T53.4. `cox plugin update` for URL and git sources

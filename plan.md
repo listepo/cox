@@ -96,7 +96,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T52.20 | todo | P3 | 4 | 0% | |
 | T52.21 | todo | P3 | 3 | 0% | |
 | T52.22 | todo | P3 | 1 | 0% | |
-| T53.1 | in progress | P2 | 2 | 0% | Claude Code / sonnet-5 |
 | T53.2 | todo | P2 | 3 | 0% | |
 | T53.3 | todo | P2 | 3 | 0% | |
 | T53.4 | todo | P2 | 3 | 0% | |
@@ -2002,12 +2001,6 @@ Every card in this phase:
 - ends every install in the existing local-directory install: validate the manifest, digest the tree, copy into `versions/<digest12>/`, ask for the grant — no second path, no plugin runs before its grant;
 - treats a downloaded or cloned tree as untrusted repository content: nothing in it runs during install, symlinks and paths that leave the staging directory are refused;
 - stops before anything outward-facing: no `cargo publish`, no tag push, no release — the card prepares metadata, docs and a dry run, and the creator publishes.
-
-#### T53.1 Design: plugin install from git or a URL (PL§1, PL§12)
-
-Depends: — · Size: ~80 (docs) · Files: `docs/design/plugins.md`
-Goal: PL§1 gains the two approved sources and PL§12's out-of-scope line keeps only the marketplace and signatures: `cox plugin install <https-url> --sha256 <hex>` for a `.tar.gz` archive (the hash is required; `http`, `file` and other schemes are refused), and `cox plugin install git+<url> --rev <tag|commit> [--path <subdir>]` (the ref is required, a branch name is refused so `update` never follows a moving target silently); the recorded source shapes `{kind: "url", url, sha256}` and `{kind: "git", url, rev, commit, path}`; staging under `~/.cox/plugins/.staging/`, removed on every exit; git is shelled to as A13 does (no `git2`/`gix`), with `GIT_TERMINAL_PROMPT=0`, `--depth 1`, no submodules; archive extraction reuses the `tar` shell-out `self_update` uses; `update` semantics per source (T53.4). No new dependency.
-Check: the section exists and names every refusal above; the creator approves it before T53.2.
 
 #### T53.2 `cox plugin install <https-url> --sha256 <hex>`
 

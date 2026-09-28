@@ -7380,3 +7380,25 @@ Deviations: the names reach the TUI as a `State` field set at start; five files.
 Check: `cargo fmt` only (no-build rule, 2026-09-29).
 
 Not done: the verification pass runs `nextest -p cox-tui -E 'test(at_agent_name_submits_user_agent) | test(at_file_path_stays_a_user_turn) | test(at_picker_lists_agents_first)'` (records the hand-written `cox_tui__picker__tests__at_picker_lists_agents_first.snap`) and a scratch TUI run: `@explore list crates`, then `/agents`.
+
+#### T53.1 Design: plugin install from git or a URL (PL§1, PL§12)
+
+Depends: — · Size: ~80 (docs) · Files: `docs/design/plugins.md`
+Goal: PL§1 gains the two approved sources and PL§12's out-of-scope line keeps only the marketplace and signatures: `cox plugin install <https-url> --sha256 <hex>` for a `.tar.gz` archive (the hash is required; `http`, `file` and other schemes are refused), and `cox plugin install git+<url> --rev <tag|commit> [--path <subdir>]` (the ref is required, a branch name is refused so `update` never follows a moving target silently); the recorded source shapes `{kind: "url", url, sha256}` and `{kind: "git", url, rev, commit, path}`; staging under `~/.cox/plugins/.staging/`, removed on every exit; git is shelled to as A13 does (no `git2`/`gix`), with `GIT_TERMINAL_PROMPT=0`, `--depth 1`, no submodules; archive extraction reuses the `tar` shell-out `self_update` uses; `update` semantics per source (T53.4). No new dependency.
+Check: the section exists and names every refusal above; the creator approves it before T53.2.
+Status: done 2026-09-29
+Result: `docs/design/plugins.md` PL§1 covers three install sources: a local directory (unchanged); `cox plugin install <https-url> --sha256 <hex>` for a `.tar.gz` (hash required and checked before unpacking; `http`, `file` and other schemes refused); `cox plugin install git+<url> --rev <tag|commit> [--path <subdir>]` (ref required, branch names refused). It also documents:
+- staging under `~/.cox/plugins/.staging/`, removed on every exit;
+- the untrusted-tree rule: no symlinks, no escapes;
+- the recorded source shapes;
+- `update` per source;
+- git shelled to as `crates/cox-tools/src/git.rs` does (A13, `GIT_TERMINAL_PROMPT=0`, no git2/gix);
+- extraction reusing `self_update`'s `unpack_cox`.
+
+PL§12's out-of-scope list keeps only the marketplace and signatures.
+
+Deviations: none; §14's dated decision log left as history.
+
+Check: docs only; the line citations were checked against the files (2026-09-29).
+
+Not done: the card's gate — the creator approves this section before T53.2.
