@@ -10,7 +10,7 @@ license.workspace = true
 # `StyledDoc` and syntax highlighting remain, for the desktop app.
 [features]
 default = ["ratatui"]
-ratatui = ["dep:ratatui", "dep:similar", "dep:terminal-colorsaurus", "dep:toml_edit", "dep:thiserror"]
+ratatui = ["dep:ratatui", "dep:terminal-colorsaurus", "dep:toml_edit", "dep:thiserror"]
 
 [dependencies]
 cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
@@ -23,7 +23,9 @@ pulldown-cmark = { workspace = true }
 serde = { workspace = true }
 syntect = { workspace = true }
 two-face = { version = "0.5", features = ["syntect-fancy"] }
-similar = { workspace = true, optional = true }
+# T37.23.11: the word diff of a replaced pair lives in `diffmodel`, which
+# both the TUI and the desktop app read, so it is not behind `ratatui`.
+similar = { workspace = true }
 unicode-width = { workspace = true }
 terminal-colorsaurus = { workspace = true, optional = true }
 # T24.2: `~/.cox/themes/<name>.toml` parses with the same crate `cox config

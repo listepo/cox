@@ -7,7 +7,8 @@ import SwiftUI
 
 /// The gutter number right-aligned in `text.secondary` (`text.primary` on a tinted gutter; the
 /// mockup's tertiary would miss DS§8's 4.5:1 on a light code surface),
-/// then `+`, `-` or a space and the code in `font.mono.code`, cut with an ellipsis.
+/// then `+`, `-` or a space and the code in `font.mono.code`, cut with an ellipsis. A replaced
+/// pair's changed words sit on the gutter's stronger `diff.*Gutter` tint (T37.23.11).
 public struct DiffLineView: View {
   public enum Kind: CaseIterable, Sendable {
     case context, added, removed
@@ -35,6 +36,11 @@ public struct DiffLineView: View {
     self.widestNumber = widestNumber ?? line.number
   }
 
+  /// The sign and the runs; a changed word takes the gutter's tint.
+  private var code: AttributedString {
+    CodeRun.attributed([[CodeRun("\(line.kind.sign) ")] + line.runs], mark: line.kind.gutter)
+  }
+
   public var body: some View {
     HStack(spacing: 0) {
       ZStack(alignment: .trailing) {
@@ -46,7 +52,7 @@ public struct DiffLineView: View {
       .padding(.trailing, Space.ml)
       .frame(maxHeight: .infinity)
       .background(line.kind.gutter)
-      Text(CodeRun.attributed([[CodeRun("\(line.kind.sign) ")] + line.runs]))
+      Text(code)
         .foregroundStyle(Color(.textPrimary))
         .padding(.leading, Space.m)
         // `font.mono.code`'s 1.55 line height, which one-line text does not get from

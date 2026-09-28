@@ -4,28 +4,25 @@
 //! least `SIDE_MIN_WIDTH` columns splits old and new into two panes. The
 //! edit card, the approval modal and `Ctrl+G` all print through `lines`.
 //! Separate from `cells` because pairing and pane fitting are their own
-//! small machine and more than one surface prints a diff; the hunk parse is
-//! `diffmodel`'s, which the desktop app shares.
+//! small machine and more than one surface prints a diff; the hunk parse,
+//! the pairing and the word diff are `diffmodel`'s, which the desktop app
+//! shares.
+
+use std::ops::Range;
 
 use cox_protocol::types::Diff;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use similar::{ChangeTag, TextDiff};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::Look;
-use crate::diffmodel::{Row, parse};
+use crate::diffmodel::{Aligned, Row, align, parse, replaced};
 pub use crate::diffstat::counts;
 use crate::markdown;
 
 /// Below this many columns a pane is too narrow to read a line of code, so
 /// the diff stays stacked whatever `tui.diff` says.
 pub const SIDE_MIN_WIDTH: u16 = 120;
-
-/// A pair with a longer line keeps its line colour instead of a word diff:
-/// the diff's cost grows with the product of the two lengths, and a
-/// minified line would be noise word by word anyway.
-const WORD_DIFF_CAP: usize = 400;
 
 /// `tui.diff`: whether a wide viewport may split a diff into two panes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -72,76 +69,28 @@ impl Layout {
     }
 }
 
-/// A side-by-side row: a whole-width meta line, or the rows (indices into
-/// the `Row` list) shown in the old and the new pane.
-enum Aligned {
-    Meta(usize),
-    Pair(Option<usize>, Option<usize>),
-}
-
-/// Rows in pane order: a run of `-` lines and the `+` run right after it
-/// are zipped line by line, so the n-th removed line faces the n-th added
-/// one — that pair is also what the word diff compares.
-fn align(rows: &[Row<'_>]) -> Vec<Aligned> {
-    let marker = |i: usize| match rows.get(i) {
-        Some(Row::Body { marker, .. }) => Some(*marker),
-        _ => None,
-    };
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < rows.len() {
-        match marker(i) {
-            None => {
-                out.push(Aligned::Meta(i));
-                i += 1;
-            }
-            Some("-") | Some("+") => {
-                let dels = (i..).take_while(|&j| marker(j) == Some("-")).count();
-                let adds = (i + dels..).take_while(|&j| marker(j) == Some("+")).count();
-                for k in 0..dels.max(adds) {
-                    out.push(Aligned::Pair(
-                        (k < dels).then_some(i + k),
-                        (k < adds).then_some(i + dels + k),
-                    ));
-                }
-                i += dels + adds;
-            }
-            Some(_) => {
-                out.push(Aligned::Pair(Some(i), Some(i)));
-                i += 1;
-            }
-        }
-    }
-    out
-}
-
 /// Appends `text` to the last span when it has the same style, so a word
 /// diff is a handful of spans rather than one per token.
 fn push(spans: &mut Vec<Span<'static>>, text: &str, style: Style) {
     match spans.last_mut() {
+        _ if text.is_empty() => {}
         Some(last) if last.style == style => last.content.to_mut().push_str(text),
         _ => spans.push(Span::styled(text.to_string(), style)),
     }
 }
 
-/// The old and the new line of a replaced pair, changed words in the
-/// add/remove colour and the words both share dim.
-fn word_spans(old: &str, new: &str, look: &Look) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
+/// One side of a replaced pair: its changed `words` in `changed` (the
+/// add/remove colour) and the words both lines share dim.
+fn marked(text: &str, words: &[Range<usize>], changed: Style) -> Vec<Span<'static>> {
     let same = Style::default().add_modifier(Modifier::DIM);
-    let del = Style::default().fg(look.colors.diff_del);
-    let add = Style::default().fg(look.colors.diff_add);
-    let (mut left, mut right) = (Vec::new(), Vec::new());
-    for c in TextDiff::from_words(old, new).iter_all_changes() {
-        match c.tag() {
-            ChangeTag::Equal => {
-                push(&mut left, c.value(), same);
-                push(&mut right, c.value(), same);
-            }
-            ChangeTag::Delete => push(&mut left, c.value(), del),
-            ChangeTag::Insert => push(&mut right, c.value(), add),
-        }
+    let (mut spans, mut at) = (Vec::new(), 0);
+    for w in words {
+        push(&mut spans, text.get(at..w.start).unwrap_or_default(), same);
+        push(&mut spans, text.get(w.clone()).unwrap_or_default(), changed);
+        at = w.end;
     }
-    (left, right)
+    push(&mut spans, text.get(at..).unwrap_or_default(), same);
+    spans
 }
 
 /// The style of a whole line by its first characters.
@@ -210,25 +159,16 @@ pub fn render(diff: &Diff, look: &Look, layout: Layout) -> Vec<Line<'static>> {
             None => Vec::new(),
         };
     bodies.resize(texts.len(), None);
-    let body_of = |i: usize| match rows.get(i) {
-        Some(Row::Body { body, .. }) => Some(*body),
-        _ => None,
-    };
-    for a in &aligned {
-        if let Aligned::Pair(Some(l), Some(r)) = *a
-            && l != r
-            && let (Some(l), Some(r)) = (body_of(l), body_of(r))
-        {
-            let within = texts[l].len() <= WORD_DIFF_CAP && texts[r].len() <= WORD_DIFF_CAP;
-            let (old, new) = match within {
-                true => {
-                    let (o, n) = word_spans(texts[l], texts[r], look);
-                    (Some(o), Some(n))
-                }
-                false => (None, None),
-            };
-            (bodies[l], bodies[r]) = (old, new);
-        }
+    let del = Style::default().fg(look.colors.diff_del);
+    let add = Style::default().fg(look.colors.diff_add);
+    for pair in replaced(&rows, &aligned, &texts) {
+        (bodies[pair.old], bodies[pair.new]) = match pair.words {
+            Some((o, n)) => (
+                Some(marked(texts[pair.old], &o, del)),
+                Some(marked(texts[pair.new], &n, add)),
+            ),
+            None => (None, None),
+        };
     }
     // A content line: `indent` and its marker in the line colour, then its
     // body spans, or the whole line in the line colour when there are none.
@@ -371,6 +311,7 @@ pub fn view_lines(text: &str, look: &Look) -> Vec<Line<'static>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diffmodel::WORD_DIFF_CAP;
 
     #[test]
     fn counts_skip_file_markers() {
@@ -418,28 +359,6 @@ mod tests {
         let out = lines(&d, &look());
         assert_eq!(out[3].spans.len(), 1, "{:?}", out[3].spans);
         assert_eq!(out[3].spans[0].style.fg, Some(look().colors.diff_add));
-    }
-
-    #[test]
-    fn align_zips_a_removed_run_against_the_added_run_after_it() {
-        let (rows, _) = parse("@@ -1,3 +1,2 @@\n-a\n-b\n-c\n+x\n+y\n k\n");
-        let pairs: Vec<_> = align(&rows)
-            .into_iter()
-            .map(|a| match a {
-                Aligned::Meta(i) => (Some(i), None),
-                Aligned::Pair(l, r) => (l, r),
-            })
-            .collect();
-        assert_eq!(
-            pairs,
-            vec![
-                (Some(0), None),
-                (Some(1), Some(4)),
-                (Some(2), Some(5)),
-                (Some(3), None),
-                (Some(6), Some(6)),
-            ]
-        );
     }
 
     #[test]

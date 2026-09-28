@@ -4,7 +4,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KMR85JG3XV9N7N1XZGETH0",
+          "id": "turn:01M3KN2E0H4HD2Q4R62BT4RZ54",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -30,7 +30,7 @@
             "estimated": false
           },
           "turn": {
-            "turn": "01M3KMR85JG3XV9N7N1XZGETH0",
+            "turn": "01M3KN2E0H4HD2Q4R62BT4RZ54",
             "tally": {
               "sent": 0,
               "received": 0,
@@ -110,7 +110,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KMR85J7YKKSAPYMZVAHZQR",
+          "id": "item:01M3KN2E0HBM6EGMJ3VVN9VP7A",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -118,12 +118,12 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3KMR85JG3XV9N7N1XZGETH0"
+        "after": "turn:01M3KN2E0H4HD2Q4R62BT4RZ54"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KMR85NVCERNAW92PX9QSKW",
+          "id": "item:01M3KN2E0NKVVJJ2W6W53NANB6",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -133,14 +133,14 @@
             }
           }
         },
-        "after": "item:01M3KMR85J7YKKSAPYMZVAHZQR"
+        "after": "item:01M3KN2E0HBM6EGMJ3VVN9VP7A"
       }
     ],
     [
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KMR85JG3XV9N7N1XZGETH0",
+          "id": "turn:01M3KN2E0H4HD2Q4R62BT4RZ54",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -163,7 +163,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KMR85NVCERNAW92PX9QSKW",
+          "id": "item:01M3KN2E0NKVVJJ2W6W53NANB6",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -185,12 +185,12 @@
             }
           }
         },
-        "after": "item:01M3KMR85J7YKKSAPYMZVAHZQR"
+        "after": "item:01M3KN2E0HBM6EGMJ3VVN9VP7A"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3KMR85NTFQMTDQSKD6PG7ZZ",
+          "id": "call:01M3KN2E0P2ZNCC9NHQGPXB6NS",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -201,14 +201,14 @@
             "state": "done",
             "tail": "wrote /project/src/lib.rs (152 bytes)",
             "archive": {
-              "id": "01M3KMR85QTJR8YJMKE0PARVQG",
+              "id": "01M3KN2E0TXQKQMXBV29Z7KZ7P",
               "bytes": 104
             },
             "diff": null,
-            "duration_ms": 1
+            "duration_ms": 3
           }
         },
-        "after": "item:01M3KMR85NVCERNAW92PX9QSKW"
+        "after": "item:01M3KN2E0NKVVJJ2W6W53NANB6"
       },
       {
         "op": "upsert",
@@ -222,12 +222,12 @@
             ]
           }
         },
-        "after": "call:01M3KMR85NTFQMTDQSKD6PG7ZZ"
+        "after": "call:01M3KN2E0P2ZNCC9NHQGPXB6NS"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KMR85RX16JYM228KHNBKCH",
+          "id": "item:01M3KN2E0WFWSJNWZ6HZHVT2MV",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -265,7 +265,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KMR85JG3XV9N7N1XZGETH0",
+            "turn": "01M3KN2E0H4HD2Q4R62BT4RZ54",
             "tally": {
               "sent": 7504,
               "received": 100,
@@ -278,7 +278,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 1595491.8867540227,
+            "tok_per_s": 2000000.0000000002,
             "exact": true,
             "sparkline": [],
             "done": false
@@ -287,12 +287,12 @@
           "text": {
             "sent": "7.5k",
             "received": "100",
-            "rate": "1595492",
-            "spoken": "7.5 thousand tokens sent, 100 received, 1595492 tokens per second",
+            "rate": "2000000",
+            "spoken": "7.5 thousand tokens sent, 100 received, 2000000 tokens per second",
             "heading": "This turn · 2 requests",
             "phase": "streaming",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 547196 tok/s · first token 0 ms · peak 1595492 tok/s",
+            "rate_detail": "avg 324851 tok/s · first token 0 ms · peak 2000000 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -345,7 +345,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3KMR85RC26MQHAMR9CYX8RY",
+          "id": "call:01M3KN2E0WNDQPZF88MQSK8RRC",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -356,7 +356,7 @@
             "state": "done",
             "tail": "edited /project/src/lib.rs",
             "archive": {
-              "id": "01M3KMR867H3HRXX95EWYY2ADB",
+              "id": "01M3KN2E14B5R9THZV5385N505",
               "bytes": 93
             },
             "diff": {
@@ -378,7 +378,8 @@
                             206
                           ]
                         }
-                      ]
+                      ],
+                      "words": []
                     },
                     {
                       "kind": "context",
@@ -401,7 +402,8 @@
                             126
                           ]
                         }
-                      ]
+                      ],
+                      "words": []
                     },
                     {
                       "kind": "context",
@@ -544,7 +546,8 @@
                             206
                           ]
                         }
-                      ]
+                      ],
+                      "words": []
                     },
                     {
                       "kind": "del",
@@ -686,6 +689,16 @@
                             197,
                             206
                           ]
+                        }
+                      ],
+                      "words": [
+                        {
+                          "start": 4,
+                          "end": 29
+                        },
+                        {
+                          "start": 32,
+                          "end": 51
                         }
                       ]
                     },
@@ -830,6 +843,16 @@
                             206
                           ]
                         }
+                      ],
+                      "words": [
+                        {
+                          "start": 4,
+                          "end": 16
+                        },
+                        {
+                          "start": 19,
+                          "end": 38
+                        }
                       ]
                     },
                     {
@@ -941,7 +964,8 @@
                             206
                           ]
                         }
-                      ]
+                      ],
+                      "words": []
                     },
                     {
                       "kind": "context",
@@ -964,16 +988,17 @@
                             206
                           ]
                         }
-                      ]
+                      ],
+                      "words": []
                     }
                   ]
                 }
               ]
             },
-            "duration_ms": 6
+            "duration_ms": 1
           }
         },
-        "after": "item:01M3KMR85RX16JYM228KHNBKCH"
+        "after": "item:01M3KN2E0WFWSJNWZ6HZHVT2MV"
       },
       {
         "op": "upsert",
@@ -987,12 +1012,12 @@
             ]
           }
         },
-        "after": "call:01M3KMR85RC26MQHAMR9CYX8RY"
+        "after": "call:01M3KN2E0WNDQPZF88MQSK8RRC"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KMR868G9Q11TYH2986A0QF",
+          "id": "item:01M3KN2E15DN91MD2VD959SX2Z",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -1009,7 +1034,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3KMR85JG3XV9N7N1XZGETH0",
+          "id": "turn:01M3KN2E0H4HD2Q4R62BT4RZ54",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -1034,7 +1059,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3KMR868G9Q11TYH2986A0QF",
+          "id": "item:01M3KN2E15DN91MD2VD959SX2Z",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -1072,7 +1097,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3KMR85JG3XV9N7N1XZGETH0",
+            "turn": "01M3KN2E0H4HD2Q4R62BT4RZ54",
             "tally": {
               "sent": 11375,
               "received": 110,
@@ -1085,7 +1110,7 @@
             },
             "thinking_tokens": 0,
             "ttft_ms": 0,
-            "tok_per_s": 509554.1401273885,
+            "tok_per_s": 401332.42364650645,
             "exact": true,
             "sparkline": [],
             "done": true
@@ -1094,12 +1119,12 @@
           "text": {
             "sent": "11.4k",
             "received": "110",
-            "rate": "509554",
-            "spoken": "11 thousand tokens sent, 110 received, 509554 tokens per second",
+            "rate": "401332",
+            "spoken": "11 thousand tokens sent, 110 received, 401332 tokens per second",
             "heading": "Last turn · 3 requests",
             "phase": "done",
             "rate_unit": "tok/s last call",
-            "rate_detail": "avg 543545 tok/s · first token 0 ms · peak 1595492 tok/s",
+            "rate_detail": "avg 330579 tok/s · first token 0 ms · peak 2000000 tok/s",
             "rows": [
               {
                 "label": "↑ Sent",
@@ -1154,7 +1179,7 @@
   "notes": [],
   "snapshot": [
     {
-      "id": "turn:01M3KMR85JG3XV9N7N1XZGETH0",
+      "id": "turn:01M3KN2E0H4HD2Q4R62BT4RZ54",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -1175,7 +1200,7 @@
       }
     },
     {
-      "id": "item:01M3KMR85J7YKKSAPYMZVAHZQR",
+      "id": "item:01M3KN2E0HBM6EGMJ3VVN9VP7A",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -1184,7 +1209,7 @@
       }
     },
     {
-      "id": "item:01M3KMR85NVCERNAW92PX9QSKW",
+      "id": "item:01M3KN2E0NKVVJJ2W6W53NANB6",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -1207,7 +1232,7 @@
       }
     },
     {
-      "id": "call:01M3KMR85NTFQMTDQSKD6PG7ZZ",
+      "id": "call:01M3KN2E0P2ZNCC9NHQGPXB6NS",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -1218,11 +1243,11 @@
         "state": "done",
         "tail": "wrote /project/src/lib.rs (152 bytes)",
         "archive": {
-          "id": "01M3KMR85QTJR8YJMKE0PARVQG",
+          "id": "01M3KN2E0TXQKQMXBV29Z7KZ7P",
           "bytes": 104
         },
         "diff": null,
-        "duration_ms": 1
+        "duration_ms": 3
       }
     },
     {
@@ -1236,7 +1261,7 @@
       }
     },
     {
-      "id": "item:01M3KMR85RX16JYM228KHNBKCH",
+      "id": "item:01M3KN2E0WFWSJNWZ6HZHVT2MV",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -1259,7 +1284,7 @@
       }
     },
     {
-      "id": "call:01M3KMR85RC26MQHAMR9CYX8RY",
+      "id": "call:01M3KN2E0WNDQPZF88MQSK8RRC",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -1270,7 +1295,7 @@
         "state": "done",
         "tail": "edited /project/src/lib.rs",
         "archive": {
-          "id": "01M3KMR867H3HRXX95EWYY2ADB",
+          "id": "01M3KN2E14B5R9THZV5385N505",
           "bytes": 93
         },
         "diff": {
@@ -1292,7 +1317,8 @@
                         206
                       ]
                     }
-                  ]
+                  ],
+                  "words": []
                 },
                 {
                   "kind": "context",
@@ -1315,7 +1341,8 @@
                         126
                       ]
                     }
-                  ]
+                  ],
+                  "words": []
                 },
                 {
                   "kind": "context",
@@ -1458,7 +1485,8 @@
                         206
                       ]
                     }
-                  ]
+                  ],
+                  "words": []
                 },
                 {
                   "kind": "del",
@@ -1600,6 +1628,16 @@
                         197,
                         206
                       ]
+                    }
+                  ],
+                  "words": [
+                    {
+                      "start": 4,
+                      "end": 29
+                    },
+                    {
+                      "start": 32,
+                      "end": 51
                     }
                   ]
                 },
@@ -1744,6 +1782,16 @@
                         206
                       ]
                     }
+                  ],
+                  "words": [
+                    {
+                      "start": 4,
+                      "end": 16
+                    },
+                    {
+                      "start": 19,
+                      "end": 38
+                    }
                   ]
                 },
                 {
@@ -1855,7 +1903,8 @@
                         206
                       ]
                     }
-                  ]
+                  ],
+                  "words": []
                 },
                 {
                   "kind": "context",
@@ -1878,13 +1927,14 @@
                         206
                       ]
                     }
-                  ]
+                  ],
+                  "words": []
                 }
               ]
             }
           ]
         },
-        "duration_ms": 6
+        "duration_ms": 1
       }
     },
     {
@@ -1898,7 +1948,7 @@
       }
     },
     {
-      "id": "item:01M3KMR868G9Q11TYH2986A0QF",
+      "id": "item:01M3KN2E15DN91MD2VD959SX2Z",
       "turn": 1,
       "kind": {
         "type": "assistant",
