@@ -109,8 +109,9 @@ struct CardAppearance<Content: View>: View {
 }
 
 extension TranscriptStyle {
-  /// The transcript drawn with CoxUI's tokens: `font.transcript` prose and `font.mono.code`
-  /// code at the user's text size, readable colours only (DS§8) — the status colours miss
+  /// The transcript drawn with CoxUI's tokens: `font.transcript` prose, `font.transcript.h3`
+  /// headings and `font.mono.code` code at the user's text size, lists indented as the
+  /// mockup's (`space.xxl`), readable colours only (DS§8) — the status colours miss
   /// 4.5:1 as text, so `ok`, `warn`, `error` and the diff tokens keep `text.primary`. A prompt
   /// sits on `UserBubble`'s face and a thought reads as `ThinkingDisclosure` (T37.21.5).
   @MainActor
@@ -119,6 +120,7 @@ extension TranscriptStyle {
     return TranscriptStyle(
       body: FontToken.transcript.nsFont(scale: textScale),
       code: FontToken.monoCode.nsFont(scale: textScale),
+      heading: FontToken.transcriptH3.nsFont(scale: textScale),
       text: TextColour.primary.nsColor,
       colors: [
         .dim: secondary, .tool: secondary, .diffHunk: secondary,
@@ -132,6 +134,7 @@ extension TranscriptStyle {
         font: NSFontManager.shared.convert(
           FontToken.caption.nsFont(scale: textScale), toHaveTrait: .italicFontMask),
         color: secondary, rule: SurfaceColour.separator.nsColor, ruleWidth: Size.hairline,
-        indent: Space.l))
+        indent: Space.l),
+      indent: Space.xxl)
   }
 }
