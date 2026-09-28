@@ -138,7 +138,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `model` = `"gemini-3.8-flash"`
 - `timeout_s` = `120`
 - `max_retries` = `4`
-- `models` = `[{id="gemini-3.8-flash", context_window=0, efforts=[], reasoning_effort=true}, {id="gemini-3.1-pro-preview", context_window=0, efforts=[], reasoning_effort=true}, {id="gemini-3.5-flash-lite", context_window=0, efforts=[], reasoning_effort=true}]`
+- `models` = `[{id="gemini-3.8-flash", display_name="Gemini 3.8 Flash", context_window=1048576, efforts=["low", "medium", "high"], reasoning_effort=true}, {id="gemini-3.1-pro-preview", display_name="Gemini 3.1 Pro Preview", context_window=1048576, efforts=["low", "medium", "high"], reasoning_effort=true}, {id="gemini-3.5-flash-lite", display_name="Gemini 3.5 Flash Lite", context_window=1048576, efforts=["low", "medium", "high"], reasoning_effort=true}]`
 ## `[context]`
 
 - `compact_at` = `0.75` — fraction of max_context
