@@ -27,8 +27,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.41 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.43 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.23 | todo | P0 | 5 | 0% | |
 | T37.24 | todo | P0 | 4 | 0% | |
 | T37.25 | todo | P1 | 3 | 0% | |
@@ -1075,18 +1073,6 @@ Every card in this phase:
 - adds its crate's row to the `AGENTS.md` layout table when it creates a crate (T37.1, T37.8, T37.14); T37.14 also updates `AGENTS.md` "What this is" and `docs/how-it-works.md` "The four surfaces" to name the app.
 
 Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same check (most used, maintained, licence compatible with both GPLv3 and the royalty-free option, A68) or our own package with its own card.
-
-#### T37.41 Cards as view-backed attachments
-
-Depends: T37.40 · Size: ~150 · Files: `…/CoxTranscriptText/…`
-Goal: tool, approval and subagent cards sit in the text as view-backed attachments hosting SwiftUI views; a card that collapses or expands keeps the text below it stable.
-Check: a test expands and collapses a card and the range and frame of the next block stay correct; a drag across a card selects the card as one unit.
-
-#### T37.43 Incremental text from `StyledDoc` spans
-
-Depends: T37.40 · Size: ~200 · Files: `…/CoxTranscriptText/…`
-Goal: the text storage is built from Rust `StyledDoc` spans (T37.7) and appended as patches arrive instead of rebuilt; the spike took ~630 ms to build 10 000 blocks at once, over the 400 ms launch budget (research.md §9.5.13).
-Check: building the 10 000-block fixture incrementally stays within the DT§1 launch budget; a streamed `AppendText` patch edits only its block's range.
 
 #### T37.23 Transcript view and the DT§9 benchmark gate
 

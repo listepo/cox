@@ -3681,3 +3681,38 @@ Result: `CoxUI/Molecules/SettingRow.swift` shows a LabeledToggle, a LabeledSlide
 Deviations: adds the `claude-settings` layer, which `cox-config` reports (D13). `SettingLabel.swift` is extracted from `LabeledToggle`; its snapshots are unchanged.
 Check: each new suite recorded its snapshots once and then passed without re-recording. After the last commit the full `swift test` ran twice: 71 tests in 21 suites passed both times. `swiftlint lint --strict` and `swift-format lint --strict` are clean. After merging into `p37-desktop`, `swift build --build-tests` succeeded.
 Not done: none.
+
+#### T37.41 Cards as view-backed attachments
+
+Depends: T37.40 · Size: ~150 · Files: `…/CoxTranscriptText/…`
+Goal: tool, approval and subagent cards sit in the text as view-backed attachments hosting SwiftUI views; a card that collapses or expands keeps the text below it stable.
+Check: a test expands and collapses a card and the range and frame of the next block stay correct; a drag across a card selects the card as one unit.
+Status: done 2026-09-28
+Result: in `CoxTranscriptText`, tool, toolGroup, approval, question and task blocks are each one `CardAttachment` character. The character hosts the caller's SwiftUI view: `TranscriptCards` via `TranscriptTextView.cards`, default `.summary`. The package still depends only on CoxClient. A card is as wide as the line and as tall as SwiftUI makes it at that width. When its height changes, only the card's range is invalidated and the viewport lays out again: text below moves, and every block range stays the same. New file `TranscriptCards.swift`.
+Deviations:
+- Question cards are included, to match T37.42's `MarkdownCopy.card`.
+- TextKit creates a card's view only when it draws the line, so one extra viewport layout on the next run-loop turn places it.
+- SwiftUI reports a shrink only through `layout()`, so both size paths are hooked.
+- About 147 source lines in 3 source files, plus a test file and desktop.md.
+Check: `TranscriptCardsTests`:
+- expand and collapse move the next block by exactly 160 pt and back, with its range and the string unchanged;
+- a real mouse drag across a card selects it whole;
+- the expand test fails when the invalidation is removed.
+`swift test` passed 3 runs. `swiftlint lint --strict` and `swift-format lint --strict` are clean.
+Not done: none.
+
+#### T37.43 Incremental text from `StyledDoc` spans
+
+Depends: T37.40 · Size: ~200 · Files: `…/CoxTranscriptText/…`
+Goal: the text storage is built from Rust `StyledDoc` spans (T37.7) and appended as patches arrive instead of rebuilt; the spike took ~630 ms to build 10 000 blocks at once, over the 400 ms launch budget (research.md §9.5.13).
+Check: building the 10 000-block fixture incrementally stays within the DT§1 launch budget; a streamed `AppendText` patch edits only its block's range.
+Status: done 2026-09-28
+Result: a reply is built from its `StyledDoc` spans. Each `StyleToken` maps to `TranscriptStyle.colors`, falling back to `text`. `TranscriptTextView.apply(_:current:)` puts each patch (upsert, AppendText, DocTail, remove, reset) into its own block's range, one storage edit per batch. Separators keep the attributes of the block before them, so patched text matches a fresh load character for character. The build makes one attributed string per block from merged runs, and fonts are made once per style. `docStarts` keeps `MarkdownCopy.partial`'s layout. New file `TranscriptPatches.swift`. Also fixed: tearing down a view with 2 000 cards took about 220 s, so card relayout now skips views with no window.
+Deviations:
+- About 360 source lines in 5 files, against 200 lines and 3 files.
+- Span `rgb` is ignored; syntax colours come from tokens. Using the real rgb is left to the creator (ideas.md).
+Check: `swift test` passed 3 runs: 19 tests in 3 suites.
+- `streamedAppendTextEditsOnlyItsBlocksRange` and `docTailEditsOnlyItsTail`: every storage edit stays inside its block, or its tail.
+- `tenThousandBlocksBuiltPatchByPatchFitTheLaunchBudget`: 10 000 blocks in batches of 64 reach the first frame in 293–374 ms against 400 ms. Measured on the shared M3 Max at load 39–51; a whole `load` takes about 200 ms.
+Both linters are clean.
+Not done: the ≤400 ms budget was not measured on the M1 Air.
