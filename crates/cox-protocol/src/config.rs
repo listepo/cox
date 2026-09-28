@@ -1298,6 +1298,8 @@ pub struct DesktopConfig {
     pub appearance: DesktopAppearanceConfig,
     /// `[desktop.transcript]`
     pub transcript: DesktopTranscriptConfig,
+    /// `[desktop.context]`
+    pub context: DesktopContextConfig,
 }
 
 /// The window's glass material (DS§3.5).
@@ -1375,6 +1377,26 @@ impl Default for DesktopTranscriptConfig {
             line_height: DESKTOP_DEFAULT_LINE_HEIGHT,
         }
     }
+}
+
+/// Which cache hit the Context tab shows (A104).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CacheHitScope {
+    /// The last turn's cache reads over what it sent: what the last
+    /// requests reused.
+    #[default]
+    Turn,
+    /// Every call's so far: whether the cache-stable prefix pays off.
+    Session,
+}
+
+/// `[desktop.context]` (A104): the inspector's Context & Cost tab.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DesktopContextConfig {
+    /// `turn` | `session`: the cache hit the tab shows.
+    pub cache_hit: CacheHitScope,
 }
 
 /// A value in `0.0..=1.0`, or a load error naming the key (figment adds it).

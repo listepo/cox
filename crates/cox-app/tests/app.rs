@@ -91,6 +91,22 @@ tool_calls = [{ name = "bash", input = { command = "echo built", background = tr
 text = "Done."
 "#;
 
+/// A turn that delegates to a subagent, then a plain second turn.
+const DELEGATE_THEN_REPLY: &str = r#"
+[[turn]]
+text = "Delegating."
+tool_calls = [{ name = "agent", input = { task = "find x", preset = "explore" } }]
+
+[[turn]]
+text = "result: x"
+
+[[turn]]
+text = "Found it."
+
+[[turn]]
+text = "Two."
+"#;
+
 /// The Keychain as a map; remembers what it was asked and told.
 #[derive(Default)]
 struct MemoryHost {
@@ -667,4 +683,80 @@ async fn info_names_the_session_its_cwd_rollout_and_the_user_config_it_read() {
         .join(format!("user/.cox/sessions/{}.jsonl", session.id()));
     assert_eq!(info.rollout, rollout);
     assert!(info.rollout.is_file(), "the turn was appended to it");
+}
+
+#[tokio::test]
+async fn turn_costs_group_the_ledger_by_turn_with_the_subagent_under_its_turn() {
+    let dir = scratch(Some(DELEGATE_THEN_REPLY));
+    let session = open(dir.path(), Arc::default()).await.expect("open");
+    session.send(send("delegate")).await.expect("send");
+    finish(&session).await;
+    session.send(send("again")).await.expect("send");
+    finish(&session).await;
+
+    let costs = session.turn_costs().expect("costs");
+    let rows: Vec<_> = costs
+        .rows
+        .iter()
+        .map(|r| (r.label.as_str(), r.detail))
+        .collect();
+    assert_eq!(
+        rows,
+        [("1 · code", false), ("explore", true), ("2 · code", false)]
+    );
+    let store = cox_store::Store::open(&dir.path().join("user/.cox")).expect("store");
+    let own = store.usage_ledger(&session.id()).expect("ledger");
+    assert_eq!(own.len(), 3, "two calls in turn 1, one in turn 2");
+    assert_eq!(costs.total.label, "Session");
+    assert_ne!(costs.total.values[0], "0", "{:?}", costs.total);
+    assert!(
+        costs.project.starts_with(&format!(
+            "Project project today: ${}",
+            costs.total.values[3]
+        )),
+        "{}",
+        costs.project
+    );
+}
+
+/// A104: the meter formats the cache hit both for the last turn and for the
+/// session, each from the ledger rows it covers.
+#[tokio::test]
+async fn the_cache_hit_is_formatted_for_the_last_turn_and_for_the_session() {
+    let dir = scratch(Some(TWO_REPLIES));
+    let session = open(dir.path(), Arc::default()).await.expect("open");
+    let mut text = None;
+    for prompt in ["one", "two"] {
+        session.send(send(prompt)).await.expect("send");
+        loop {
+            let batch = session.next_patches().await.expect("open stream");
+            for patch in &batch {
+                if let TimelinePatch::Usage { usage } = patch {
+                    text = Some(usage.text.clone());
+                }
+            }
+            if batch.iter().any(ends_turn) {
+                break;
+            }
+        }
+    }
+    let text = text.expect("a usage patch");
+
+    let store = cox_store::Store::open(&dir.path().join("user/.cox")).expect("store");
+    let ledger = store.usage_ledger(&session.id()).expect("ledger");
+    let last = ledger
+        .iter()
+        .rposition(|r| r.usage.turn == 1)
+        .expect("turn 2");
+    assert!(last > 0, "two turns: {ledger:?}");
+    let hit = |rows: &[cox_store::queries::LedgerRow], span: &str| {
+        let sum = |f: fn(&cox_protocol::types::Usage) -> u32| {
+            rows.iter().map(|r| f(&r.usage.usage)).sum::<u32>()
+        };
+        let sent = sum(cox_protocol::types::Usage::context_tokens);
+        let read = sum(|u| u.cache_read_tokens);
+        format!("{:.0}% {span}", f64::from(read) / f64::from(sent) * 100.0)
+    };
+    assert_eq!(text.cache_hit, hit(&ledger[last..], "this turn"));
+    assert_eq!(text.cache_hit_session, hit(&ledger, "this session"));
 }

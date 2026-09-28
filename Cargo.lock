@@ -1055,6 +1055,7 @@ name = "cox-app"
 version = "0.1.2"
 dependencies = [
  "async-trait",
+ "chrono",
  "cox-config",
  "cox-core",
  "cox-ext",

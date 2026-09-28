@@ -17,6 +17,8 @@ cox-render = { path = "../cox-render", version = "0.1.2", default-features = fal
 serde = { workspace = true }
 # Tool inputs and `ToolResult.structured` are JSON values (`summary.rs`).
 serde_json = { workspace = true }
+# "Today" and "this week" in the local time zone (T37.29.3.3).
+chrono = { workspace = true }
 # T37.9 (DT§4.5): the drain task, its wake-up and the per-frame pull.
 tokio = { workspace = true }
 # T37.10 (DT§4.2): the workspace reads sessions, search and lock holders

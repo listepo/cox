@@ -253,6 +253,9 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `cross_block_selection` = `true` — a text selection runs across blocks like one document; false clamps it to one block (A67)
 - `text_size` = `13.5` — the transcript's prose size in pt at 100 % text size, 10 … 24; code, headings and thoughts keep their size relative to it (A93)
 - `line_height` = `1.55` — the prose line height as a multiple of the text size, 1 … 2.5 (A93)
+## `[desktop.context]`
+
+- `cache_hit` = `"turn"` — turn | session — the Context tab's cache hit: the last turn's reads, or every call's so far (A104)
 ## `~/.cox/keybindings.toml`
 
 Rebinds the TUI's keys (T25.5). Each line is an action id and a key, or a list of keys; dotted ids may be written as TOML tables. The keys you give replace the action's defaults, in every context the action has (`idle`, `running`), and take the key from whatever action held it by default. A missing file means the defaults in `docs/getting-started.md`.
