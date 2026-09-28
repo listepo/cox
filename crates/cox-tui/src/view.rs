@@ -130,6 +130,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Some(
             Modal::Diff { .. }
             | Modal::Help
+            | Modal::Context
             | Modal::Agents { .. }
             | Modal::Transcript { .. }
             | Modal::Plugin { .. },
@@ -189,6 +190,10 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         }
         Some(Modal::Help) => (
             crate::modal::help_lines(&state.glyphs, &state.theme, &state.keymap, area.width),
+            0,
+        ),
+        Some(Modal::Context) => (
+            crate::modal::context_lines(&state.status, &state.glyphs, &state.theme, area.width),
             0,
         ),
         // T27.5: `/agents`'s navigable list, one row per `agents_rows` entry;
@@ -298,6 +303,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Some(
             Modal::Diff { .. }
             | Modal::Help
+            | Modal::Context
             | Modal::Agents { .. }
             | Modal::Transcript { .. }
             | Modal::Plugin { .. },
@@ -463,5 +469,50 @@ mod tests {
         assert!(rendered.contains("overlay text"), "{rendered}");
 
         insta::assert_snapshot!(format!("{waiting}\n---\n{rendered}"));
+    }
+
+    /// A98: `/context` draws the window, the share and the four parts
+    /// as one bar in the theme's context roles, in each theme; the parts
+    /// are rescaled to the reported context. With no window it says so.
+    #[test]
+    fn context_overlay_snapshot() {
+        use crate::state::{Msg, update};
+        use crate::theme::Theme;
+        use cox_protocol::ids::TurnId;
+        use cox_protocol::types::{ContextBreakdown, Event};
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        let mut breakdown = ContextBreakdown {
+            window: Some(200_000),
+            total: 34_000,
+            system: 3_400,
+            tools: 21_500,
+            instructions: 1_100,
+            history: 8_000,
+            cached: 51_000,
+        };
+        let event = |breakdown| {
+            Msg::Event(Event::ContextBreakdown {
+                turn: TurnId::new(),
+                breakdown,
+            })
+        };
+        update(&mut state, event(breakdown));
+        state.status.context_tokens = 68_000;
+        state.modal = Some(Modal::Context);
+        for (name, theme) in [
+            ("dark", Theme::dark()),
+            ("light", Theme::light()),
+            ("no_color", Theme::mono()),
+        ] {
+            state.theme = theme;
+            let buf = render(&state, 60, 12);
+            let text = buffer_to_string(&buf);
+            assert!(text.contains("68000 of 200000 tokens · 34%"), "{text}");
+            insta::assert_snapshot!(format!("context_overlay_{name}"), format!("{buf:?}"));
+        }
+        breakdown.window = None;
+        update(&mut state, event(breakdown));
+        let text = buffer_to_string(&render(&state, 60, 12));
+        assert!(text.contains("68000 tokens · window unknown"), "{text}");
     }
 }
