@@ -6,12 +6,13 @@
 use std::fmt::Display;
 
 use cox_protocol::ids::{CallId, ItemId};
-use cox_protocol::types::{Event, ItemKind, ToolCall, Usage};
+use cox_protocol::types::{Event, ItemKind, ToolCall};
 use cox_render::glyph::UNICODE;
 use cox_render::markdown;
 
 use crate::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState, tail};
 use crate::summary::{self, Explore, one_line};
+use crate::usage::add_to;
 
 /// The block list of one session and what folds events into it.
 #[derive(Debug, Clone, Default)]
@@ -227,7 +228,7 @@ impl Timeline {
             }
             Event::Usage { turn, usage: u } => self.update(&key("turn", turn), |k| {
                 if let BlockKind::TurnMeta { usage, .. } = k {
-                    *usage = Some(usage.map_or(*u, |sum| add(sum, u)));
+                    *usage = Some(add_to(*usage, u));
                 }
             }),
             Event::TurnDone { turn, stop: s } => self.update(&key("turn", turn), |k| {
@@ -477,18 +478,6 @@ impl Timeline {
             from: from as u32,
             blocks,
         }]
-    }
-}
-
-fn add(a: Usage, b: &Usage) -> Usage {
-    Usage {
-        input_tokens: a.input_tokens.saturating_add(b.input_tokens),
-        output_tokens: a.output_tokens.saturating_add(b.output_tokens),
-        cache_read_tokens: a.cache_read_tokens.saturating_add(b.cache_read_tokens),
-        cache_write_tokens: a.cache_write_tokens.saturating_add(b.cache_write_tokens),
-        estimated: a.estimated || b.estimated,
-        cost_usd: a.cost_usd + b.cost_usd,
-        latency_ms: a.latency_ms.saturating_add(b.latency_ms),
     }
 }
 

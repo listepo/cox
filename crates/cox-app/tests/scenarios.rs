@@ -11,12 +11,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use cox_app::{Block, BlockKind, Controller, Timeline, TimelinePatch, coalesce};
+use cox_app::{Block, BlockKind, Controller, Meter, Tally, Timeline, TimelinePatch, coalesce};
 use cox_core::{MemoryStore, Session};
 use cox_protocol::errors::ToolError;
 use cox_protocol::traits::{Store, Tool, ToolCx};
 use cox_protocol::types::{Concurrency, Decision, Event, Risk, Submission, ToolOutput, ToolSpec};
-use cox_protocol::{Before, Change, Checkpointer, Config, PreImage, Snapshot};
+use cox_protocol::{Before, Change, Checkpointer, Config, PreImage, Snapshot, UsageRow};
 use cox_provider::scripted::Scripted;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
@@ -384,16 +384,20 @@ async fn slow_consumer_never_stalls_the_core() {
             let _ = turn.await;
             start.elapsed()
         });
-        let (mut blocks, mut widest) = (Vec::new(), 0);
+        let (mut blocks, mut widest, mut meter) = (Vec::new(), 0, None);
         while !turn_over(&blocks) {
             let batch = tokio::time::timeout(Duration::from_secs(60), controller.next_patches())
                 .await
                 .expect("patches in time")
                 .expect("stream open");
-            widest = widest.max(batch.len());
-            batch
-                .into_iter()
-                .for_each(|p| coalesce::apply(&mut blocks, p));
+            // The meter's one patch sits beside the blocks.
+            widest = widest.max(batch.len() - 1);
+            for patch in batch {
+                match patch {
+                    TimelinePatch::Usage { usage } => meter = Some(usage.session),
+                    p => coalesce::apply(&mut blocks, p),
+                }
+            }
             tokio::time::sleep(nap).await;
         }
         let took = finished.await.expect("join");
@@ -402,6 +406,11 @@ async fn slow_consumer_never_stalls_the_core() {
             "{name}: the turn waited on the consumer ({took:?})"
         );
         let events = store.rollout_read(&session.id()).expect("rollout");
+        assert_eq!(
+            meter,
+            Some(ledger(&rows_of(&store, &session))),
+            "{name}: the last queued meter is not the ledger's"
+        );
         if name == "flood" {
             assert!(events.len() > 256, "flood emitted only {}", events.len());
         }
@@ -416,4 +425,51 @@ async fn slow_consumer_never_stalls_the_core() {
             "{name}: coalesced state differs from applying every patch"
         );
     }
+}
+
+/// This session's ledger rows; a subagent writes its own under its own id.
+fn rows_of(store: &MemoryStore, session: &Session) -> Vec<UsageRow> {
+    let mut rows = store.usage_rows();
+    rows.retain(|r| r.session_id == session.id());
+    rows
+}
+
+/// The DS§7 figures summed straight from ledger rows.
+fn ledger(rows: &[UsageRow]) -> Tally {
+    let sum = |f: fn(&UsageRow) -> u32| rows.iter().map(f).sum();
+    Tally {
+        sent: sum(|r| {
+            r.usage.input_tokens + r.usage.cache_read_tokens + r.usage.cache_write_tokens
+        }),
+        received: sum(|r| r.usage.output_tokens),
+        cache_read: sum(|r| r.usage.cache_read_tokens),
+        cache_write: sum(|r| r.usage.cache_write_tokens),
+        uncached: sum(|r| r.usage.input_tokens),
+        cost_usd: rows.iter().map(|r| r.usage.cost_usd).sum(),
+        calls: rows.len() as u32,
+        estimated: rows.iter().any(|r| r.usage.estimated),
+    }
+}
+
+/// Two user turns — a tool round then a reply (two calls), and a reply (one
+/// call): each turn's meter and the session's equal the rows it wrote.
+#[tokio::test]
+async fn meter_totals_equal_the_ledger_rows() {
+    let toml = "[[turn]]\ntext = \"echoing\"\ntool_calls = [{ name = \"echo\", input = { text = \"hi\" } }]\n\n[[turn]]\ntext = \"done\"\n\n[[turn]]\ntext = \"again\"\n";
+    let (session, store, mut rx) = open(toml, Config::default(), &Act::Nothing);
+    for text in ["first", "second"] {
+        let _ = common::spawn_turn(&session, text).await.expect("join");
+    }
+    let (mut meter, mut turns) = (Meter::default(), Vec::new());
+    while let Ok(event) = rx.try_recv() {
+        meter.apply(&event, Duration::ZERO);
+        if matches!(event, Event::TurnDone { .. }) {
+            turns.extend(meter.view().turn.as_ref().map(|t| t.tally));
+        }
+    }
+    let rows = rows_of(&store, &session);
+    assert_eq!(rows.len(), 3);
+    assert!(rows.iter().all(|r| r.usage.output_tokens > 0));
+    assert_eq!(turns, vec![ledger(&rows[..2]), ledger(&rows[2..])]);
+    assert_eq!(meter.view().session, ledger(&rows));
 }

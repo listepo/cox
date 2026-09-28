@@ -12,6 +12,7 @@ pub mod intent;
 pub mod patch;
 pub mod summary;
 pub mod timeline;
+pub mod usage;
 pub mod workspace;
 
 pub use complete::{Completer, Completion};
@@ -21,4 +22,5 @@ pub use intent::{Dispatch, Intent, IntentError, dispatch};
 pub use patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState};
 pub use summary::Icon;
 pub use timeline::Timeline;
+pub use usage::{Meter, Tally, TurnUsage, UsageView};
 pub use workspace::{ProjectRow, SearchHit, SessionEntry, Workspace, WorkspaceError};

@@ -209,6 +209,7 @@ enum TimelinePatch {
   DocTail { id: BlockId, from: u32, blocks: Vec<DocBlock> }  // markdown: closed blocks are frozen, only the tail is re-sent
   Remove { id: BlockId }
   Status { status: Status }
+  Usage { usage: UsageView }                    // token meter (DS§7): ledger totals, tok/s, TTFT; a queue keeps only the latest
 }
 ```
 
