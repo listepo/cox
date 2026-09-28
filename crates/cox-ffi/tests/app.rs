@@ -31,9 +31,12 @@ fn scratch(scenario: Option<&Path>) -> tempfile::TempDir {
 #[tokio::test]
 async fn a_scripted_turn_reaches_the_app_as_blocks_and_the_meter() {
     let dir = scratch(Some(&scenario("read-and-reply")));
-    let session = open(dir.path(), Arc::default()).await.expect("open");
+    let host = Arc::new(MemoryHost::default());
+    let session = open(dir.path(), Arc::clone(&host)).await.expect("open");
     let prompts = ["read the notes".to_string()];
-    let recording = record::record(&session, &prompts).await.expect("record");
+    let recording = record::record(&session, &host, &prompts)
+        .await
+        .expect("record");
     assert!(
         recording["batches"]
             .as_array()
@@ -76,4 +79,45 @@ async fn the_host_keychain_supplies_the_provider_key_and_its_absence_fails() {
     keyed.secrets.insert("anthropic".into(), "sk-test".into());
     let session = open(dir.path(), Arc::new(keyed)).await;
     assert!(session.is_ok(), "{:?}", session.err());
+}
+
+#[tokio::test]
+async fn an_approval_is_noted_with_badge_one_and_allowing_it_resumes_the_turn() {
+    let dir = scratch(Some(&scenario("approve-write")));
+    let host = Arc::new(MemoryHost::default());
+    let session = open(dir.path(), Arc::clone(&host)).await.expect("open");
+    let prompts = ["write a summary".to_string()];
+    let recording = record::record(&session, &host, &prompts)
+        .await
+        .expect("record");
+
+    let notes = recording["notes"].as_array().cloned().unwrap_or_default();
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert_eq!(notes[0]["badge"], 1);
+    assert_eq!(notes[0]["item"]["need"]["type"], "approval");
+    let kinds: Vec<BlockKind> = session.snapshot().into_iter().map(|b| b.kind).collect();
+    let allowed = |k: &BlockKind| {
+        matches!(
+            k,
+            BlockKind::Approval {
+                decision: Some(_),
+                ..
+            }
+        )
+    };
+    assert!(kinds.iter().any(allowed), "{kinds:?}");
+    let ended = |k: &BlockKind| {
+        matches!(
+            k,
+            BlockKind::TurnMeta {
+                stop: Some(StopReason::EndTurn),
+                ..
+            }
+        )
+    };
+    assert!(kinds.iter().any(ended), "{kinds:?}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("project/summary.md")).ok(),
+        Some("hello\n".into())
+    );
 }

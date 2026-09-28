@@ -7,4 +7,11 @@ mise exec -- cargo run -p cox-ffi --example record -- \
   crates/cox-ffi/fixtures/read-and-reply.toml desktop/macos/Fixtures/read-and-reply.json "Read the notes"
 ```
 
+A pending approval or question is allowed or answered by the recorder, so `approve-write.json` holds the waiting card, then the rest of the turn. `notes` lists each inbox item the host was told about (`AppHost.notify`) with the `batch` it arrived by; `FixtureCoreClient(fixture:host:waitsForYou:)` hands them to its host and, waiting for you, holds the turn until the card is answered (T37.27):
+
+```bash
+mise exec -- cargo run -p cox-ffi --example record -- \
+  crates/cox-ffi/fixtures/approve-write.toml desktop/macos/Fixtures/approve-write.json "Write a summary"
+```
+
 Ids and timings change on every run.

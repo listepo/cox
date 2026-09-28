@@ -30,8 +30,12 @@ public struct HostNote: Sendable, Equatable {
   public var text: String
   /// Items that block a turn, across all sessions.
   public var badge: Int
+  /// The approval or question a notification action answers; `nil` for news.
+  public var call: String?
 
-  public init(session: String, kind: Kind, text: String, badge: Int) {
-    (self.session, self.kind, self.text, self.badge) = (session, kind, text, badge)
+  public init(session: String, kind: Kind, text: String, badge: Int, call: String? = nil) {
+    (self.session, self.kind, self.text, self.badge, self.call) = (
+      session, kind, text, badge, call
+    )
   }
 }

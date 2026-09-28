@@ -4,6 +4,11 @@
 //! Runs in a scratch `COX_HOME` and `HOME`, never the real `~/.cox` or
 //! Keychain. The tests reuse its host and `record` (`tests/app.rs`).
 //!
+//! A turn that stops for the person is allowed or answered, so the fixture
+//! holds the pending card and the rest of the turn after it (T37.27); each
+//! inbox item the host was told about is written with the batch it arrived
+//! by, so the Swift fixture client can hand it to its host at that point.
+//!
 //! `cargo run -p cox-ffi --example record -- <scenario.toml> <out.json> <prompt>...`
 
 use std::collections::HashMap;
@@ -12,6 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use cox_app::{BlockKind, InboxItem, Intent, TimelinePatch};
 use cox_ffi::{App, AppError, AppHost, OpenRequest, SessionHandle};
+use cox_protocol::types::Decision;
 
 /// The Keychain as a map; remembers what it was asked and told.
 #[derive(Default)]
@@ -77,12 +83,15 @@ pub async fn open(dir: &Path, host: Arc<MemoryHost>) -> Result<Arc<SessionHandle
     app.open(request).await
 }
 
-/// Sends each prompt and pulls batches until its turn ends.
+/// Sends each prompt and pulls batches until its turn ends, allowing every
+/// approval and answering every question with its first option (or "yes").
 pub async fn record(
     session: &Arc<SessionHandle>,
+    host: &MemoryHost,
     prompts: &[String],
 ) -> Result<serde_json::Value, AppError> {
     let mut batches = Vec::new();
+    let mut notes = Vec::new();
     for text in prompts {
         let send = Intent::Send {
             text: text.clone(),
@@ -91,13 +100,49 @@ pub async fn record(
         Arc::clone(session).send(send).await?;
         while let Some(batch) = session.next_patches().await {
             let done = batch.iter().any(ends_turn);
+            let replies: Vec<Intent> = batch.iter().filter_map(reply).collect();
             batches.push(batch);
+            let told = std::mem::take(&mut *host.notes.lock().unwrap_or_else(|e| e.into_inner()));
+            for (item, badge) in told {
+                let batch = batches.len() - 1;
+                notes.push(serde_json::json!({ "batch": batch, "item": item, "badge": badge }));
+            }
+            for intent in replies {
+                Arc::clone(session).send(intent).await?;
+            }
             if done {
                 break;
             }
         }
     }
-    Ok(serde_json::json!({ "batches": batches, "snapshot": session.snapshot() }))
+    Ok(serde_json::json!({ "batches": batches, "notes": notes, "snapshot": session.snapshot() }))
+}
+
+/// The person's reply to a card that waits on them, as the recorder gives it.
+fn reply(patch: &TimelinePatch) -> Option<Intent> {
+    let TimelinePatch::Upsert { block, .. } = patch else {
+        return None;
+    };
+    match &block.kind {
+        BlockKind::Approval {
+            call,
+            decision: None,
+            ..
+        } => Some(Intent::Approve {
+            call: *call,
+            decision: Decision::Allow,
+        }),
+        BlockKind::Question {
+            call,
+            options,
+            answer: None,
+            ..
+        } => Some(Intent::Answer {
+            question: *call,
+            text: Some(options.first().cloned().unwrap_or_else(|| "yes".into())),
+        }),
+        _ => None,
+    }
 }
 
 pub fn ends_turn(patch: &TimelinePatch) -> bool {
@@ -115,8 +160,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scenario = std::fs::canonicalize(scenario)?;
     // SAFETY: nothing else runs yet; the runtime starts with the first call.
     unsafe { scratch_env(dir.path(), Some(&scenario)) };
-    let session = open(dir.path(), Arc::default()).await?;
-    let recording = record(&session, prompts).await?;
+    let host = Arc::new(MemoryHost::default());
+    let session = open(dir.path(), Arc::clone(&host)).await?;
+    let recording = record(&session, &host, prompts).await?;
     session.end();
     let text = serde_json::to_string_pretty(&recording)?;
     // Scratch paths vary per run; the fixture names the project `/project`.
