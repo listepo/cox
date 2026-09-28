@@ -116,6 +116,37 @@ private struct CoxTransition: ViewModifier {
 }
 
 extension View {
+  /// Turns the view a full circle every `period`, for as long as it is on screen — a busy
+  /// indicator — or holds it still under Reduce Motion, where a turn has no cross-fade to
+  /// become (DS§3.6).
+  func coxSpin(period: TimeInterval) -> some View {
+    modifier(CoxSpin(period: period))
+  }
+}
+
+private struct CoxSpin: ViewModifier {
+  let period: TimeInterval
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// The angle counts from the view's first appearance, so every spinner starts upright.
+  @State private var start = Date.now
+
+  func body(content: Content) -> some View {
+    if reduceMotion {
+      content
+    } else {
+      TimelineView(.animation) { timeline in
+        content.rotationEffect(angle(at: timeline.date))
+      }
+    }
+  }
+
+  private func angle(at date: Date) -> Angle {
+    let turn = date.timeIntervalSince(start) / period
+    return .degrees((turn - turn.rounded(.down)) * 360)
+  }
+}
+
+extension View {
   /// One view that moves between places — a selection pill, a knob: the copy that appears
   /// slides from the frame of the copy that goes, sharing `id` in `namespace`, or the two
   /// cross-fade under Reduce Motion (DS§3.6).
