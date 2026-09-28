@@ -17,6 +17,11 @@ pub const COMMANDS: &[(&str, &str, &str)] = &[
         "one turn on the think tier, price confirmed first",
     ),
     (
+        "mode",
+        "/mode architect|editor",
+        "switch between planning and editing",
+    ),
+    (
         "effort",
         "/effort [low|medium|high|xhigh]",
         "effort for the rest of the session; bare restores the tier default",
