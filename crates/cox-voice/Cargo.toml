@@ -1,0 +1,17 @@
+[package]
+name = "cox-voice"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# T54.2 (A123): local speech-to-text through whisper.cpp. `tracing_backend`
+# routes whisper.cpp's and ggml's own logging into `tracing` instead of
+# stderr, which would paint over the TUI.
+whisper-rs = { workspace = true, features = ["tracing_backend"] }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

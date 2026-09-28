@@ -158,6 +158,12 @@ extism = { version = "1.30.0", default-features = false, features = ["wasmtime-e
 # that one feature by feature unification; the version follows extism's pin.
 wasmtime = { version = "43", default-features = false, features = ["anyhow"] }
 
+# cox-voice
+# T54.2 (A123): whisper.cpp bindings for local push-to-talk transcription.
+# Only cox-voice depends on it, and cox-voice only behind `crates/cox`'s
+# `voice` feature (off by default): the C++ build needs cmake (mise.toml).
+whisper-rs = "0.16"
+
 # dev-deps
 insta = { version = "1.48", features = ["json"] }
 proptest = "1.11"

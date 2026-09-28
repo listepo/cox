@@ -27,6 +27,7 @@ Programs the project uses and the direct packages from its manifests.
 | SwiftLint | mise (`mise.toml`, aqua) | Lints the macOS app (T37.18): default rules plus DS§9's no-literal custom rules in `desktop/macos/.swiftlint.yml`; CI's `desktop-macos-lint` job; packages run the same version through the SwiftLintPlugins build-tool plugin | https://github.com/realm/SwiftLint |
 | swift-format | Xcode toolchain (`xcrun swift-format`) | Formats the macOS app's Swift (research.md §9.5.5); CI's `desktop-macos-lint` job runs `lint --strict` | https://github.com/swiftlang/swift-format |
 | XcodeGen | mise (`mise.toml`, aqua) | Generates the macOS app's thin `desktop/macos/Cox.xcodeproj` from `desktop/macos/project.yml`, so only the spec is in git and the project never merge-conflicts (`just desktop-app`, T37.32.1); CI's `desktop-macos` job | https://github.com/yonaskolb/XcodeGen |
+| cmake | mise (`mise.toml`) | Builds whisper.cpp for `cox-voice` through `whisper-rs-sys` (T54.2, A123); 3.31.12, the version sibling projects already pin (apps/bindsmith) | https://github.com/Kitware/CMake |
 
 ## ketch
 
@@ -122,6 +123,7 @@ Programs the project uses and the direct packages from its manifests.
 | unicode-width | local | https://crates.io/crates/unicode-width | Rust dependency |
 | vt100 | local | https://crates.io/crates/vt100 | Rust dependency |
 | wasmtime | local (`anyhow` feature only) | https://github.com/bytecodealliance/wasmtime | cox-plugin: the runtime under extism; declared only to enable the `anyhow` feature extism 1.30.0 needs with its default features off (T33.3) |
+| whisper-rs | local (`tracing_backend`) | https://codeberg.org/tazz4843/whisper-rs | cox-voice: local push-to-talk transcription through whisper.cpp (MIT, built with cmake), behind `crates/cox`'s `voice` feature, off by default (T54.2, A123) |
 | wiremock | local | https://crates.io/crates/wiremock | Rust dependency |
 | trycmd | local | https://github.com/assert-rs/trycmd | dev-dep: `cox run -p` output fixtures (P48) |
 
