@@ -359,15 +359,24 @@ pub enum PluginAction {
     },
     /// Validate a package, copy it into `versions/<digest12>/`, write
     /// `current`, then ask for its capabilities (PL§1). An https URL is
-    /// downloaded and unpacked into staging first.
+    /// downloaded and unpacked, and a git repository cloned, into staging
+    /// first.
     Install {
-        /// A local plugin package directory, or an `https://` URL of a
-        /// `.tar.gz` package archive (needs `--sha256`).
+        /// A local plugin package directory, an `https://` URL of a
+        /// `.tar.gz` package archive (needs `--sha256`), or `git+<url>`
+        /// (needs `--rev`).
         source: String,
         /// The archive's SHA-256; required with a URL. A mismatch is
         /// refused before anything is unpacked.
-        #[arg(long, value_name = "HEX")]
+        #[arg(long, value_name = "HEX", conflicts_with_all = ["rev", "path"])]
         sha256: Option<String>,
+        /// The tag or full commit hash to install from a `git+<url>`; a
+        /// branch is refused.
+        #[arg(long, value_name = "TAG|COMMIT")]
+        rev: Option<String>,
+        /// The package's directory inside the git repository.
+        #[arg(long, value_name = "SUBDIR", requires = "rev")]
+        path: Option<String>,
         /// Skip the stdin prompt and grant what the manifest asks for.
         #[arg(long)]
         yes: bool,

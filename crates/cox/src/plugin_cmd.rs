@@ -70,12 +70,31 @@ pub fn list(cli: &Cli, cwd: &Path, json: bool) -> String {
     out
 }
 
-/// `cox plugin install <dir | https-url> [--sha256 <hex>] [--yes]` (PL§1):
-/// a URL (anything with `://`) is checked for `https://` and a
-/// `--sha256` before a byte is fetched, then downloaded and unpacked into
-/// staging (T53.2); either way the tree ends in `install_tree`, the one
-/// install path.
-pub fn install(cli: &Cli, source: &str, sha256: Option<&str>, yes: bool) -> anyhow::Result<()> {
+/// `cox plugin install <dir | https-url | git+url> [--sha256 <hex>]
+/// [--rev <tag|commit>] [--path <subdir>] [--yes]` (PL§1): a URL (anything
+/// with `://`) is checked for `https://` and a `--sha256` before a byte is
+/// fetched, then downloaded and unpacked into staging (T53.2); a
+/// `git+<url>` needs `--rev` and is cloned into staging (T53.3). Every
+/// source ends in `install_tree`, the one install path.
+pub fn install(
+    cli: &Cli,
+    source: &str,
+    sha256: Option<&str>,
+    rev: Option<&str>,
+    path: Option<&str>,
+    yes: bool,
+) -> anyhow::Result<()> {
+    if let Some(url) = source.strip_prefix("git+") {
+        if sha256.is_some() {
+            anyhow::bail!("--sha256 applies only to an https:// archive URL");
+        }
+        let rev =
+            rev.ok_or_else(|| anyhow::anyhow!("--rev <tag|commit> is required with git+<url>"))?;
+        return install_git(cli, url, rev, path.unwrap_or("."), yes);
+    }
+    if rev.is_some() || path.is_some() {
+        anyhow::bail!("--rev and --path apply only to a git+<url> source");
+    }
     if source.contains("://") {
         plugin_fetch::https_url(source)?;
         let sha256 = plugin_fetch::sha256_arg(sha256)?;
@@ -110,6 +129,23 @@ fn install_url(cli: &Cli, url: &str, sha256: &str, yes: bool) -> anyhow::Result<
         yes,
         |_| serde_json::json!({ "kind": "url", "url": url, "sha256": sha256 }),
     )
+}
+
+/// The git half of `install` (T53.3): clones `rev` into staging,
+/// confines `path` inside the clone and records the commit it resolved.
+fn install_git(cli: &Cli, url: &str, rev: &str, path: &str, yes: bool) -> anyhow::Result<()> {
+    let home = cli.home.clone().unwrap_or_else(cox_home);
+    let staging = plugin_fetch::Staging::new(&home)?;
+    let (root, commit) = plugin_fetch::clone_git(&staging, url, rev, path)?;
+    install_tree(cli, &root, yes, |_| {
+        serde_json::json!({
+            "kind": "git",
+            "url": url,
+            "rev": rev,
+            "commit": commit,
+            "path": path,
+        })
+    })
 }
 
 /// The one install path every source ends in (PL§1): validates and
@@ -1237,13 +1273,15 @@ mod tests {
         let cli = cli_at(home.path());
 
         for url in [served.url(), "file:///etc/passwd".to_string()] {
-            let err = install(&cli, &url, Some(&sha), true)
+            let err = install(&cli, &url, Some(&sha), None, None, true)
                 .unwrap_err()
                 .to_string();
             assert!(err.contains("must be https://"), "{err}");
         }
         let https = served.url().replacen("http://", "https://", 1);
-        let err = install(&cli, &https, None, true).unwrap_err().to_string();
+        let err = install(&cli, &https, None, None, None, true)
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("--sha256 <hex> is required"), "{err}");
 
         assert_eq!(served.hits(), 0, "refused before a byte is fetched");
@@ -1316,5 +1354,177 @@ mod tests {
             serde_json::json!({ "kind": "url", "url": served.url(), "sha256": sha })
         );
         assert!(!home.path().join("plugins/.staging").exists());
+    }
+
+    /// `git` for building a fixture repository, isolated from the
+    /// developer's own git config and signing setup.
+    fn git_in(dir: &Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .current_dir(dir)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .args([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.invalid",
+                "-c",
+                "init.defaultBranch=main",
+                "-c",
+                "core.fsmonitor=false",
+            ])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    }
+
+    /// A `file://` bare repository holding `files`, tagged `v1` and with a
+    /// `stable` branch, plus the commit both name.
+    fn bare_repo(dir: &Path, files: &[(&str, &str)]) -> (String, String) {
+        let work = dir.join("work");
+        fs::create_dir_all(&work).unwrap();
+        git_in(&work, &["init", "--quiet"]);
+        for (rel, body) in files {
+            let path = work.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, body).unwrap();
+        }
+        git_in(&work, &["add", "-A"]);
+        git_in(&work, &["commit", "--quiet", "-m", "plugin"]);
+        git_in(&work, &["tag", "v1"]);
+        git_in(&work, &["branch", "stable"]);
+        let commit = git_in(&work, &["rev-parse", "HEAD"]);
+        git_in(dir, &["clone", "--quiet", "--bare", "work", "repo.git"]);
+        let url = format!("file://{}", dir.join("repo.git").display());
+        (url, commit)
+    }
+
+    const PLUGIN_FILES: [(&str, &str); 2] = [
+        ("plugin.toml", MANIFEST),
+        ("plugin.wasm", "dummy wasm bytes"),
+    ];
+
+    fn grant_source(home: &Path) -> serde_json::Value {
+        let plugin_dir = home.join("plugins/demo");
+        let current = fs::read_to_string(plugin_dir.join("current")).unwrap();
+        let digest =
+            cox_plugin::package_digest(&plugin_dir.join("versions").join(current.trim())).unwrap();
+        Store::open(home)
+            .unwrap()
+            .grant_get("demo", &GrantScope::User, &digest)
+            .unwrap()
+            .expect("granted with --yes")
+            .source
+    }
+
+    #[test]
+    fn plugin_install_git_from_a_local_bare_repo() {
+        let repos = tempfile::tempdir().unwrap();
+        let (url, commit) = bare_repo(repos.path(), &PLUGIN_FILES);
+
+        let home = tempfile::tempdir().unwrap();
+        let source = format!("git+{url}");
+        install(&cli_at(home.path()), &source, None, Some("v1"), None, true).unwrap();
+        assert_eq!(
+            grant_source(home.path()),
+            serde_json::json!({
+                "kind": "git", "url": url, "rev": "v1", "commit": commit, "path": ".",
+            })
+        );
+        assert!(!home.path().join("plugins/.staging").exists());
+
+        // A full commit hash is fetched directly.
+        let home = tempfile::tempdir().unwrap();
+        install(
+            &cli_at(home.path()),
+            &source,
+            None,
+            Some(&commit),
+            None,
+            true,
+        )
+        .unwrap();
+        assert_eq!(grant_source(home.path())["commit"], commit.as_str());
+    }
+
+    #[test]
+    fn plugin_install_git_refuses_a_branch() {
+        let repos = tempfile::tempdir().unwrap();
+        let (url, _) = bare_repo(repos.path(), &PLUGIN_FILES);
+        let home = tempfile::tempdir().unwrap();
+        let cli = cli_at(home.path());
+        let source = format!("git+{url}");
+
+        let err = install(&cli, &source, None, Some("stable"), None, true)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("names a branch"), "{err}");
+        let err = install(&cli, &source, None, None, None, true)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("--rev <tag|commit> is required"), "{err}");
+        let err = install(&cli, &source, None, Some("abc123"), None, true)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("neither a tag"), "{err}");
+        assert_nothing_left(home.path());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plugin_install_git_path_cannot_escape_the_clone() {
+        let repos = tempfile::tempdir().unwrap();
+        let outside = repos.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("plugin.toml"), MANIFEST).unwrap();
+        fs::write(outside.join("plugin.wasm"), "outside bytes").unwrap();
+        let work = repos.path().join("work");
+        fs::create_dir_all(&work).unwrap();
+        std::os::unix::fs::symlink(&outside, work.join("link")).unwrap();
+        let (url, _) = bare_repo(repos.path(), &[("pkg/plugin.toml", MANIFEST)]);
+        let home = tempfile::tempdir().unwrap();
+        let cli = cli_at(home.path());
+        let source = format!("git+{url}");
+
+        for path in ["../outside", "/etc", "pkg/../../outside"] {
+            let err = install(&cli, &source, None, Some("v1"), Some(path), true)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("must stay inside the clone"), "{path}: {err}");
+        }
+        let err = install(&cli, &source, None, Some("v1"), Some("link"), true)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not a directory inside the clone"), "{err}");
+        assert_nothing_left(home.path());
+    }
+
+    #[test]
+    fn plugin_install_git_digest_excludes_dot_git() {
+        let repos = tempfile::tempdir().unwrap();
+        let (url, _) = bare_repo(repos.path(), &PLUGIN_FILES);
+        let home = tempfile::tempdir().unwrap();
+
+        install(
+            &cli_at(home.path()),
+            &format!("git+{url}"),
+            None,
+            Some("v1"),
+            None,
+            true,
+        )
+        .unwrap();
+
+        let plain = tempfile::tempdir().unwrap();
+        for (rel, body) in PLUGIN_FILES {
+            fs::write(plain.path().join(rel), body).unwrap();
+        }
+        let want = cox_plugin::package_digest(plain.path()).unwrap();
+        let versions = home.path().join("plugins/demo/versions");
+        let version = versions.join(install::short(&want));
+        assert!(version.is_dir(), "the digest is the tree's alone");
+        assert!(!version.join(".git").exists());
     }
 }

@@ -1,8 +1,9 @@
 //! Fetching what `cox` installs from outside the machine (T53.2, PL§1): the
 //! download and SHA-256 helpers `cox self update` and `cox plugin install
 //! <https-url>` share, the `tar` shell-out both unpack with, and the
-//! staging directory a downloaded plugin lands in before the local install
-//! path (`plugin_cmd`) takes over. Separate from `plugin_cmd` so the
+//! staging directory a downloaded or cloned (`git+<url>`, T53.3) plugin
+//! lands in before the local install path (`plugin_cmd`) takes over.
+//! Separate from `plugin_cmd` so the
 //! self-update path reuses one fetch without the plugin host, and so every
 //! rule about an untrusted downloaded tree sits in one place: the hash is
 //! checked before a byte is unpacked, no entry may be a link or leave
@@ -13,7 +14,7 @@
 
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, bail};
@@ -167,6 +168,150 @@ pub fn fetch_archive(staging: &Staging, url: &str, sha256: &str) -> anyhow::Resu
     fs::remove_file(&archive)?;
     refuse_links(&tree)?;
     package_root(&tree)
+}
+
+/// Clones `rev` of the git repository at `url` into `staging` and returns
+/// the package root (`path` inside the clone, `.git` removed) and the
+/// commit it resolved (PL§1). `rev` must be a tag or a full commit hash:
+/// a branch is refused, so `update` never follows a moving target.
+pub fn clone_git(
+    staging: &Staging,
+    url: &str,
+    rev: &str,
+    path: &str,
+) -> anyhow::Result<(PathBuf, String)> {
+    git_url(url)?;
+    if rev.is_empty()
+        || rev.starts_with('-')
+        || rev.contains("..")
+        || !rev
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._/+-".contains(&b))
+    {
+        bail!("--rev {} is not a tag or a commit hash", sanitize(rev));
+    }
+    let sub = Path::new(path);
+    if !sub
+        .components()
+        .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
+    {
+        bail!("--path {} must stay inside the clone", sanitize(path));
+    }
+    let top = staging.path();
+    let clone = top.join("clone");
+    let clone_arg = clone.to_string_lossy();
+    let refs = git(top, &["ls-remote", "--tags", "--heads", "--", url])?;
+    let names = |kind: &str| {
+        let want = format!("refs/{kind}/{rev}");
+        refs.lines()
+            .any(|l| l.split('\t').nth(1) == Some(want.as_str()))
+    };
+    let is_commit = matches!(rev.len(), 40 | 64) && rev.bytes().all(|b| b.is_ascii_hexdigit());
+    match (names("tags"), names("heads")) {
+        (_, true) => bail!(
+            "--rev {} names a branch; install from a tag or a commit",
+            sanitize(rev)
+        ),
+        (true, false) => {
+            git(
+                top,
+                &[
+                    "clone",
+                    "--quiet",
+                    "--depth",
+                    "1",
+                    "--no-recurse-submodules",
+                    "--branch",
+                    rev,
+                    "--",
+                    url,
+                    &clone_arg,
+                ],
+            )?;
+        }
+        (false, false) if is_commit => {
+            git(top, &["init", "--quiet", &clone_arg])?;
+            git(
+                &clone,
+                &[
+                    "fetch",
+                    "--quiet",
+                    "--depth",
+                    "1",
+                    "--no-recurse-submodules",
+                    "--",
+                    url,
+                    rev,
+                ],
+            )?;
+            git(&clone, &["checkout", "--quiet", "--detach", "FETCH_HEAD"])?;
+        }
+        (false, false) => bail!(
+            "--rev {} is neither a tag of that repository nor a full commit hash",
+            sanitize(rev)
+        ),
+    }
+    let commit = git(&clone, &["rev-parse", "HEAD"])?.trim().to_string();
+    fs::remove_dir_all(clone.join(".git"))?;
+    // Each step of `path` must be a real directory: a symlinked one could
+    // point anywhere, whatever its name says.
+    let mut root = clone;
+    for part in sub.components() {
+        root.push(part);
+        if !fs::symlink_metadata(&root).is_ok_and(|m| m.is_dir()) {
+            bail!(
+                "--path {} is not a directory inside the clone",
+                sanitize(path)
+            );
+        }
+    }
+    refuse_links(&root)?;
+    Ok((root, commit))
+}
+
+/// `https://`, `ssh://` and `file://` only: plain `http://` and `git://`
+/// are unauthenticated, and a `<transport>::<address>` helper (`ext::` runs
+/// a command) parses as its own scheme, so it never reaches `git`.
+fn git_url(url: &str) -> anyhow::Result<()> {
+    let scheme = reqwest::Url::parse(url)
+        .map(|u| u.scheme().to_string())
+        .map_err(|e| anyhow!("git+{} is not a URL: {e}", sanitize(url)))?;
+    if !matches!(scheme.as_str(), "https" | "ssh" | "file") {
+        bail!(
+            "refused git+{}: the URL must be https://, ssh:// or file://",
+            sanitize(url)
+        );
+    }
+    Ok(())
+}
+
+/// One `git` run, shelled to the way `cox_tools::git` does (A13): `git` on
+/// `PATH`, never linked in. No prompt (`GIT_TERMINAL_PROMPT=0`, no stdin),
+/// so a private repository fails instead of waiting, and
+/// `GIT_CEILING_DIRECTORIES` stops git from finding a repository above
+/// staging and reading its config.
+fn git(dir: &Path, args: &[&str]) -> anyhow::Result<String> {
+    let ceiling = dir
+        .ancestors()
+        .find(|a| a.file_name().is_some_and(|n| n == ".staging"))
+        .unwrap_or(dir);
+    let out = Command::new("git")
+        .current_dir(dir)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_CEILING_DIRECTORIES", ceiling)
+        .args(["-c", "core.fsmonitor=false"])
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| anyhow!("git not found: {e}"))?;
+    if !out.status.success() {
+        bail!(
+            "git {} failed: {}",
+            args.first().copied().unwrap_or_default(),
+            sanitize(String::from_utf8_lossy(&out.stderr).trim())
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Runs on its own thread with its own runtime: every caller is sync, and

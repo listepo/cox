@@ -104,8 +104,17 @@ fn main() -> anyhow::Result<()> {
             Some(crate::cli::PluginAction::Install {
                 source,
                 sha256,
+                rev,
+                path,
                 yes,
-            }) => plugin_cmd::install(&cli, source, sha256.as_deref(), *yes),
+            }) => plugin_cmd::install(
+                &cli,
+                source,
+                sha256.as_deref(),
+                rev.as_deref(),
+                path.as_deref(),
+                *yes,
+            ),
             Some(crate::cli::PluginAction::Enable { id, project, yes }) => {
                 plugin_cmd::enable(&cli, &cwd, id, *project, *yes)
             }
