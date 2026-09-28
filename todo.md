@@ -22,7 +22,6 @@
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T37.16. Swift: `CoxCore`, `CoreClient`, fixture client; `CoxModel` stores
-- T37.18. SwiftLint with the no-literal rules
 - T37.19. `CoxUI` Foundations
 - T37.20. `CoxUI` Atoms
 - T37.21. `CoxUI` Molecules

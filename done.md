@@ -3308,3 +3308,17 @@ Deviations: more than three files (`.gitignore`, `ci.yml`, `mise.toml`, `toolcha
 Check: `just desktop-tokens` before and after the commit — no diff, no untracked files; an edited colour shows the diff; `surfaceWindow.colorset` has a `"luminosity": "dark"` entry; `xcrun actool` compiles the catalog (112 renditions); `swiftc -typecheck -swift-version 6 Tokens.swift` ok; a temporary `color.dark-hc.json` adds a contrast entry and an unknown mode file fails the build; `actionlint` clean. Commit addef79.
 
 Not done: no High Contrast values yet — the pipeline adds them when `color.light-hc.json`/`color.dark-hc.json` exist, but the colours are a design choice for the creator. `mockups.html` still has its own inline variables (outside the card's files). `letterSpacing` is stored as `rem` but means em; it is emitted as em tracking.
+
+#### T37.18 SwiftLint with the no-literal rules
+
+Depends: T37.15 · Size: ~60 · Files: `desktop/macos/.swiftlint.yml`, `.github/workflows/ci.yml`
+Goal: custom rules reject literal colours, sizes, fonts, radii, shadows and durations outside `Tokens/` and `Foundations/` (DS§9); SwiftLint runs through the SwiftLintPlugins build-tool plugin and formatting through the toolchain's own `swift-format` (R§9.5.4–9.5.5). New tool SwiftLint (§1.1 row).
+Check: a fixture view with `.padding(12)` fails lint; the same view with `Space.l` passes.
+Status: done 2026-09-28
+Result: `desktop/macos/.swiftlint.yml` keeps SwiftLint's defaults and adds six error-severity custom rules — `no_literal_colour`, `no_literal_size`, `no_literal_font`, `no_literal_radius`, `no_literal_shadow`, `no_literal_duration` — exempt under `/(Tokens|Foundations)/` (literal `0`, comments and strings allowed); `trailing_comma` off (conflicts with swift-format); `identifier_name` allows the token step names. Its comments say how a package attaches SwiftLintPlugins 0.65.1 (`SwiftLintBuildToolPlugin` per target, plus a one-line `Packages/<Name>/.swiftlint.yml` with `parent_config: ../../.swiftlint.yml`, since the plugin reads config only inside the package). `desktop/macos/LintFixtures/` (`Accepted/`, `Rejected/<rule>.swift`, README; in no package). CI job `desktop-macos-lint` (macos-26, SwiftLint via `jdx/mise-action`): `Accepted` passes `--strict`, each `Rejected` file fails with its own rule, then `xcrun swift-format lint --strict --recursive` over `LintFixtures` and `Packages`. SwiftLint 0.65.1 (latest, 2026-08-21) pinned in `mise.toml` as `aqua:realm/SwiftLint`.
+
+Deviations: `mise.toml` and `toolchain.md` edited beyond the card's two files; a separate CI job rather than a step in `desktop-macos`.
+
+Check: from `desktop/macos`, `swiftlint lint --strict LintFixtures/Rejected/no_literal_size.swift` (`.padding(12)`) → `error: No literal size Violation (no_literal_size)`, exit 2; `LintFixtures/Accepted/PaddingView.swift` (`.padding(Space.l)`) → exit 0. The CI fixture step run locally: exit 0, all six Rejected files fail with their own rule; the Foundations fixture copied outside `Foundations/` fails four rules. `swift-format lint --strict --recursive LintFixtures` exit 0. `actionlint` 1.7.12 + shellcheck clean. The plugin's command (`BUILD_WORKSPACE_DIRECTORY=<pkg> swiftlint lint --quiet --force-exclude`) on a scratch package with the child config: `.padding(12)` exit 2, `Space.l` exit 0. Commit 7cd8ad7.
+
+Not done: no real `swift build` through SwiftLintPlugins (SwiftPM stalled fetching the artifact bundle locally); no package lints yet — T37.16 and T37.19 attach the plugin.
