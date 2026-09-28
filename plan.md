@@ -1394,7 +1394,8 @@ Every card in this phase: same four bullets as P39.
 
 ### T40.4. `read` returns an image instead of refusing it
 
-- Model: sonnet
+- Model: Claude Code / opus-5.5 (card: sonnet)
+- Status: in progress
 - Depends: T40.1
 - Size: ~90
 - Priority: P1
@@ -1411,6 +1412,12 @@ Every card in this phase: same four bullets as P39.
   mise exec -- cargo nextest run -p cox-tools -E 'test(read_)'
   ```
 - Done when: the tests pass. `docs/tools.md` states the cap and the four formats.
+- Plan:
+  1. Tests first in `crates/cox-tools/src/read.rs`: `read_png_returns_structured_image` (a tiny PNG; text line `image/png, …`, `image::take_structured` yields the same media type and base64 of the file), `read_oversized_image_is_too_large` (a PNG header padded to `MAX_IMAGE_BYTES + 1` → `TooLarge { bytes, cap }`), and keep `read_binary_file_is_rejected_with_binary_error`. Watch the first two fail on current code (they hit `Binary`/text).
+  2. In `call`, after `confine` and the read, `image::sniff` the bytes before the NUL sniff. An image over `MAX_IMAGE_BYTES` → `ToolError::TooLarge`; otherwise text `<media_type>, <size>` (plus a note when `lines`/`mode` were passed, since they do not apply) and `structured = image::to_structured(..)`. No new path handling.
+  3. Tool description: images (PNG, JPEG, GIF, WebP, up to the cap) are returned as images; other binaries are still refused.
+  4. `docs/tools.md`: the `read` row and a line with the cap and the four formats. On close, the plan.md §1.11 `read` row drops "images v0.2".
+  5. Verify: the Check; the real binary with the scripted provider reading a PNG under `COX_HOME=/tmp/cox-t40.4` if a scenario can drive `read`; then fmt, clippy `-D warnings`, workspace nextest.
 - Out of scope:
   - The ACP `FsReadTool` swap (it reads through the editor's text API; images there stay unsupported and say so).
   - Forwarding the image to the model (T40.5).
