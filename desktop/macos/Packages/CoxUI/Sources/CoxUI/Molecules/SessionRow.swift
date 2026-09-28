@@ -24,6 +24,8 @@ public struct SessionRow: View {
 
   let item: Item
   let isSelected: Bool
+  /// Off for a row that answers nothing (an expired inbox item): its title in `text.secondary`.
+  @Environment(\.isEnabled) private var isEnabled
 
   init(_ item: Item, isSelected: Bool = false) {
     self.item = item
@@ -37,7 +39,7 @@ public struct SessionRow: View {
         HStack(alignment: .firstTextBaseline, spacing: Space.m) {
           Text(item.title)
             .textStyle(.body)
-            .foregroundStyle(Color(.textPrimary))
+            .foregroundStyle(Color(isEnabled ? .textPrimary : .textSecondary))
             .frame(maxWidth: .infinity, alignment: .leading)
           if let cost = item.cost {
             // `text.secondary`, not the mockup's tertiary: a figure must stay readable on

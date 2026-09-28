@@ -181,19 +181,26 @@ private struct SidebarGroup: View {
   }
 
   private var rows: some View {
-    ForEach(group.sessions) { session in
+    ForEach(group.sessions) { row($0).padding(.horizontal, Space.m) }
+  }
+
+  @ViewBuilder private func row(_ session: Sidebar.Session) -> some View {
+    let row = SessionRow(session.row, isSelected: session.opens == selection)
+    if session.isReadOnly {
+      // Not a disabled button: `.plain` would fade its label below DS§8. The row answers
+      // nothing and its title steps down to `text.secondary`, as a disabled control's does.
+      row.disabled(true)
+    } else {
       Button {
         send(.select(session.opens))
       } label: {
-        SessionRow(session.row, isSelected: session.opens == selection)
+        row
       }
       .buttonStyle(.plain)
-      .disabled(session.isReadOnly)
       .contextMenu {
         // A session's own row; an inbox row's text is the item's, not the session's title.
         if session.session == nil { Button("Rename…") { rename(session) } }
       }
-      .padding(.horizontal, Space.m)
     }
   }
 }
