@@ -5577,3 +5577,17 @@ Status: done 2026-09-28
 **Deviations:** ~500 LOC over 30 files. No title is generated: that is the unapproved ideas.md entry "Session titles", so it stays there. With the sidebar hidden the traffic lights sit ~4 pt below the toolbar's centre.
 
 **Check:** `just test --changed-since p37-desktop` 1559 passed, 6 skipped; clippy on cox-app and cox-ffi and fmt clean. CoxModel 79, CoxUI 179 (11 new snapshots: the model popover and output sheet; none changed), CoxCore 13; CoxTranscript: PinnedDecision and a ComposerFlow test fail only in the full run under load and pass alone, also without this change. swiftlint and swift-format strict clean; the app builds and runs.
+
+#### T37.21.11 Molecule legibility and small fixes
+
+Depends: T37.19.5 · Size: ~100 · Files: `…/Molecules/…`, `desktop/design/DESIGN.md`
+Goal: `clock` joins the DS§3.7 symbol table; `SessionRow` reuses `InspectorRow`'s selected-row styling; `DiffStat` hides "−0" for add-only files; section headers and the filter prompt stay readable on Frosted (not `text.tertiary` there); the `KeyCap` inside `StopButton` is visible on the inverted capsule.
+Check: the changed snapshots are re-recorded on purpose; each fixed text pair meets DS§8 contrast on all three materials.
+
+Decided (A112): a new placeholder token for the filter prompt; contrast on the glass over the window fill.
+Status: done 2026-09-28
+**Result:** `clock` joins the DS§3.7 symbol table; `SessionRow` and `InspectorRow` share one `rowSelection` modifier (`InspectorRow.swift`); `DiffStat` shows no "−0" for an add-only change; `SectionHeader` (so the sidebar's "Needs you" too) uses `text.secondary`; the `KeyCap` inside `StopButton` is an outline in `surface.window` on the dark capsule. A112: a new `text.placeholder` token (`#69696e` light, `#a1a1a8` dark, light-hc `#48484c` derived) for `SessionFilter`'s prompt and magnifier, `text.secondary` unchanged; DS§8 measures Frosted and Glossy on the glass over the window fill, and `ContrastTests.swift` checks each fixed pair at 4.5:1 on Solid, Frosted and Glossy, light and dark, with the `frosts: false` compositing (worst: filter prompt 4.50/4.75/4.81, sidebar section header 4.61/4.88/4.93, inspector header 5.07 light and 6.40 dark, Stop key cap 16.8 and 14.7).
+
+**Deviations:** none. The selected session row (`text.secondary` on `accent.soft`) is 3.99:1 in light Solid, unchanged by this card; it waits for a colour decision.
+
+**Check:** `just desktop-tokens` twice, no diff the second time; `node desktop/design/high-contrast.mjs --check` 226 pairs pass. CoxUI 60 snapshots re-recorded on purpose, second run 177; after the merge with T37.22.6, CoxUI 182 passed. swiftlint and swift-format strict clean; the app builds.

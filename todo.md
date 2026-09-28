@@ -28,7 +28,6 @@
 - T37.33. Performance budget suite
 - T37.44.1. Figma file from the design tokens and mockups
 - T37.44.2. Style the app from the Figma file
-- T37.21.11. Molecule legibility and small fixes
 - T37.22.7. Model display names from models.dev
 - T37.22.8. Session titles: generated after the first turn, behind a setting
 - T37.22.9. Session titles in the TUI and the app, with rename

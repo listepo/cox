@@ -34,7 +34,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.44.1 | in progress | P2 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.44.2 | todo | P2 | 4 | 0% | |
-| T37.21.11 | in progress | P2 | 2 | 90% | Claude Code / Opus 5.5 |
 | T37.22.7 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.22.8 | in progress | P2 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.22.9 | todo | P2 | 3 | 0% | |
@@ -2785,14 +2784,6 @@ Check: the generator's test; `get_variable_defs` on the rebuilt screen 28 return
 Depends: T37.44.1 · Size: ~200 · Files: CoxUI, `desktop/macos/App`
 Goal: A114. Each screen of the running app is compared with its Figma frame (`get_design_context`, `get_variable_defs`, `get_screenshot`) against a screenshot of the app, starting with main screen 28, then the rest; every difference in layout, spacing, radius, colour or type is fixed in CoxUI through the tokens (no raw values), with snapshots re-recorded on purpose.
 Check: per screen, the app screenshot next to the Figma frame matches by eye; CoxUI snapshots re-recorded on purpose; swiftlint and swift-format clean.
-
-#### T37.21.11 Molecule legibility and small fixes
-
-Depends: T37.19.5 · Size: ~100 · Files: `…/Molecules/…`, `desktop/design/DESIGN.md`
-Goal: `clock` joins the DS§3.7 symbol table; `SessionRow` reuses `InspectorRow`'s selected-row styling; `DiffStat` hides "−0" for add-only files; section headers and the filter prompt stay readable on Frosted (not `text.tertiary` there); the `KeyCap` inside `StopButton` is visible on the inverted capsule.
-Check: the changed snapshots are re-recorded on purpose; each fixed text pair meets DS§8 contrast on all three materials.
-
-Decided (A112): a new placeholder token for the filter prompt; contrast on the glass over the window fill.
 
 #### T37.22.7 Model display names from models.dev
 
