@@ -40,11 +40,14 @@ enum TranscriptText {
 
   /// The whole transcript. A block id seen twice keeps its first block, as
   /// `SessionStore` holds one block per id.
-  static func build(_ blocks: some Sequence<Block>, style: TranscriptStyle) -> Built {
+  @MainActor
+  static func build(
+    _ blocks: some Sequence<Block>, style: TranscriptStyle, cards: TranscriptCards
+  ) -> Built {
     let out = NSMutableAttributedString()
     var ranges = BlockRanges()
     for block in blocks where ranges.index(of: block.id) == nil {
-      let piece = piece(block.kind, style: style)
+      let piece = piece(block, style: style, cards: cards)
       if piece.length > 0, out.length > 0 {
         // The previous block's attributes, so its last paragraph keeps its spacing.
         let attributes = out.attributes(at: out.length - 1, effectiveRange: nil)
@@ -56,13 +59,24 @@ enum TranscriptText {
     return (out, ranges)
   }
 
-  static func piece(_ kind: BlockKind, style: TranscriptStyle) -> NSAttributedString {
+  /// A card is one attachment character; any other block is its text runs.
+  @MainActor
+  static func piece(
+    _ block: Block, style: TranscriptStyle, cards: TranscriptCards
+  ) -> NSAttributedString {
     let out = NSMutableAttributedString()
-    for run in runs(kind) where !run.text.isEmpty {
-      let text = (out.length > 0 ? separator : "") + run.text
-      let font = run.code ? style.code : style.body
-      out.append(
-        NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: style.text]))
+    if TranscriptCards.isCard(block.kind) {
+      out.append(NSAttributedString(attachment: CardAttachment(block, cards: cards)))
+      out.addAttributes(
+        [.font: style.body, .foregroundColor: style.text],
+        range: NSRange(location: 0, length: out.length))
+    } else {
+      for run in runs(block.kind) where !run.text.isEmpty {
+        let text = (out.length > 0 ? separator : "") + run.text
+        let font = run.code ? style.code : style.body
+        out.append(
+          NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: style.text]))
+      }
     }
     guard out.length > 0 else { return out }
     let spacing = NSMutableParagraphStyle()
@@ -81,13 +95,9 @@ enum TranscriptText {
       return [(text, false)]
     case .assistant(_, let doc):
       return doc.blocks.compactMap(run)
-    case .tool(_, let summary, _, _, _, _, _, _, _), .toolGroup(let summary, _, _),
-      .approval(_, _, let summary, _, _, _, _):
-      return [(summary, false)]
-    case .question(_, let question, _, _):
-      return [(question, false)]
-    case .task(_, let label, _, _, _, _):
-      return [(label, false)]
+    case .tool, .toolGroup, .approval, .question, .task:
+      // Cards: one attachment character (`TranscriptCards`).
+      return []
     case .compaction(_, _, _, let summary):
       return summary.map { [($0, false)] } ?? []
     case .checkpoint(let files):

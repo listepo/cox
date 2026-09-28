@@ -19,6 +19,8 @@ public final class TranscriptTextView: NSTextView {
   public var crossBlockSelection = true
   /// The block a clamped drag started in, while the drag runs.
   var dragAnchor: Int?
+  /// The views card blocks show (T37.41); set before `load`.
+  public var cards = TranscriptCards.summary
 
   /// A read-only, selectable transcript on TextKit 2. `NSTextView()` would
   /// also be TextKit 2, but this names it: reading `layoutManager` falls back
@@ -53,7 +55,7 @@ public final class TranscriptTextView: NSTextView {
   /// Replaces the whole text with `blocks`, in order.
   public func load(_ blocks: some Sequence<Block>) {
     let blocks = Array(blocks)
-    let (text, ranges) = TranscriptText.build(blocks, style: style)
+    let (text, ranges) = TranscriptText.build(blocks, style: style, cards: hostedCards)
     blockRanges = ranges
     self.blocks = Dictionary(blocks.map { ($0.id, $0) }) { first, _ in first }
     dragAnchor = nil
