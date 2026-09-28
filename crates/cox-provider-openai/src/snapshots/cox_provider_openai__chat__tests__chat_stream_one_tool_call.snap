@@ -1,5 +1,5 @@
 ---
-source: crates/cox-provider/src/openai/chat.rs
+source: crates/cox-provider-openai/src/chat.rs
 expression: "run_fixture(\"one_tool_call\")"
 ---
 [
@@ -14,11 +14,10 @@ expression: "run_fixture(\"one_tool_call\")"
   },
   {
     "type": "tool_use_input_delta",
-    "text": "{\"path\":"
+    "text": "{\"path\":\"src/main.rs\"}"
   },
   {
-    "type": "tool_use_input_delta",
-    "text": "\"src/main.rs\"}"
+    "type": "tool_use_end"
   },
   {
     "type": "stop",

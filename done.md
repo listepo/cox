@@ -2960,3 +2960,29 @@ Check:
 - e2e `an_assignment_prefix_asks_instead_of_auto_allowing` (scenario `bash_assignment_prefix.toml`): the real binary in a scratch `COX_HOME` denies `GIT_PAGER='touch x' git log` headless, exit 2, `x` not created.
 - In the worktree: nextest 1307 passed, 4 skipped; fmt, clippy and the slim build clean.
 - On main after landing: nextest 1307 passed, 4 skipped; fmt, clippy and the slim build clean.
+
+### T38.1. OpenAI Chat wire emits `ToolUseEnd`
+
+Model: Claude Code / opus-5.5 · Status: done 2026-09-28 · Depends: — · Size: ~150 · Files: `crates/cox-provider-openai/src/chat.rs` (+ a fixture under its tests)
+
+Goal: a tool call streamed over the Chat Completions wire (OpenAI Chat, Ollama, vLLM, LM Studio, OpenRouter) reaches the core. Today `chat.rs` emits `ToolUseStart` and input deltas but never `ToolUseEnd`, and `turn::consume_provider` commits a call only on `ToolUseEnd` — the bug T30.6 fixed for Anthropic. Chat interleaves parallel calls by `index`, so each call's start, deltas and end must come out in order (buffer per index, flush on `finish_reason`).
+
+Check: a scripted Chat SSE stream with two interleaved parallel tool calls yields, per call, `ToolUseStart` → its deltas → `ToolUseEnd`, and a core-level test commits both calls; the regression test fails without the fix.
+
+Execution plan:
+
+1. Tests first. `chat.rs`: `chat_stream_parallel_tool_calls_by_index` asserts the exact order Start(0) → delta(0, whole arguments) → End → Start(1) → delta(1) → End → Stop over the existing interleaved fixture `fixtures/openai-chat/parallel_tool_calls.sse`. New `crates/cox-core/tests/chat_wire.rs`: a `Provider` that feeds an inline Chat SSE body with two interleaved `echo` calls through `cox_provider::openai::chat::OpenAiChatStream` (then a plain-text reply), and asserts both calls reach `ToolCallDone` with their own input. Both fail on `main`.
+2. Fix in `chat.rs`: `on_tool_call_chunk` only accumulates per wire index (no events); a `flush` drains the accumulators in index order as `ToolUseStart` → one `ToolUseInputDelta` (the whole arguments, when non-empty) → `ToolUseEnd`. It runs before `Stop` on any `finish_reason`, and once more after the SSE body ends (`finish`, called from `stream_once`) for a server that closes without a `finish_reason`. The `started` flag goes away.
+3. Accept the changed `chat_stream_one_tool_call`/`chat_stream_parallel_tool_calls` snapshots; run fmt, clippy, nextest.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: live recording against a paid key; the Responses wire (already correct).
+Status: done 2026-09-28
+Result: `OpenAiChatStream` (`crates/cox-provider-openai/src/chat.rs`) now only accumulates tool-call chunks per wire index; `flush` emits the batch in index order, each call as `ToolUseStart` → one `ToolUseInputDelta` with its whole arguments → `ToolUseEnd`, before `Stop` on any `finish_reason`, and `finish` flushes once more when the SSE body ends without one (`stream_once` calls it). The `started` flag is gone. No new dependency.
+Check:
+- `chat_stream_parallel_tool_calls_come_out_whole_each_ending_before_the_next` (interleaved fixture `fixtures/openai-chat/parallel_tool_calls.sse`), `chat_stream_calls_left_open_by_a_body_without_finish_reason_end_on_finish` (chat.rs); snapshots `chat_stream_one_tool_call`/`chat_stream_parallel_tool_calls` gained `tool_use_end`.
+- Core level: `chat_wire_parallel_calls_both_commit_and_run` (`crates/cox-core/tests/chat_wire.rs`) runs two interleaved `echo` calls through the real `OpenAiChatStream` into the loop; both reach `ToolCallDone`.
+- Without the fix all three failed (core test: no `ToolCallDone` at all).
+- In the worktree: nextest 1313 passed, 4 skipped; fmt and clippy clean.
+

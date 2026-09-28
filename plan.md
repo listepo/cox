@@ -27,7 +27,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T38.1 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T38.2 | in progress | P1 | 4 | 0% | Claude Code / opus-5.5 |
 
 ## Reference
@@ -1043,24 +1042,6 @@ Rationale in §6 A62.
 ### P38 — Leftovers from ideas (goal: two defects found in passing are fixed while P33 waits for an extism release on wasmtime ≥ 48)
 
 Rationale in §6 A69. Each card came from `ideas.md`; the creator approved the move on 2026-09-28. The implementing agent writes its execution plan into its own card before starting.
-
-### T38.1. OpenAI Chat wire emits `ToolUseEnd`
-
-Model: Claude Code / opus-5.5 · Status: in progress · Depends: — · Size: ~150 · Files: `crates/cox-provider-openai/src/chat.rs` (+ a fixture under its tests)
-
-Goal: a tool call streamed over the Chat Completions wire (OpenAI Chat, Ollama, vLLM, LM Studio, OpenRouter) reaches the core. Today `chat.rs` emits `ToolUseStart` and input deltas but never `ToolUseEnd`, and `turn::consume_provider` commits a call only on `ToolUseEnd` — the bug T30.6 fixed for Anthropic. Chat interleaves parallel calls by `index`, so each call's start, deltas and end must come out in order (buffer per index, flush on `finish_reason`).
-
-Check: a scripted Chat SSE stream with two interleaved parallel tool calls yields, per call, `ToolUseStart` → its deltas → `ToolUseEnd`, and a core-level test commits both calls; the regression test fails without the fix.
-
-Execution plan:
-
-1. Tests first. `chat.rs`: `chat_stream_parallel_tool_calls_by_index` asserts the exact order Start(0) → delta(0, whole arguments) → End → Start(1) → delta(1) → End → Stop over the existing interleaved fixture `fixtures/openai-chat/parallel_tool_calls.sse`. New `crates/cox-core/tests/chat_wire.rs`: a `Provider` that feeds an inline Chat SSE body with two interleaved `echo` calls through `cox_provider::openai::chat::OpenAiChatStream` (then a plain-text reply), and asserts both calls reach `ToolCallDone` with their own input. Both fail on `main`.
-2. Fix in `chat.rs`: `on_tool_call_chunk` only accumulates per wire index (no events); a `flush` drains the accumulators in index order as `ToolUseStart` → one `ToolUseInputDelta` (the whole arguments, when non-empty) → `ToolUseEnd`. It runs before `Stop` on any `finish_reason`, and once more after the SSE body ends (`finish`, called from `stream_once`) for a server that closes without a `finish_reason`. The `started` flag goes away.
-3. Accept the changed `chat_stream_one_tool_call`/`chat_stream_parallel_tool_calls` snapshots; run fmt, clippy, nextest.
-
-Done when: the Check passes and the three AGENTS.md commands are clean.
-
-Out of scope: live recording against a paid key; the Responses wire (already correct).
 
 ### T38.2. Detached `bash` from an older turn is killed on quit
 

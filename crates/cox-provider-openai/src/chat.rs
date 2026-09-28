@@ -12,7 +12,9 @@
 //! to, arguments arrive split across many chunks, and the whole batch
 //! finishes together on `finish_reason: "tool_calls"`. So this state
 //! machine — unlike `responses` — keeps per-call state: a Vec of
-//! accumulators keyed by wire index. Wire ids (`tool_call_id`) are opaque
+//! accumulators keyed by wire index, emitted only when the batch finishes,
+//! one whole call at a time (`ToolUseStart` → input → `ToolUseEnd`),
+//! because a `ToolUseInputDelta` names no call (T38.1). Wire ids (`tool_call_id`) are opaque
 //! provider strings (Ollama mints `call_xxx`, never a ULID), so cox mints
 //! its own `CallId` per call and sends it back out as
 //! `tool.role: "tool"`, `tool_call_id` — the same "cox owns the id space"
@@ -196,14 +198,13 @@ fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
 /// header: Chat interleaves parallel calls by wire index).
 #[derive(Debug)]
 pub struct AccruedCall {
-    /// The cox id minted at `ToolUseStart`; sent back out as `tool_call_id`.
+    /// The cox id minted when the index first appears; carried by
+    /// `ToolUseStart` and sent back out as `tool_call_id`.
     pub id: CallId,
     /// The tool's name.
     pub name: String,
     /// The JSON input, accumulated one string chunk at a time.
     pub arguments: String,
-    /// Whether `ToolUseStart` was emitted for this call yet.
-    started: bool,
 }
 
 /// The state carried across one `POST /v1/chat/completions` SSE body:
@@ -238,6 +239,14 @@ impl OpenAiChatStream {
             },
             frame_no: 0,
         }
+    }
+
+    /// Called once the SSE body ends: emits any call a server left open by
+    /// closing without a `finish_reason` (empty after a normal batch).
+    pub fn finish(&mut self) -> Vec<ProviderEvent> {
+        let mut events = Vec::new();
+        self.flush(&mut events);
+        events
     }
 
     /// The usage accumulated so far (cost/latency filled in by the caller).
@@ -313,11 +322,12 @@ impl OpenAiChatStream {
             }
             if let Some(tool_chunks) = delta.get("tool_calls").and_then(Value::as_array) {
                 for chunk in tool_chunks {
-                    self.on_tool_call_chunk(chunk, events);
+                    self.on_tool_call_chunk(chunk);
                 }
             }
         }
         if let Some(finish) = choice.get("finish_reason").and_then(Value::as_str) {
+            self.flush(events);
             match finish {
                 // §1.2 StopReason: a provider only ever emits EndTurn/
                 // Refusal/Error. `tool_calls`, `stop`, `length` and any
@@ -341,50 +351,53 @@ impl OpenAiChatStream {
     }
 
     /// One `delta.tool_calls[i]` chunk: index-keyed accumulation (module
-    /// header). The first chunk for an index carries `id` + `function.name`
-    /// and emits `ToolUseStart`; later chunks append to `arguments`.
-    fn on_tool_call_chunk(&mut self, chunk: &Value, events: &mut Vec<ProviderEvent>) {
+    /// header). The first chunk for an index carries `id` + `function.name`;
+    /// later chunks append to `arguments`. Nothing is emitted here: an input
+    /// delta names no call, so a chunk interleaved from another index would
+    /// land in the wrong one — [`Self::flush`] emits each call whole.
+    fn on_tool_call_chunk(&mut self, chunk: &Value) {
         let idx = chunk.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
         while self.calls.len() <= idx {
             self.calls.push(AccruedCall {
                 id: CallId::new(),
                 name: String::new(),
                 arguments: String::new(),
-                started: false,
             });
         }
         let call = &mut self.calls[idx];
+        let function = chunk.get("function");
 
-        if let Some(name) = chunk
-            .get("function")
-            .and_then(|f| f.get("name"))
-            .and_then(Value::as_str)
+        // Some servers resend the name on later chunks; the last one wins.
+        if let Some(name) = function.and_then(|f| f.get("name")).and_then(Value::as_str)
             && !name.is_empty()
         {
             call.name = name.to_string();
         }
-
-        // Emit `ToolUseStart` once, on the chunk that first names the tool.
-        // The name is set above and the id was minted when the accumulator
-        // was created, so a second name chunk (some servers resend it) is
-        // idempotent: `started` is a separate flag.
-        if !call.name.is_empty() && !call.started {
-            call.started = true;
-            events.push(ProviderEvent::ToolUseStart {
-                id: call.id,
-                name: call.name.clone(),
-            });
-        }
-        if let Some(args) = chunk
-            .get("function")
+        if let Some(args) = function
             .and_then(|f| f.get("arguments"))
             .and_then(Value::as_str)
-            && !args.is_empty()
         {
             call.arguments.push_str(args);
-            events.push(ProviderEvent::ToolUseInputDelta {
-                text: args.to_string(),
+        }
+    }
+
+    /// Emits the batch in wire-index order, each call as `ToolUseStart` →
+    /// its input → `ToolUseEnd`, and drains it so a second flush is a no-op.
+    /// `cox-core` commits a call only on `ToolUseEnd` (the bug T30.6 fixed
+    /// for Anthropic, T38.1 here). A call that never got a name has no tool
+    /// to run and is dropped.
+    fn flush(&mut self, events: &mut Vec<ProviderEvent>) {
+        for call in self.calls.drain(..).filter(|c| !c.name.is_empty()) {
+            events.push(ProviderEvent::ToolUseStart {
+                id: call.id,
+                name: call.name,
             });
+            if !call.arguments.is_empty() {
+                events.push(ProviderEvent::ToolUseInputDelta {
+                    text: call.arguments,
+                });
+            }
+            events.push(ProviderEvent::ToolUseEnd);
         }
     }
 
@@ -574,16 +587,23 @@ impl OpenAiChatProvider {
                 _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
                 frame = frames.next() => frame,
             };
-            let Some(frame) = next else {
-                break;
+            let done = next.is_none();
+            let events = match next {
+                Some(frame) => {
+                    let (_event, data) = frame.map_err(|_| ProviderError::Network)?;
+                    machine.feed(&data)?
+                }
+                None => machine.finish(),
             };
-            let (_event, data) = frame.map_err(|_| ProviderError::Network)?;
-            for provider_event in machine.feed(&data)? {
+            for provider_event in events {
                 // The receiving end hung up: unwind as a cancellation
                 // rather than silently dropping the rest of the call.
                 if sink.send(provider_event).await.is_err() {
                     return Err(ProviderError::Cancelled);
                 }
+            }
+            if done {
+                break;
             }
         }
 
@@ -660,20 +680,56 @@ mod tests {
         insta::assert_json_snapshot!("chat_stream_one_tool_call", run_fixture("one_tool_call"));
     }
 
+    /// T38.1: `cox-core` commits a call only on `ToolUseEnd` and a delta
+    /// carries no call id, so interleaved calls must come out one whole
+    /// call at a time: the fixture's second chunk for index 0 arrives after
+    /// index 1 has started.
     #[test]
-    fn chat_stream_parallel_tool_calls_by_index() {
+    fn chat_stream_parallel_tool_calls_come_out_whole_each_ending_before_the_next() {
         let events = run_fixture("parallel_tool_calls");
-        let starts = events
+        let shape: Vec<String> = events
             .iter()
-            .filter(|e| matches!(e, ProviderEvent::ToolUseStart { .. }))
-            .count();
-        assert_eq!(starts, 2, "two interleaved-by-index calls: {events:?}");
-        let stops = events
-            .iter()
-            .filter(|e| matches!(e, ProviderEvent::Stop { .. }))
-            .count();
-        assert_eq!(stops, 1, "one terminal finish_reason for the batch");
+            .filter_map(|e| match e {
+                ProviderEvent::ToolUseStart { name, .. } => Some(format!("start {name}")),
+                ProviderEvent::ToolUseInputDelta { text } => Some(format!("delta {text}")),
+                ProviderEvent::ToolUseEnd => Some("end".into()),
+                ProviderEvent::Stop { .. } => Some("stop".into()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                "start read",
+                r#"delta {"path":"a.rs"} more"#,
+                "end",
+                "start read",
+                r#"delta {"path":"b.rs"}"#,
+                "end",
+                "stop",
+            ],
+            "{events:?}"
+        );
         insta::assert_json_snapshot!("chat_stream_parallel_tool_calls", events);
+    }
+
+    #[test]
+    fn chat_stream_calls_left_open_by_a_body_without_finish_reason_end_on_finish() {
+        let mut stream = OpenAiChatStream::new();
+        let open = stream
+            .feed(r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"c","function":{"name":"read","arguments":"{}"}}]}}]}"#)
+            .expect("well-formed");
+        assert!(open.is_empty(), "buffered until the batch ends: {open:?}");
+        let flushed = stream.finish();
+        assert!(matches!(
+            flushed.as_slice(),
+            [
+                ProviderEvent::ToolUseStart { .. },
+                ProviderEvent::ToolUseInputDelta { .. },
+                ProviderEvent::ToolUseEnd
+            ]
+        ));
+        assert!(stream.finish().is_empty(), "a flush drains the batch");
     }
 
     #[test]
