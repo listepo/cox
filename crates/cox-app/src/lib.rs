@@ -23,6 +23,7 @@ pub mod onboarding;
 pub mod patch;
 pub mod permissions;
 pub mod plugin_ui;
+pub mod remote;
 pub mod review;
 pub mod server;
 pub mod settings;

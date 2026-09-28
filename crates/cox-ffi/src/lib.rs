@@ -11,6 +11,7 @@ use std::sync::{Arc, OnceLock};
 use cox_app::WorkspaceError;
 use cox_app::app::{App as Owner, AppError as OwnerError};
 use cox_app::onboarding::CheckRow;
+use cox_app::remote::RemoteError;
 use cox_app::terminal::TerminalError;
 use cox_app::{
     Activity, DaySummary, Holder, InboxItem, ModelChoice, Project, SearchHit, SessionEntry,
@@ -22,10 +23,12 @@ use tokio::runtime::Runtime;
 use tokio_util::task::AbortOnDropHandle;
 
 pub mod host;
+pub mod remote;
 pub mod session;
 pub mod types;
 
 pub use host::AppHost;
+pub use remote::{RemoteHandle, RemoteSessionHandle};
 pub use session::{SessionHandle, TerminalHandle};
 pub use types::{BrowserFailure, OpenRequest};
 
@@ -71,6 +74,15 @@ impl From<WorkspaceError> for AppError {
 impl From<TerminalError> for AppError {
     fn from(e: TerminalError) -> Self {
         OwnerError::from(e).into()
+    }
+}
+
+/// T52.20: a remote failure is shown as the session's own would be.
+impl From<RemoteError> for AppError {
+    fn from(e: RemoteError) -> Self {
+        Self::Session {
+            message: e.to_string(),
+        }
     }
 }
 
@@ -278,6 +290,16 @@ impl App {
     /// runs `git` and probes the sandbox, so it runs off the caller's thread.
     pub async fn checklist(self: Arc<Self>, cwd: String) -> Result<Vec<CheckRow>, AppError> {
         Ok(on_runtime(async move { self.owner.checklist(Path::new(&cwd)) }).await??)
+    }
+
+    /// A remote host's workspace over the person's own ssh (T52.20).
+    pub async fn connect_remote(
+        self: Arc<Self>,
+        host: String,
+    ) -> Result<Arc<RemoteHandle>, AppError> {
+        Ok(RemoteHandle::new(
+            on_runtime(async move { self.owner.connect_remote(&host).await }).await??,
+        ))
     }
 
     pub async fn open(

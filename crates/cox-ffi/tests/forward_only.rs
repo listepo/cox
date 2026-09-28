@@ -1,8 +1,9 @@
 //! D11 and A90 as a test: `cox-ffi` holds no logic. Every function and
-//! method body in `lib.rs`, `session.rs` and `host.rs` — exported through
-//! `#[uniffi::export]` or not — is one forward expression; anything that
-//! decides something belongs in `cox-app`, where it is tested once, and type
-//! mapping belongs in `types.rs`, which this test does not read. Where a
+//! method body in `lib.rs`, `session.rs`, `host.rs` and `remote.rs` —
+//! exported through `#[uniffi::export]` or not — is one forward expression;
+//! anything that decides something belongs in `cox-app`, where it is tested
+//! once, and type mapping belongs in `types.rs`, which this test does not
+//! read. Where a
 //! forward lands is `deps.rs`'s job (the crate depends only on `cox-app` and
 //! `cox-protocol`); this test checks the shape, parsing the files with `syn`.
 //!
@@ -32,7 +33,7 @@ use syn::{TraitItem, Type};
 const EXEMPT: &[(&str, &str)] = &[("AppError", "From<OwnerError>")];
 
 /// The files the rule covers.
-const FILES: &[&str] = &["lib.rs", "session.rs", "host.rs"];
+const FILES: &[&str] = &["lib.rs", "session.rs", "host.rs", "remote.rs"];
 
 /// `None` when `e` is a forward, else the construct that makes it logic.
 fn logic_in(e: &Expr) -> Option<String> {
