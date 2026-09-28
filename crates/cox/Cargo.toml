@@ -74,6 +74,8 @@ cox-session = { path = "../cox-session", version = "0.1.2", default-features = f
 # anyhow at the cox-crate boundary (AGENTS.md: "anyhow only in crates/cox"),
 # serde_json to build the CLI-flag override layer and `--json` output.
 anyhow = { workspace = true }
+# T37.2: `cox_acp::SessionFactory` is an async trait (`acp_cmd`).
+async-trait = { workspace = true }
 # T33.29: `plugin_new::PluginNewError`, so the TUI's future `/plugin new`
 # (T33.30) gets a typed error to match on instead of anyhow's text.
 thiserror = { workspace = true }

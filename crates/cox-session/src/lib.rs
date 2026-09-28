@@ -115,6 +115,17 @@ pub struct SessionSpec {
     pub mcp_login: Option<cox_mcp::client::Prompt>,
     /// T33.23, T33.44: renders the live plugins; only the TUI has one.
     pub plugin_ui: Option<ServeUi>,
+    /// T37.2: an ACP client that offers `fs`/`terminal` backs the file and
+    /// shell tools; only `cox acp` has one.
+    pub client: Option<ClientTools>,
+}
+
+/// The ACP client's side of a session (T11.1): the link its proxy tools
+/// call back through and which of `fs`/`terminal` it offers.
+pub struct ClientTools {
+    pub link: cox_acp::ClientLink,
+    pub fs: bool,
+    pub terminal: bool,
 }
 
 /// A built session.
@@ -141,6 +152,7 @@ pub async fn open(spec: SessionSpec) -> Result<Opened, SessionError> {
         resume,
         mcp_login,
         plugin_ui,
+        client,
     } = spec;
     let cwd = cwd.as_path();
     let mut warnings = Vec::new();
@@ -231,6 +243,9 @@ pub async fn open(spec: SessionSpec) -> Result<Opened, SessionError> {
     let mut all = tools(answer, &store, mdir);
     if let Some(tx) = questions {
         all = tools::with_question_surface(all, tx);
+    }
+    if let Some(c) = client {
+        all = with_client_tools(all, c.link, c.fs, c.terminal);
     }
     // T34.6: stateless — the session that builds each call's own `ToolCx`
     // (`cox-core/src/turn.rs`) stamps `ToolCx.relay` with itself, so this
@@ -415,6 +430,7 @@ mod tests {
             resume: None,
             mcp_login: None,
             plugin_ui: None,
+            client: None,
         };
         let scenario = scenario.display().to_string();
         let vars = [

@@ -30,9 +30,12 @@ use crate::map::{self, CallTable};
 /// Builds live cox sessions for ACP sessions. Implemented in the binary
 /// (which owns config, providers, tools and the store); the server only
 /// drives the returned `Session` through `Submission`s and `Event`s.
+/// Async because session assembly (`cox_session::open`, T37.2) starts MCP
+/// servers and plugins on the server's own runtime.
+#[async_trait::async_trait]
 pub trait SessionFactory: Send + Sync + 'static {
     /// Creates the cox session for an ACP `session/new`.
-    fn create(&self, req: FactoryRequest) -> anyhow::Result<cox_core::Session>;
+    async fn create(&self, req: FactoryRequest) -> anyhow::Result<cox_core::Session>;
 }
 
 /// What the factory needs: where the session lives, which client tools to
@@ -209,7 +212,7 @@ async fn handle_new_session(
         client_terminal: caps.terminal,
         link: link.clone(),
     };
-    let cox = match state.factory.create(factory_req) {
+    let cox = match state.factory.create(factory_req).await {
         Ok(session) => session,
         Err(_) => {
             return responder.respond_with_error(agent_client_protocol::Error::internal_error());

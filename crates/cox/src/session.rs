@@ -28,10 +28,7 @@ use cox_protocol::GrantScope;
 #[cfg(feature = "plugins")]
 pub(crate) use cox_session::sandboxed_argv;
 use cox_session::{fork, handoff, project_root};
-pub(crate) use cox_session::{
-    lmstudio_model, mcp_servers, memory_dir_for, plugin_notices, provider_for, sandbox_policy,
-    tools, with_client_tools,
-};
+pub(crate) use cox_session::{lmstudio_model, mcp_servers, memory_dir_for, sandbox_policy, tools};
 
 /// Loads config from `cli` for `cwd`, lets `tweak` adjust it, then builds
 /// the session with `cox_session::open` and prints the warnings it returns.
@@ -65,6 +62,7 @@ pub async fn open(
         resume,
         mcp_login: interactive.then(mcp_login),
         plugin_ui: serve_ui(plugin_ui),
+        client: None,
     })
     .await?;
     for warning in &opened.warnings {
