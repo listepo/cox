@@ -146,9 +146,9 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 
 - `mode` = `"default"` — default | plan | auto | bypass (bypass only via flag)
 - `approval` = `"on-request"` — untrusted | on-request | on-failure | never
-- `allow` = `[]` — rule strings, §1.8
-- `ask` = `[]`
-- `deny` = `["Read(~/.ssh/**)", "Read(~/.aws/**)", "Bash(rm -rf /*)"]`
+- `allow` = `[]` — rule strings, §1.8; a project config cannot set allow (its list is ignored)
+- `ask` = `[]` — a project config adds rules to this list, never replaces it
+- `deny` = `["Read(~/.ssh/**)", "Read(~/.aws/**)", "Bash(rm -rf /*)"]` — a project config adds rules to this list, never replaces it
 - `import_claude_settings` = `true`
 - `allow_for_session_persists` = `false`
 ## `[sandbox]`

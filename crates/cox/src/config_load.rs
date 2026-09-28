@@ -316,6 +316,10 @@ mod claude_settings_tests {
     /// adds to (not replaces) the project's own list, and is labelled.
     #[test]
     fn config_claude_settings_import_matches_native_rules() {
+        // T22.10: a project list that omits a default deny gets it back
+        // ahead of its own rules (and of the imported ones), so each project
+        // list repeats the defaults to keep the lists below in its own order.
+        const DEFAULTS: &str = r#""Read(~/.ssh/**)", "Read(~/.aws/**)", "Bash(rm -rf /*)", "#;
         let home = tempdir().expect("tempdir");
         let git_root = tempdir().expect("tempdir");
         fs::create_dir_all(git_root.path().join(".git")).expect("mkdir .git");
@@ -323,7 +327,7 @@ mod claude_settings_tests {
         fs::create_dir_all(git_root.path().join(".claude")).expect("mkdir .claude");
         fs::write(
             git_root.path().join(".cox/config.toml"),
-            "[permissions]\ndeny = [\"Bash(curl *)\"]\n",
+            format!("[permissions]\ndeny = [{DEFAULTS}\"Bash(curl *)\"]\n"),
         )
         .expect("write project config");
         fs::write(
@@ -336,7 +340,7 @@ mod claude_settings_tests {
         fs::create_dir_all(native_dir.path().join(".cox")).expect("mkdir .cox");
         fs::write(
             native_dir.path().join(".cox/config.toml"),
-            "[permissions]\ndeny = [\"Bash(curl *)\", \"Bash(rm -rf *)\"]\n",
+            format!("[permissions]\ndeny = [{DEFAULTS}\"Bash(curl *)\", \"Bash(rm -rf *)\"]\n"),
         )
         .expect("write native config");
 
@@ -366,11 +370,22 @@ mod claude_settings_tests {
                 // The import is opt-out.
                 fs::write(
                     git_root.path().join(".cox/config.toml"),
-                    "[permissions]\ndeny = [\"Bash(curl *)\"]\nimport_claude_settings = false\n",
+                    format!(
+                        "[permissions]\ndeny = [{DEFAULTS}\"Bash(curl *)\"]\n\
+                         import_claude_settings = false\n"
+                    ),
                 )
                 .expect("rewrite project config");
                 let off = load(git_root.path(), &cli).expect("load opt-out");
-                assert_eq!(off.config.permissions.deny, ["Bash(curl *)"]);
+                assert_eq!(
+                    off.config.permissions.deny,
+                    [
+                        "Read(~/.ssh/**)",
+                        "Read(~/.aws/**)",
+                        "Bash(rm -rf /*)",
+                        "Bash(curl *)"
+                    ]
+                );
                 assert!(off.config.hooks.events.is_empty());
             },
         );
