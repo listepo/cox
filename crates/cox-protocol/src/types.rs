@@ -453,6 +453,19 @@ pub enum CompactReason {
     ContextTooLong,
 }
 
+/// Why `Event::RepoMapBuilt` happened (P43): the only three moments the
+/// repo map in system[2] is built.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RepoMapReason {
+    /// Before the first request of a session.
+    SessionStart,
+    /// `/repomap refresh` produced different bytes.
+    Refresh,
+    /// Compaction rebuilt it with the prefix it already restarts.
+    Compaction,
+}
+
 /// `sandbox.mode` (plan.md §1.6/D7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -1249,6 +1262,17 @@ pub enum Event {
         /// existed read as `post-turn`.
         #[serde(default)]
         reason: CompactReason,
+    },
+    /// The repo map now in system[2] (P43). Its text is archived before
+    /// this is emitted; resume reads the last one back instead of
+    /// rebuilding, so the replayed request carries the same bytes.
+    RepoMapBuilt {
+        /// The archived map text.
+        archive: ArchiveId,
+        /// Its size in bytes.
+        bytes: u64,
+        /// What built it.
+        reason: RepoMapReason,
     },
     /// Pre-images of the files a tool call changed are archived and
     /// retrievable (T26.1). Emitted after the `checkpoints` rows exist, so a

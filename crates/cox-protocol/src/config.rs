@@ -786,6 +786,9 @@ pub struct ContextConfig {
     /// `"default"` or `"minimal"` (T30.1: the ≤300-token prompt; profiles
     /// set this, users normally set `core.profile` instead).
     pub system_prompt: String,
+    /// Token budget for the session repo map, placed last in system[2]
+    /// (P43); `0` is off, the default until the T43.6 bench sets one.
+    pub repomap_budget_tokens: u32,
 }
 
 impl Default for ContextConfig {
@@ -802,6 +805,7 @@ impl Default for ContextConfig {
             memory_budget_tokens: 800,
             deferred_tools: true,
             system_prompt: "default".to_string(),
+            repomap_budget_tokens: 0,
         }
     }
 }
@@ -1653,6 +1657,19 @@ mod tests {
         assert_eq!(cfg.sandbox.mode, SandboxMode::WorkspaceWrite);
         assert!(cfg.hooks.events.is_empty());
         assert!(cfg.mcp.servers.is_empty());
+    }
+
+    /// P43: the repo map stays off until the T43.6 bench picks a budget,
+    /// in the hand-written default and in `default.toml` alike.
+    #[test]
+    fn repomap_budget_defaults_to_off() {
+        use figment::providers::Format as _;
+        assert_eq!(ContextConfig::default().repomap_budget_tokens, 0);
+        let from_toml: Config =
+            figment::Figment::from(figment::providers::Toml::string(DEFAULT_CONFIG_TOML))
+                .extract()
+                .expect("default.toml parses");
+        assert_eq!(from_toml.context, ContextConfig::default());
     }
 
     /// T41.1: the hand-written `LspConfig::default()` and the `[lsp]` rows

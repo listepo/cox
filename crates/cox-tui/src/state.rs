@@ -2392,7 +2392,10 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             mode,
             permission_mode,
         } => mode_changed(state, mode, permission_mode),
-        Event::SessionStarted { .. } | Event::Compacted { .. } | Event::GrantRevoked { .. } => {}
+        Event::SessionStarted { .. }
+        | Event::Compacted { .. }
+        | Event::GrantRevoked { .. }
+        | Event::RepoMapBuilt { .. } => {}
     }
     cmds
 }
@@ -2566,6 +2569,7 @@ mod tests {
             permission_mode: None,
             grants: Vec::new(),
             truncated: false,
+            repomap: None,
             turns: 4,
             turn_marks: vec![HistoryTurn {
                 item: ItemId::new(),

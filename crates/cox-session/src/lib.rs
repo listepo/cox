@@ -420,6 +420,9 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
     )));
     // T27.3: `agent(isolation: "worktree")` gets real worktrees on every surface.
     session.set_worktrees(Arc::new(cox_tools::git::GitWorktrees));
+    // P43: the repo map, built once on the first submit when
+    // `context.repomap_budget_tokens` is on.
+    session.set_repo_mapper(Arc::new(ToolsRepoMapper));
     for warning in served.iter().flat_map(|s| s.model.warnings()) {
         session.notice(Level::Warn, warning).await?;
     }
@@ -489,6 +492,22 @@ pub fn memory_dir_for(config: &Config, home: &Path, cwd: &Path) -> PathBuf {
         cox_ext::memory::memory_dir(home, cwd)
     } else {
         PathBuf::from(&config.memory.dir)
+    }
+}
+
+/// `cox_tools::repomap` behind the core's `RepoMapper` (P43): `cox-core`
+/// may not walk the tree or run git itself.
+struct ToolsRepoMapper;
+
+#[async_trait::async_trait]
+impl cox_protocol::traits::RepoMapper for ToolsRepoMapper {
+    async fn build(
+        &self,
+        root: &Path,
+        budget_bytes: usize,
+        admit: &(dyn Fn(&Path) -> bool + Send + Sync),
+    ) -> String {
+        cox_tools::repomap::build(root, budget_bytes, admit).await
     }
 }
 

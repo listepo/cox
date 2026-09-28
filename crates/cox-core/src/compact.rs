@@ -9,7 +9,7 @@ use cox_protocol::errors::CoreError;
 use cox_protocol::ids::ItemId;
 use cox_protocol::types::{
     CompactReason, Content, Event, HookEvent, HookOutcome, ItemKind, Job, Level, Message,
-    ProviderEvent, Request, Role, SystemBlock,
+    ProviderEvent, RepoMapReason, Request, Role, SystemBlock,
 };
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -251,6 +251,9 @@ impl Session {
         })
         .await?;
         let _ = hooks::fire(self, HookEvent::PostCompact, payload).await;
+        // §1.10 step 5 (P43): the prefix restarts here anyway, so the repo
+        // map is rebuilt with it; no notice of its own.
+        self.rebuild_repomap(RepoMapReason::Compaction).await?;
         Ok(true)
     }
 

@@ -8,10 +8,10 @@ use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
 use cox_protocol::agent::AgentDef;
 use cox_protocol::errors::{CoreError, ProviderError, StoreError, ToolError};
-use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId, TurnId};
+use cox_protocol::ids::{ArchiveId, CallId, ItemId, SessionId, TaskId, TurnId};
 use cox_protocol::traits::{
-    Advisor, Archive, ArchivePut, Checkpointer, EventTap, ExternalAgent, Hook, Provider, Store,
-    Tool, Worktrees,
+    Advisor, Archive, ArchivePut, Checkpointer, EventTap, ExternalAgent, Hook, Provider,
+    RepoMapper, Store, Tool, Worktrees,
 };
 use cox_protocol::types::{
     ArchiveRef, Attachment, Content, ContextBreakdown, Decision, Event, HookEvent, HookOutcome,
@@ -25,7 +25,7 @@ use tracing::Instrument as _;
 use crate::budget;
 use crate::cache_diag::CacheTracker;
 use crate::compact::{self, TurnMark};
-use crate::context::assemble_with_skills;
+use crate::context::{Stable, assemble_with_skills};
 use crate::dedup::Dedup;
 use crate::hooks;
 use crate::permission::{Engine, Outcome};
@@ -66,9 +66,9 @@ pub(crate) struct Inner {
     provider_calls: u32,
     spent_usd: f64,
     budget_warned: bool,
-    permission_mode: PermissionMode,
+    pub(crate) permission_mode: PermissionMode,
     /// `AllowForSession` grants as `(tool, subject prefix)`.
-    grants: Vec<(String, String)>,
+    pub(crate) grants: Vec<(String, String)>,
     /// Calls parked in `AwaitingApproval`, answered by `Submission::Approve`.
     pending: HashMap<CallId, oneshot::Sender<Decision>>,
     /// `ask_user` calls waiting in `QuestionAsked`, resumed by
@@ -139,6 +139,12 @@ pub(crate) struct Inner {
     /// `additional_context` from the `SessionStart` hook (T22.3), appended
     /// to `system[3]`, the one block after the last cache breakpoint.
     startup_context: String,
+    /// The repo map last in `system[2]` (P43): set once at session start or
+    /// on resume, then only by `/repomap refresh` or compaction.
+    pub(crate) repomap: Option<String>,
+    /// Where that map's text is archived; on resume, set from the rollout
+    /// before the text is read back on the first submit.
+    pub(crate) repomap_archive: Option<ArchiveId>,
 }
 
 /// The mode and effort as they stand after a change, for every surface to
@@ -203,6 +209,9 @@ pub struct Session {
     /// Where `agent(isolation: "worktree")` gets its worktree (T27.3);
     /// installed by the surface, shared with children. Absent in tests.
     worktrees: Arc<OnceLock<Arc<dyn Worktrees>>>,
+    /// Builds the repo map (P43); installed by the surface like `worktrees`.
+    /// Not copied to children: only the session the user talks to has a map.
+    pub(crate) repo_mapper: Arc<OnceLock<Arc<dyn RepoMapper>>>,
     /// Custom subagent definitions the surface discovered on disk (T34.1:
     /// `cox_ext::agents::discover`, which this crate never calls itself);
     /// installed like `worktrees`, empty until then. Not copied to
@@ -430,41 +439,51 @@ impl Session {
         let is_resume = resume.is_some();
         // Subagents announce themselves with `SubagentStart`, not `SessionStart`.
         let is_child = parent_id.is_some();
-        let (id, history_messages, permission_mode, grants, turn_marks, truncated_notice, turns) =
-            match resume {
-                Some((id, history)) => {
-                    let truncated_notice = history.truncated_notice();
-                    let turn_marks = history
-                        .turn_marks
-                        .iter()
-                        .map(|mark| TurnMark {
-                            item: mark.item,
-                            start: mark.message_index,
-                            seq: mark.seq,
-                        })
-                        .collect();
-                    (
-                        id,
-                        history.messages,
-                        // T50.4: a rollout with no mode record (written
-                        // before T50.2/T50.4) resumes in the configured mode.
-                        history.permission_mode.unwrap_or(config.permissions.mode),
-                        history.grants,
-                        turn_marks,
-                        truncated_notice,
-                        history.turns,
-                    )
-                }
-                None => (
-                    fresh,
-                    Vec::new(),
-                    config.permissions.mode,
-                    Vec::new(),
-                    Vec::new(),
-                    None,
-                    0,
-                ),
-            };
+        let (
+            id,
+            history_messages,
+            permission_mode,
+            grants,
+            turn_marks,
+            truncated_notice,
+            turns,
+            repomap_archive,
+        ) = match resume {
+            Some((id, history)) => {
+                let truncated_notice = history.truncated_notice();
+                let turn_marks = history
+                    .turn_marks
+                    .iter()
+                    .map(|mark| TurnMark {
+                        item: mark.item,
+                        start: mark.message_index,
+                        seq: mark.seq,
+                    })
+                    .collect();
+                (
+                    id,
+                    history.messages,
+                    // T50.4: a rollout with no mode record (written
+                    // before T50.2/T50.4) resumes in the configured mode.
+                    history.permission_mode.unwrap_or(config.permissions.mode),
+                    history.grants,
+                    turn_marks,
+                    truncated_notice,
+                    history.turns,
+                    history.repomap,
+                )
+            }
+            None => (
+                fresh,
+                Vec::new(),
+                config.permissions.mode,
+                Vec::new(),
+                Vec::new(),
+                None,
+                0,
+                None,
+            ),
+        };
         // P42: a top-level session opens in `core.mode`, which only narrows
         // the mode above. A child runs under its parent's live mode (T45.1),
         // so config never re-applies one to it.
@@ -514,6 +533,7 @@ impl Session {
             checkpointer: Arc::new(OnceLock::new()),
             writable_roots: Arc::new(OnceLock::new()),
             worktrees: Arc::new(OnceLock::new()),
+            repo_mapper: Arc::new(OnceLock::new()),
             agent_defs: Arc::new(OnceLock::new()),
             instructions: Arc::new(OnceLock::new()),
             skills_index: Arc::new(OnceLock::new()),
@@ -567,6 +587,8 @@ impl Session {
                 retried_after_too_long: false,
                 startup: (!is_child).then_some(if is_resume { "resume" } else { "startup" }),
                 startup_context: String::new(),
+                repomap: None,
+                repomap_archive,
             })),
         };
         let started = Event::SessionStarted {
@@ -794,6 +816,12 @@ impl Session {
         self.worktrees.get().cloned()
     }
 
+    /// Installs the repo-map builder (P43); a second call is ignored like
+    /// `set_worktrees`. The map itself is built on the first submit.
+    pub fn set_repo_mapper(&self, mapper: Arc<dyn RepoMapper>) {
+        let _ = self.repo_mapper.set(mapper);
+    }
+
     /// Installs the custom subagent definitions the surface discovered
     /// (T34.1); a second call is ignored like `set_worktrees`. Discovery
     /// happens once at session build, so the `agent` tool's schema stays
@@ -874,6 +902,8 @@ impl Session {
                 let (_, context) = hooks::prompt_rewrite(String::new(), input);
                 self.inner.lock().await.startup_context = context.unwrap_or_default();
             }
+            // P43: the same once-per-session slot, before the first request.
+            self.start_repomap().await?;
         }
         match sub {
             Submission::UserTurn {
@@ -954,6 +984,11 @@ impl Session {
                 self.compact(compact::Trigger::Manual, focus)
                     .await
                     .map(|_| ())
+            }
+            // P43: `/repomap` shows the map; `/repomap refresh` is one of
+            // the two ways it changes mid-session.
+            Submission::Command { command } if command.name == "repomap" => {
+                self.repomap_command(&command.args).await
             }
             // T25.6: `/init [--force]` scaffolds AGENTS.md; the write asks
             // first, like any other model-initiated write.
@@ -1525,7 +1560,7 @@ impl Session {
             self.finish(turn, StopReason::Interrupted).await?;
             return Ok(Step::Done);
         }
-        let (history, calls_so_far, discovered, marks, archives, startup_context, routed) = {
+        let (history, calls_so_far, discovered, marks, archives, startup_context, routed, repomap) = {
             let inner = self.inner.lock().await;
             (
                 inner.history.clone(),
@@ -1535,6 +1570,7 @@ impl Session {
                 inner.archives.clone(),
                 inner.startup_context.clone(),
                 inner.routed.is_some(),
+                inner.repomap.clone(),
             )
         };
         if calls_so_far >= self.config.core.max_turns {
@@ -1595,8 +1631,11 @@ impl Session {
                 &discovered,
                 &self.cwd,
                 "",
-                self.instructions.get().map_or("", String::as_str),
-                self.skills_index.get().map_or("", String::as_str),
+                &Stable {
+                    instructions: self.instructions.get().map_or("", String::as_str),
+                    skills_index: self.skills_index.get().map_or("", String::as_str),
+                    repomap: repomap.as_deref().unwrap_or(""),
+                },
             );
             req.model = route.model.clone();
             // T22.3: `SessionStart` hook context goes into `system[3]` — the

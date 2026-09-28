@@ -493,6 +493,22 @@ pub trait Worktrees: Send + Sync {
     }
 }
 
+/// Where the session gets its repo map (P43): a ranked outline of the
+/// workspace at `root`, cut at `budget_bytes`, showing only files `admit`
+/// accepts. Implemented over `cox-tools::repomap`, the crate allowed to walk
+/// the tree and run git; `cox-core` decides when to build and passes the
+/// permission engine as `admit`. Infallible: a map it cannot build is empty.
+#[async_trait]
+pub trait RepoMapper: Send + Sync {
+    /// The map text, a pure function of the files, git order and budget.
+    async fn build(
+        &self,
+        root: &Path,
+        budget_bytes: usize,
+        admit: &(dyn Fn(&Path) -> bool + Send + Sync),
+    ) -> String;
+}
+
 /// A hook source (`cox-ext`'s shell hooks, `cox-plugin`'s plugin hooks, or
 /// a chain of them): reports its verdict for one hook event. Never returns
 /// a `Result` — a broken hook is always a `HookOutcome::Failed`, never a

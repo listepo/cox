@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cox_protocol::ids::{CallId, ItemId};
+use cox_protocol::ids::{ArchiveId, CallId, ItemId};
 use cox_protocol::types::{
     Content, Decision, Event, ItemKind, Job, Level, Message, PermissionMode, Role, StopReason,
     ToolCall,
@@ -30,6 +30,9 @@ pub struct History {
     /// Surviving main turns as `(seq, message index, checkpoint count)`.
     /// These are rollout ordinals, not positions after rewind/compaction.
     pub turn_marks: Vec<HistoryTurn>,
+    /// The archived repo map of the last `RepoMapBuilt` (P43): resume
+    /// reads it back instead of rebuilding, so `system[2]` keeps its bytes.
+    pub repomap: Option<ArchiveId>,
 }
 
 /// Reconstructed metadata for one user turn.
@@ -70,6 +73,7 @@ impl History {
         let mut calls: HashMap<CallId, ToolCall> = HashMap::new();
         let mut grants = Vec::new();
         let mut permission_mode = None;
+        let mut repomap = None;
         let mut turns = 0u32;
         let mut current_seq = 0u32;
         let mut item_seq: HashMap<ItemId, u32> = HashMap::new();
@@ -225,6 +229,7 @@ impl History {
                 Event::GrantRevoked { tool, subject } => {
                     grants.retain(|(t, s)| t != tool || s != subject);
                 }
+                Event::RepoMapBuilt { archive, .. } => repomap = Some(*archive),
                 Event::TurnDone { stop, .. } => {
                     if *stop == StopReason::Interrupted {
                         pending_results.clear();
@@ -262,6 +267,7 @@ impl History {
             truncated,
             turns,
             turn_marks,
+            repomap,
         }
     }
 
@@ -350,6 +356,25 @@ mod tests {
         assert_eq!(level, Level::Warn);
         assert!(text.contains("truncated"));
         assert!(History::from_events(&[]).truncated_notice().is_none());
+    }
+
+    /// P43: the last map built wins; a rollout without one has none.
+    #[test]
+    fn resume_keeps_the_last_repomap_archive() {
+        use cox_protocol::types::RepoMapReason;
+        let (first, second) = (ArchiveId::new(), ArchiveId::new());
+        let built = |archive, reason| Event::RepoMapBuilt {
+            archive,
+            bytes: 10,
+            reason,
+        };
+        let events = vec![
+            built(first, RepoMapReason::SessionStart),
+            user_item(ItemId::new(), "hi"),
+            built(second, RepoMapReason::Refresh),
+        ];
+        assert_eq!(History::from_events(&events).repomap, Some(second));
+        assert_eq!(History::from_events(&events[1..2]).repomap, None);
     }
 
     #[test]

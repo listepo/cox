@@ -20,6 +20,7 @@ pub mod mode;
 mod monotone;
 mod plugin_model;
 pub mod redact;
+mod repomap;
 mod rewind;
 mod rollout;
 pub mod router;
