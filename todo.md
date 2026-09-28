@@ -35,3 +35,13 @@
 - T37.31. Onboarding and doctor checklist
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
+- T37.17.1. High Contrast palette
+- T37.17.2. `letterSpacing` in em, mockups on `tokens.css`
+- T37.19.5. Foundation tokens: on-accent text, dark highlight, disabled controls
+- T37.20.5. Atom tokens: project purple, RiskChip colours, named constants
+- T37.21.11. Molecule legibility and small fixes
+- T37.22.1. Inspector as an overlay below 1280 pt
+- T37.22.2. Sidebar and inspector shortcuts; the bypass strip
+- T37.22.3. App window setup and the public CoxUI surface
+- T37.42.1. `SessionStore` keeps the reply text current while it streams
+- T37.42.2. "Copy as Markdown" menu item and ⇧-click block selection

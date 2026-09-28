@@ -27,7 +27,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T37.23 | todo | P0 | 5 | 0% | |
+| T37.23 | in progress | P0 | 5 | 0% | Claude Code / Opus 5.5 |
 | T37.24 | todo | P0 | 4 | 0% | |
 | T37.25 | todo | P1 | 3 | 0% | |
 | T37.26 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
@@ -41,6 +41,16 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.31 | todo | P2 | 2 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
+| T37.17.1 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.17.2 | todo | P3 | 1 | 0% | |
+| T37.19.5 | todo | P2 | 3 | 0% | |
+| T37.20.5 | todo | P2 | 2 | 0% | |
+| T37.21.11 | todo | P2 | 2 | 0% | |
+| T37.22.1 | todo | P2 | 2 | 0% | |
+| T37.22.2 | todo | P1 | 2 | 0% | |
+| T37.22.3 | todo | P1 | 2 | 0% | |
+| T37.42.1 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
+| T37.42.2 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 
 ## Reference
 
@@ -1159,6 +1169,66 @@ Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/�
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
 
+#### T37.17.1 High Contrast palette
+
+Depends: — · Size: ~80 plus generated files · Files: `desktop/design/tokens/color.light-hc.json`, `desktop/design/tokens/color.dark-hc.json`, the generated outputs
+Goal: the High Contrast appearances (A74) derived from the light and dark palettes by one rule. Text is at least 7:1 on its surface, hairlines and borders are solid and at least 3:1, glass opacity is raised and the specular sweep is off. The pipeline emits the HC variants into `Colors.xcassets` and `tokens.css`.
+Check: `just desktop-tokens` emits both HC appearances; a test or script checks every HC text/surface pair at ≥7:1 and every border at ≥3:1; the `desktop-tokens` drift job is clean.
+
+#### T37.17.2 `letterSpacing` in em, mockups on `tokens.css`
+
+Depends: — · Size: ~40 · Files: `desktop/design/tokens/*.json`, `desktop/design/style-dictionary.config.*`, `desktop/design/mockups.html`
+Goal: `letterSpacing` tokens say em, which is what they mean; `mockups.html` reads the generated `tokens.css` instead of its inline variables, as its README promises.
+Check: generated `Tokens.swift` values are unchanged or the changed snapshots are re-recorded on purpose; the mockups render the same by eye.
+
+#### T37.19.5 Foundation tokens: on-accent text, dark highlight, disabled controls
+
+Depends: — · Size: ~120 · Files: `desktop/design/tokens/*.json`, `…/Foundations/…`
+Goal: an on-accent text token replaces the `Color.white` constant on the primary button; a dark e1 highlight token so dark controls lose the bright rim; `surface.capsuleBorder` is either used by capsules or removed; disabled toggle and slider visuals; check the faint vertical bars at a stroked pill's ends on screen and fix them if they are real.
+Check: snapshots re-recorded on purpose for the changed foundations, and every other suite passes unchanged; SwiftLint's no-literal rules stay clean.
+
+#### T37.20.5 Atom tokens: project purple, RiskChip colours, named constants
+
+Depends: T37.19.5 · Size: ~100 · Files: `desktop/design/tokens/*.json`, `…/Atoms/…`
+Goal: a purple `role.project` token for the project badge (mockup value), RiskChip low/medium/high colours, and tokens for the values the atoms keep as named constants (badge and inline-code radius 5, CountBadge height 16, StatusDot halo 3 and idle ring 1.5, project tint 0.13).
+Check: the affected atom snapshots are re-recorded on purpose; no named constant remains for a value that now has a token.
+
+#### T37.21.11 Molecule legibility and small fixes
+
+Depends: T37.19.5 · Size: ~100 · Files: `…/Molecules/…`, `desktop/design/DESIGN.md`
+Goal: `clock` joins the DS§3.7 symbol table; `SessionRow` reuses `InspectorRow`'s selected-row styling; `DiffStat` hides "−0" for add-only files; section headers and the filter prompt stay readable on Frosted (not `text.tertiary` there); the `KeyCap` inside `StopButton` is visible on the inverted capsule.
+Check: the changed snapshots are re-recorded on purpose; each fixed text pair meets DS§8 contrast on all three materials.
+
+#### T37.22.1 Inspector as an overlay below 1280 pt
+
+Depends: T37.26 · Size: ~80 · Files: `…/Screens/MainScreen.swift`, `…/Organisms/Inspector.swift`
+Goal: below 1280 pt of window width the inspector floats over the transcript column instead of taking width from it.
+Check: snapshots at 1440 and 1100 pt wide; the transcript column keeps its width at 1100 pt.
+
+#### T37.22.2 Sidebar and inspector shortcuts; the bypass strip
+
+Depends: T37.26 · Size: ~100 · Files: `…/Screens/MainScreen.swift`, `desktop/design/DESIGN.md`, `docs/design/desktop.md`
+Goal: the sidebar and inspector toggles use the system `SidebarCommands`/`InspectorCommands` and their default shortcuts (A74), and DS§4 and DT§5 say the same; the bypass-mode strip sits under the toolbar (A74), and DS§4 says so.
+Check: snapshot with bypass on; the toolbar tooltips name the shortcuts; DS§4 and DT§5 agree.
+
+#### T37.22.3 App window setup and the public CoxUI surface
+
+Depends: T37.32 (the app target) · Size: ~100 · Files: `…/Screens/MainScreen.swift`, the app target
+Goal: the app window has a hidden title bar and a behind-window blur; the screen, state and intent types the app target needs are `public`.
+Check: the app target builds against `CoxUI` with only public API; a screenshot of the running app matches mockup screen 28 by eye.
+
+#### T37.42.1 `SessionStore` keeps the reply text current while it streams
+
+Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxModel/Sources/CoxModel/SessionStore.swift`
+Goal: `Block.assistant.text` follows every `docTail` patch, so a whole-reply copy mid-stream returns the current source.
+Check: a test streams a scripted reply and copies it after every patch; each copy equals the text so far.
+
+#### T37.42.2 "Copy as Markdown" menu item and ⇧-click block selection
+
+Depends: — · Size: ~100 · Files: `desktop/macos/Packages/CoxTranscriptText/…`
+Goal: the transcript context menu offers "Copy as Markdown"; ⇧-click in the gutter selects whole blocks (DT§5.2).
+Check: a test invokes the menu item and reads Markdown from the pasteboard; a ⇧-click from block 2 to block 4 selects exactly those three blocks.
+
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
@@ -1293,6 +1363,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A71 §3 P37, T37.39 — T37.14 put session ownership in `cox-ffi` (it depends on cox-session, core, config, store, render, tools; lib + session + host = 499 lines against D11's 300) because `deps.rs` banned `anyhow` from `cox-app`'s resolved tree, stricter than D1's "depend on". Why: D11 and DT§4.2 keep the FFI a thin forwarder so logic is tested in Rust once. Effect: T37.39 narrows the rule to direct dependencies and moves the ownership into `cox-app`.
 - A72 §3 P37, T37.40–T37.43, `docs/design/desktop.md` §5.2, §9, §11 — spike T37.37 rejected Textual 0.5.0 (per-block views keep a drag in one block, copy gives plain text and HTML, no clamp API, one-document mode 5.5 s to first frame) and passed our TextKit 2 view on all four criteria (`research.md` §9.5.13). Why: T37.37's card makes the TextKit 2 view its own package with its own cards when Textual fails. Effect: four cards for `CoxTranscriptText`; T37.23 depends on them instead of T37.37. No decision changes.
 - A73 §0 D11 — the `#[uniffi::remote]` type declarations in `crates/cox-ffi/src/types.rs` do not count toward D11's 300-LOC limit on `cox-ffi`, by the creator (2026-09-28). Why: they hold no logic — one declaration per type the Swift side names — and growing with the protocol is their job; the limit guards the forwarding code in `lib.rs`, `session.rs` and `host.rs` (299 lines after T37.39 and T37.30). Effect: `types.rs` may grow without splitting or generating it. No other decision changes.
+- A74 §3 P37, T37.17.1, T37.17.2, T37.19.5, T37.20.5, T37.21.11, T37.22.1–T37.22.3, T37.42.1, T37.42.2 — the P37 follow-ups in `ideas.md` become cards, by the creator ("approve all", 2026-09-28). Decisions taken with them: the High Contrast palette is derived by rule (text ≥7:1, borders ≥3:1, more opaque glass, no specular); the sidebar and inspector toggles use the system `SidebarCommands`/`InspectorCommands` and their default shortcuts, replacing both DS§4's and DT§5's pairs; the bypass strip sits under the toolbar; syntax colours come from `TranscriptStyle` tokens and a `StyledDoc` span's `rgb` is ignored, so themes and High Contrast stay consistent; T37.22 lays the window out by hand instead of `NavigationSplitView`. Why: each follow-up came from a finished card's report and none changes a D-decision; the system commands give the menu items, shortcuts and VoiceOver names macOS users already know.
 
 ## 7. Risk register
 
