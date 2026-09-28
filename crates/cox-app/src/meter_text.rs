@@ -41,6 +41,12 @@ pub struct MeterText {
     /// System, tools, instructions and history, in that order; empty
     /// until the first request.
     pub context_parts: Vec<ContextPart>,
+    /// `923.6k`, what the window has left beside the parts (the context
+    /// tab's `Free` row); empty while the window is unknown.
+    pub context_free: String,
+    /// `94% this turn`, the turn's cache reads over what it sent; empty
+    /// before a turn sent anything.
+    pub cache_hit: String,
     /// `Cache hit 94% this turn · counts from the provider's usage, …`.
     pub footnote: String,
 }
@@ -126,11 +132,12 @@ impl MeterText {
         } else {
             "counts from the provider's usage, one ledger row per request"
         };
-        let footnote = match t.filter(|(t, _)| t.sent > 0) {
-            Some((t, _)) => {
-                let hit = f64::from(t.cache_read) / f64::from(t.sent) * 100.0;
-                format!("Cache hit {hit:.0}% this turn · {source}")
-            }
+        let cache_hit = t.filter(|(t, _)| t.sent > 0).map(|(t, _)| {
+            let hit = f64::from(t.cache_read) / f64::from(t.sent) * 100.0;
+            format!("{hit:.0}% this turn")
+        });
+        let footnote = match &cache_hit {
+            Some(hit) => format!("Cache hit {hit} · {source}"),
             None => format!("C{}", &source[1..]),
         };
         Self {
@@ -163,6 +170,11 @@ impl MeterText {
                 .context
                 .map(|b| parts(&b, view.context_tokens))
                 .unwrap_or_default(),
+            context_free: rates
+                .context
+                .and_then(|b| free(&b, view.context_tokens))
+                .unwrap_or_default(),
+            cache_hit: cache_hit.unwrap_or_default(),
             footnote,
         }
     }
@@ -188,6 +200,12 @@ fn share(b: &ContextBreakdown, last_context: u32) -> Option<String> {
         format!("{pct:.0}%")
     };
     Some(format!("{pct} of {}", window_size(window)))
+}
+
+/// The window less `used`; `None` when the window is unknown.
+fn free(b: &ContextBreakdown, last_context: u32) -> Option<String> {
+    let window = b.window.filter(|w| *w > 0)?;
+    Some(tokens(window.saturating_sub(used(b, last_context))))
 }
 
 /// The core's split scaled to `used`, so the legend sums to the `Context`
@@ -335,6 +353,7 @@ mod tests {
             ("$0.42", "$0.42")
         );
         assert_eq!(text.context, "Context · 76.4k");
+        assert_eq!(text.cache_hit, "90% this turn");
         assert!(
             text.footnote
                 .starts_with("Cache hit 90% this turn · counts"),
@@ -382,6 +401,7 @@ mod tests {
         let text = &meter.view().text;
         assert_eq!(text.context, "Context · 76.4k");
         assert_eq!(text.context_share, "7.6% of 1M");
+        assert_eq!(text.context_free, "923.6k", "the window less the context");
         let shown: Vec<_> = text
             .context_parts
             .iter()
@@ -403,6 +423,7 @@ mod tests {
         meter.apply(&split(breakdown), Duration::ZERO);
         let text = &meter.view().text;
         assert_eq!(text.context_share, "", "no window, no share");
+        assert_eq!(text.context_free, "", "no window, nothing free");
         let filled: f64 = text.context_parts.iter().map(|p| p.share).sum();
         assert!((filled - 1.0).abs() < 1e-9, "the bar is the whole context");
         assert_eq!(window_size(200_000), "200k");
@@ -414,6 +435,7 @@ mod tests {
         let text = MeterText::of(&UsageView::default(), Rates::default());
         assert_eq!(text.spoken, "0 tokens sent, 0 received");
         assert_eq!((text.rate.as_str(), text.heading.as_str()), ("", ""));
+        assert_eq!(text.cache_hit, "", "no turn, no cache hit");
         assert!(text.rows.iter().all(|r| r.turn == "–"));
         assert!(text.footnote.starts_with("Counts from"));
     }
