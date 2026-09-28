@@ -28,7 +28,6 @@
 - T37.33. Performance budget suite
 - T37.44.2. Style the app from the Figma file
 - T37.44.3. Figma text in SF Pro and SF Mono
-- T37.22.10. The running app draws pane content under the glass
 - T39.3. Chat translator replays a signature as `extra_content` on its tool call
 - T39.4. Surfaces skip the empty signed thinking item
 - T39.5. `[providers.gemini]` preset and vendored model rows

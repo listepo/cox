@@ -5691,3 +5691,17 @@ Deviations: none.
 Check: `just desktop-tokens` both High Contrast palettes pass (237 pairs each); `desktop/design` `npm test` 6/6 and `npm run check` pass; CoxUI 19 snapshots re-recorded on purpose, then 182 tests in 63 suites pass; swift-format and swiftlint strict clean. On the merged tree: `npm test` 6/6.
 
 Not done: the Figma file not re-synced (`use_figma`); only CoxUI's Swift tests ran.
+
+#### T37.22.10 The running app draws pane content under the glass
+
+Depends: — · Size: ~80 · Files: `desktop/macos/App/WindowChrome.swift`, `…/GlassPane.swift`, `…/Screens/MainScreen.swift`
+Goal: a regression the orchestrator saw on the approve-write fixture with the window in front (2026-09-28): text inside the panes draws much lighter than its token (`text.primary` reads about `#626366`, the sidebar's "Needs you" about 1.8:1), as if the glass or blur layer sits on top of the content, and the transcript's tool block and the pinned approval are not visible at all, leaving a gap. The toolbar's text, outside the panes, draws at full strength. Snapshot tests do not show it, so it lies in how the app window composes the panes (T37.22.4's `glassPane(frosts: false)`, the behind-window view) or in a later change (T37.22.6, T37.21.11). Find the cause (bisect the merges if needed), fix it so pane content draws above the glass at its token colour, and add a guard a test can hold where possible.
+Check: a screenshot of the app in front on the approve-write fixture shows the tool block, the pinned approval and text at token strength; the measured `text.primary` pixel matches its token within a small tolerance over a plain backdrop.
+Status: done 2026-09-28
+Result: two causes fixed. `.specular`'s white sweep drew over pane content and faded text toward white; it now sits under the content in `glassPane` and `CoxButtonStyle` (text.primary measures #1d1d1f in the panes, as in the toolbar). TextKit 2 at launch replaced a card's element view and left the card out until a resize; `TranscriptTextView` now lays out again, after each viewport layout (`textViewportLayoutControllerDidLayout`), any card in the viewport whose view has no window, at most 8 tries in a row (0/5 launches placed the cards before, 8/8 after). `DESIGN.md` rows say the sweep sits under the content.
+
+Deviations: > 3 files (Specular, GlassPane, CoxButtonStyle, TranscriptCards, DESIGN.md, tests); ~237 snapshots re-recorded on purpose (CoxUI Frosted/Glossy, two CoxTranscript thought headers now 1.5 pt narrower).
+
+Check: new `GlassContentTests` (fails without the sweep fix) and `aCardAViewportPassLeftOutIsLaidOutAgainOncePerTurn`; CoxTranscriptText 37/37, CoxUI 183/183 twice, CoxTranscript 50/52 (the two known load-flaky tests pass alone); swiftlint and swift-format strict clean; screenshot `t37.22.10-after.png` shows the tool block and "Allowed by you". Merged tree: 9 snapshot conflicts with T37.22.11 re-recorded, CoxUI 183 passed.
+
+Not done: the offscreen harness cannot reproduce the launch-time swap, so the test covers the follow-up pass; the override uses a method the SDK declares from macOS 27 and was not run on the macOS 26 deployment target.
