@@ -1,0 +1,5 @@
+---
+source: crates/cox-tui/src/commands.rs
+expression: row
+---
+/mode architect|editor                                   switch between planning and editing

@@ -284,7 +284,8 @@ fn composer_slash_palette() {
     keys(&mut state, "/mo");
     insta::assert_snapshot!(buffer_to_string(&render(&state, 40, 8)));
     update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
-    assert_eq!(state.composer.text(), "/model ");
+    // `/mode` (P42) now ranks above `/model` for `/mo`.
+    assert_eq!(state.composer.text(), "/mode ");
     // Backspacing out of an empty palette removes the `/` too.
     let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
     keys(&mut state, "/");

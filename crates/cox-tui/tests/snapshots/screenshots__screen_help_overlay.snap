@@ -10,11 +10,12 @@ transcript · Ctrl+E expand · Ctrl+G diff · Ctrl+K plugin leader · Ctrl+C qui
  · Shift+Y copy all
        running  Esc interrupt · Ctrl+C interrupt · Ctrl+B background · Ctrl+O transcript · Alt+Enter
         send now · Ctrl+Enter send now · Ctrl+U unqueue
-       modal    Enter choose · Esc close · Up previous · Down next
+       modal    Enter choose · Esc close · Up previous · Down next · Ctrl+E theme edit
        overlay  Esc close · ? close · PageUp scroll up · PageDown scroll down
        /model [cheap|code|think] [model]                        switch a tier's model
        /think <prompt>                                          one turn on the think tier, price
        confirmed first
+       /mode architect|editor                                   switch between planning and editing
        /effort [low|medium|high|xhigh]                          effort for the rest of the session;
        bare restores the tier default
        /compact [focus]                                         compact the context now
@@ -24,6 +25,7 @@ transcript · Ctrl+E expand · Ctrl+G diff · Ctrl+K plugin leader · Ctrl+C qui
        /redo                                                    redo what /undo took back
        /cost                                                    what this session has spent
        /context                                                 where the next request's tokens go
+       /repomap [refresh]                                       show or rebuild the repo map
        /autocompact                                             the compaction threshold and its
        config source
        /permissions [default|plan|auto|bypass]                  show or set the permission mode
