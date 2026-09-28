@@ -2788,7 +2788,7 @@ Check: a screenshot of the app on the approve-write fixture next to mockup 28 sh
 #### T37.22.6 App wiring leftovers: model popover, session titles, provider count, live session list
 
 Depends: T37.22.5 · Size: ~150 · Files: `crates/cox-ffi`, `crates/cox-app`, CoxClient, `…/Screens/…`
-Goal: what T37.22.5 left. The toolbar's model pill opens its popover from a model catalog `cox-ffi` exports (a one-expression forward, A90). A session gets a title the same way the TUI titles one, also for `cox run`; the toolbar and the sidebar name an untitled session the same way. The sidebar's footer counts the providers the user can use (a key present or a local server), not the configured sections (9 on defaults), pending the creator's confirmation. The session list follows app patches instead of a 2 s poll. A shell task's output opens in a viewer.
+Goal: what T37.22.5 left. The toolbar's model pill opens its popover from a model catalog `cox-ffi` exports (a one-expression forward, A90). A session gets a title the same way the TUI titles one, also for `cox run`; the toolbar and the sidebar name an untitled session the same way. The sidebar's footer counts the providers the user can use (a key present or a local server), not the configured sections (9 on defaults) (A110). The session list follows app patches instead of a 2 s poll. A shell task's output opens in a viewer.
 Check: a screenshot on a live core with a few titled sessions; a test for each new FFI export and the provider count.
 
 ## 4. Definition of done for v0.1
@@ -2961,6 +2961,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A107 T37.33 — the performance budget suite is on hold, by the creator (2026-09-28). Why: benchmarks are skipped for now.
 - A108 T37.28.6 — the Review pane's "Send to agent" follows a setting: queue the comments while a turn runs, like the composer (the default), or send them at once, by the creator (2026-09-28). Why: the same behaviour as a typed prompt by default, with the choice left to the user.
 - A109 T37.19.5 — the dark-mode control highlight is a user setting, by the creator (2026-09-28): none (the dark mockup's look, the default) or white at 10% of the light highlight's strength; a second setting applies it to controls only (e1, the default, as the card says) or to every elevation level (e1–e4, including the transcript's user bubble). Why: the dark mockup gives no value, and both looks are wanted as options.
+- A110 T37.22.6 — the sidebar footer's "N providers" counts the providers the user can use now (a stored or env key, or a reachable local server), not the configured sections, by the creator (2026-09-28). Why: on defaults the section count reads 9 and says nothing about what works.
 
 ## 7. Risk register
 
