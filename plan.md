@@ -51,7 +51,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.37 | todo | P0 | 3 | 0% | |
-| T37.38 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 
 ## Reference
 
@@ -1225,12 +1224,6 @@ Check: the suite runs locally and in the nightly job; every budget has a measure
 Depends: T37.16 · Size: ~200 (throwaway spike plus a result note) · Files: `desktop/macos/Spikes/Selection/…`, `research.md`
 Goal: decide how the transcript selects text across blocks (A67). Build the same 2 000-block fixture (prose, code, diffs, tool cards) twice: with Textual 0.5.0 (MIT, R§9.5.10) and with our own TextKit 2 view — one `NSTextView` over the whole transcript with the cards as view-backed attachments. Measure: one continuous drag selects across blocks, copy keeps block order as Markdown, clamping to one block when `cross_block_selection = false`, first frame and scroll frame time against the DT§9 budget. If Textual passes, it is taken (§1.1 row); if not, our view becomes its own package `desktop/macos/Packages/CoxTranscriptText` with its own cards. STTextView is out (A68).
 Check: the result table with both measurements is in `research.md` §9.5; T37.23's card names the chosen engine.
-
-#### T37.38 `cox-app`: tool summaries, `ToolGroup`, compaction summary
-
-Depends: T37.8 · Size: ~150 · Files: `crates/cox-app/src/summary.rs`, `crates/cox-app/src/timeline.rs`, `crates/cox-app/src/patch.rs`
-Goal: the DT§4.3 rows T37.8 left out. Rust writes each tool's one-line summary ("Ran `cargo test` — exit 0 · 4.2 s", "Edited `crates/x.rs` +12 −3", "Read `a.rs` · 120 lines") with its icon key and duration, so Swift never parses tool output; consecutive read/grep/glob/outline calls fold into one `ToolGroup` block ("Explored 7 files") with the calls as children; the `Compaction` block carries before → after tokens, reason and the summary text. Also covers the scenarios T37.8 skipped: subagent, checkpoint and rewind.
-Check: the T37.8 scenario snapshots updated in one reviewed change; new scenarios for subagent, checkpoint/rewind and a read-grep-read run that folds into one group; `replay_equals_live` holds for all of them.
 
 ## 4. Definition of done for v0.1
 

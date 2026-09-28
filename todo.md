@@ -45,4 +45,3 @@
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.37. Spike: the cross-block selection engine
-- T37.38. `cox-app`: tool summaries, `ToolGroup`, compaction summary
