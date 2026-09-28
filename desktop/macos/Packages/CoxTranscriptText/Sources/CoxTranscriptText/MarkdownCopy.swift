@@ -67,8 +67,7 @@ enum MarkdownCopy {
         if part != full {
           markdown.append(partial(doc, part, from: full.location, in: text))
         } else {
-          markdown.append(
-            source.isEmpty ? doc.blocks.compactMap(whole).joined(separator: "\n\n") : source)
+          markdown.append(source.isEmpty ? doc.markdown : source)
         }
       }
     }
@@ -102,49 +101,14 @@ enum MarkdownCopy {
       let cut = NSIntersectionRange(range, part)
       guard cut.length > 0 else { continue }
       let selected = text.substring(with: cut)
-      if cut == range, let markdown = whole(block) {
+      if cut == range, let markdown = block.markdown {
         out.append(markdown)
       } else if case .code(let lang, _) = block {
-        out.append(fence(lang, selected))
+        out.append(DocBlock.fence(lang, selected))
       } else {
         out.append(selected)
       }
     }
     return out.joined(separator: "\n\n")
-  }
-
-  /// One doc block as Markdown, for a reply whose source has not arrived.
-  static func whole(_ block: DocBlock) -> String? {
-    func joined(_ lines: [[Span]], _ span: (Span) -> String) -> String {
-      lines.map { $0.map(span).joined() }.joined(separator: "\n")
-    }
-    switch block {
-    case .text(.heading(let level), let lines):
-      return String(repeating: "#", count: Int(level)) + " " + joined(lines, inline)
-    case .text(_, let lines): return joined(lines, inline)
-    case .code(let lang, let lines): return fence(lang, joined(lines, \.text))
-    case .table(let rows):
-      guard let head = rows.first else { return nil }
-      let row = { (cells: [String]) in "| " + cells.joined(separator: " | ") + " |" }
-      return ([row(head), row(head.map { _ in "---" })] + rows.dropFirst().map(row))
-        .joined(separator: "\n")
-    case .rule: return "---"
-    }
-  }
-
-  static func inline(_ span: Span) -> String {
-    guard !span.text.allSatisfy(\.isWhitespace) else { return span.text }
-    var text = span.text
-    if span.bold { text = "**\(text)**" }
-    if span.italic { text = "_\(text)_" }
-    if span.strike { text = "~~\(text)~~" }
-    return text
-  }
-
-  /// A fence longer than any backtick run inside `body`.
-  static func fence(_ lang: String, _ body: String) -> String {
-    var ticks = "```"
-    while body.contains(ticks) { ticks += "`" }
-    return "\(ticks)\(lang)\n\(body)\n\(ticks)"
   }
 }

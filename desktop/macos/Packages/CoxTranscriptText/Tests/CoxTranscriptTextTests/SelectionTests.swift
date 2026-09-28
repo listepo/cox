@@ -178,7 +178,7 @@ struct SelectionTests {
       .table(rows: [["k", "v"], ["x", "1"]]),
       .rule,
     ])
-    let whole = doc.blocks.compactMap(MarkdownCopy.whole).joined(separator: "\n\n")
+    let whole = doc.markdown
 
     #expect(
       whole
