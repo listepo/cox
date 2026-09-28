@@ -8,7 +8,9 @@ use cox_core::{History, MemoryStore, Session, assemble};
 use cox_protocol::errors::ToolError;
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::{Store, Tool, ToolCx};
-use cox_protocol::types::{Concurrency, Event, Risk, Submission, ToolOutput, ToolSpec};
+use cox_protocol::types::{
+    Concurrency, Event, PermissionMode, Risk, Submission, ToolOutput, ToolSpec,
+};
 use cox_provider::scripted::Scripted;
 use serde_json::Value;
 
@@ -145,4 +147,24 @@ async fn resume_session_reuses_id_and_history() {
     let live_req = assemble(&live, &config, &tools, &cwd, "");
     let resume_req = assemble(&resumed_history, &config, &tools, &cwd, "");
     assert_eq!(live_req, resume_req);
+}
+
+/// T50.2: a mode change is written to the rollout, so resume rebuilds the
+/// last recorded mode instead of always coming back in `Default`.
+#[tokio::test]
+async fn resume_restores_last_recorded_permission_mode() {
+    let provider = Arc::new(Scripted::from_toml(&scenario(), "").expect("scenario"));
+    let store = Arc::new(MemoryStore::new());
+    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Echo)];
+    let cwd = PathBuf::from("/tmp/cox-turn");
+    let config = cox_protocol::Config::default();
+    let session =
+        Session::new(config, provider, tools, store.clone(), store.clone(), cwd).expect("session");
+    for mode in [PermissionMode::Plan, PermissionMode::Auto] {
+        let sub = Submission::SetPermissionMode { mode };
+        session.submit(sub).await.expect("set mode");
+    }
+    let events = store.rollout_read(&session.id()).expect("rollout");
+    let history = History::from_events(&events);
+    assert_eq!(history.permission_mode, Some(PermissionMode::Auto));
 }

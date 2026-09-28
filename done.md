@@ -3154,3 +3154,41 @@ Check output:
 - `instructions_precede_skills_index_and_survive_minimal` (`crates/cox-core/src/context.rs`) pins the order and the `minimal` rule; `prefix_bytes_identical_between_turns`, `skills_index_is_in_system_2` and `minimal_prefix_under_1000_tokens` stay green.
 - Real binary, `COX_HOME=/tmp/cox-t50.1`, `--provider local run -p hi --output-format stream-json` against a local capturing HTTP stand-in: the request's system text carried `# Instructions`, the `AGENTS.md` body and `- greet: …` after the stub line. Scratch tree removed.
 - nextest 1316 passed, 4 skipped; fmt and clippy clean.
+
+#### T50.2 Permission-mode changes are recorded, so resume and a woken child keep the live mode
+
+Model: Claude Code / opus-5.5 · Depends: — · Size: ~150 · Priority: P0 · Complexity: 3
+
+Files:
+- `crates/cox-protocol/src/types.rs`
+- `docs/protocol.jsonschema` (generated)
+- `crates/cox-core/src/rollout.rs`
+- `crates/cox-core/src/session.rs`
+- `crates/cox-core/src/subagent.rs`
+- `crates/cox-tui/src/state.rs`
+- `crates/cox-core/tests/subagent.rs`, `crates/cox-core/tests/resume.rs` (tests)
+
+Goal: a mode change (`Submission::SetPermissionMode`, Shift+Tab) is written to the rollout, and `History::from_events` rebuilds the last recorded mode instead of always returning `PermissionMode::Default` (`rollout.rs` ~236). Then a resumed session comes back in the mode it had, and a finished child woken by `TaskMessage` (`subagent.rs` `restart`) is never wider than its parent: it takes the parent's live mode (T45.1), or its own recorded mode if that is narrower. Found by T45.1.
+
+Check: a test switches a parent to Plan, runs a child to completion, wakes it with `TaskMessage` and asserts the child's write raises `ApprovalRequired`/is denied as in Plan; a resume test asserts the rebuilt `History.permission_mode` equals the last recorded mode. Both fail on current `main`. Older rollouts with no mode record still load (as `Default`).
+
+Plan:
+1. Tests first, failing on `main`. `woken_child_keeps_parent_plan_mode` (`crates/cox-core/tests/subagent.rs`): a `Default` parent approves a `shell` child limited to `touch` (`Risk::Write`), the child answers without writing, the parent switches to Plan, a `TaskMessage` wakes the child and its `touch` must be denied without an `ApprovalRequired` (today it asks, as in `Default`). `resume_restores_last_recorded_permission_mode` (`crates/cox-core/tests/resume.rs`): `SetPermissionMode` Plan then Auto, the rebuilt `History.permission_mode` is `Some(Auto)`. `old_rollout_without_mode_record_has_no_mode` (`rollout.rs`): no record reads as `None`.
+2. `crates/cox-protocol/src/types.rs`: new `Event::PermissionModeChanged { mode }`, a roundtrip case; regenerate `docs/protocol.jsonschema` through its drift test. A typed event, not a parsed `Notice`, because the rollout is replayed by type.
+3. `session.rs`: `SetPermissionMode` emits the new event (the human-facing `Notice` stays, so no surface changes); resume seeds the live mode with `history.permission_mode.unwrap_or(Default)`, today's behaviour for old rollouts.
+4. `rollout.rs`: `History.permission_mode` becomes `Option<PermissionMode>`, the last recorded mode, `None` when the rollout never recorded one.
+5. `subagent.rs` `restart`: the woken child runs in the parent's live mode, or its own recorded mode when that is narrower (a private `narrower`, width Plan < Default < Auto < Bypass, with a unit test). `cox_permission::Engine` is untouched.
+6. Verify: the tests, fmt, clippy, nextest; the real binary resumed against `COX_HOME=/tmp/cox-t50.2` if a headless run can reach it. More than 3 files (protocol type, generated schema, two integration test files) because the record is a new wire event.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: the model's view of the mode (T50.3).
+Status: done 2026-09-28
+Result: `Submission::SetPermissionMode` now also emits a new `Event::PermissionModeChanged { mode }` (`crates/cox-protocol/src/types.rs`; `docs/protocol.jsonschema` regenerated through its drift test), so the change lands in the rollout; the human-facing `Notice` stays. `History.permission_mode` (`rollout.rs`) is now `Option<PermissionMode>`: the last recorded mode, `None` for a rollout with no record. Resume seeds the live mode with `unwrap_or(Default)`, so rollouts written before this change load as before. `subagent.rs` `restart` gives a woken child the parent's live mode (`Session::permission_mode`, T45.1), or its own recorded mode when that is narrower (private `narrower`, Plan < Default < Auto < Bypass). The TUI's exhaustive event match ignores the new event (its `set_mode` already updated the status line). `cox_permission::Engine` is unchanged; no new dependency. 8 files, about 210 added lines, most of it tests and the generated schema: more than 3 files because the record is a new wire event (protocol type, generated schema, the TUI's exhaustive match) and the two Check tests live in two integration test files.
+Check output:
+- `woken_child_keeps_parent_plan_mode` (`crates/cox-core/tests/subagent.rs`): failed on `main` ("the woken child asked as in Default, not Plan"), passes after.
+- `resume_restores_last_recorded_permission_mode` (`crates/cox-core/tests/resume.rs`): Plan then Auto, the rebuilt `History.permission_mode` is `Some(Auto)`. On `main` it does not compile (the field was a bare `PermissionMode`, always `Default`).
+- `old_rollout_without_mode_record_has_no_mode` (`rollout.rs`) and `narrower_mode_is_the_less_permissive_of_the_two` (`subagent.rs`): pass.
+- Real binary against `COX_HOME=/tmp/cox-t50.2` (removed afterwards), scripted provider: `cox --plain` with `/permissions auto` and one turn, then `cox run -p --continue --output-format stream-json` whose script calls `write`: the resumed run wrote the file. The same with `/permissions default`: the write was denied (headless approval `never`).
+- In the worktree: nextest 1321 passed, 4 skipped; fmt and clippy clean.
+Follow-ups found (not in this card): resume ignores the configured mode and `--permission-mode` entirely (it takes the rollout's mode, `Default` when none), so a session started in a non-default configured mode and never switched still resumes in `Default`; recording the initial mode at session start would close that. `cox --plain`'s status line keeps showing the configured mode after `/permissions` (`plain.rs` submits the change but never updates its own status mode). A woken child's volatile block still renders its spawn-time `config.permissions.mode` (the T50.3 fix covers it if it renders the live mode).

@@ -91,7 +91,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T49.3 | todo | P3 | 2 | 0% | |
 | T49.4 | todo | P3 | 2 | 0% | |
 | T49.5 | todo | P3 | 3 | 0% | |
-| T50.2 | in progress | P0 | 3 | 0% | Claude Code / opus-5.5 |
 | T50.3 | todo | P2 | 1 | 0% | |
 
 ## Reference
@@ -2823,26 +2822,6 @@ Out of scope: any API call with credentials; any plugin code.
 ### P50 — Gaps found while planning P39–P49 (goal: the model sees the project's instruction files and skills, and a subagent never runs with wider permissions than its parent)
 
 Rationale in §6 A81.
-
-### T50.2. Permission-mode changes are recorded, so resume and a woken child keep the live mode
-
-Model: Claude Code / opus-5.5 · Status: in progress · Depends: — · Size: ~150 · Files: `crates/cox-core/src/rollout.rs`, `crates/cox-core/src/session.rs`, `crates/cox-core/src/subagent.rs`
-
-Goal: a mode change (`Submission::SetPermissionMode`, Shift+Tab) is written to the rollout, and `History::from_events` rebuilds the last recorded mode instead of always returning `PermissionMode::Default` (`rollout.rs` ~236). Then a resumed session comes back in the mode it had, and a finished child woken by `TaskMessage` (`subagent.rs` `restart`) is never wider than its parent: it takes the parent's live mode (T45.1), or its own recorded mode if that is narrower. Found by T45.1.
-
-Check: a test switches a parent to Plan, runs a child to completion, wakes it with `TaskMessage` and asserts the child's write raises `ApprovalRequired`/is denied as in Plan; a resume test asserts the rebuilt `History.permission_mode` equals the last recorded mode. Both fail on current `main`. Older rollouts with no mode record still load (as `Default`).
-
-Plan:
-1. Tests first, failing on `main`. `woken_child_keeps_parent_plan_mode` (`crates/cox-core/tests/subagent.rs`): a `Default` parent approves a `shell` child limited to `touch` (`Risk::Write`), the child answers without writing, the parent switches to Plan, a `TaskMessage` wakes the child and its `touch` must be denied without an `ApprovalRequired` (today it asks, as in `Default`). `resume_restores_last_recorded_permission_mode` (`crates/cox-core/tests/resume.rs`): `SetPermissionMode` Plan then Auto, the rebuilt `History.permission_mode` is `Some(Auto)`. `old_rollout_without_mode_record_has_no_mode` (`rollout.rs`): no record reads as `None`.
-2. `crates/cox-protocol/src/types.rs`: new `Event::PermissionModeChanged { mode }`, a roundtrip case; regenerate `docs/protocol.jsonschema` through its drift test. A typed event, not a parsed `Notice`, because the rollout is replayed by type.
-3. `session.rs`: `SetPermissionMode` emits the new event (the human-facing `Notice` stays, so no surface changes); resume seeds the live mode with `history.permission_mode.unwrap_or(Default)`, today's behaviour for old rollouts.
-4. `rollout.rs`: `History.permission_mode` becomes `Option<PermissionMode>`, the last recorded mode, `None` when the rollout never recorded one.
-5. `subagent.rs` `restart`: the woken child runs in the parent's live mode, or its own recorded mode when that is narrower (a private `narrower`, width Plan < Default < Auto < Bypass, with a unit test). `cox_permission::Engine` is untouched.
-6. Verify: the tests, fmt, clippy, nextest; the real binary resumed against `COX_HOME=/tmp/cox-t50.2` if a headless run can reach it. More than 3 files (protocol type, generated schema, two integration test files) because the record is a new wire event.
-
-Done when: the Check passes and the three AGENTS.md commands are clean.
-
-Out of scope: the model's view of the mode (T50.3).
 
 ### T50.3. The volatile block shows the live permission mode
 

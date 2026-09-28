@@ -2275,6 +2275,9 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
         // T33.20: the `TurnStarted` that follows already carries the
         // advised tier and model, so the status line needs nothing more.
         Event::Advised { .. } => {}
+        // T50.2: the rollout's record of a mode change; `set_mode` already
+        // updated the status line when the TUI sent it.
+        Event::PermissionModeChanged { .. } => {}
         Event::TaskCreated { task, label, tier } => {
             state.tasks.push((task, label, tier, state.tick, None));
         }
@@ -2453,7 +2456,7 @@ mod tests {
         let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
         state.transcript_from_history(&History {
             messages: messages.to_vec(),
-            permission_mode: PermissionMode::Default,
+            permission_mode: None,
             grants: Vec::new(),
             truncated: false,
             turns: 4,

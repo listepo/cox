@@ -471,3 +471,84 @@ text = "done"
     running.await.expect("join").expect("turn");
     assert!(child_asked, "the child's write ran without asking");
 }
+
+/// T50.2: a finished child woken by `TaskMessage` is never wider than its
+/// parent's live mode. The child ran under `Default`; the parent then
+/// switched to Plan, so the woken child's write is denied without asking.
+/// Before the fix the child was rebuilt from its rollout in `Default` and
+/// asked instead.
+#[tokio::test]
+async fn woken_child_keeps_parent_plan_mode() {
+    let toml = r#"
+[[turn]]
+tool_calls = [{ name = "agent", input = { task = "wait", preset = "shell", tools = ["touch"] } }]
+[[turn]]
+text = "ready"
+[[turn]]
+text = "done"
+[[turn]]
+tool_calls = [{ name = "touch", input = { path = "/tmp/cox-turn/t50-2" } }]
+[[turn]]
+text = "blocked"
+"#;
+    let (session, _store, mut rx) = open(toml, cox_protocol::Config::default());
+    let running = spawn_turn(&session, "wait");
+    let mut task = None;
+    loop {
+        match next(&mut rx).await {
+            Event::TaskCreated { task: t, .. } => task = Some(t),
+            Event::ApprovalRequired { call, .. } => {
+                let decision = Decision::Allow;
+                let sub = Submission::Approve {
+                    call_id: call.id,
+                    decision,
+                };
+                session.submit(sub).await.expect("approve");
+            }
+            Event::TurnDone { .. } => break,
+            _ => {}
+        }
+    }
+    running.await.expect("join").expect("turn");
+    let task = task.expect("the child was created");
+    let plan = cox_protocol::types::PermissionMode::Plan;
+    let sub = Submission::SetPermissionMode { mode: plan };
+    session.submit(sub).await.expect("set mode");
+    let text = "write it now".to_string();
+    let (from, hop) = (None, 0);
+    let sub = Submission::TaskMessage {
+        task,
+        from,
+        hop,
+        text,
+    };
+    session.submit(sub).await.expect("deliver");
+    let mut child_asked = false;
+    loop {
+        match next(&mut rx).await {
+            Event::ApprovalRequired { call, source, .. } => {
+                child_asked |= source.is_some_and(|s| s.agent.is_some());
+                let reason = "test".to_string();
+                let decision = Decision::Deny { reason };
+                let sub = Submission::Approve {
+                    call_id: call.id,
+                    decision,
+                };
+                session.submit(sub).await.expect("deny");
+            }
+            Event::TaskCompleted { task: t, .. } if t == task => break,
+            _ => {}
+        }
+    }
+    assert!(
+        !child_asked,
+        "the woken child asked as in Default, not Plan"
+    );
+}
+
+async fn next(rx: &mut tokio::sync::mpsc::Receiver<Event>) -> Event {
+    tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("event timeout")
+        .expect("event stream closed")
+}

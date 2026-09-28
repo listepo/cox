@@ -35,8 +35,8 @@ use cox_protocol::ids::{ItemId, SessionId, TaskId};
 use cox_protocol::traits::{ExternalAgent, Relay, Tool, ToolCx, Worktree};
 use cox_protocol::types::{
     Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Job, Level, Message,
-    ModelId, ProviderEvent, Request, Risk, Role, Source, Submission, SystemBlock, Tier, ToolCall,
-    ToolOutput, ToolSpec, Why,
+    ModelId, PermissionMode, ProviderEvent, Request, Risk, Role, Source, Submission, SystemBlock,
+    Tier, ToolCall, ToolOutput, ToolSpec, Why,
 };
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
@@ -814,7 +814,14 @@ async fn restart(
         .store
         .rollout_read(&dormant.session)
         .map_err(|error| CoreError::Store { error })?;
-    let history = History::from_events(&events);
+    let mut history = History::from_events(&events);
+    // T50.2: the parent may have narrowed since the child ran (Shift+Tab to
+    // Plan); a woken child must not come back wider than the parent is now.
+    let live = parent.permission_mode().await;
+    let mode = history
+        .permission_mode
+        .map_or(live, |own| narrower(live, own));
+    history.permission_mode = Some(mode);
     let child = spawn(
         parent,
         task,
@@ -835,6 +842,18 @@ async fn restart(
         .register_task(task, label, tier, crate::tasks::TaskKind::Agent)
         .await;
     Ok(child)
+}
+
+/// The less permissive of `a` and `b` (T50.2), widest last:
+/// Plan < Default < Auto < Bypass.
+fn narrower(a: PermissionMode, b: PermissionMode) -> PermissionMode {
+    let width = |mode| match mode {
+        PermissionMode::Plan => 0,
+        PermissionMode::Default => 1,
+        PermissionMode::Auto => 2,
+        PermissionMode::Bypass => 3,
+    };
+    if width(b) < width(a) { b } else { a }
 }
 
 /// A child that could not be restored stops being addressable, loudly.
@@ -1152,6 +1171,18 @@ mod tests {
     use cox_protocol::agent::AgentDef;
 
     use super::*;
+
+    #[test]
+    fn narrower_mode_is_the_less_permissive_of_the_two() {
+        use PermissionMode as M;
+        let widest_last = [M::Plan, M::Default, M::Auto, M::Bypass];
+        for (i, a) in widest_last.iter().enumerate() {
+            for b in &widest_last[i..] {
+                assert_eq!(narrower(*a, *b), *a, "{a:?} vs {b:?}");
+                assert_eq!(narrower(*b, *a), *a, "{b:?} vs {a:?}");
+            }
+        }
+    }
 
     /// An `AgentTool` over a throwaway session, for `resolve`'s own claims
     /// (unit-level, no turn ever runs). T34.1 made `resolve`/`preset`

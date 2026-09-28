@@ -541,6 +541,24 @@
         ]
       },
       {
+        "description": "The live permission mode changed (`Submission::SetPermissionMode`,\nT50.2). Recorded so resume and a woken subagent rebuild the mode the\nsession last ran under instead of falling back to `Default`.",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "description": "The mode now in force.",
+            "$ref": "#/$defs/PermissionMode"
+          },
+          "type": {
+            "type": "string",
+            "const": "permission_mode_changed"
+          }
+        },
+        "required": [
+          "type",
+          "mode"
+        ]
+      },
+      {
         "description": "A decision plugin answered a decision point (PL§4, T33.20). Recorded\nfor every answer, used or not, so replay and `cox stats` see which\nadvice changed the core's pick; it never feeds model history.",
         "type": "object",
         "properties": {
@@ -1534,6 +1552,31 @@
         "description": "TaskId: a 26-character Crockford-base32 ULID.",
         "type": "string",
         "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+      },
+      "PermissionMode": {
+        "description": "`permissions.mode` (plan.md §1.6/§1.8).",
+        "oneOf": [
+          {
+            "description": "Rules and risk decide as usual.",
+            "type": "string",
+            "const": "default"
+          },
+          {
+            "description": "Only `Risk::ReadOnly` is allowed; everything else denies without asking.",
+            "type": "string",
+            "const": "plan"
+          },
+          {
+            "description": "`Write` is allowed automatically; `Exec`/`Destructive` still ask unless a safe-command match.",
+            "type": "string",
+            "const": "auto"
+          },
+          {
+            "description": "Everything is allowed; flag-only, banner shown.",
+            "type": "string",
+            "const": "bypass"
+          }
+        ]
       },
       "DecidePoint": {
         "description": "A decision point (PL§4 \"Decision points\").",

@@ -1118,6 +1118,13 @@ pub enum Event {
         /// The new model.
         to: ModelId,
     },
+    /// The live permission mode changed (`Submission::SetPermissionMode`,
+    /// T50.2). Recorded so resume and a woken subagent rebuild the mode the
+    /// session last ran under instead of falling back to `Default`.
+    PermissionModeChanged {
+        /// The mode now in force.
+        mode: PermissionMode,
+    },
     /// A decision plugin answered a decision point (PL§4, T33.20). Recorded
     /// for every answer, used or not, so replay and `cox stats` see which
     /// advice changed the core's pick; it never feeds model history.
@@ -1486,6 +1493,7 @@ mod tests {
     #[case::task_created(Event::TaskCreated { task: TaskId::new(), label: "explore".into(), tier: Tier::Cheap })]
     #[case::task_completed(Event::TaskCompleted { task: TaskId::new(), result_item: ItemId::new(), cost_usd: 0.002, exit_code: Some(0), archive: Some(ArchiveId::new()) })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Code, from: ModelId("claude-sonnet-5".into()), to: ModelId("claude-opus-5".into()) })]
+    #[case::permission_mode_changed(Event::PermissionModeChanged { mode: PermissionMode::Plan })]
     #[case::advised(Event::Advised { point: crate::plugin::DecidePoint::Route, plugin: "jev".into(), advice: crate::plugin::Advice { answer: crate::plugin::Answer::Choice { order: vec![0] }, confidence: Some(0.9), note: None }, applied: true })]
     #[case::notice(Event::Notice { level: Level::Warn, text: "hook skipped".into() })]
     #[case::turn_done(Event::TurnDone { turn: TurnId::new(), stop: StopReason::EndTurn })]

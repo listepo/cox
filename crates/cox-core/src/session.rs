@@ -407,7 +407,8 @@ impl Session {
                     (
                         id,
                         history.messages,
-                        history.permission_mode,
+                        // Rollouts before T50.2 record no mode.
+                        history.permission_mode.unwrap_or(PermissionMode::Default),
                         history.grants,
                         turn_marks,
                         truncated_notice,
@@ -816,6 +817,7 @@ impl Session {
             }
             Submission::SetPermissionMode { mode } => {
                 self.inner.lock().await.permission_mode = mode;
+                self.emit(Event::PermissionModeChanged { mode }).await?;
                 self.emit(Event::Notice {
                     level: Level::Info,
                     text: format!("permission mode: {mode:?}"),

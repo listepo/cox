@@ -85,5 +85,4 @@
 - T49.3. Voice input scope gate
 - T49.4. MCP Apps scope gate
 - T49.5. Cursor Cloud Agents API as a background-task backend — scope gate
-- T50.2. Permission-mode changes are recorded, so resume and a woken child keep the live mode
 - T50.3. The volatile block shows the live permission mode
