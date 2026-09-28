@@ -24,6 +24,11 @@ sandbox and rules as the model's `bash`, kept out of the conversation; `!!cmd`
 also hands its output to the model. Headless scripts use `cox run -p`; editors use
 `cox acp`; other agents can call `cox mcp`.
 
+`cox run -p "what is wrong here?" --image shot.png --image log.jpg` attaches
+images to the first turn; repeat `--image` for more. Each must be a PNG, JPEG,
+GIF or WebP of at most 3.75 MB. A missing file, a non-image or an oversized
+image exits 2 with the reason before any request is made.
+
 ## Keys
 
 `?` on an empty composer shows this table over the transcript; `/help`

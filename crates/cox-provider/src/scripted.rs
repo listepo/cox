@@ -123,6 +123,12 @@ impl Provider for Scripted {
         }
     }
 
+    /// Stands in for a vision wire (T40.7), so an attached or tool image
+    /// reaches the request a test inspects instead of being held back.
+    fn accepts_images(&self, _model: &str) -> bool {
+        true
+    }
+
     async fn stream(
         &self,
         req: Request,

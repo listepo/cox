@@ -2303,14 +2303,39 @@ mod tests {
         (session, probe)
     }
 
+    /// `Scripted` on a wire without image input: `Scripted` itself stands
+    /// in for a vision wire (T40.7), and `accepts_images` defaults to false.
+    struct TextOnly(Scripted);
+
+    #[async_trait::async_trait]
+    impl Provider for TextOnly {
+        fn id(&self) -> ProviderId {
+            self.0.id()
+        }
+        fn capabilities(&self) -> cox_protocol::types::Caps {
+            self.0.capabilities()
+        }
+        async fn stream(
+            &self,
+            req: Request,
+            sink: mpsc::Sender<cox_protocol::types::ProviderEvent>,
+            cancel: CancellationToken,
+        ) -> Result<cox_protocol::types::Usage, ProviderError> {
+            self.0.stream(req, sink, cancel).await
+        }
+        async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {
+            self.0.count_tokens(req).await
+        }
+    }
+
     /// T37.6 Check: a wire without image input gets the notice and the text
     /// still goes. T40.2: the rollout records only what was sent, so a
     /// resumed session rebuilds the same text-only message.
     #[tokio::test]
     async fn image_on_a_text_only_wire_is_held_back_with_a_notice() {
         let store = Arc::new(MemoryStore::new());
-        let provider =
-            Arc::new(Scripted::from_toml("[[turn]]\ntext = \"ok\"\n", "").expect("scenario"));
+        let scripted = Scripted::from_toml("[[turn]]\ntext = \"ok\"\n", "").expect("scenario");
+        let provider = Arc::new(TextOnly(scripted));
         let session = Session::new(
             cox_protocol::Config::default(),
             provider,

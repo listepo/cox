@@ -489,3 +489,59 @@ fn resume_with_an_explicit_permission_mode_flag_uses_it() {
 fn resume_without_a_flag_keeps_the_recorded_mode() {
     assert!(resumed_write_lands(&["--permission-mode", "auto"], &[]));
 }
+
+/// T40.7: each `--image` goes with the first turn, and the scripted
+/// provider was sent both: its usage is its own estimate of the request it
+/// received, which prices each image at `IMAGE_TOKEN_ESTIMATE` (T40.3).
+#[test]
+fn image_flag_attaches_each_image_to_the_first_turn() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(work.path().join("a.png"), b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR").unwrap();
+    std::fs::write(work.path().join("b.jpg"), b"\xff\xd8\xff\xe0\0\x10JFIF\0").unwrap();
+    let out = cox(work.path(), home.path(), TEXT_ONLY)
+        .args(["--output-format", "stream-json"])
+        .args(["--image", "a.png", "--image", "b.jpg"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines: Vec<Value> = String::from_utf8(out)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let user = lines
+        .iter()
+        .find(|v| v["type"] == "item_started" && v["kind"]["type"] == "user_message")
+        .expect("the user message");
+    let types: Vec<&str> = user["kind"]["attachments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["media_type"].as_str().unwrap())
+        .collect();
+    assert_eq!(types, ["image/png", "image/jpeg"]);
+    let result = lines.last().unwrap();
+    let floor = 2 * cox_protocol::image::IMAGE_TOKEN_ESTIMATE;
+    assert!(
+        result["usage"]["input_tokens"].as_u64().unwrap() >= floor,
+        "{result}"
+    );
+}
+
+/// T40.7: a file that is not an image stops the run with exit 2 and the
+/// `ImageError` text, before any request is made.
+#[test]
+fn image_flag_refuses_a_text_file_before_any_request() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(work.path().join("notes.txt"), "not an image").unwrap();
+    cox(work.path(), home.path(), TEXT_ONLY)
+        .args(["--output-format", "stream-json", "--image", "notes.txt"])
+        .assert()
+        .code(2)
+        .stdout("")
+        .stderr(predicates_str_contains(
+            "--image notes.txt: not a PNG, JPEG, GIF or WebP image",
+        ));
+}

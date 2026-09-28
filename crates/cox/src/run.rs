@@ -4,14 +4,17 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use cox_core::Session;
 use cox_protocol::Event;
 use cox_protocol::ids::{CallId, ItemId, SessionId};
+use cox_protocol::image::{self, ImageError, MAX_IMAGE_BYTES};
 use cox_protocol::traits::Store as _;
-use cox_protocol::types::{ApprovalPolicy, Decision, ItemKind, StopReason, Submission, Tier};
+use cox_protocol::types::{
+    ApprovalPolicy, Attachment, Decision, ItemKind, StopReason, Submission, Tier,
+};
 use cox_store::Store;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
@@ -178,6 +181,15 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
         (None, None) => None,
         _ => anyhow::bail!("--loop and --max-iterations must be given together"),
     };
+    // T40.7: every `--image` is read and checked before any request, so a
+    // bad one costs nothing.
+    let attachments = match read_images(&args.images) {
+        Ok(attachments) => attachments,
+        Err(e) => {
+            eprintln!("cox: {e}");
+            return Ok(EXIT_DENIED);
+        }
+    };
     // Headless defaults to `never`: nobody is there to answer an ask.
     let approve_default = cli.approve.is_none();
     let rt = tokio::runtime::Runtime::new()?;
@@ -233,11 +245,20 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
         let outcome = match loop_spec {
             Some(loop_spec) => {
                 run_loop(
-                    &session, &mut rx, prompt, format, approvals, args.deep, loop_spec,
+                    &session,
+                    &mut rx,
+                    (prompt, attachments),
+                    format,
+                    approvals,
+                    args.deep,
+                    loop_spec,
                 )
                 .await
             }
-            None => drive(&session, &mut rx, prompt, format, approvals, args.deep).await,
+            None => {
+                let prompt = (prompt, attachments);
+                drive(&session, &mut rx, prompt, format, approvals, args.deep).await
+            }
         };
         // T34.9 follow-up: `drive`/`run_loop` above already awaited
         // `session.wait_idle()`, so every `TaskKind::Agent` chain is done.
@@ -281,13 +302,39 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
     Ok(outcome.exit_code())
 }
 
+/// Reads each `--image` path and checks it with `image::attachment`. The
+/// path is the user's own argument, and the user is the trust root, so it
+/// is not confined like a path from the model. A file over the cap is
+/// refused from its size, before it is read.
+fn read_images(paths: &[PathBuf]) -> Result<Vec<Attachment>, String> {
+    paths
+        .iter()
+        .map(|path| {
+            let why = |e: &dyn std::fmt::Display| format!("--image {}: {e}", path.display());
+            let len = std::fs::metadata(path).map_err(|e| why(&e))?.len();
+            let bytes = usize::try_from(len).unwrap_or(usize::MAX);
+            if bytes > MAX_IMAGE_BYTES {
+                let cap = MAX_IMAGE_BYTES;
+                return Err(why(&ImageError::TooLarge { bytes, cap }));
+            }
+            let data = std::fs::read(path).map_err(|e| why(&e))?;
+            let name = path.file_name().map_or_else(
+                || path.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            image::attachment(name, &data).map_err(|e| why(&e))
+        })
+        .collect()
+}
+
 /// Runs one turn to completion on an already-open `session`, reading its
 /// events off the caller's `rx` (taken once — see `run`'s comment — so
-/// `--loop` can call this repeatedly on the same receiver).
+/// `--loop` can call this repeatedly on the same receiver). `prompt` is the
+/// text and its attachments (T40.7).
 async fn drive(
     session: &Session,
     rx: &mut mpsc::Receiver<Event>,
-    prompt: String,
+    prompt: (String, Vec<Attachment>),
     format: Format,
     approvals: Option<Duration>,
     deep: bool,
@@ -304,13 +351,14 @@ async fn drive(
     }
     // The core runs the turn inside `submit`, so it must live on its own
     // task or nothing could answer an `ApprovalRequired` mid-turn.
+    let (text, attachments) = prompt;
     let turn = tokio::spawn({
         let session = session.clone();
         async move {
             session
                 .submit(Submission::UserTurn {
-                    text: prompt,
-                    attachments: Vec::new(),
+                    text,
+                    attachments,
                     confirm_think: deep,
                 })
                 .await
@@ -408,11 +456,13 @@ async fn drive(
 /// stop reason is `StopReason::Budget` (the core already tracks
 /// `budget.session_usd` cumulatively per session, so this needs no
 /// second cap) or fails fatally, or when `Ctrl+C` fires during the wait
-/// between iterations — that exit is clean, not an error.
+/// between iterations — that exit is clean, not an error. The attachments
+/// go with the first turn only (T40.7); later turns already have them in
+/// history.
 async fn run_loop(
     session: &Session,
     rx: &mut mpsc::Receiver<Event>,
-    prompt: String,
+    prompt: (String, Vec<Attachment>),
     format: Format,
     approvals: Option<Duration>,
     deep: bool,
@@ -421,9 +471,11 @@ async fn run_loop(
     loop_spec: (Duration, u32),
 ) -> anyhow::Result<Outcome> {
     let (interval, max_iterations) = loop_spec;
+    let (text, mut attachments) = prompt;
     let mut total = Outcome::default();
     for i in 0..max_iterations {
-        let iteration = drive(session, rx, prompt.clone(), format, approvals, deep).await?;
+        let prompt = (text.clone(), std::mem::take(&mut attachments));
+        let iteration = drive(session, rx, prompt, format, approvals, deep).await?;
         total.merge(iteration);
         if total.failed || matches!(total.stop, Some(StopReason::Budget)) {
             break;
@@ -524,7 +576,7 @@ mod tests {
         let outcome = run_loop(
             &session,
             &mut rx,
-            "hi".into(),
+            ("hi".into(), vec![]),
             Format::Text,
             None,
             false,
