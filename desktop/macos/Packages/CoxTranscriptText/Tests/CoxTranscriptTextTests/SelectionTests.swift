@@ -10,11 +10,11 @@ import Testing
 @testable import CoxTranscriptText
 
 private let userText = "Please fix the **flaky** test in cox-core."
-private let summary = "Ran cargo nextest run -p cox-core"
-private let replySource = "Fixed it:\n\n```sh\ncargo nextest run -p cox-core\n```"
+let summary = "Ran cargo nextest run -p cox-core"
+let replySource = "Fixed it:\n\n```sh\ncargo nextest run -p cox-core\n```"
 
 /// A user message, a tool card, a reply with a code block, then one more block.
-private let transcript: [Block] = [
+let transcript: [Block] = [
   Block(id: "u", turn: 1, kind: .user(text: userText, attachments: [])),
   Block(
     id: "t", turn: 1,
@@ -35,11 +35,12 @@ private let transcript: [Block] = [
 /// A borderless window far off screen, ordered in so AppKit lays out and
 /// draws it, with the transcript as its content.
 @MainActor
-private final class Host {
+final class Host {
   let window: NSWindow
-  let view = TranscriptTextView.make()
+  let view: TranscriptTextView
 
-  init() {
+  init(style: TranscriptStyle = .system) {
+    view = TranscriptTextView.make(style: style)
     NSApplication.shared.setActivationPolicy(.accessory)
     window = NSWindow(
       // A window frame far off screen, not a design size.
@@ -178,7 +179,7 @@ struct SelectionTests {
       .table(rows: [["k", "v"], ["x", "1"]]),
       .rule,
     ])
-    let whole = doc.blocks.compactMap(MarkdownCopy.whole).joined(separator: "\n\n")
+    let whole = doc.markdown
 
     #expect(
       whole

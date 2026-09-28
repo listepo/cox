@@ -104,8 +104,45 @@ private func paragraph(_ text: String) -> DocBlock {
     .remove(id: "t"),
   ])
   let want = StyledDoc(blocks: [paragraph("a"), paragraph("B"), paragraph("c")])
-  #expect(store.blocks["m"]?.kind == .assistant(text: "", doc: want))
+  #expect(store.blocks["m"]?.kind == .assistant(text: "a\n\nB\n\nc", doc: want))
   #expect(Array(store.blocks.keys) == ["m"])
+}
+
+/// A reply streamed as `cox_app`'s timeline streams it: each chunk re-parsed,
+/// only the blocks from the first changed one re-sent. It starts from a
+/// snapshot that already holds a source, the case a stale source showed in.
+@MainActor
+@Test func aStreamedReplysTextIsTheTextSoFarAfterEveryDocTail() {
+  let store = SessionStore(session: FixtureSession(fixture: Fixture(batches: [], snapshot: [])))
+  var bold = Span(text: "bold")
+  bold.bold = true
+  let heading = DocBlock.text(kind: .heading(1), lines: [[Span(text: "Title")]])
+  let firstPara = DocBlock.text(kind: .paragraph, lines: [[Span(text: "first para")]])
+  let fullPara = DocBlock.text(
+    kind: .paragraph, lines: [[Span(text: "first paragraph, "), bold]])
+  let code = DocBlock.code(lang: "swift", lines: [[Span(text: "let x = 1")]])
+  let stream: [(TimelinePatch, String)] = [
+    (.docTail(id: "m", from: 1, blocks: [firstPara]), "# Title\n\nfirst para"),
+    (.docTail(id: "m", from: 1, blocks: [fullPara]), "# Title\n\nfirst paragraph, **bold**"),
+    (
+      .docTail(id: "m", from: 2, blocks: [code]),
+      "# Title\n\nfirst paragraph, **bold**\n\n```swift\nlet x = 1\n```"
+    ),
+  ]
+  store.apply([
+    .reset(blocks: [
+      Block(id: "m", turn: 1, kind: .assistant(text: "# Title", doc: StyledDoc(blocks: [heading])))
+    ])
+  ])
+
+  for (patch, soFar) in stream {
+    store.apply([patch])
+    guard case .assistant(let copied, _) = store.blocks["m"]?.kind else {
+      Issue.record("the reply is gone after \(patch)")
+      return
+    }
+    #expect(copied == soFar)
+  }
 }
 
 @Test func lastLinesMatchesTheRustTail() {

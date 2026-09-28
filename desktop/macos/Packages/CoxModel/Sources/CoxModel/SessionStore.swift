@@ -86,10 +86,13 @@ extension BlockKind {
     }
   }
 
+  /// A `docTail` carries doc blocks, not source, so the text becomes the
+  /// doc's Markdown: derived from the doc, never a stale earlier source. The
+  /// reply's closing upsert brings the real source (`cox_app` `ItemDone`).
   mutating func replaceDoc(from: Int, with tail: [DocBlock]) {
-    guard case .assistant(let text, var doc) = self, from <= doc.blocks.count else { return }
+    guard case .assistant(_, var doc) = self, from <= doc.blocks.count else { return }
     doc.blocks.replaceSubrange(from..., with: tail)
-    self = .assistant(text: text, doc: doc)
+    self = .assistant(text: doc.markdown, doc: doc)
   }
 }
 
