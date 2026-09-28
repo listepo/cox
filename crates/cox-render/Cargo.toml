@@ -18,6 +18,9 @@ cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
 cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
 ratatui = { workspace = true, optional = true }
 pulldown-cmark = { workspace = true }
+# T37.8: `StyledDoc` crosses to the desktop app inside serde patches (DT§8);
+# serde is already in the graph through cox-protocol.
+serde = { workspace = true }
 syntect = { workspace = true }
 two-face = { version = "0.5", features = ["syntect-fancy"] }
 similar = { workspace = true, optional = true }

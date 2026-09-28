@@ -154,13 +154,13 @@ fn only_plugin_depends_on_extism() {
     );
 }
 
-/// Names of every package in `cox`'s normal dependency tree under `features`.
-fn cox_tree(features: &[&str]) -> HashSet<String> {
+/// Names of every package in `package`'s normal dependency tree under `features`.
+fn tree(package: &str, features: &[&str]) -> HashSet<String> {
     let output = Command::new("cargo")
         .args([
             "tree",
             "-p",
-            "cox",
+            package,
             "-e",
             "normal",
             "--offline",
@@ -188,8 +188,8 @@ fn cox_tree(features: &[&str]) -> HashSet<String> {
 /// drop extism and wasmtime.
 #[test]
 fn slim_build_has_no_wasm_runtime() {
-    let slim = cox_tree(&["--no-default-features", "--features", "otel"]);
-    let full = cox_tree(&[]);
+    let slim = tree("cox", &["--no-default-features", "--features", "otel"]);
+    let full = tree("cox", &[]);
     for wasm_crate in ["cox-plugin", "extism", "wasmtime"] {
         assert!(
             !slim.contains(wasm_crate),
@@ -545,5 +545,16 @@ fn session_has_no_cli_or_terminal() {
             !deps.contains(banned),
             "cox-session must not depend on {banned}"
         );
+    }
+}
+
+/// T37.8 (DT§4.2): the application core is UI-agnostic — the desktop app
+/// links it through `cox-ffi`, so no terminal toolkit or CLI crate may reach
+/// it, not even through `cox-render`'s default `ratatui` feature.
+#[test]
+fn app_has_no_terminal_or_cli() {
+    let deps = tree("cox-app", &[]);
+    for banned in ["ratatui", "crossterm", "clap", "anyhow", "cox-tui"] {
+        assert!(!deps.contains(banned), "cox-app must not pull {banned}");
     }
 }

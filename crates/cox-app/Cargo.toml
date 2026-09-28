@@ -1,0 +1,27 @@
+[package]
+name = "cox-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# T37.8 (DT§4.2, §4.3): the UI-agnostic application core the desktop app
+# drives — today the timeline fold. Pure over `Event`s: no ratatui, no
+# terminal, no CLI (`crates/cox/tests/deps.rs` holds that).
+
+[dependencies]
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+# The neutral `StyledDoc` half only; the ratatui layout stays in the TUI.
+cox-render = { path = "../cox-render", version = "0.1.2", default-features = false }
+serde = { workspace = true }
+
+[dev-dependencies]
+# The scenario tests run a real session over the Scripted provider and
+# reuse cox-core's test harness (`tests/scenarios.rs`).
+cox-core = { path = "../cox-core", version = "0.1.2" }
+cox-provider = { path = "../cox-provider", version = "0.1.2" }
+async-trait = { workspace = true }
+insta = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }

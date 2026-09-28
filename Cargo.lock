@@ -956,6 +956,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "cox-app"
+version = "0.1.2"
+dependencies = [
+ "async-trait",
+ "cox-core",
+ "cox-protocol",
+ "cox-provider",
+ "cox-render",
+ "insta",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "cox-config"
 version = "0.1.2"
 dependencies = [
@@ -1211,6 +1226,7 @@ dependencies = [
  "insta",
  "pulldown-cmark",
  "ratatui",
+ "serde",
  "similar 3.2.0",
  "syntect",
  "tempfile",
