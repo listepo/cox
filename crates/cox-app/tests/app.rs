@@ -410,16 +410,21 @@ fn the_checklist_asks_the_host_for_the_provider_key() {
     assert_eq!(rows[0].status, CheckStatus::Ok, "{}", rows[0].detail);
 }
 
+/// A session that ran `TWO_EDITS` with both tools allowed.
+async fn edited(dir: &Path) -> Arc<LiveSession> {
+    let config = "[permissions]\nallow = [\"edit\", \"write\"]\n";
+    std::fs::create_dir_all(dir.join("user/.cox")).expect("home");
+    std::fs::write(dir.join("user/.cox/config.toml"), config).expect("config");
+    let session = open(dir, Arc::default()).await.expect("open");
+    session.send(send("change them")).await.expect("send");
+    finish(&session).await;
+    session
+}
+
 #[tokio::test]
 async fn changes_lists_the_edited_and_created_files_and_the_turn_to_rewind_to() {
     let dir = scratch(Some(TWO_EDITS));
-    let config = "[permissions]\nallow = [\"edit\", \"write\"]\n";
-    std::fs::create_dir_all(dir.path().join("user/.cox")).expect("home");
-    std::fs::write(dir.path().join("user/.cox/config.toml"), config).expect("config");
-    let session = open(dir.path(), Arc::default()).await.expect("open");
-    session.send(send("change them")).await.expect("send");
-    finish(&session).await;
-
+    let session = edited(dir.path()).await;
     let changes = session.changes().await.expect("changes");
     let mut files = changes.files.clone();
     files.sort_by(|a, b| a.path.cmp(&b.path));
@@ -451,6 +456,64 @@ async fn changes_lists_the_edited_and_created_files_and_the_turn_to_rewind_to() 
     assert!(checkpoint.label.ends_with(" and 1 more"), "{checkpoint:?}");
     assert!(checkpoint.time.starts_with("20"), "{checkpoint:?}");
     assert_eq!(changes.worktree, None, "a tempdir is no linked worktree");
+}
+
+/// Sends the rewind the timeline (T37.28.1) sends for the session's one
+/// checkpoint, then pulls until its notice lands.
+async fn rewind(session: &LiveSession, code: bool, conversation: bool) {
+    let changes = session.changes().await.expect("changes");
+    let [checkpoint] = changes.checkpoints.as_slice() else {
+        panic!("one checkpoint: {:?}", changes.checkpoints);
+    };
+    let intent = Intent::Rewind {
+        to_turn: checkpoint.turn,
+        code,
+        conversation,
+    };
+    session.send(intent).await.expect("rewind");
+    let done = |s: &LiveSession| {
+        s.snapshot().iter().any(|b| {
+            matches!(&b.kind, BlockKind::Notice { text, .. } if text.starts_with("rewound to T"))
+        })
+    };
+    while !done(session) {
+        session.next_patches().await.expect("the stream stays open");
+    }
+}
+
+#[tokio::test]
+async fn rewinding_code_to_a_checkpoint_restores_its_files_and_keeps_the_conversation() {
+    let dir = scratch(Some(TWO_EDITS));
+    let session = edited(dir.path()).await;
+    let notes = std::fs::read_to_string(dir.path().join("project/notes.md"));
+    assert_eq!(notes.ok().as_deref(), Some("bye\n"));
+    rewind(&session, true, false).await;
+    let notes = std::fs::read_to_string(dir.path().join("project/notes.md"));
+    assert_eq!(notes.ok().as_deref(), Some("hello\n"));
+    assert!(
+        !dir.path().join("project/new.rs").exists(),
+        "a created file goes"
+    );
+    assert_eq!(
+        texts(&session),
+        ["change them", "Changing two files.", "Done."]
+    );
+}
+
+#[tokio::test]
+async fn rewinding_code_and_conversation_leaves_nothing_to_review() {
+    let dir = scratch(Some(TWO_EDITS));
+    let session = edited(dir.path()).await;
+    rewind(&session, true, true).await;
+    let notes = std::fs::read_to_string(dir.path().join("project/notes.md"));
+    assert_eq!(notes.ok().as_deref(), Some("hello\n"));
+    assert!(
+        !dir.path().join("project/new.rs").exists(),
+        "a created file goes"
+    );
+    assert!(texts(&session).is_empty(), "{:?}", texts(&session));
+    let changes = session.changes().await.expect("changes");
+    assert_eq!((changes.files, changes.checkpoints), (vec![], vec![]));
 }
 
 #[tokio::test]
