@@ -386,12 +386,12 @@ Default window 1 440 × 900, minimum 900 × 600. A three-column
 └──────────────┴──────────────────────────────────────────────┴─────────────────┘
 ```
 
-- **Toolbar** (Liquid Glass): sidebar toggle; breadcrumb *project › branch ›
+- **Toolbar** (Liquid Glass): sidebar toggle (⌃⌘S); breadcrumb *project › branch ›
   worktree* (click: switch branch/worktree); model chip (tier · model · effort,
   menu); permission-mode segmented control; cost pill (`$` for the session and
   context-window fill; click opens Context & Cost); Stop button while a turn
-  runs (⌘.); inspector toggle. **Bypass mode** paints a thin red strip under
-  the whole toolbar for as long as it is on.
+  runs (⌘.); Appearance (⌘⌥A); inspector toggle (⌃⌘I). **Bypass mode** paints
+  a thin red strip under the whole toolbar for as long as it is on.
 - **Sidebar**: filter field; "Needs you" (sessions with a pending approval or
   question, orange count); "Running"; then projects as disclosure groups.
   A row: status glyph (● running, ◐ waiting for you, ○ idle, ✕ error),
@@ -401,7 +401,7 @@ Default window 1 440 × 900, minimum 900 × 600. A three-column
 - **Transcript**: one centered reading column, max 760 pt, with a 36 pt left
   gutter for turn numbers and checkpoint marks. The composer is docked at
   the bottom of the column and grows up to 40 % of the height.
-- **Inspector** (⌥⌘I), tabs:
+- **Inspector** (⌃⌘I), tabs:
   - *Changes* — files touched this session with +/− and the tool call that
     touched them; click opens Review.
   - *Plan* — the live todo list with statuses.
@@ -505,7 +505,8 @@ current project and slash commands. The whole app is keyboard-drivable:
 | ⌘. | Interrupt |
 | ⏎ / ⌘⏎ / ⎋ | On a pending approval: allow / allow for session / deny |
 | ⌘⇧R | Review |
-| ⌥⌘I / ⌘⌃S | Inspector / sidebar |
+| ⌃⌘I / ⌃⌘S | Inspector / sidebar: the defaults of the system `InspectorCommands` and `SidebarCommands` (A74) |
+| ⌘⌥A | Appearance popover |
 | ⌘⇧F | Search all sessions |
 | ⌘[ / ⌘] | Previous / next turn in the transcript |
 | ⌘+ / ⌘− | Text size |

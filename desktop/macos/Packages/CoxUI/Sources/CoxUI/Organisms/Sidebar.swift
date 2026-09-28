@@ -53,7 +53,8 @@ struct Sidebar: View {
           }
           .buttonStyle(CoxButtonStyle(.plain, size: .small))
           .foregroundStyle(Color(.textSecondary))
-          .help("Hide the sidebar")
+          .keyboardShortcut(ShellShortcut.sidebar.key)
+          .help(ShellShortcut.sidebar.help("Hide the sidebar"))
           .accessibilityLabel("Hide sidebar")
         }
         // The system's window buttons sit at the leading end of this row, beside the toolbar.

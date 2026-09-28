@@ -63,9 +63,6 @@ struct AppearancePopover: View {
   let send: (Intent) -> Void
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-  /// The shortcut DS§3.5 gives the popover.
-  static let shortcut = "⌘⌥A"
-
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Radius.popover, style: .continuous)
     let isGlass = state.material != .solid
@@ -75,7 +72,7 @@ struct AppearancePopover: View {
           .foregroundStyle(Color(.textPrimary))
           .accessibilityAddTraits(.isHeader)
         Spacer(minLength: Space.m)
-        KeyCap(Self.shortcut)
+        KeyCap(ShellShortcut.appearance.glyphs)
       }
       VStack(spacing: Space.s) {
         SectionHeader("Material")
