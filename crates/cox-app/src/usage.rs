@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use cox_protocol::ids::TurnId;
-use cox_protocol::types::{Event, Usage};
+use cox_protocol::types::{ContextBreakdown, Event, Usage};
 use serde::{Deserialize, Serialize};
 
 use crate::meter_text::{MeterText, Rates};
@@ -104,6 +104,9 @@ pub struct Meter {
     /// The turn's highest tok/s, live or exact.
     peak: Option<f64>,
     session_thinking_bytes: usize,
+    /// The latest request's window and split (A98); only its formatted
+    /// text crosses to the views.
+    context: Option<ContextBreakdown>,
 }
 
 impl Meter {
@@ -121,6 +124,7 @@ impl Meter {
                 avg: (self.rated.1 > 0.0).then(|| self.rated.0 / self.rated.1),
                 peak: self.peak,
                 session_thinking: estimate(self.session_thinking_bytes),
+                context: self.context,
             };
             self.view.text = MeterText::of(&self.view, rates);
         }
@@ -163,6 +167,10 @@ impl Meter {
                         self.peak = Some(self.peak.map_or(rate, |p| p.max(rate)));
                     }
                 }
+                true
+            }
+            Event::ContextBreakdown { breakdown, .. } => {
+                self.context = Some(*breakdown);
                 true
             }
             Event::TurnDone { turn, .. } => match self.view.turn.as_mut() {

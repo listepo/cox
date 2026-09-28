@@ -15,10 +15,10 @@ use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange}
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind, TextLine};
 use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 use cox_app::{
-    Activity, ChangedFile, Changes, Checkpoint, Completion, ConfigSource, Dropped, FileChange,
-    Icon, InboxItem, Info, Intent, Layer, Linked, McpLogin, McpServer, MeterRow, MeterText, Need,
-    Project, SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind,
-    TaskTarget, TurnUsage, UsageView,
+    Activity, ChangedFile, Changes, Checkpoint, Completion, ConfigSource, ContextPart, Dropped,
+    FileChange, Icon, InboxItem, Info, Intent, Layer, Linked, McpLogin, McpServer, MeterRow,
+    MeterText, Need, Project, SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally,
+    TaskKind, TaskTarget, TurnUsage, UsageView,
 };
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
@@ -350,7 +350,17 @@ pub struct MeterText {
     pub rate_detail: String,
     pub rows: Vec<MeterRow>,
     pub context: String,
+    pub context_share: String,
+    pub context_parts: Vec<ContextPart>,
     pub footnote: String,
+}
+
+#[uniffi::remote(Record)]
+pub struct ContextPart {
+    pub kind: String,
+    pub label: String,
+    pub tokens: String,
+    pub share: f64,
 }
 
 #[uniffi::remote(Record)]
