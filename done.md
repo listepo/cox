@@ -2986,3 +2986,27 @@ Check:
 - Without the fix all three failed (core test: no `ToolCallDone` at all).
 - In the worktree: nextest 1313 passed, 4 skipped; fmt and clippy clean.
 
+#### T38.2 Detached `bash` from an older turn is killed on quit
+
+Model: Claude Code / opus-5.5 · Depends: — · Size: ~180 · Files: `crates/cox-tools` (bash spawn/cancel), `crates/cox-core` (session-scoped token), `crates/cox` or `crates/cox-tui` (quit path)
+
+Goal: no orphaned shell after cox exits. Cancellation is turn-scoped (T34.11 follow-up), so once the user sends another prompt, `interrupt()` at TUI quit no longer reaches a detached shell's `ToolCx::cancel`; `wait_tasks_cleared` gives up after `SHELL_CANCEL_GRACE` and the process is orphaned (reproduced with `sleep 4003`, ppid 1). A session-scoped token that detached shell tasks also watch closes it for TUI quit, headless `--loop`, `/clear`, fork and handoff alike.
+
+Check: a test starts a detached `bash` in turn 1, runs turn 2, ends the session, and asserts the shell's process group is gone within the grace period; it fails without the fix. Manual: the `sleep 4003` repro against a `COX_HOME` scratch tree leaves no process with ppid 1.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: changing turn-scoped cancellation for foreground tools.
+
+Plan:
+1. `crates/cox-core/src/session.rs`: a session-scoped `CancellationToken` (`ended`) next to the turn token. Every turn token becomes `ended.child_token()` (at build and at each reset: `run_turn_inner`, `user_shell`, and `ToolInvoker::invoke` in `plugin_model.rs`, through one `renew_cancel` helper), so a detached shell's `ToolCx::cancel` clone from any older turn is still a descendant of `ended`. `pub fn end()` cancels it; `interrupt()` stays turn-scoped. `spawn_child` roots a child's `ended` under the parent's, so a subagent's detached shell dies too.
+2. `crates/cox/src/run.rs` and `crates/cox/src/session.rs`: the two session-exit sites (headless `run`/`--loop`; TUI quit, `/clear`, fork, handoff) call `end()` instead of `interrupt()` before `wait_tasks_cleared(SHELL_CANCEL_GRACE)`; comments that describe the old limit are corrected. The bash kill-group path (`cox-tools` `bash::run`) is reused as is: it already SIGTERM→SIGKILLs the group when its token fires.
+3. Regression test `ending_the_session_kills_a_shell_detached_in_an_older_turn` in `crates/cox-core/tests/bash_tasks.rs` (real `BashTool`, scripted provider): turn 1 detaches `sleep 4011.<test pid>` (a command line unique to the run), turn 2 runs, `end()` + `wait_tasks_cleared`, then `pgrep -f` is polled with a deadline of the grace period; any leftover is killed before the assert. Run once with `end()` aliased to `interrupt()` to see it fail.
+4. Verify: the Check test, the manual `sleep 4003` repro with the real binary against a scratch `COX_HOME`, then fmt, clippy, nextest.
+Status: done 2026-09-28
+Result: a session-scoped `CancellationToken` (`Session::ended`, `crates/cox-core/src/session.rs`) is now the parent of every turn token (`renew_cancel` replaces the three `CancellationToken::new()` resets: `run_turn_inner`, `user_shell`, `ToolInvoker::invoke`). `Session::end()` cancels it, so the `ToolCx::cancel` a shell detached in any older turn cloned fires too and the bash tool's own SIGTERM→SIGKILL of the process group runs; `interrupt()` stays turn-scoped. `spawn_child` roots a subagent's token under its parent's. Headless `run`/`--loop` and the TUI exit path (quit, `/clear`, fork, handoff) call `end()` instead of `interrupt()` before `wait_tasks_cleared(SHELL_CANCEL_GRACE)`. No new kill path; sandbox and permission guards untouched.
+Deviations: 6 files instead of ≤3, all small: the core token (`session.rs`), the one reset in `plugin_model.rs` (else a plugin-invoked detached shell would escape `end`), doc-only corrections in `tasks.rs`, one call site each in `crates/cox/src/run.rs` and `crates/cox/src/session.rs`, and the test. About 80 LOC without the test.
+Check output:
+- `ending_the_session_kills_a_shell_detached_in_an_older_turn` (`crates/cox-core/tests/bash_tasks.rs`): failed with `end()` aliased to `interrupt()` (`sleep 4011.<pid>` outlived the session after 10 s), passes with the fix.
+- Manual, real binary, `COX_HOME=/tmp/cox-t38.2`, scripted provider, `sleep 4003` detached in turn 1: headless `run --loop 1s --max-iterations 2` exits about 2 s later and leaves no `sleep 4003`; TUI (PTY) with two prompts then Ctrl+C ×2 exits in 0.6 s and leaves no `sleep 4003` (before the fix it survived with ppid 1, T34.11).
+- nextest 1312 passed, 4 skipped; fmt and clippy clean.

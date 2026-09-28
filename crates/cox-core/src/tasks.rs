@@ -8,7 +8,8 @@
 //!
 //! Cancellation is turn-scoped: a background task clones the spawning
 //! turn's token, so `Interrupt` stops it only while that turn is current;
-//! a later turn does not cancel work it did not start.
+//! a later turn does not cancel work it did not start. Every turn token is
+//! a child of the session's own (T38.2), so `Session::end` still stops it.
 //!
 //! T34.5: the same registry routes follow-up messages (SM§2). A subagent
 //! stays addressable by its `TaskId` after it finishes: live, a message
@@ -242,17 +243,14 @@ impl Session {
     /// Waits, bounded by `deadline`, for every task of any kind — including
     /// `TaskKind::Shell`, which `wait_idle` above deliberately ignores — to
     /// leave the registry (T34.9 follow-up). The headless surface calls
-    /// `interrupt()` first, then this, right before `shutdown_background`:
-    /// a still-running detached `bash` gets killed rather than merely
+    /// `end()` first, then this, right before `shutdown_background`: a
+    /// still-running detached `bash` gets killed rather than merely
     /// abandoned as an orphan process. Unlike `wait_idle`, this cannot use
     /// `cancel.cancelled()` as an exit condition — the caller just set it,
     /// so it is already true and would make this return immediately,
-    /// before the kill it triggered actually lands. `deadline` is the
-    /// safety net for the one case that leaves anyway: cancellation is
-    /// turn-scoped (`register_task`'s callers, `deliver`'s `Wake` case),
-    /// so a `Shell` task detached in an *older* turn (only reachable in
-    /// `--loop`) holds a `ToolCx::cancel` clone of a token this session's
-    /// `interrupt()` can no longer reach, and would otherwise never clear.
+    /// before the kill it triggered actually lands. `end()` reaches a shell
+    /// detached in any turn (T38.2); `deadline` is the safety net for a
+    /// shell that does not die in time.
     pub async fn wait_tasks_cleared(&self, deadline: Duration) {
         let _ = tokio::time::timeout(deadline, async {
             loop {

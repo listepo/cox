@@ -1741,8 +1741,10 @@ pub fn run_tui(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
         // T34.11: the same kill headless `run` does before it exits (see
         // its comment there): a detached `bash` still running would
         // otherwise outlive this session — and, at quit, cox itself as an
-        // orphan. Every outcome leaves this session, so every one reaps it.
-        quit.interrupt();
+        // orphan. Every outcome leaves this session, so every one reaps it;
+        // `end`, not `interrupt`, so a shell detached in an older turn is
+        // reached too (T38.2).
+        quit.end();
         rt.block_on(quit.wait_tasks_cleared(crate::run::SHELL_CANCEL_GRACE));
         let parent = quit.id();
         let (child, what) = match outcome {

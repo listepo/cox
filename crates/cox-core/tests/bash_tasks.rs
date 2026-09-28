@@ -210,3 +210,77 @@ text = "moved on"
     );
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Whether a process whose command line contains `pattern` is running.
+fn running(pattern: &str) -> bool {
+    std::process::Command::new("pgrep")
+        .args(["-f", pattern])
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
+/// Polls `running(pattern)` until it equals `want` or `within` elapses.
+async fn settle(pattern: &str, want: bool, within: Duration) -> bool {
+    let deadline = tokio::time::Instant::now() + within;
+    loop {
+        if running(pattern) == want {
+            return true;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// T38.2: cancellation is turn-scoped, so after turn 2 the shell detached
+/// in turn 1 holds a token `interrupt()` no longer reaches. `end()` still
+/// reaches it: the shell's process group is killed within the grace period.
+#[tokio::test]
+async fn ending_the_session_kills_a_shell_detached_in_an_older_turn() {
+    // The same fixed margin the surfaces give `wait_tasks_cleared`.
+    const GRACE: Duration = Duration::from_secs(5);
+    // Unique per test process, so a parallel run or a leftover never matches.
+    let sleeper = format!("sleep 4011.{}", std::process::id());
+    let (session, _store, mut rx, dir) = open(&format!(
+        r#"
+[[turn]]
+text = "starting"
+tool_calls = [{{ name = "bash", input = {{ command = "{sleeper}", background = true }} }}]
+
+[[turn]]
+text = "detached"
+
+[[turn]]
+text = "second turn"
+"#
+    ));
+    let mut events = Vec::new();
+    let turn = user_turn(&session);
+    until(&mut rx, &mut events, |e| {
+        matches!(e, Event::TurnDone { .. })
+    })
+    .await;
+    turn.await.expect("turn 1");
+    assert!(
+        settle(&sleeper, true, GRACE).await,
+        "the shell never started"
+    );
+    let turn = user_turn(&session);
+    until(&mut rx, &mut events, |e| {
+        matches!(e, Event::TurnDone { .. })
+    })
+    .await;
+    turn.await.expect("turn 2");
+
+    session.end();
+    session.wait_tasks_cleared(GRACE).await;
+    let gone = settle(&sleeper, false, GRACE).await;
+    if !gone {
+        let _ = std::process::Command::new("pkill")
+            .args(["-KILL", "-f", &sleeper])
+            .status();
+    }
+    let _ = std::fs::remove_dir_all(dir);
+    assert!(gone, "`{sleeper}` outlived the session");
+}
