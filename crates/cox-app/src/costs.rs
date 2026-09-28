@@ -4,16 +4,19 @@
 //! formatted. Built from the rows the store returns, never from the meter's
 //! running sums, because a cost that is not a ledger row does not exist.
 //! Also the tab's footnote, the project's spend today and this week
-//! (T37.29.3.3). Separate from `meter_text.rs`, which formats the live meter.
+//! (T37.29.3.3), and the menu bar's "Today" footer over the whole ledger
+//! (T51.12). Separate from `meter_text.rs`, which formats the live meter.
 
 use chrono::{DateTime, Datelike, Days, NaiveDate, SecondsFormat, TimeZone, Utc};
+use cox_protocol::StoreError;
 use cox_protocol::types::{Job, Usage};
 use cox_store::queries::LedgerRow;
-use cox_store::to_tag;
+use cox_store::{Store, to_tag};
 use serde::Serialize;
 
 use crate::meter_text::tokens;
 use crate::usage::add_to;
+use crate::workspace::{Workspace, WorkspaceError};
 
 /// What the tab's "Cost by turn" grid shows.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -143,6 +146,40 @@ pub fn footnote(project: &str, today: f64, week: f64) -> String {
         "Project {project} today: ${today:.2} · this week: ${week:.2}. \
          Every number is a row in the cost ledger."
     )
+}
+
+/// The menu bar's "Today" footer (T51.12, mockup 26), every figure a
+/// ledger row's.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct DaySummary {
+    /// `$3.18`: the `usage` rows written since local midnight, formatted as
+    /// the meter's cost.
+    pub cost: String,
+    /// The sessions written to since local midnight.
+    pub sessions: u64,
+    /// `Today $3.18 · 4 sessions`.
+    pub text: String,
+}
+
+impl Workspace {
+    /// Today's spend and sessions across every project, for the menu bar.
+    pub fn today(&self) -> Result<DaySummary, WorkspaceError> {
+        Ok(day_summary(self.store(), &chrono::Local::now())?)
+    }
+}
+
+/// `now`'s day from its local midnight, as [`periods`] starts it.
+fn day_summary<Tz: TimeZone>(store: &Store, now: &DateTime<Tz>) -> Result<DaySummary, StoreError> {
+    let (today, _) = periods(now);
+    let (spent, active) = store.activity_since(&today)?;
+    let sessions = u64::try_from(active).unwrap_or(0);
+    let cost = format!("${spent:.2}");
+    let noun = if sessions == 1 { "session" } else { "sessions" };
+    Ok(DaySummary {
+        text: format!("Today {cost} · {sessions} {noun}"),
+        cost,
+        sessions,
+    })
 }
 
 /// The jobs a subagent's child session runs as (`subagent::Preset::job`).
@@ -281,6 +318,65 @@ mod tests {
                 "2026-09-29T21:00:00.000Z".to_string(),
                 "2026-09-27T21:00:00.000Z".to_string()
             )
+        );
+    }
+
+    /// A scratch store with `sessions` sessions, each with one `usage` row
+    /// per cost in `costs`.
+    fn ledger(sessions: usize, costs: &[f64]) -> (tempfile::TempDir, Store) {
+        use cox_protocol::Store as _;
+        use cox_protocol::traits::SessionRow;
+
+        let home = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(home.path()).expect("store");
+        for _ in 0..sessions {
+            let id = SessionId::new();
+            store
+                .session_create(&SessionRow {
+                    id,
+                    created_at: String::new(),
+                    cwd: "/tmp/work".into(),
+                    project_slug: "work".into(),
+                    title: None,
+                    parent_id: None,
+                    rollout_path: std::path::PathBuf::new(),
+                })
+                .expect("session");
+            for &cost in costs {
+                let mut row = at(0, 1, Job::Main, Tier::Code, 10, cost).usage;
+                row.session_id = id;
+                store.usage_insert(&row).expect("usage");
+            }
+        }
+        (home, store)
+    }
+
+    fn tomorrow() -> DateTime<chrono::Local> {
+        chrono::Local::now()
+            .checked_add_days(Days::new(1))
+            .expect("tomorrow")
+    }
+
+    #[test]
+    fn today_sums_only_todays_usage_rows() {
+        let (_home, store) = ledger(1, &[0.5, 0.25]);
+        let today = day_summary(&store, &chrono::Local::now()).expect("today");
+        assert_eq!(today.cost, "$0.75");
+        // Seen from tomorrow, the same rows are yesterday's.
+        let later = day_summary(&store, &tomorrow()).expect("tomorrow");
+        assert_eq!(later.cost, "$0.00");
+    }
+
+    #[test]
+    fn today_counts_sessions_active_today() {
+        let (_home, store) = ledger(2, &[0.1]);
+        let today = day_summary(&store, &chrono::Local::now()).expect("today");
+        assert_eq!(today.sessions, 2);
+        assert_eq!(today.text, "Today $0.20 · 2 sessions");
+        let later = day_summary(&store, &tomorrow()).expect("tomorrow");
+        assert_eq!(
+            (later.sessions, later.text.as_str()),
+            (0, "Today $0.00 · 0 sessions")
         );
     }
 

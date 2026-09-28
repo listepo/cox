@@ -34,7 +34,7 @@ pub use browser::{Browser, BrowserError, PageText};
 pub use changes::{ChangedFile, Changes, Checkpoint, FileChange};
 pub use complete::{Completer, Completion};
 pub use controller::Controller;
-pub use costs::{CostRow, TurnCosts};
+pub use costs::{CostRow, DaySummary, TurnCosts};
 pub use inbox::{Activity, Inbox, InboxItem, Need};
 pub use info::{ConfigSource, Info};
 pub use intent::{Dispatch, Intent, IntentError, dispatch};

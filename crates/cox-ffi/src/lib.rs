@@ -13,7 +13,9 @@ use cox_app::WorkspaceError;
 use cox_app::app::{App as Owner, AppError as OwnerError};
 use cox_app::onboarding::CheckRow;
 use cox_app::terminal::TerminalError;
-use cox_app::{Activity, Holder, InboxItem, ModelChoice, Project, SearchHit, SessionEntry};
+use cox_app::{
+    Activity, DaySummary, Holder, InboxItem, ModelChoice, Project, SearchHit, SessionEntry,
+};
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::WorktreeInfo;
 use tokio::runtime::Runtime;
@@ -150,6 +152,11 @@ impl App {
             .owner
             .workspace()
             .sessions(Path::new(&project), i64::from(limit))?)
+    }
+
+    /// The menu bar's "Today" footer (T51.12).
+    pub fn today(&self) -> Result<DaySummary, AppError> {
+        Ok(self.owner.workspace().today()?)
     }
 
     pub fn search(&self, query: String, limit: u32) -> Result<Vec<SearchHit>, AppError> {

@@ -18,10 +18,10 @@ use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState
 use cox_app::review::LineComment;
 use cox_app::{
     Activity, BrowserError, ChangedFile, Changes, Checkpoint, Completion, ConfigSource,
-    ContextPart, CostRow, Dropped, FileChange, Icon, InboxItem, Info, Intent, Layer, Linked,
-    McpLogin, McpServer, MeterRow, MeterText, ModelChoice, Need, PageText, Project, SearchHit,
-    SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind, TaskTarget, TurnCosts,
-    TurnUsage, UsageView,
+    ContextPart, CostRow, DaySummary, Dropped, FileChange, Icon, InboxItem, Info, Intent, Layer,
+    Linked, McpLogin, McpServer, MeterRow, MeterText, ModelChoice, Need, PageText, Project,
+    SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind, TaskTarget,
+    TurnCosts, TurnUsage, UsageView,
 };
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::ui::StyleToken;
@@ -922,6 +922,14 @@ pub enum Level {
     Warn,
     Budget,
     Security,
+}
+
+/// T51.12: the menu bar's "Today" footer.
+#[uniffi::remote(Record)]
+pub struct DaySummary {
+    pub cost: String,
+    pub sessions: u64,
+    pub text: String,
 }
 
 /// T51.8: what the app's browser pane reports of its page.
