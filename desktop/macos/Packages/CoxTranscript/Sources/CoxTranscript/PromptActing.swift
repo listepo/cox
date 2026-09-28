@@ -1,5 +1,6 @@
 // What a hovered prompt's actions do (T37.23.9, DT§5.2): Copy puts the prompt's text on the
-// pasteboard, Edit and resend puts it in the session's composer draft. Here because the
+// pasteboard, Edit and resend puts it in the session's composer draft and rewinds the
+// conversation to before it (T37.23.18). Here because the
 // transcript's actions meet the composer's store only in this package; CoxUI draws the strip
 // and CoxTranscriptText shows it on hover.
 
@@ -44,15 +45,17 @@ struct PromptActing {
   }
 
   /// Copy gives the prompt as shown, without its tiles (T37.23.4); Edit and resend replaces the
-  /// draft with it, to change and send again.
-  func perform(_ action: PromptActions.Action, on block: Block) {
-    guard case .user(let text, _) = block.kind else { return }
+  /// draft with it, to change and send again, and rewinds the conversation to before it.
+  @discardableResult
+  func perform(_ action: PromptActions.Action, on block: Block) -> Task<Void, Never>? {
+    guard case .user(let text, _) = block.kind else { return nil }
     switch action {
     case .copy:
       pasteboard.clearContents()
       pasteboard.setString(text, forType: .string)
+      return nil
     case .edit:
-      composer?.edit(text)
+      return composer?.resend(block)
     }
   }
 }
