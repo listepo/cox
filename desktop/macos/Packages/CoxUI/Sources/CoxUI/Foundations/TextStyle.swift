@@ -2,7 +2,6 @@
 // `FontToken`, at the user's text size. Separate so no view spells a font and every text
 // scales together.
 
-import AppKit
 import SwiftUI
 
 extension View {
@@ -29,16 +28,9 @@ private struct TextStyle: ViewModifier {
     let font = Font.system(size: size, weight: token.weight, design: token.design)
     content
       .font(tabularDigits ? font.monospacedDigit() : font)
-      .lineSpacing(max(0, size * token.lineHeight - Self.naturalLineHeight(size, token.design)))
+      // The line box, not `lineSpacing`, which only adds between lines: a single line is as
+      // tall as the mockups' CSS line box, so rows and labels keep the designed rhythm.
+      .lineHeight(.exact(points: size * token.lineHeight))
       .tracking(token.tracking * size)
-  }
-
-  /// The system font's own line height, which SwiftUI's `lineSpacing` adds to.
-  private static func naturalLineHeight(_ size: CGFloat, _ design: Font.Design) -> CGFloat {
-    let font =
-      design == .monospaced
-      ? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
-      : NSFont.systemFont(ofSize: size)
-    return font.ascender - font.descender + font.leading
   }
 }

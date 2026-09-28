@@ -135,9 +135,7 @@ public struct Composer: View {
     let shape = RoundedRectangle(cornerRadius: Radius.pane, style: .continuous)
     return VStack(alignment: .leading, spacing: 0) {
       ComposerEditor(state: state, send: send)
-        .padding(.horizontal, Space.l)
-        .padding(.top, Space.l)
-        .padding(.bottom, Space.xs)
+        .padding(EdgeInsets(top: Space.l, leading: Space.l, bottom: Space.s, trailing: Space.l))
       if !state.attachments.isEmpty {
         ComposerAttachments(attachments: state.attachments) { send(.removeAttachment($0)) }
           .padding(.horizontal, Space.xl)
@@ -145,6 +143,7 @@ public struct Composer: View {
       }
       ComposerChipRow(state: state, send: send)
         .padding(.horizontal, Space.ml)
+        .padding(.top, Space.s)
         .padding(.bottom, Space.ml)
     }
     .frame(maxWidth: Size.readingWidth)
