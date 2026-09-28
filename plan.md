@@ -29,9 +29,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.10 | todo | P3 | 2 | 0% | |
 | T35.14 | todo | P2 | 3 | 0% | |
 | T37.2 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.3 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.4 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.5 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.8 | todo | P0 | 4 | 0% | |
 | T37.9 | todo | P0 | 3 | 0% | |
 | T37.10 | todo | P0 | 4 | 0% | |
@@ -1099,24 +1096,6 @@ Swift dependencies are in `research.md` §9.5 and A67; a new one needs the same 
 Depends: T37.1 · Size: ~80 · Files: `crates/cox-acp/src/lib.rs`, `crates/cox/src/main.rs`
 Goal: ACP sessions get the same tools, MCP servers, hooks and plugins as the TUI.
 Check: an ACP e2e against the scripted provider lists the same tool names as `cox run -p` for the same `COX_HOME`.
-
-#### T37.3 `ToolResult.structured`; TUI and ACP drop their todo re-parsers
-
-Depends: — · Size: ~150 · Files: `crates/cox-protocol/src/lib.rs`, `crates/cox-tools/src/todo.rs`, `crates/cox-tui/src/…` (DT gap G3)
-Goal: the todo list crosses the event stream as data, not text a surface re-parses.
-Check: protocol schema regenerated; a todo scenario snapshot shows identical TUI output; no todo text parser remains (`rg` finds none).
-
-#### T37.4 `QuestionAsked` / `Answer` replace the `ask_user` side channel
-
-Depends: — · Size: ~180 · Files: `crates/cox-protocol/src/lib.rs`, `crates/cox-core/src/turn.rs`, `crates/cox-tools/src/ask_user.rs` (G4)
-Goal: a question to the user is an `Event` and its answer a `Submission`, so every surface — and a replay — sees it.
-Check: a scripted scenario asks and answers a question headless; the rollout contains both.
-
-#### T37.5 `StateChanged` and `TitleSet` events; fix `protocol.md` counts
-
-Depends: — · Size: ~120 · Files: `crates/cox-protocol/src/lib.rs`, `crates/cox-core/src/lib.rs`, `docs/protocol.md` (G5–G7)
-Goal: effort and permission-mode changes and the session title arrive as typed events, not a `Notice`.
-Check: a scenario that changes mode and effort emits both events; `docs/protocol.md` counts match the enum.
 
 #### T37.8 `cox-app`: timeline fold with snapshots per scripted scenario
 

@@ -23,9 +23,6 @@
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T35.14. Sandboxed plugin and external-agent programs may live under `/tmp`
 - T37.2. Route `cox acp` through `cox-session`
-- T37.3. `ToolResult.structured`; TUI and ACP drop their todo re-parsers
-- T37.4. `QuestionAsked` / `Answer` replace the `ask_user` side channel
-- T37.5. `StateChanged` and `TitleSet` events; fix `protocol.md` counts
 - T37.8. `cox-app`: timeline fold with snapshots per scripted scenario
 - T37.9. `cox-app`: drain task, coalescer, never-stall
 - T37.10. `cox-app`: workspace, inbox, status, intents, completion

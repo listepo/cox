@@ -3048,3 +3048,45 @@ Result: `crates/cox-session/src/env.rs`: `login_env(timeout)` runs `$SHELL` (or 
 Deviations: `-l -i` as DT§4.8 says (PATH is often set in `.zshrc`, which only an interactive shell reads; stdin is empty so it cannot wait for input); `nix` (`signal`, workspace version) added to cox-session for the group kill, as `cox-ext` hooks do (§1.1 row). The timeout became 10 s instead of 3 s after merge: a real `zsh -l -i -c` took ~2.0 s on a loaded machine (DT§4.8 updated).
 
 Check: `cargo nextest run -p cox-session` 38/38 (5 new: a fake shell's exported PATH comes back through junk output; a 30 s sleeper against a 200 ms timeout falls back with a "timed out" warning; a missing shell falls back; `parse` keeps multi-line values and ignores junk; `parse` returns nothing without markers); re-run after the timeout change 38/38; clippy and fmt clean. Commits 8cda296, 57783af.
+
+#### T37.3 `ToolResult.structured`; TUI and ACP drop their todo re-parsers
+
+Depends: — · Size: ~150 · Files: `crates/cox-protocol/src/lib.rs`, `crates/cox-tools/src/todo.rs`, `crates/cox-tui/src/…` (DT gap G3)
+Goal: the todo list crosses the event stream as data, not text a surface re-parses.
+Check: protocol schema regenerated; a todo scenario snapshot shows identical TUI output; no todo text parser remains (`rg` finds none).
+Status: done 2026-09-28
+Result: `ToolResult.structured: Option<Box<Value>>` (serde default, so old rollouts load); `cox-protocol` gains `TodoItem`, `TodoState` and `ToolResult::todo_list`. The core passes `ToolOutput.structured` through (`turn.rs`); `todo.rs` builds its payload from those types; the TUI panel (`state.rs`, `status.rs`) and the ACP plan (`map.rs`) read the list as data. `parse_todo` and the text-parsing `plan_from` are deleted.
+
+Deviations: the payload is boxed (unboxed, it tripped `large_enum_variant` on the TUI enums); ~20 files that build a `ToolResult` (mostly tests) gained `structured: None`; `docs/compat.md` lost the T5.5 leftover row this resolves.
+
+Check: `docs/protocol.jsonschema` regenerated; `todo_panel` screenshot and `/todo` status snapshots unchanged; no todo text parser left (grep); new `todo_plan_comes_from_the_structured_list_not_the_text` (ACP), an old-rollout load test and a `todo_list` test; nextest for protocol, tools, core, tui, acp green; clippy for those plus plugin and cox clean; fmt clean. Commit 8b6d281.
+
+Not done: `cox-plugin/src/context.rs` still takes the todo list from the call input (not a text parser).
+
+#### T37.5 `StateChanged` and `TitleSet` events; fix `protocol.md` counts
+
+Depends: — · Size: ~120 · Files: `crates/cox-protocol/src/lib.rs`, `crates/cox-core/src/lib.rs`, `docs/protocol.md` (G5–G7)
+Goal: effort and permission-mode changes and the session title arrive as typed events, not a `Notice`.
+Check: a scenario that changes mode and effort emits both events; `docs/protocol.md` counts match the enum.
+Status: done 2026-09-28
+Result: `Event::StateChanged { mode, effort }` replaces the notice text `SetEffort` and `SetPermissionMode` sent; the TUI takes mode and effort from it. `Event::TitleSet { title }` added. `docs/design/protocol.md` counts fixed (after T37.4: 26 `Event`, 16 `Submission` variants).
+
+Deviations: the change is in `cox-core/src/session.rs`, not `lib.rs`; the card's `docs/protocol.md` is `docs/design/protocol.md`.
+
+Check: new `set_mode_and_effort_each_emit_state_changed_with_both_values` (router.rs), `router_set_effort…` updated, a TUI test for `StateChanged`; schema regenerated; 580 tests in protocol, core and tui pass; clippy clean. Commit 287daaa.
+
+Not done: nothing emits `TitleSet` yet — generating a title (a low-cost `Job::Title` call after the first turn, and a store column for it) adds one model request per session and changes every scripted scenario and cost; when it runs and whether it is opt-in is a creator decision (see `ideas.md`).
+
+#### T37.4 `QuestionAsked` / `Answer` replace the `ask_user` side channel
+
+Depends: — · Size: ~180 · Files: `crates/cox-protocol/src/lib.rs`, `crates/cox-core/src/turn.rs`, `crates/cox-tools/src/ask_user.rs` (G4)
+Goal: a question to the user is an `Event` and its answer a `Submission`, so every surface — and a replay — sees it.
+Check: a scripted scenario asks and answers a question headless; the rollout contains both.
+Status: done 2026-09-28
+Result: a question is `Event::QuestionAsked { call_id, question, options, source }`, the reply `Submission::Answer { call_id, text: Option<String> }`. `ask_user` asks through the session via a new `Relay::ask` (default: deny): the session parks the call, emits the event and waits. A subagent's question is raised on the parent's stream and the answer passed back to the child. The TUI modal and `--plain` work from the event and answer with a submission; `cox-session`'s `questions` setting is a plain flag; the old channel plumbing is gone from `crates/cox`, the TUI main loop and `kitty_probe`.
+
+Deviations: no separate question id (the call id is unique, as for approvals); `text` optional so Esc or end of input dismisses; 13 source files, +366/−271 including in-file tests (~95 net lines of code), because the old channel ran through every surface.
+
+Check: new `crates/cox-core/tests/question.rs` — a scripted scenario asks and answers headless and the rollout holds the question and answered result; a subagent's question is answered through the parent (fails without the relay); a stray answer gives a warning notice. 733 tests across protocol, tools, core, session and tui; `-p cox` 139; clippy and fmt clean. Real binary `--plain` with a scripted scenario: question shown, "2" answered, `prod` returned, `question_asked` in the rollout. After merge with T37.11: clippy `-p cox-session -p cox` clean, `cox-session` + `cox-protocol` 117/117. Commit 69a63d5.
+
+Not done: headless `--answer` still answers inside the tool (no `QuestionAsked` there); the `Notification` hook fires on the `ask_user` call, not on `QuestionAsked`.
