@@ -1208,6 +1208,7 @@ version = "0.1.2"
 dependencies = [
  "cox-protocol",
  "cox-sanitize",
+ "insta",
  "pulldown-cmark",
  "ratatui",
  "similar 3.2.0",
