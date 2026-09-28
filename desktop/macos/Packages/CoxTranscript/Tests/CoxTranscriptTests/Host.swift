@@ -72,16 +72,29 @@ final class Host {
   var scroll: NSScrollView? { text.enclosingScrollView }
 
   /// One frame: layout, draw and commit. An occluded window draws no layers, and TextKit 2
-  /// makes a card's view when its line draws, so the text view also draws into a bitmap (as
-  /// the T37.41 suite does).
-  func flush() {
+  /// makes a card's view when its line draws, so the text view draws `dirty` (all it shows
+  /// when `nil`) into a bitmap itself, as the T37.41 suite does.
+  func flush(drawing dirty: NSRect? = nil) {
     window.layoutIfNeeded()
     window.displayIfNeeded()
     for text in descendants(of: hosting, as: TranscriptTextView.self) {
-      let bitmap = text.bitmapImageRepForCachingDisplay(in: text.visibleRect)
-      bitmap.map { text.cacheDisplay(in: text.visibleRect, to: $0) }
+      let rect = dirty ?? text.visibleRect
+      let bitmap = text.bitmapImageRepForCachingDisplay(in: rect)
+      bitmap.map { text.cacheDisplay(in: rect, to: $0) }
     }
     CATransaction.flush()
+  }
+
+  /// What a frame redraws while a reply streams at the bottom: the shown text from the top of
+  /// its last paragraph down.
+  var streamedTail: NSRect {
+    let visible = text.visibleRect
+    guard let manager = text.textLayoutManager,
+      let last = manager.location(manager.documentRange.endLocation, offsetBy: -1),
+      let fragment = manager.textLayoutFragment(for: last)
+    else { return visible }
+    let top = max(visible.minY, fragment.layoutFragmentFrame.minY + text.textContainerOrigin.y)
+    return NSRect(x: visible.minX, y: top, width: visible.width, height: visible.maxY - top)
   }
 
   /// Turns the run loop until every card on screen has its view placed (TextKit places a
