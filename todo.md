@@ -1,6 +1,7 @@
 # Todo
 
 - T22.10. A project config may only tighten the permission rules
+- T22.11. A repository's `.claude/settings.json` may only tighten the permission rules
 - T33.14. `cox_http` and filesystem preopens
 - T33.18. Providers, ABI form (`PluginProvider`)
 - T33.34. Go: SDK wrapper, template, example
