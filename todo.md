@@ -31,7 +31,6 @@
 - T37.44.10. Tokens for the type sizes and window sizes the mockups use
 - T37.44.11. The running app matches the mockups end to end
 - T37.45.1. Settings: filter field in the sidebar
-- T37.45.2. Settings: provider keys and model pickers as in mockup 18
 - T37.45.3. Settings: permission rules editor and session grants
 - T37.45.4. Settings: MCP server status and log
 - T37.45.5. Onboarding: drop a project folder

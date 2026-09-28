@@ -37,7 +37,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.10 | todo | P2 | 2 | 0% | |
 | T37.44.11 | todo | P2 | 3 | 0% | |
 | T37.45.1 | todo | P3 | 2 | 0% | |
-| T37.45.2 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.45.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
 | T37.45.4 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T37.45.5 | todo | P3 | 2 | 0% | |
@@ -2858,13 +2857,6 @@ Check: per screen, the app screenshot and its diff against the mockup; no unexpl
 Depends: — · Size: ~80 · Files: CoxUI `SettingsSidebar`/`SettingsScreen`, CoxModel `SettingsStore`
 Goal: A120. Mockups 18–20 put a search field at the top of the settings sidebar. Typing filters the pages and the fields on them by label and config key (the schema-generated field list), highlighting matches; Esc clears. Pure Swift over the settings the store already holds.
 Check: a CoxModel test that a query keeps only matching pages and fields; a CoxUI snapshot with a query; the sidebar diff against mockup 18 loses the offset region T37.44.5 reported.
-
-#### T37.45.2 Settings: provider keys and model pickers as in mockup 18
-
-Depends: — · Size: ~180 · Files: CoxUI settings Models & Providers views, CoxModel `SettingsStore`, `SecretStore` use
-Goal: A120, DT§ settings row ("API keys go to the Keychain"). Each provider row shows whether a key is stored and offers Add key / Change key: a secure field whose value goes only through `SecretStore` (`KeychainSecretStore` in the app, the in-memory store in tests, A49) and is never logged or echoed; enum fields such as the default model and effort render as pop-up menus as in the mockup, writing through the existing settings set path.
-Check: CoxModel tests with the in-memory `SecretStore` (add, change, the value never reaches the settings file or a log); CoxUI snapshots of both key states and a pop-up; no real Keychain touched.
-Plan: find what `SettingsStore`/`SecretStore` already expose for provider keys and enum fields, add the key-state row with Add/Change key and a secure-field sheet, render enum fields as pop-ups, test with the in-memory store, snapshots; CoxModel and CoxUI only unless cox-app lacks key presence.
 
 #### T37.45.3 Settings: permission rules editor and session grants
 
