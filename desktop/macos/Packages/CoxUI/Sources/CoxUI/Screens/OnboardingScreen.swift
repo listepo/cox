@@ -16,13 +16,15 @@ public struct OnboardingScreenState: Equatable, Sendable {
 public enum OnboardingScreenIntent: Equatable, Sendable {
   /// The folder picker, for the project the first session runs in.
   case chooseFolder
+  /// Open this folder as the project: the one the picker chose, or one dropped on the step.
+  case openFolder(URL)
   /// Settings, to store a provider key.
   case openSettings
   /// Run the checks again, after the person fixed something outside the app.
   case retry
 }
 
-/// The first-run window: a project step over a `SettingsGroupBox` of `ChecklistRow`s.
+/// The first-run window: the `ProjectDropZone` step over a `SettingsGroupBox` of `ChecklistRow`s.
 public struct OnboardingScreen: View {
   let state: OnboardingScreenState
   let send: (OnboardingScreenIntent) -> Void
@@ -34,14 +36,10 @@ public struct OnboardingScreen: View {
   public var body: some View {
     ShellPane(.window) {
       ScrollView {
-        // The mockup's first-run window heads neither box: each row names itself.
+        // The mockup's first-run window heads neither the drop zone nor the checklist: each row
+        // names itself.
         VStack(alignment: .leading, spacing: Space.xxl) {
-          SettingsGroupBox(nil) {
-            ChecklistRow(
-              "Open a project", detail: "Choose a folder. A git repository is recommended.",
-              status: .step, symbol: "folder", action: "Choose Folder…"
-            ) { send(.chooseFolder) }
-          }
+          ProjectDropZone(send: send)
           SettingsGroupBox(nil) {
             ForEach(state.checks) { check in
               ChecklistRow(

@@ -1,6 +1,7 @@
 // First run (DT§5.8, T37.31): cox-app's checklist in CoxUI's `OnboardingScreen`, the folder the
-// first session opens in, and the way to Settings for a missing key. Shown in the session window
-// until a project is chosen; the choice is kept, so later launches go straight to the session.
+// first session opens in — picked or dropped (T37.45.5) — and the way to Settings for a missing
+// key. Shown in the session window until a project is chosen; the choice is kept, so later
+// launches go straight to the session.
 
 import AppKit
 import CoxClient
@@ -16,14 +17,17 @@ struct FirstRun: View {
   @Environment(\.openSettings) private var openSettings
 
   var body: some View {
-    OnboardingScreen(state: state) { intent in
-      switch intent {
-      case .chooseFolder: choose()
-      case .openSettings: openSettings()
-      case .retry: Task { await check() }
-      }
+    OnboardingScreen(state: state) { handle($0) }.task { await check() }
+  }
+
+  private func handle(_ intent: OnboardingScreenIntent) {
+    switch intent {
+    // The picker's folder takes the same road as a dropped one, so both open the project alike.
+    case .chooseFolder: if let folder = pickFolder() { handle(.openFolder(folder)) }
+    case .openFolder(let folder): openProject(folder)
+    case .openSettings: openSettings()
+    case .retry: Task { await check() }
     }
-    .task { await check() }
   }
 
   private func check() async {
@@ -40,11 +44,15 @@ struct FirstRun: View {
     }
   }
 
-  private func choose() {
+  private func pickFolder() -> URL? {
     let panel = NSOpenPanel()
     (panel.canChooseDirectories, panel.canChooseFiles) = (true, false)
     panel.prompt = "Open"
-    guard panel.runModal() == .OK, let folder = panel.url else { return }
+    return panel.runModal() == .OK ? panel.url : nil
+  }
+
+  /// Keeps `folder` as the project, so later launches go straight to the session.
+  private func openProject(_ folder: URL) {
     UserDefaults.standard.set(folder.path(percentEncoded: false), forKey: LaunchCore.projectKey)
     done()
   }
