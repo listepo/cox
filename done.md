@@ -7050,3 +7050,333 @@ Deviations: the OpenAPI file and endpoints page were not re-fetched; the doc cit
 Check: the P49 common check passes (five headings; `checked 2026-` lines: 4; nothing under `crates/` changed), 2026-09-29. Sources were not re-fetched (no network in this run): each doc cites the card's and `research.md` §4.3.8/§8.1 figures, dated 2026-09-28, and marks anything else **unverified**.
 
 Not done: verdict for the creator — recommended: defer. Open questions: do Cursor's terms allow a third-party client; does a $0 row with Cursor-reported tokens meet the ledger rule; can the unlicensed OpenAPI file be vendored.
+
+### T44.2. One live session per worktree
+
+Model: claude-sonnet-5 · Status: open · Depends: - · Size: ~110 · Priority: P2 · Complexity: 2
+
+Goal: a second session on a held worktree is warned, and the model's presence text names other sessions' worktrees.
+
+Files:
+- `crates/cox-ext/src/presence.rs`
+- `crates/cox/src/session.rs`
+
+Steps:
+1. `presence.rs`: `describe` appends ` in worktree <path>` (through `sanitize`, it reaches the model) when `worktree` is set; `pub fn holder(home, project, worktree: &Path, me, now) -> Option<Presence>` over `others` (live only, 600 s rule).
+2. `crates/cox/src/session.rs` `enter_worktree` (~1071): before switching cwd, `holder(...)` ⇒ a warning through the TUI notice path naming the other session id; start continues (warn, not block — fail open).
+3. Tests: `describe_names_other_sessions_worktree`, `holder_finds_live_session_on_same_worktree`, `holder_ignores_stale_records`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-ext describe_names_other_sessions_worktree holder_
+COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- --worktree t44 doctor
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: tests pass; two scratch sessions on one worktree produce the warning.
+
+Out of scope: hard locking.
+Status: done 2026-09-29
+Result: a session entering a worktree another live session holds warns, naming that session and its pid; the "other sessions" line names each one's worktree.
+
+Deviations: the warning is a `cox: warning:` stderr line, not a transcript notice; cox-ext now depends on cox-sanitize, with `crates/cox/tests/deps.rs` widened for cox-ext only; `Cargo.lock` edited by hand.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `nextest -p cox-ext -E 'test(holder_) | test(describe_names_other_sessions_worktree)'` and `-p cox --test deps`.
+
+### T44.3. Worktrees in `/agents` and `cox sessions`
+
+Model: claude-sonnet-5 · Status: open · Depends: - · Size: ~80 · Priority: P3 · Complexity: 2
+
+Goal: the user sees which session holds which worktree.
+
+Files:
+- `crates/cox-tui/src/state.rs`
+- `crates/cox/src/sessions.rs`
+
+Steps:
+1. `state.rs` `agents_rows`: append `⧉ <worktree file name>` via `crate::text::sanitize` when `Presence.worktree` is set.
+2. `sessions.rs`: mark a session whose recorded cwd is a linked worktree (`.git` is a file) with `⧉`.
+3. Tests: snapshot `agents_overlay_shows_worktree`; `sessions_marks_worktree_sessions`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui agents_overlay_shows_worktree
+mise exec -- cargo nextest run -p cox sessions_marks_worktree_sessions
+mise exec -- cargo insta review
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: snapshot reviewed; both tests pass.
+
+Out of scope: worktree actions from the overlay.
+Status: done 2026-09-29
+Result: the `/agents` overlay shows ` · ⧉ <worktree>`; `cox sessions` marks the cwd of a session in a linked worktree with ⧉.
+
+Deviations: a worktree is a `.git` file starting `gitdir:` and containing `/worktrees/`, so submodules are not marked.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `nextest -p cox-tui -E 'test(agents_overlay_shows_worktree)'` (records the hand-written `agents__agents_overlay_shows_worktree.snap`) and `-p cox -E 'test(sessions_marks_worktree_sessions)'`.
+
+### T44.4. Resume a worktree session in its worktree
+
+Model: claude-sonnet-5 · Status: open · Depends: T44.2 · Size: ~130 · Priority: P2 · Complexity: 3
+
+Goal: `cox --resume <id>` of a worktree session runs in that worktree (sandbox roots follow), with the main checkout as a read root, and refuses with a hint when the worktree is gone.
+
+Files:
+- `crates/cox/src/resume.rs`
+- `crates/cox/src/main.rs`
+- `crates/cox/src/session.rs`
+
+Steps:
+1. `resume.rs`: return the session's recorded cwd with the history.
+2. `main.rs` resume dispatch: if the recorded cwd is a linked worktree of the current project, use it as `cli.cwd`, add the main checkout as a read root (same as `enter_worktree`), set presence `with_worktree`; if the directory is missing ⇒ error naming `git worktree list` and `--worktree <name>`; never `git worktree add`.
+3. `session.rs`: factor the "main checkout as read root + presence worktree" lines of `enter_worktree` into one helper reused by step 2.
+4. Tests: `resume_uses_recorded_worktree_cwd`, `resume_refuses_missing_worktree`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox resume_uses_recorded_worktree_cwd resume_refuses_missing_worktree
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: tests pass; a scratch run resumes inside the worktree.
+
+Out of scope: moving a session between worktrees.
+Status: done 2026-09-29
+Result: resuming a session whose recorded cwd is a linked worktree of this repo re-enters it; a missing worktree stops cox with an error naming `git worktree list` and the exact `cox --worktree <name> --resume <id>`.
+
+Deviations: `resume::recorded_cwd` added; `cox run --resume`/`--continue` unchanged; the card's file references were stale.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `nextest -p cox -E 'test(resume_uses_recorded_worktree_cwd) | test(resume_refuses_missing_worktree) | test(worktree_flag_sets_roots)'` and a real-binary `--worktree x`, exit, `--resume <id>`.
+
+### T44.5. Worktree docs
+
+Model: claude-haiku · Status: open · Depends: T44.1, T44.2, T44.4 · Size: ~50 · Priority: P3 · Complexity: 1
+
+Goal: the gate doc and user docs describe the shipped mapping.
+
+Files:
+- `docs/design/v0.2-worktrees.md`
+- `docs/how-it-works.md`
+
+Steps:
+1. Gate doc "Resolved (P44)": T27.3 + T44.1–T44.4, the permission shape for `isolation: "worktree"` (falsifier 1 answered).
+2. `how-it-works.md`: one paragraph on `--worktree`, resume and the warning.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox docs
+```
+
+Done when: both docs updated.
+
+Out of scope: code.
+
+---
+Status: done 2026-09-29
+Result: `docs/design/v0.2-worktrees.md` gains "Resolved (P44)"; `docs/how-it-works.md` one paragraph.
+
+Deviations: none.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `nextest -p cox --test docs`.
+
+### T45.2. `permissionMode` in an agent definition narrows only
+
+Model: claude-sonnet-5 · Status: open · Depends: T45.1, T42.1 · Size: ~120 · Priority: P2 · Complexity: 3
+
+Goal: an `AgentDef` may ask for a narrower mode; a wider request is clamped to the parent's live mode; `cox_permission::Engine` stays the single guard.
+
+Files:
+- `crates/cox-protocol/src/agent.rs`
+- `crates/cox-ext/src/agents.rs`
+- `crates/cox-core/src/subagent.rs`
+
+Steps:
+1. `agent.rs`: `AgentDef.permission_mode: Option<PermissionMode>`.
+2. `agents.rs` `Header`: `#[serde(rename = "permissionMode")] permission_mode: Option<String>`, mapped `default→Default`, `plan→Plan`, `acceptEdits→Auto`, `bypassPermissions→Bypass`, `auto→Auto`; unknown ⇒ a `notices` entry and `None` (fail open, the parent mode applies).
+3. `subagent.rs`: `Resolved.permission` from the def; in `call`, `config.permissions.mode = narrower(parent_live, def)`; a clamp emits a `Notice` Info "`<name>` asked for `<wide>`, runs as `<parent>`".
+4. Tests: `agents_permission_mode_frontmatter_is_parsed`, `agents_unknown_permission_mode_is_a_notice`, `agent_permission_mode_never_widens_parent`, `agent_permission_mode_can_narrow_to_plan`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-ext agents_permission_mode agents_unknown_permission_mode
+mise exec -- cargo nextest run -p cox-core agent_permission_mode_
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: tests pass; no new permission check outside the Engine.
+
+Out of scope: per-agent allow/deny rules.
+Status: done 2026-09-29
+Result: an agent file's `permissionMode` narrows the parent's live mode, never widens it: a widening request runs at the parent's mode with an Info notice; an unknown value gives a notice and the parent's mode.
+
+Deviations: after the merge, `subagent.rs` uses T42.1's shared `cox_permission::narrower`; its private copy and that copy's test are removed (6300b40c).
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `nextest -p cox-ext -E 'test(agents_permission_mode) | test(agents_unknown_permission_mode)'` and `-p cox-core -E 'test(agent_permission_mode_)'`.
+
+### T45.3. Plugin manifest declares agent definitions
+
+Model: claude-sonnet-5 · Status: open · Depends: - · Size: ~140 · Priority: P2 · Complexity: 3
+
+Goal: `plugin.toml` can ship `[[agents]]` files, and adding one changes the grant digest so the user re-approves.
+
+Files:
+- `crates/cox-plugin-api/src/manifest.rs`
+- `crates/cox-plugin/src/grant.rs`
+- `docs/design/plugins.md`
+
+Steps:
+1. `manifest.rs`: `pub struct AgentDecl { pub name: String, pub file: String }`; `PluginManifest.agents: Vec<AgentDecl>` (`#[serde(default)]`). `validate()`: name passes the existing `is_tool_name` rule on `<id>-<name>`; `file` is relative, has no `..` component, ends in `.md`; duplicates rejected; a data-only package (agents and/or mcp) may omit `wasm`. New `ManifestError` variants. Regenerate `docs/plugin.schema.json`.
+2. `grant.rs` `capability_list`: one line per agent, `subagent:<name> <file>` (distinct from the existing `agent:` external-agent line), so `check` returns `NeedsApproval { added }` when a plugin adds one.
+3. `plugins.md`: §2 manifest field and §3 grant line; §14 decision "plugin agent definitions are grant-gated, local definitions win".
+4. Tests: `manifest_agents_reject_parent_dir_file`, `manifest_agents_only_package_needs_no_wasm`, `grant_new_agent_needs_approval`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-plugin-api manifest_agents_
+mise exec -- cargo nextest run -p cox-plugin grant_new_agent_needs_approval
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: tests and the plugin schema drift test pass; `cox-plugin-api` still builds for wasm32 (`just plugin-test`).
+
+Out of scope: loading the files (T45.4).
+Status: done 2026-09-29
+Result: a plugin package declares subagent files as `[[agents]]` (`name`, `file`): names pass the tool-name rule, files are relative `.md` paths with no `..`, `\\` or `:`, duplicates are refused; each entry is its own grant line `subagent:<name> <file>`; a package with only `[[mcp]]`/`[[agents]]` may omit `wasm`; `plugins.md` records decision 15 (plugin agents load only when granted; local definitions win).
+
+Deviations: six files; `docs/plugin.schema.json` edited by hand.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `nextest -p cox-plugin-api -E 'test(manifest_agents_) | test(plugin_schema_matches_committed_file)'` and `-p cox-plugin -E 'test(grant_new_agent_needs_approval)'`.
+
+### T45.4. Load granted plugins' agent definitions
+
+Model: claude-sonnet-5 · Status: open · Depends: T45.3, T45.2 · Size: ~130 · Priority: P2 · Complexity: 3
+
+Goal: agent files from Granted plugins join the discovered set; nothing loads from a plugin that is not Granted.
+
+Files:
+- `crates/cox-ext/src/agents.rs`
+- `crates/cox/src/session.rs`
+- `crates/cox/tests/plugins.rs`
+
+Steps:
+1. `agents.rs`: `pub fn parse_file(path: &Path) -> Result<AgentDef, String>` wrapping the private `parse_agent` (reuse, no second parser); `pub fn merge(local: &mut Discovered, plugin: Vec<AgentDef>, plugin_id: &str)`: a name already present locally is kept and a `notice` names the skipped plugin agent (open question 6).
+2. `crates/cox/src/session.rs`: `Plugins.agent_defs: Vec<AgentDef>` filled only in the `Verdict::Granted` branch of `load_plugins` (~356) — path = package dir joined with `file`, confined under the package dir; a parse error is a notice (fail open). Merge before `session.set_agent_defs` (~213). Plugin defs pass through `AgentDef::restrict` and T45.2 narrowing like local ones.
+3. `plugins.rs` e2e: `granted_plugin_agent_is_dispatchable`, `ungranted_plugin_agent_is_not_loaded`, `local_agent_wins_over_plugin_agent`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox granted_plugin_agent ungranted_plugin_agent local_agent_wins
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: the three e2e tests pass against a scratch `COX_HOME`.
+
+Out of scope: plugin-provided tools for those agents beyond what `restrict` allows.
+Status: done 2026-09-29
+Result: agent files from granted plugins join the discovered definitions, each confined under the package directory with no symlinks; a local definition of the same name wins, with a notice.
+
+Deviations: the code is in `cox-session` (`plugins.rs`, `lib.rs`); `parse_file` takes a notices argument; a file whose frontmatter `name` differs from the approved name is skipped with a warning.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `nextest -p cox -E 'test(granted_plugin_agent) | test(ungranted_plugin_agent) | test(local_agent_wins)'` and `-p cox-ext -E 'test(merge_keeps_local)'`.
+
+### T45.5. Core `Submission::UserAgent`
+
+Model: claude-sonnet-5 · Status: open · Depends: T45.1 · Size: ~130 · Priority: P2 · Complexity: 3
+
+Goal: a surface can run a named subagent directly, through the same `agent` tool path as a model call (Engine, hooks, budget, slots).
+
+Files:
+- `crates/cox-protocol/src/types.rs`
+- `crates/cox-core/src/session.rs`
+
+Steps:
+1. `types.rs`: `Submission::UserAgent { name: String, task: String }`.
+2. `session.rs`: `user_agent(name, task)` modelled on `user_shell` (~1685): idle check, `renew_cancel`, `run_tools(self, TurnId::new(), vec![(CallId::new(), "agent".into(), json!({"preset": name, "task": task}))])`; an unknown name surfaces the existing `ToolError::Denied` listing names. The user text and the result enter history as a user message `@name task` plus the result (open question 7), so the next model turn sees it; the push happens at the history tail (no prefix change).
+3. Tests: `user_agent_runs_through_the_engine` (plan mode denies a write-capable preset's writes as usual), `user_agent_result_enters_history`, `user_agent_refused_mid_turn`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core user_agent_
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: tests pass; protocol schema regenerated.
+
+Out of scope: ACP and stream-json input forms.
+Status: done 2026-09-29
+Result: `Submission::UserAgent` runs a named subagent through the `agent` tool, the model's path; the line and answer (a denied result too) join history; refused while a turn runs; `user_shell` shares the new `user_tool` helper.
+
+Deviations: the engine test uses `deny = ["agent"]` (the harness cannot see a child's own calls); `docs/protocol.jsonschema` edited by hand.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: ACP and stream-json input forms (out of scope). The verification pass runs `nextest -p cox-core -E 'test(user_agent_) | test(submission_json_roundtrip)'` and `-p cox-protocol` (the drift test).
+
+### T45.6. `@name task` in the TUI composer
+
+Model: claude-sonnet-5 · Status: open · Depends: T45.5 · Size: ~150 · Priority: P3 · Complexity: 3
+
+Goal: OpenCode-style manual invocation (research.md §4.3.7): `@explore find the router` at line start runs that agent.
+
+Files:
+- `crates/cox-tui/src/state.rs`
+- `crates/cox-tui/src/picker.rs`
+- `crates/cox/src/session.rs`
+
+Steps:
+1. `crates/cox/src/session.rs`: send the dispatchable agent names (built-ins + enabled defs + external, i.e. what `AgentTool::resolve` accepts) to the TUI once at start (`Msg::AgentNames`).
+2. `state.rs`: on Enter, if the line starts with `@<name> ` and `<name>` is in that list, submit `Submission::UserAgent`; otherwise the line is a normal turn (an `@file` mention keeps working).
+3. `picker.rs`: the `@` picker (`Kind::Files`) lists agent names first, tagged `agent`, then files.
+4. Tests: `at_agent_name_submits_user_agent`, `at_file_path_stays_a_user_turn`, snapshot `at_picker_lists_agents_first`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-tui at_agent_name_submits_user_agent at_file_path_stays_a_user_turn at_picker_lists_agents_first
+mise exec -- cargo insta review
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: tests pass; a scratch TUI run of `@explore list crates` shows the child in `/agents`.
+
+Out of scope: mid-line mentions.
+
+---
+Status: done 2026-09-29
+Result: `@<agent> task` at the start of a line submits `UserAgent`; `@file` mentions still work; the `@` picker lists agents first, tagged `agent`; core gains `Session::agent_names()`.
+
+Deviations: the names reach the TUI as a `State` field set at start; five files.
+
+Check: `cargo fmt` only (no-build rule, 2026-09-29).
+
+Not done: the verification pass runs `nextest -p cox-tui -E 'test(at_agent_name_submits_user_agent) | test(at_file_path_stays_a_user_turn) | test(at_picker_lists_agents_first)'` (records the hand-written `cox_tui__picker__tests__at_picker_lists_agents_first.snap`) and a scratch TUI run: `@explore list crates`, then `/agents`.
