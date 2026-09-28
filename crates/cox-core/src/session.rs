@@ -16,7 +16,7 @@ use cox_protocol::traits::{
 use cox_protocol::types::{
     ArchiveRef, Attachment, Content, ContextBreakdown, Decision, Event, HookEvent, HookOutcome,
     ItemKind, Job, Level, Message, ModelId, PermissionMode, ProviderId, Request, Role, SandboxMode,
-    StopReason, Submission, Tier, ToolCall,
+    StopReason, Submission, Tier, ToolCall, ToolResult,
 };
 use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
@@ -896,6 +896,7 @@ impl Session {
             Submission::RevertFile { path, to_turn } => self.revert_file(&path, to_turn).await,
             Submission::Background { call_id } => self.background(call_id).await,
             Submission::UserShell { command, share } => self.user_shell(command, share).await,
+            Submission::UserAgent { name, task } => self.user_agent(name, task).await,
             Submission::Command { command } if command.name == "compact" => {
                 let focus = (!command.args.is_empty()).then(|| command.args.join(" "));
                 self.compact(compact::Trigger::Manual, focus)
@@ -1893,6 +1894,44 @@ impl Session {
     /// `Idle`: a shell result landing mid-turn would split a tool_use from
     /// its tool_result in history.
     async fn user_shell(&self, command: String, share: bool) -> Result<(), CoreError> {
+        let input = serde_json::json!({ "command": command });
+        let Some(result) = self.user_tool("`!`", "bash", input).await? else {
+            return Ok(());
+        };
+        if share {
+            self.push_user_text(format!("$ {command}\n{}", result.visible))
+                .await;
+        }
+        Ok(())
+    }
+
+    /// A composer `@name task` line (T45.5): the `agent` tool on the same
+    /// path as `!` (`run_tools`: `PreToolUse`, the engine, the budget and
+    /// the agent slots), so a user dispatch is no more trusted than a model
+    /// one; an unknown name is the tool's own denial, which lists the names
+    /// it accepts. The line and the answer join history at its tail, never
+    /// inside the cached prefix, so the next model turn sees them.
+    async fn user_agent(&self, name: String, task: String) -> Result<(), CoreError> {
+        let input = serde_json::json!({ "preset": name, "task": task });
+        let label = format!("`@{name}`");
+        let Some(result) = self.user_tool(&label, "agent", input).await? else {
+            return Ok(());
+        };
+        self.push_user_text(format!("@{name} {task}\n{}", result.visible))
+            .await;
+        Ok(())
+    }
+
+    /// One user-issued tool call (`!`, `@name`) through `run_tools`, or
+    /// `None` with a notice naming `what` when a turn is running: a result
+    /// landing mid-turn would split a tool_use from its tool_result in
+    /// history.
+    async fn user_tool(
+        &self,
+        what: &str,
+        tool: &str,
+        input: serde_json::Value,
+    ) -> Result<Option<ToolResult>, CoreError> {
         let busy = {
             let mut inner = self.inner.lock().await;
             let busy = inner.state != State::Idle;
@@ -1902,33 +1941,30 @@ impl Session {
             busy
         };
         if busy {
-            return self
-                .emit(Event::Notice {
-                    level: Level::Warn,
-                    text: "a turn is running; `!` waits until it ends".into(),
-                })
-                .await;
+            self.emit(Event::Notice {
+                level: Level::Warn,
+                text: format!("a turn is running; {what} waits until it ends"),
+            })
+            .await?;
+            return Ok(None);
         }
         self.renew_cancel();
-        let input = serde_json::json!({ "command": command });
         let ran = run_tools(
             self,
             TurnId::new(),
-            vec![(CallId::new(), "bash".into(), input)],
+            vec![(CallId::new(), tool.into(), input)],
         )
         .await;
-        let mut inner = self.inner.lock().await;
-        inner.state = State::Idle;
-        let results = ran?;
-        if share && let Some((_, result)) = results.first() {
-            inner.history.push(Message {
-                role: Role::User,
-                content: vec![Content::Text {
-                    text: format!("$ {command}\n{}", result.visible),
-                }],
-            });
-        }
-        Ok(())
+        self.inner.lock().await.state = State::Idle;
+        Ok(ran?.into_iter().next().map(|(_, result)| result))
+    }
+
+    /// Appends one user text message at the history tail.
+    async fn push_user_text(&self, text: String) {
+        self.inner.lock().await.history.push(Message {
+            role: Role::User,
+            content: vec![Content::Text { text }],
+        });
     }
 
     pub(crate) async fn set_state(&self, state: State) {
