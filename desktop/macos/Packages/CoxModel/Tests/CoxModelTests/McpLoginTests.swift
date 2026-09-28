@@ -14,6 +14,7 @@ final class OpenRecorder: PlatformHost {
 
   func secret(for section: String) -> String? { nil }
   func notify(_ note: HostNote) {}
+  func badge(_ count: Int) {}
   func open(_ url: String) { opened.withLock { $0.append(url) } }
 }
 

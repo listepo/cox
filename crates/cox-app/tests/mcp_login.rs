@@ -20,6 +20,7 @@ struct Opener(Mutex<Vec<String>>);
 
 impl Host for Opener {
     fn notify(&self, _: InboxItem, _: u32) {}
+    fn badge(&self, _: u32) {}
     fn open_url(&self, url: &str) {
         self.0.lock().expect("opened").push(url.into());
     }
