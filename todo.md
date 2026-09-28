@@ -73,6 +73,7 @@
 - T47.2. `cox-mcp` client handler answers `elicitation/create` through an asker
 - T47.3. Bridge elicitation into the question modal (TUI and `--plain`) and document the surfaces
 - T47.4. URL-mode elicitation: show the URL, ask consent, open the browser
+- T47.5. The browser opener runs no shell on Windows
 - T48.1. trycmd harness plus text, json and bad-format cases
 - T48.2. stream-json and denied-write cases; drop the asserts the fixtures now cover
 - T49.1. Remote control scope gate
