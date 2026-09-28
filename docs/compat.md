@@ -41,6 +41,24 @@ A checkout configured for Claude Code or Codex works with cox unchanged:
 | Worktree isolation | yes | `--worktree <name>` and `agent(isolation: "worktree")`; `_worktrees/<repo>-<name>`, branch `<name>`, locked for its owner |
 | MCP resources/prompts, image input | no | deferred to v0.2 |
 
+## Gemini over its OpenAI-compatible endpoint (P39)
+
+`[providers.gemini]` is a built-in type-2 preset: Google's
+OpenAI-compatible endpoint
+(`https://generativelanguage.googleapis.com/v1beta/openai`, bearer
+`GEMINI_API_KEY`), spoken by the shared Chat client. Point a tier at it with
+`tiers.code.provider = "gemini"`. Vertex AI is not covered.
+
+- Google says its OpenAI compatibility is still in beta
+  (https://ai.google.dev/gemini-api/docs/openai, last updated 2026-09-02).
+- Gemini 3 sends a thought signature with each tool call, and it must go
+  back exactly as received. cox keeps it in history and returns it as
+  `extra_content.google.thought_signature` on that tool call. This field
+  path is **unverified**: the page that documented it now only says it has
+  moved. `crates/cox/tests/gemini_compat.rs` runs a two-round tool loop
+  offline against fixtures in that shape. A live recording (T39.7) will
+  confirm or refute it.
+
 ## Known leftovers (T22.7)
 
 Every `Not done:` line in `done.md` that no done task closed and no open

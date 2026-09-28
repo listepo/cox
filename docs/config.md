@@ -133,7 +133,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 
 - `base_url` = `"https://generativelanguage.googleapis.com/v1beta/openai"` — client appends /chat/completions
 - `api_key_env` = `"GEMINI_API_KEY"` — else keyring entry "cox/gemini"
-- `api` = `"chat"`
+- `api` = `"chat"` — Google calls its OpenAI compatibility beta: https://ai.google.dev/gemini-api/docs/openai
 - `model` = `"gemini-3.8-flash"`
 - `timeout_s` = `120`
 - `max_retries` = `4`
