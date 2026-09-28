@@ -303,6 +303,11 @@ impl OpenAiChatStream {
     /// Ollama and vLLM do) just updates the counters.
     pub fn feed(&mut self, data: &str) -> Result<Vec<ProviderEvent>, ProviderError> {
         self.frame_no += 1;
+        // OpenAI-style servers end the stream with a non-JSON sentinel; the
+        // end of the byte stream, not this frame, finishes the turn.
+        if data.trim() == "[DONE]" {
+            return Ok(Vec::new());
+        }
         let value: Value = serde_json::from_str(data).map_err(|_| ProviderError::Parse {
             line: self.frame_no,
         })?;
@@ -890,6 +895,12 @@ mod tests {
         let mut stream = OpenAiChatStream::new();
         let err = stream.feed("{not json").unwrap_err();
         assert!(matches!(err, ProviderError::Parse { line: 1 }));
+    }
+
+    #[test]
+    fn chat_stream_done_sentinel_is_not_a_parse_error() {
+        let mut stream = OpenAiChatStream::new();
+        assert!(stream.feed("[DONE]").expect("sentinel").is_empty());
     }
 
     #[test]
