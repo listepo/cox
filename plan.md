@@ -32,7 +32,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.23.18 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.25.2 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.25.3 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.24.10 | todo | P3 | 2 | 0% | |
+| T37.24.10 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.28.3 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.28.4 | todo | P3 | 2 | 0% | |
 | T37.28.5 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
@@ -2781,7 +2781,7 @@ Check: `insta` snapshots of the status line and the `/context` overlay in dark, 
 #### T37.24.10 Think toggle in the composer
 
 Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxUI/…` (Composer), `desktop/macos/Packages/CoxModel/…`
-Goal: the composer's think toggle from DS/DT (left out of T37.24.7). Needs the creator's choice before it is claimed: one turn per click through the existing `/think` (`confirm_think`, the think tier), sticky until turned off, or extended thinking on/off through a new `Submission`.
+Goal (A103): the composer's think toggle from DS/DT (left out of T37.24.7) works for one turn, like `/think`: the next send goes out with `confirm_think` (the think tier), then the toggle turns itself off.
 Check: a CoxModel test that the toggle sends what the chosen behaviour needs; a CoxUI snapshot of both states.
 
 #### T37.28.3 Revert one file to before turn N
@@ -3013,6 +3013,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A100 T37.19.6 — under Increase Contrast, window and pane glass keeps a quarter of its transparency (`material.highContrast.glassKeep = 0.25`), the rule A89 already applies to the palette, by the creator (2026-09-28). Why: one contrast rule for colours and materials; `material.readableFloor` (0.8) was the other option.
 - A101 T37.28.2, T37.28.3, T37.28.5 — review and rewind, by the creator (2026-09-28): the Changes tab's plain Rewind restores code only; after a code-only rewind Review shows the net diff between the checkpoint copy and disk; a new `Submission` reverts one file to before turn N, checkpointing it first; a skipped restore carries its real reason instead of "too large". Why: the recommendations of T37.28.1's report, accepted as proposed.
 - A102 T37.23.18 — Edit and resend fills the composer and rewinds the conversation only (not code) to before that prompt, by the creator (2026-09-28). Why: DT§5.2's rewind, without silently discarding file changes; code is restored only from the timeline.
+- A103 T37.24.10 — the composer's think toggle routes one turn to the think tier through the existing `/think` (`confirm_think`) and then turns off, by the creator (2026-09-28). Why: it reuses what the core has, and the costly tier never stays on by accident; sticky or a model-level extended-thinking switch were the other options.
 
 ## 7. Risk register
 
