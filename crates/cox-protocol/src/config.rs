@@ -57,6 +57,8 @@ pub struct Config {
     pub mcp: McpConfig,
     /// `[lsp]`
     pub lsp: LspConfig,
+    /// `[voice]`
+    pub voice: VoiceConfig,
     /// `[plugins]`
     pub plugins: PluginsConfig,
     /// `[memory]`
@@ -1179,6 +1181,43 @@ impl Default for LspConfig {
                 .into_iter()
                 .map(|(name, s)| (name.to_string(), s))
                 .collect(),
+        }
+    }
+}
+
+/// `[voice]` (P54, A123): push-to-talk dictation with local whisper, used
+/// only by a `cox` built with the `voice` feature. User config only: a
+/// project config cannot set any `voice.*` key (the guard in `cox-config`'s
+/// `load.rs`), so a cloned repository can neither switch the microphone on
+/// nor choose the model file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct VoiceConfig {
+    /// Whether the TUI's push-to-talk key records at all.
+    pub enabled: bool,
+    /// Whisper model name from `cox voice model list` (`tiny.en`,
+    /// `base.en`, `small.en`, `tiny`, `base`, `small`).
+    pub model: String,
+    /// ISO-639-1 language code passed to whisper; `auto` lets it detect.
+    pub language: String,
+    /// The push-to-talk key, in the keymap's `modifier+key` form.
+    pub key: String,
+    /// Submit the transcript as `Enter` would, but only when the draft was
+    /// empty before recording.
+    pub auto_submit: bool,
+    /// Longest recording kept, in seconds; audio past it is dropped.
+    pub max_seconds: u32,
+}
+
+impl Default for VoiceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            model: "base.en".to_string(),
+            language: "en".to_string(),
+            key: "alt+v".to_string(),
+            auto_submit: true,
+            max_seconds: 120,
         }
     }
 }

@@ -132,6 +132,7 @@ impl GuardViolation {
             "tiers.think.confirm" => "A project may not skip the think tier's confirmation",
             "mcp.servers.*.sandbox" => "A project may not run an MCP server unsandboxed",
             "lsp.servers" => "A project may not choose which language servers run",
+            "voice" => "A project may not turn on the microphone or choose the voice model",
             "tui.status_line.command" => "A project may not choose a status-line command",
             _ => GUARD_REASON,
         }
@@ -312,6 +313,30 @@ fn apply_project_guards(full: &mut Config, without_project: &Config) -> Vec<Guar
         full.lsp.servers = without_project.lsp.servers.clone();
     }
 
+    // T54.4 (A123): `[voice]` switches the microphone on and picks the
+    // model file cox loads, so the whole table is the user's alone; any
+    // project difference reverts all of it.
+    if full.voice != without_project.voice {
+        let (theirs, ours) = (&full.voice, &without_project.voice);
+        let changed: Vec<&str> = [
+            ("enabled", theirs.enabled != ours.enabled),
+            ("model", theirs.model != ours.model),
+            ("language", theirs.language != ours.language),
+            ("key", theirs.key != ours.key),
+            ("auto_submit", theirs.auto_submit != ours.auto_submit),
+            ("max_seconds", theirs.max_seconds != ours.max_seconds),
+        ]
+        .into_iter()
+        .filter_map(|(key, differs)| differs.then_some(key))
+        .collect();
+        violations.push(GuardViolation {
+            key: "voice",
+            project_value: changed.join(", "),
+            reverted_to: "your own [voice] settings".to_string(),
+        });
+        full.voice = without_project.voice.clone();
+    }
+
     // T46.1 (A77): the status-line command runs on every TUI start, before
     // any prompt, so a cloned repository must not choose it; Claude Code
     // gates the same key behind workspace trust.
@@ -354,7 +379,7 @@ fn rule_list(rules: &[String]) -> String {
 /// Dotted keys the project-config guard list can revert (plan.md §1.6);
 /// used only to pick which figment (with or without the project layer) a
 /// reverted key's provenance is looked up in.
-const GUARDED_KEYS: [&str; 12] = [
+const GUARDED_KEYS: [&str; 13] = [
     "budget.session_usd",
     "budget.monthly_usd",
     "budget.warn_at",
@@ -367,6 +392,7 @@ const GUARDED_KEYS: [&str; 12] = [
     "sandbox.mode",
     "tiers.think.confirm",
     "tui.status_line.command",
+    "voice",
 ];
 
 /// The result of [`load`]: the effective, guard-corrected `Config`, plus
@@ -782,6 +808,62 @@ mod tests {
             assert_eq!(loaded.source_of("lsp.servers.rust.command"), "default");
             assert_eq!(loaded.source_of("lsp.servers.zig.command"), "user");
             assert_eq!(loaded.source_of("lsp.timeout_s"), "project");
+        });
+    }
+
+    /// T54.4: voice is off until the user turns it on, and a transcript
+    /// submits itself by default (only into an empty draft, T54.6).
+    #[test]
+    fn voice_defaults_are_off_with_auto_submit() {
+        let home = tempdir().expect("tempdir");
+        let cwd = tempdir().expect("tempdir");
+        temp_env(&[("COX_HOME", Some(home.path().to_str().unwrap()))], || {
+            let voice = load_plain(cwd.path()).expect("load succeeds").config.voice;
+            assert!(!voice.enabled);
+            assert!(voice.auto_submit);
+            assert_eq!(voice.model, "base.en");
+            assert_eq!(voice.language, "en");
+            assert_eq!(voice.key, "alt+v");
+            assert_eq!(voice.max_seconds, 120);
+            assert_eq!(voice, cox_protocol::config::VoiceConfig::default());
+        });
+    }
+
+    /// T54.4 (A123): a cloned repository must not switch the microphone on
+    /// or choose the model file cox loads, so no `voice.*` key survives from
+    /// a project `.cox/config.toml`; the user's own `[voice]` does.
+    #[test]
+    fn project_config_cannot_set_voice_keys() {
+        let home = tempdir().expect("tempdir");
+        let git_root = tempdir().expect("tempdir");
+        fs::write(
+            home.path().join("config.toml"),
+            "[voice]\nmodel = \"tiny.en\"\n",
+        )
+        .expect("write user config");
+        fs::create_dir_all(git_root.path().join(".git")).expect("mkdir .git");
+        fs::create_dir_all(git_root.path().join(".cox")).expect("mkdir .cox");
+        fs::write(
+            git_root.path().join(".cox/config.toml"),
+            "[voice]\nenabled = true\nmodel = \"../../evil.bin\"\nmax_seconds = 9999\n",
+        )
+        .expect("write project config");
+
+        temp_env(&[("COX_HOME", Some(home.path().to_str().unwrap()))], || {
+            let loaded = load_plain(git_root.path()).expect("load succeeds");
+            let voice = &loaded.config.voice;
+            assert!(!voice.enabled);
+            assert_eq!(voice.model, "tiny.en", "the user's own model survives");
+            assert_eq!(voice.max_seconds, 120);
+            let violation = loaded
+                .violations
+                .iter()
+                .find(|v| v.key == "voice")
+                .expect("a voice violation");
+            assert_eq!(violation.project_value, "enabled, model, max_seconds");
+            assert_ne!(violation.reason(), GUARD_REASON);
+            assert_eq!(loaded.source_of("voice.enabled"), "default");
+            assert_eq!(loaded.source_of("voice.model"), "user");
         });
     }
 
