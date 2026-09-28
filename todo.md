@@ -25,7 +25,10 @@
 - T37.23.13. Transcript text size and line height from config and tokens
 - T37.23.15. Per-level transcript heading sizes
 - T37.23.16. Theme colours for syntax runs in edit cards
-- T37.25.1. Context window size and split in the token popover
+- T37.23.17. A stronger quote bar from its own token
+- T37.25.1. Core emits the context window and its split
+- T37.25.2. Context split in the desktop token popover
+- T37.25.3. Context split in the TUI
 - T37.24.7. Composer status chips
 - T37.27.8. One app-local key monitor for the composer and the decision bar
 - T37.28. Review pane and rewind timeline

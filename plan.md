@@ -31,7 +31,10 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.23.13 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.23.15 | todo | P3 | 2 | 0% | |
 | T37.23.16 | in progress | P3 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.25.1 | todo | P2 | 3 | 0% | |
+| T37.23.17 | todo | P3 | 1 | 0% | |
+| T37.25.1 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.25.2 | todo | P2 | 2 | 0% | |
+| T37.25.3 | todo | P2 | 2 | 0% | |
 | T37.24.7 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.27.8 | in progress | P3 | 1 | 0% | Claude Code / Opus 5.5 |
 | T37.28 | in progress | P1 | 4 | 0% | Claude Code / Opus 5.5 |
@@ -2775,11 +2778,28 @@ Depends: — · Size: ~150 · Files: `crates/cox-app/…` (the `CodeRun` it send
 Goal (A95): a diff's `CodeRun` carries the session theme's colour for its span in the theme's light and dark variants, taken from `cox-render`'s highlighter; the edit card draws the one matching the window's effective macOS appearance and redraws when the appearance changes, without a new fold. Runs without a colour stay `.plain`.
 Check: a cox-app test that a Rust edit's keyword run carries both colours; CoxTranscript light/dark snapshots of that edit card; the three Swift fixtures re-recorded.
 
-#### T37.25.1 Context window size and split in the token popover
+#### T37.23.17 A stronger quote bar from its own token
 
-T37.25's popover shows only "Context · 76.4k" for a live session: cox-app never learns the model's context window or the system/tools/instructions/history split. `cox_core::context::breakdown` exists but is dead code, and no event carries it.
+Depends: — · Size: ~40 · Files: `desktop/design/tokens/*.json` (and the generated outputs), `desktop/design/DESIGN.md`, `desktop/macos/Packages/CoxTranscriptText/…/TranscriptStructure.swift`
+Goal (A97): a `quote.bar` token (width about 3 pt, a colour stronger than the hairline, with light, dark and high-contrast variants) in DESIGN.md's tables; T37.23.12's `QuoteFragment` draws its bars from it instead of the thought's hairline.
+Check: the token build's own check; CoxTranscriptText light and dark snapshots of a nested quote.
 
-Done means: the core emits the breakdown (a `cox-protocol` event or a field on an existing one) with the window from the model catalog; the Meter fold keeps it; `MeterText` formats the share and each part; the live popover draws the StackedBar and legend the preview already shows. Check: a cox-app test over the Scripted provider sees a non-empty split and the window; a CoxUI snapshot of the live-fed popover.
+#### T37.25.1 Core emits the context window and its split
+
+Depends: — · Size: ~150 · Files: `crates/cox-protocol/…` (event), `docs/protocol.jsonschema`, `crates/cox-core/…` (context, session), `crates/cox-app/…` (Meter fold, `MeterText`)
+Goal (A98): after it assembles each request the core emits `Event::ContextBreakdown` with the model's context window from the catalog and the system, tools, instructions and history parts from `cox_core::context::breakdown` (today dead code), scaled to the last usage as that function already does. The rollout records it like any event; cox-app's Meter fold keeps the latest and `MeterText` formats the share of the window and each part.
+Check: the protocol-schema drift test; a cox-core test over the Scripted provider that every request emits the event with a non-empty split and the catalog window; a cox-app test that `MeterText` formats it.
+#### T37.25.2 Context split in the desktop token popover
+
+Depends: T37.25.1 · Size: ~100 · Files: `crates/cox-ffi/src/types.rs` (mirror only), `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxUI/…` (token popover), `desktop/design/DESIGN.md`
+Goal (A98): the live token popover shows the context share of the window and the StackedBar with its legend (`context.system/tools/instructions/history`) that the preview already draws, fed from T37.25.1's Meter; DESIGN.md's context-bar note stops claiming the TUI already showed the split.
+Check: a CoxModel test that the fixture's breakdown reaches the popover state; a CoxUI snapshot of the live-fed popover; fixtures re-recorded.
+
+#### T37.25.3 Context split in the TUI
+
+Depends: T37.25.1 · Size: ~120 · Files: `crates/cox-tui/src/…` (state, status, a `/context` overlay)
+Goal (A98): the TUI shows what the desktop popover shows: its status-line context share takes the window from `Event::ContextBreakdown` instead of a fixed default, and a `/context` overlay lists the window, the share and the system, tools, instructions and history parts with a bar in the same colour roles.
+Check: `insta` snapshots of the status line and the `/context` overlay in dark, light and no-colour; a state test that the event updates the window.
 
 #### T37.24.7 Composer status chips
 
@@ -2801,7 +2821,7 @@ Check: fixture rewind restores the expected files in a scratch worktree.
 
 #### T37.29.3 Inspector Context & Cost tab
 
-Depends: — · Size: split at claim · Files: `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`, `crates/cox-app/…`
+Depends: T37.25.1 · Size: split at claim · Files: `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`, `crates/cox-app/…`
 Goal: the context window as a StackedBar by part, cache-hit %, Compact now, per-turn cost as a KeyValueGrid, session and project totals and the budget cap; the missing cox-app calls (context breakdown, per-turn history, project totals, budget) come with it.
 Check: a snapshot per cell; cox-app tests for each new call.
 
@@ -3028,6 +3048,8 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A94 T37.23.15 — tokens `font.transcript.h1` 17 pt and `font.transcript.h4` 13 pt semibold beside `font.transcript.h3`, by the creator (2026-09-28). Why: headings of different levels read as different levels, as DT§5.9 sizes them.
 - A95 T37.23.16 — syntax runs in edit cards take the session theme's colours, the light or dark variant chosen by the macOS appearance, by the creator (2026-09-28). Why: the TUI and the app highlight code the same way without a second palette of syntax tokens to keep in step.
 - A96 T37.30.5 — `tile.settings.*` tokens mapped to macOS system colours for the Settings page tiles, by the creator (2026-09-28). Why: the mockup's coloured tiles, with colours that follow the system's light, dark and high-contrast variants.
+- A97 T37.23.17 — a `quote.bar` token (about 3 pt, a stronger colour with light, dark and high-contrast variants) for the transcript's quote bar, by the creator (2026-09-28). Why: the thought's 0.5 pt hairline T37.23.12 reused is barely visible in light mode.
+- A98 T37.25.1, T37.25.2, T37.25.3 — the core emits a new `Event::ContextBreakdown` (context window and its system, tools, instructions and history split) after assembling each request, and both the desktop and the TUI show it, by the creator (2026-09-28). Why: neither surface knew the window or the split; `cox_core::context::breakdown` existed but nothing called it. A separate event, not fields on the usage event, because the split is known before the request is sent and usage only after the reply.
 
 ## 7. Risk register
 
