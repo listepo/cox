@@ -103,6 +103,58 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T49.5 | todo | P3 | 3 | 0% | |
 | T50.3 | todo | P2 | 1 | 0% | |
 | T50.5 | todo | P3 | 1 | 0% | |
+| T51.1 | todo | P2 | 2 | 0% | |
+| T51.2 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
+| T51.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
+| T51.4 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T51.5 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T51.6 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T51.7 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
+| T51.8 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T51.9 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T51.10 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T51.11 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T51.12 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T51.13 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T51.14 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T51.15 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
+| T51.16 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
+| T51.17 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
+| T51.18 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
+| T51.19 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
+| T51.20 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T51.21 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T52.1 | todo | P2 | 2 | 0% | |
+| T52.2 | todo | P2 | 3 | 0% | |
+| T52.3 | todo | P2 | 4 | 0% | |
+| T52.4 | todo | P2 | 4 | 0% | |
+| T52.5 | todo | P2 | 4 | 0% | |
+| T52.6 | todo | P3 | 3 | 0% | |
+| T52.7 | todo | P2 | 2 | 0% | |
+| T52.8 | todo | P2 | 3 | 0% | |
+| T52.9 | todo | P3 | 4 | 0% | |
+| T52.10 | todo | P3 | 3 | 0% | |
+| T52.11 | todo | P3 | 2 | 0% | |
+| T52.12 | todo | P3 | 3 | 0% | |
+| T52.13 | todo | P3 | 4 | 0% | |
+| T52.14 | todo | P3 | 4 | 0% | |
+| T52.15 | todo | P3 | 2 | 0% | |
+| T52.16 | todo | P3 | 3 | 0% | |
+| T52.17 | todo | P3 | 3 | 0% | |
+| T52.18 | todo | P3 | 3 | 0% | |
+| T52.19 | todo | P3 | 4 | 0% | |
+| T52.20 | todo | P3 | 4 | 0% | |
+| T52.21 | todo | P3 | 3 | 0% | |
+| T52.22 | todo | P3 | 1 | 0% | |
+| T53.1 | todo | P2 | 2 | 0% | |
+| T53.2 | todo | P2 | 3 | 0% | |
+| T53.3 | todo | P2 | 3 | 0% | |
+| T53.4 | todo | P2 | 3 | 0% | |
+| T53.5 | todo | P3 | 3 | 0% | |
+| T53.6 | todo | P3 | 2 | 0% | |
+| T53.7 | todo | P3 | 2 | 0% | |
+| T53.8 | todo | P3 | 2 | 0% | |
+| T53.9 | todo | P3 | 1 | 0% | |
 
 ## Reference
 
@@ -2842,6 +2894,349 @@ Depends: — · Size: ~60 · Files: CoxUI onboarding view, `desktop/macos/App` f
 Goal: A120, mockup 21, DT§ onboarding row ("Pick a folder"). The first-run window has the dashed drop zone: dropping a folder (only a directory is accepted) opens it as the project, the same as the folder picker; hover shows the accent outline.
 Check: a test that a dropped file is refused and a dropped directory reaches the same intent as the picker; CoxUI snapshots idle and hovered.
 
+### P51 — Desktop M2 (goal: the rest of the terminal inside the app — a sandboxed terminal pane, a browser pane the agent can read and screenshot, pop-out windows and tabs, a menu-bar extra with a global hotkey, Spotlight and App Intents, and per-hunk revert — plus the dark glass look; DT§3.2)
+
+Plan (A121): one agent implements P51's cards in table order on branch `p51-roadmap`, one commit per card, without building or running tests (the creator's instruction); T51.1 waits for the creator's approval of the dark renders. A verification pass builds and tests each commit before the branch merges into `p37-desktop`.
+
+Rationale in §6 A121. Design: `docs/design/desktop.md` DT§3.2, §4, §10; view layer `desktop/design/DESIGN.md`; approved looks: mockups 24-terminal-pane-m2, 25-browser-preview-m2, 26-menu-bar-extra-m2 in `desktop/design/mockups/mockups.html`. Starts after the P37 cards that touch the same files.
+
+Every card in this phase keeps the P37 rules (business logic in `cox-app`, `cox-ffi` a one-expression forwarder per A90, tokens only in SwiftUI, a catalogue row for each new visual, a test that fails without it) and:
+- Swift never spawns a process, never touches `~/.cox` or git, never decides a permission (DT§4.6);
+- every model- or page-originated string passes `cox_sanitize::sanitize` in Rust before it becomes a block or reaches the model (DT§10);
+- a Swift card that draws an M2 screen compares it with its mockup by `npm run diff` in `desktop/design`;
+- a new dependency is named in its card and gets its §1.1 and `toolchain.md` rows in the same commit.
+
+#### T51.1 Dark glass: mock the dark glass surfaces and give them token values
+
+Depends: — · Size: ~150 · Files: `desktop/design/mockups/mockups.html`, `desktop/design/tokens/color.dark.json`, `desktop/design/DESIGN.md` (generated CoxUI tokens and `color.dark-hc.json` from `just desktop-tokens` and `high-contrast.mjs` do not count)
+Goal: the glass CSS in the mockups (`.glass .window`, `.sidebar`, `.filter`, `.row.act`, the top-edge highlight) is written for light only — white fills over a dark wallpaper. Add `.dark.glass` rules and the screens `31-main-glass-dark-frosted` and `32-main-glass-dark-glossy` (same layout as 28/29); take the dark glass fill, border and highlight values from those renders into `color.dark.json` beside the light ones (the dark highlight follows A109's `darkHighlight` setting, the High Contrast variant follows A89/A100's rule through `high-contrast.mjs`); DESIGN.md §3.5 lists them. The rendered screens go to the creator for approval before the token values are final.
+Check: `desktop/design/mockups/render.sh 31-main-glass-dark-frosted 32-main-glass-dark-glossy` renders both; `just desktop-tokens` and `npm test` (in `desktop/design`) pass; CoxUI dark-glass snapshots re-recorded on purpose (`swift test --package-path desktop/macos/Packages/CoxUI`); DS§8 contrast holds for text on the dark glass (the contrast test in `desktop/design` passes).
+
+#### T51.2 One sandbox argv for `sh -c` commands and interactive programs
+
+Depends: — · Size: ~70 · Files: `crates/cox-sandbox/src/sandbox/mod.rs`
+Goal: `sandbox::command` builds its argv inline for `<shell> -c <command>`. Extract `pub fn argv(policy, roots, writable_roots, program: &[String]) -> io::Result<Vec<String>>` that wraps any program argv (Seatbelt `sandbox-exec -p <profile> --`, bwrap), and make `command` call it, so the terminal pane (T51.3) spawns through the same wrap and there is still one place a policy becomes an argv. Landlock needs a `pre_exec` a PTY spawn cannot carry, so `argv` returns an error on the Landlock backend (the desktop is macOS-only, DT-1); `danger-full-access` returns the program unchanged, as `command` does now. `cox_sandbox::sandbox::Policy` stays the single guard.
+Check: `mise exec -- cargo nextest run -p cox-sandbox command_argv_is_unchanged_by_the_extraction argv_wraps_an_interactive_login_shell_in_seatbelt argv_refuses_landlock argv_leaves_danger_full_access_bare`; the existing sandbox and `bash` tests pass unchanged; `mise exec -- cargo clippy --workspace --all-targets -- -D warnings`; `mise exec -- cargo fmt --check`.
+
+#### T51.3 `cox-app` terminal: the login shell in a PTY, in the session cwd, under the session's sandbox
+
+Depends: T51.2 · Size: ~190 · Files: `crates/cox-app/src/terminal.rs` (new), `crates/cox-app/src/lib.rs`, `crates/cox-app/Cargo.toml`
+Goal: `SessionController::open_terminal(cols, rows) -> TerminalHandle` spawns the user's `$SHELL -l -i` — resolved from A12's shell allowlist in the fixed directories, never on `PATH` — in a PTY, with cwd the session's cwd (its worktree when it has one), argv from `sandbox::argv` under the session's resolved `SandboxPolicy` (bare only when the user chose `danger-full-access` for that session), and env the login-shell environment of DT§4.8. `TerminalHandle`: `write(bytes)`, `resize(cols, rows)`, `async next_output() -> Option<Vec<u8>>` (bounded, coalesced like patches; `None` after exit), `exit_status()`, `close()` killing the process group. The pane is the user's own terminal: its bytes never reach the model, the rollout or the ledger, and SwiftTerm interprets the escape sequences. New dependency: `portable-pty` 0.9 (wezterm's, already the workspace's PTY dev-dependency for the TUI e2e tests) becomes a normal dependency of `cox-app` — §1.1 row and `toolchain.md` row updated.
+Check: `mise exec -- cargo nextest run -p cox-app terminal_starts_in_the_session_cwd terminal_write_outside_the_workspace_is_denied_under_workspace_write terminal_shell_comes_from_the_allowlist terminal_close_kills_the_process_group terminal_output_is_not_in_the_rollout`; `crates/cox/tests/deps.rs` still passes (`cox-app` pulls no ratatui); clippy and fmt clean.
+
+#### T51.4 `cox-ffi` forwards the terminal handle
+
+Depends: T51.3 · Size: ~70 · Files: `crates/cox-ffi/src/session.rs`, `crates/cox-ffi/src/types.rs`, `crates/cox-ffi/src/lib.rs`
+Goal: `SessionHandle.open_terminal(cols, rows)` and a `TerminalHandle` object (`write`, `resize`, `next_output`, `exit_status`, `close`), each a one-expression forward into `cox-app` (A90); the bindings regenerate.
+Check: the A90 forwarder test passes; `mise exec -- cargo nextest run -p cox-ffi`; `just desktop-xcframework` builds and the generated Swift names `TerminalHandle`.
+
+#### T51.5 CoxPlatform terminal view over SwiftTerm
+
+Depends: T51.4 · Size: ~150 · Files: `desktop/macos/Packages/CoxPlatform/Package.swift`, `…/CoxPlatform/Sources/CoxPlatform/TerminalPane.swift` (new), its test
+Goal: an `NSViewRepresentable` over SwiftTerm's `TerminalView` (not `LocalProcessTerminalView`: Swift never spawns) bridged to a `TerminalClient` protocol in CoxClient (`write`, `resize`, `outputs: AsyncStream<[UInt8]>`); `send` and `sizeChanged` from the delegate go to the handle, one `Task` feeds output in; colours and font from tokens (`surface.terminal`, `text.terminal`, `text.terminalOk`, the mono font token). New dependency SwiftTerm v1.19.0 (research.md §9.5.2, MIT, maintained; licence fits GPLv3 and the royalty-free option, A68) — §1.1 row and `toolchain.md` Swift row.
+Check: `swift test --package-path desktop/macos/Packages/CoxPlatform --filter TerminalPane` with a fake `TerminalClient` (keys typed reach `write`, a resize reaches `resize`, fed bytes appear in the buffer); swiftlint strict and swift-format clean.
+
+#### T51.6 Terminal pane in the session window (mockup 24)
+
+Depends: T51.5 · Size: ~150 · Files: CoxUI `TerminalPaneChrome` organism (header with shell, branch, tabs, `+`), `desktop/macos/App` session scene wiring, CoxModel `SessionStore` terminal state
+Goal: mockup 24: the pane under the transcript column, toggled by ⌃\` (added to the DT§5.5 key table), header "zsh — <branch>", `+` opens another terminal of the same session; closing the session window closes its terminals (asking first while one runs a foreground job); the pane height is UI-only state.
+Check: CoxUI snapshots of the pane (one and two tabs, light and dark); `npm run diff` of the app screenshot against 24-terminal-pane-m2 leaves no unexplained layout or type region; a CoxModel test that closing the session closes its handles; swiftlint strict and swift-format clean.
+
+#### T51.7 Browser tools in `cox-app`: open, read, screenshot through the host
+
+Depends: T40.5 · Size: ~200 · Files: `crates/cox-app/src/browser.rs` (new), `crates/cox-app/src/app.rs` (the `Host` trait), `crates/cox-app/src/lib.rs`
+Goal: three deferred tools (found by `tool_search`, so the core eight and the cache prefix do not change): `browser_open { url }`, `browser_read {}` (title, URL and visible text of the page) and `browser_screenshot {}`. They call a `Browser` the host supplies through the plain `Host` trait (`fn browser(&self) -> Option<Arc<dyn Browser>>`, default `None`) and are registered at session open only when the host has one, so the tool set stays byte-stable within a session. Trust: the URL is parsed with `url` and only `http`/`https` pass; `cox_permission::Engine` decides `browser_open` like `web_fetch` (a loopback host is `ReadOnly`, any other host `Network`, so plan mode and deny rules apply); page text is untrusted input — it passes `cox_sanitize::sanitize`, and over the tool cap the full text is archived before the model sees the shortened one (lossless rule); the screenshot is a `Content::Image` through T40.5's tool-image path, bounded by P40's size limits.
+Check: `mise exec -- cargo nextest run -p cox-app browser_tools_absent_without_a_host_browser browser_open_refuses_non_http_schemes browser_open_to_a_remote_host_is_network_risk browser_read_text_is_sanitized browser_read_over_cap_is_archived_first browser_screenshot_is_an_image_item` (fake `Browser`); clippy and fmt clean.
+
+#### T51.8 Browser methods across `cox-ffi` and the host bridge
+
+Depends: T51.7 · Size: ~150 · Files: `crates/cox-ffi/src/host.rs`, CoxClient `PlatformHost`, CoxCore `HostBridge`
+Goal: the foreign `AppHost` trait gains async `browser_load(url)`, `browser_text() -> PageText` and `browser_snapshot() -> bytes` plus `has_browser()`, forwarded into `cox-app`'s `Browser` (one expression each, A90); CoxClient's `PlatformHost` declares them and CoxCore's `HostBridge` adapts, so CoxPlatform still tests without the XCFramework (DT§4.4).
+Check: the A90 forwarder test; `mise exec -- cargo nextest run -p cox-ffi`; `just desktop-xcframework`; `swift test --package-path desktop/macos/Packages/CoxModel` (the protocol compiles against the fixture host).
+
+#### T51.9 CoxPlatform browser controller over `WebPage`
+
+Depends: T51.8 · Size: ~150 · Files: `…/CoxPlatform/Sources/CoxPlatform/BrowserController.swift` (new), `…/CoxPlatform/Sources/CoxPlatform/Host.swift`, its test
+Goal: a `BrowserController` over SwiftUI's `WebPage` (macOS 26, R9.3.11; no new dependency) implements the host's browser methods: load, read `document.title`, `location.href` and `document.body.innerText` by evaluating script in the page's own world, snapshot to PNG. No script message handlers and no bridge from the page to the app (DT§10); a non-persistent website data store, so the agent's page never sees the user's cookies; `MacHost` returns it from `has_browser`.
+Check: `swift test --package-path desktop/macos/Packages/CoxPlatform --filter BrowserController` loads a local HTML fixture, reads its text and gets a non-empty PNG; a test that the controller registers no message handler; swiftlint strict and swift-format clean.
+
+#### T51.10 Browser preview pane (mockup 25)
+
+Depends: T51.9 · Size: ~150 · Files: CoxUI `BrowserPaneChrome` organism (back, lock, address, reload), `desktop/macos/App` session scene wiring, CoxModel pane state
+Goal: mockup 25: the pane beside the transcript, showing the same `WebPage` the agent drives; the user can type an address (the same `http`/`https` rule, checked in Rust through the open intent) and reload; the agent's actions appear as ordinary tool cards; a toggle in the View menu and the palette.
+Check: CoxUI snapshots of the pane chrome (idle, loading, `https` lock); `npm run diff` against 25-browser-preview-m2; swiftlint strict and swift-format clean.
+
+#### T51.11 Pop a session out into its own window or a native tab
+
+Depends: — · Size: ~160 · Files: CoxModel `AppStore` (store registry), `desktop/macos/App` scenes and commands, a CoxModel test
+Goal: "Open in New Window" and "Open in New Tab" from the sidebar row's context menu and the Window menu open the session in a `WindowGroup(for:)` window (transcript, composer, inspector; no sidebar) that joins native window tabs. All windows showing one session share one `SessionStore` and one patch-pull task, which the registry keeps while any window shows the session; closing a window never stops a running turn (DT§4.5).
+Check: a CoxModel test that two windows on one session get the same store and closing one keeps it; `just desktop-app` builds; swiftlint strict and swift-format clean.
+
+#### T51.12 `cox-app` menu-bar summary: today's cost and sessions
+
+Depends: — · Size: ~90 · Files: `crates/cox-app/src/costs.rs`, `crates/cox-ffi/src/lib.rs`
+Goal: `Workspace::today() -> DaySummary { cost, sessions }` from the ledger's `usage` rows of the local day (a cost that is not a ledger row does not exist) and the sessions active that day, formatted in Rust like the meter; `App.today()` forwards it (A90).
+Check: `mise exec -- cargo nextest run -p cox-app today_sums_only_todays_usage_rows today_counts_sessions_active_today`; the A90 forwarder test.
+
+#### T51.13 CoxUI menu-bar panel (mockup 26)
+
+Depends: T51.12 · Size: ~150 · Files: CoxUI `MenuBarPanel` organism, its snapshots, the DS§6 catalogue row
+Goal: mockup 26: "Needs you" rows (approval with the command and Allow / Deny; a question opens the app), "Running" rows (title, activity, time, cost), the footer "Today $x · n sessions", New session ⌥⌘N and Open cox ⌘O. Allow-for-session and edit stay in the app, as for notifications (DT§5.6).
+Check: CoxUI snapshots (empty, approvals and running, light and dark); `npm run diff` against 26-menu-bar-extra-m2; swiftlint strict and swift-format clean.
+
+#### T51.14 Menu-bar extra scene and its setting
+
+Depends: T51.13 · Size: ~120 · Files: `desktop/macos/App` (`MenuBarExtra` scene), `crates/cox-protocol/src/config.rs` (`desktop.menu_bar`), `config/default.toml`
+Goal: a `MenuBarExtra` (window style) fed by `AppStore`'s inbox and running sessions; Allow and Deny send the same `Intent::Approve` the notification actions send (`NotificationActions` reused, no second mapping); the extra shows while `desktop.menu_bar = true` (default on), a key with a schema, provenance and a row in `docs/config.md`.
+Check: `mise exec -- cargo nextest run -p cox-config` (schema drift regenerated on purpose) and the `docs/config.md` coverage test; a CoxModel test that Allow from the menu emits the notification path's intent; `just desktop-app` builds.
+
+#### T51.15 Global hotkey for the menu-bar panel and a new session
+
+Depends: T51.14 · Size: ~80 · Files: `desktop/macos/App` (hotkey names and handlers), CoxUI Settings General page, `desktop/macos/App` package manifest
+Goal: two user-recorded global shortcuts, "Show cox menu" and "New session", with no default binding; recorded in Settings › General with the library's recorder and stored by it as UI-only state (DT§4.6). New dependency KeyboardShortcuts 3.1.0 (research.md §9.5.7, MIT, maintained) — §1.1 row and `toolchain.md` Swift row.
+Check: `just desktop-app` builds; a CoxUI snapshot of the General page with the recorders; swiftlint strict and swift-format clean.
+
+#### T51.16 Spotlight indexes session titles
+
+Depends: — · Size: ~140 · Files: `…/CoxPlatform/Sources/CoxPlatform/SpotlightIndex.swift` (new), its test, `desktop/macos/App` continuation handler
+Goal: session titles (already sanitized in Rust), their project and last activity are indexed with CoreSpotlight (native, no dependency) and removed when a session is archived or deleted; only titles, never transcript text; opening a result opens that session through `NSUserActivity` continuation. The index is fed from `AppStore`'s session rows behind a protocol, so the mapping tests without Spotlight.
+Check: `swift test --package-path desktop/macos/Packages/CoxPlatform --filter SpotlightIndex` (row → attributes, delete on archive, no transcript text); `just desktop-app` builds.
+
+#### T51.17 App Intents: "Ask cox in <project>" and "Open session"
+
+Depends: — · Size: ~150 · Files: `desktop/macos/App/Intents/AskCoxIntent.swift` (new), `…/Intents/Entities.swift` (new), `…/Intents/Shortcuts.swift` (new)
+Goal: `ProjectEntity` and `SessionEntity` whose queries read `App.projects()` and `App.sessions()`; `AskCoxIntent(project, prompt)` opens the app, starts a session in that project and sends the prompt through the normal `Send` intent (approvals then land in the inbox as usual; the engine decides as always); `OpenSessionIntent(session)`; an `AppShortcutsProvider` with the phrase "Ask cox in \(project)".
+Check: `just desktop-app` builds and the intents appear in `xcrun appintentsmetadataprocessor` output of the build; a CoxModel test that the ask intent maps to open-then-send.
+
+#### T51.18 `revert_hunk`: undo one hunk of a file's net diff
+
+Depends: — · Size: ~120 · Files: `crates/cox-render/src/diffmodel.rs`
+Goal: Review's diff (A101: the checkpoint copy against disk) gives each hunk a stable index; `revert_hunk(before, now, index) -> Result<String, HunkError>` returns `now` with only that hunk put back to `before`, reusing the same `similar` diff the model was built from; an index that no longer exists or a `now` that changed since is `HunkError::Stale`.
+Check: `mise exec -- cargo nextest run -p cox-render revert_hunk_restores_only_that_hunk revert_hunk_of_an_added_file_region revert_hunk_refuses_a_stale_index revert_hunk_keeps_line_endings`.
+
+#### T51.19 `Submission::RevertHunk` in the core, checkpointed
+
+Depends: T51.18 · Size: ~160 · Files: `crates/cox-protocol/src/types.rs`, `crates/cox-core/src/rewind.rs`, `crates/cox-core/src/session.rs`
+Goal: `Submission::RevertHunk { path, to_turn, hunk, now_digest }` beside `RevertFile` (A101): the path goes through the checkpointer's `preimages` (so `cox_sandbox::path::confine`, as for `RevertFile`), the file is checkpointed first so the revert can itself be undone, the new bytes come from `revert_hunk`, a digest mismatch with what Review showed is refused with a Notice, and a `Rewound` (code only) event makes `/redo` and every surface treat it as a rewind. `docs/protocol.jsonschema` regenerates.
+Check: `mise exec -- cargo nextest run -p cox-core revert_hunk_checkpoints_before_writing revert_hunk_outside_the_workspace_is_refused revert_hunk_with_a_stale_digest_is_refused revert_hunk_is_undone_by_redo`; `mise exec -- cargo nextest run -p cox-protocol` (schema drift regenerated on purpose).
+
+#### T51.20 `cox-app` and `cox-ffi` carry the hunk revert
+
+Depends: T51.19 · Size: ~80 · Files: `crates/cox-app/src/intent.rs`, `crates/cox-app/src/review.rs`, `crates/cox-ffi/src/types.rs`
+Goal: Review's `DiffModel` carries each hunk's index and the digest of the bytes shown; `Intent::RevertHunk { path, to_turn, hunk, now_digest }` maps to the submission; the FFI intent enum mirrors it.
+Check: `mise exec -- cargo nextest run -p cox-app revert_hunk_intent_maps_to_the_submission review_diff_carries_hunk_indices`; the A90 forwarder test.
+
+#### T51.21 Review: Revert hunk button
+
+Depends: T51.20 · Size: ~80 · Files: CoxUI Review diff views, their snapshots
+Goal: DT§5.4's "Per-hunk revert is M2": each hunk header in Review gets "Revert hunk" (with ⌥-click skipping the confirmation), sending the intent; a refused stale revert shows the core's Notice.
+Check: CoxUI snapshots of a hunk header idle and hovered; a CoxModel test that the button sends the hunk's index and digest; swiftlint strict and swift-format clean.
+
+### P52 — Desktop M3 (goal: beyond a single agent — Claude Code, Codex, Gemini CLI and Cursor sessions in the same sidebar over ACP, best-of-n across models in worktrees, plugin panels drawn natively from the `Widget` tree, and remote sessions over SSH through `cox app-server`; DT§3.3)
+
+Rationale in §6 A121. Design: DT§3.3, §4.4 (patch types are serde so the same stream can go over a socket), §4.7 G9, §10; PL§8 (`Widget` tree); EA (external agents, P35) and `crates/cox-acp` (`client.rs`, `terminal.rs`, T35.3/T35.11) and `crates/cox-session/src/external_agents.rs` (T35.13). Approved look: mockup 27-external-agents-acp-m3. Starts after P51.
+
+Every card keeps the P51 rules, and:
+- an external agent's own tool calls are guarded by the process sandbox T35.2's wrap put it under; only what it asks cox for (`session/request_permission`, `fs/*`, `terminal/*`) meets `cox_permission::Engine` and `cox_sandbox::path::confine` (EA§2, T35.3); cox's provider keys are never in its environment (`CHILD_ENV_ALLOWLIST`);
+- an external agent's usage is its own billing: no `usage` row is invented for it, and the cost pill shows "—" as the mockup does;
+- a remote session never sends API keys or the Keychain's secrets over the wire and never forwards the ssh agent;
+- plugin widgets reach the screen only through `cox_sanitize::sanitize` and PL§8's limits, as in the TUI.
+
+#### T52.1 ACP host design: launch table for Claude Code, Codex, Gemini CLI and Cursor
+
+Depends: — · Size: ~120 (docs) · Files: `docs/design/desktop.md` (new DT§3.3.1), `research.md` (new §9.6)
+Goal: one page before any code: how a top-level session is driven by an external ACP agent in `cox-app`, the event mapping, which intents are refused (mode, model switch, rewind, compact, fork), how approvals reach the inbox, what is stored, and the launch table — program, arguments and install source for each agent (Claude Code's ACP adapter, Codex's ACP adapter, Gemini CLI's ACP mode, Cursor through the granted Cursor plugin's `[[external_agents]]` entry, T35.6) — each fact with its primary source (the vendor's repository or docs, URL and date checked), anything only secondary marked **unverified**. The creator approves the page before T52.2.
+Check: the page and the §9.6 rows exist with sources; `mise exec -- cargo nextest run -p cox --test docs` passes.
+
+#### T52.2 `[external_agents.<name>]` in user config, resolved through the one sandboxed constructor
+
+Depends: T52.1 · Size: ~170 · Files: `crates/cox-protocol/src/config.rs`, `crates/cox-config/src/…` (project-config guard list), `crates/cox-plugin/src/external_agent.rs`
+Goal: a user-config table naming an ACP agent's `command`, `args` and `key_env` (the agent's own key variable, passed through only by name), with T52.1's four agents as documented examples, not defaults. A project config can never add one (it would run a program): the table joins the project-config guard list. An entry resolves to T35.2's `ExternalAgentCommand` through its one constructor with a `config` source beside the plugin source, so an unwrapped command still cannot be built. `docs/config.jsonschema` and `docs/config.md` regenerate.
+Check: `mise exec -- cargo nextest run -p cox-config external_agents_in_project_config_is_refused external_agents_schema_drift` and `-p cox-plugin config_external_agent_resolves_only_wrapped`; the `docs/config.md` coverage test.
+
+#### T52.3 ACP `session/update` to `Event` mapper
+
+Depends: T52.1 · Size: ~190 · Files: `crates/cox-acp/src/client_events.rs` (new), `crates/cox-acp/src/lib.rs`
+Goal: a pure fold from ACP `session/update` notifications (`agent_message_chunk`, `agent_thought_chunk`, `tool_call`, `tool_call_update`, `plan`, the prompt's stop reason) to cox `Event`s (`ItemStarted`, `TextDelta`, `ThinkingDelta`, `ToolCallRequested`, `ToolCallOutput`, `ToolCallDone` with a diff when the update carries one, `ToolResult.structured` for the plan, `TurnDone`), so `cox-app`'s `Timeline` renders an external session with no second fold (DT-7). Unknown update kinds become a `Notice(Info)`, never a failure (fail open). Reuses `agent-client-protocol` 2.2, no new dependency.
+Check: `mise exec -- cargo nextest run -p cox-acp acp_updates_fold_into_events_snapshot acp_unknown_update_is_a_notice acp_tool_call_update_carries_its_diff` (recorded update fixtures, `insta`).
+
+#### T52.4 `cox-app` drives a top-level session through an external ACP agent
+
+Depends: T52.2, T52.3 · Size: ~200 · Files: `crates/cox-app/src/external.rs` (new), `crates/cox-app/src/workspace.rs`, `crates/cox-app/src/intent.rs`
+Goal: `OpenRequest { agent: Some(name), .. }` spawns the resolved, sandbox-wrapped agent in the session cwd (or its worktree) through `cox_acp::connect` (the T35.13 driver path), runs `initialize` and `session/new`, maps `Send` to `session/prompt` and `Interrupt` to `session/cancel`, and drains T52.3's events into the same `Timeline` and patch coalescer; `SetMode`, `SwitchModel`, `Rewind`, `Compact` and `Fork` return `AppError::Unsupported` naming the agent. A missing program is one warning, as T35.13 does.
+Check: `mise exec -- cargo nextest run -p cox-app external_session_streams_into_the_timeline external_session_interrupt_sends_cancel external_session_refuses_rewind missing_agent_program_is_one_warning` (a fake ACP agent binary in the test fixtures, under the sandbox).
+
+#### T52.5 An external agent's permission requests reach the inbox
+
+Depends: T52.4 · Size: ~150 · Files: `crates/cox-acp/src/client.rs`, `crates/cox-app/src/external.rs`, `crates/cox-app/src/inbox.rs`
+Goal: when `cox_permission::Engine` answers `Ask` to an agent's `session/request_permission` (T35.3), the request becomes an `ApprovalRequired` block and an inbox item with the agent as `source`; the user's Allow / Deny (and allow-for-session as the engine's grant) answer the ACP request; a closed session or timeout answers deny. `Allow` and `Deny` decisions of the engine still answer without asking.
+Check: `mise exec -- cargo nextest run -p cox-app external_ask_becomes_an_inbox_item external_answer_reaches_the_agent external_closed_session_denies` and `-p cox-acp acp_client_relays_request_permission_through_the_engine` (still passes).
+
+#### T52.6 External-agent sessions are stored and reopen
+
+Depends: T52.4 · Size: ~150 · Files: `crates/cox-store/migrations/<new>/up.sql` + `down.sql`, `crates/cox-store/src/models.rs`, `crates/cox-app/src/external.rs`
+Goal: a nullable `sessions.agent` column (migration; raw SQL only there, D9) and the mapped events written to the rollout, so the session lists with its agent and reopens: through ACP `session/load` when the agent advertises it, otherwise read-only with a "start a new session" action.
+Check: `mise exec -- cargo nextest run -p cox-store sessions_agent_column_round_trips` and `-p cox-app external_session_reopens_read_only_without_load_session external_session_resumes_with_load_session`.
+
+#### T52.7 `cox-ffi` and CoxModel: pick an agent for a new session
+
+Depends: T52.4 · Size: ~100 · Files: `crates/cox-ffi/src/types.rs`, `crates/cox-ffi/src/lib.rs`, CoxModel `AppStore`
+Goal: `App.agents()` (built-in cox plus configured and plugin-provided external agents, with availability), `OpenRequest.agent`, and `SessionRow.agent` forwarded (A90); CoxModel carries the chosen agent into the open intent.
+Check: the A90 forwarder test; `just desktop-xcframework`; `swift test --package-path desktop/macos/Packages/CoxModel --filter Agent`.
+
+#### T52.8 CoxUI and app: agent picker, ACP banner, Agents list (mockup 27)
+
+Depends: T52.7 · Size: ~170 · Files: CoxUI new-session sheet and `AgentsList` organism, CoxUI transcript banner, `desktop/macos/App` wiring
+Goal: mockup 27: New session offers the agent; an external session's transcript opens with the "driven by <agent> over the Agent Client Protocol" banner, its toolbar model chip reads "<agent> · ACP" and cost "—"; the sidebar row shows the agent; the inspector's Info tab lists the agents with their launch line and availability.
+Check: CoxUI snapshots of the picker, banner and Agents list; `npm run diff` against 27-external-agents-acp-m3; swiftlint strict and swift-format clean.
+
+#### T52.9 `cox-app` best-of-n launcher: one prompt, n candidates, n worktrees
+
+Depends: T52.4 · Size: ~180 · Files: `crates/cox-app/src/best_of.rs` (new), `crates/cox-app/src/workspace.rs`, `crates/cox-app/src/lib.rs`
+Goal: `Workspace::best_of(BestOfRequest { project, prompt, candidates })`, where a candidate is a model (cox) or an external agent, creates one worktree per candidate through the `Worktrees` trait (the user chose it in the UI — A75's consent), opens one session per worktree, sends the same prompt, and groups them under a `BestOfId` shown as one sidebar group. Each candidate's usage is its own ledger rows; the group total is their sum. A failed candidate never stops the others (fail open).
+Check: `mise exec -- cargo nextest run -p cox-app best_of_opens_one_worktree_per_candidate best_of_sends_the_same_prompt best_of_one_failure_leaves_the_others_running best_of_total_is_the_sum_of_ledger_rows` (fake `Worktrees`, scripted provider).
+
+#### T52.10 Best-of-n comparison and pick
+
+Depends: T52.9 · Size: ~160 · Files: `crates/cox-app/src/best_of.rs`, `crates/cox-app/src/review.rs`
+Goal: `compare(BestOfId) -> Vec<CandidateView>`: per candidate state, files changed with +/− against the worktree's base (the same diff model Review uses), cost, duration; `pick(id, candidate)` keeps the picked worktree and prunes the others through the `Worktrees` trait after the caller confirms (a prune of a worktree with uncommitted changes needs a second confirmation, as the M1 prune does).
+Check: `mise exec -- cargo nextest run -p cox-app best_of_compare_lists_diffstat_and_cost best_of_pick_prunes_the_others best_of_pick_refuses_dirty_without_second_confirmation`.
+
+#### T52.11 `cox-ffi` and CoxModel carry best-of-n
+
+Depends: T52.10 · Size: ~90 · Files: `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`, CoxModel `BestOfStore` (new)
+Goal: `App.best_of`, `compare`, `pick` forwarded (A90); a CoxModel store that refreshes the comparison from app patches.
+Check: the A90 forwarder test; `just desktop-xcframework`; `swift test --package-path desktop/macos/Packages/CoxModel --filter BestOf`.
+
+#### T52.12 CoxUI best-of-n control and compare view
+
+Depends: T52.11 · Size: ~180 · Files: CoxUI composer "Best of n" control, CoxUI `BestOfCompare` screen, `desktop/macos/App` wiring
+Goal: the composer's "Compare with a second agent on the same prompt · Best of n" control from mockup 27 (pick candidates, then send), and a compare view: one column per candidate with state, diffstat, cost, "Open in Review" and "Keep this one" (confirmation lists what will be pruned).
+Check: CoxUI snapshots (2 and 3 candidates, one failed); swiftlint strict and swift-format clean.
+
+#### T52.13 Plugin UI service moves from `crates/cox` into `cox-session` (DT§4.7 G9)
+
+Depends: — · Size: ~180 · Files: `crates/cox-session/src/plugin_ui.rs` (new, moved), `crates/cox/src/plugin_ui.rs` (becomes the TUI adapter), `crates/cox-session/src/lib.rs`
+Goal: the request/answer service over the live `PluginHost`s (render with its 20 ms deadline, command and key with theirs, render-item) moves unchanged into `cox-session` with neutral `PluginRequest`/`PluginAnswer` types; the TUI keeps only the mapping to its `Msg`/`Cmd`, so the desktop reuses the one implementation (no duplicate). No behaviour change.
+Check: the existing plugin UI tests pass unchanged (`mise exec -- cargo nextest run -p cox plugin_ui` and the T33.23–T33.26 tests); `crates/cox/tests/deps.rs` (`cox-session` gains no ratatui); `mise exec -- cargo nextest run --workspace`.
+
+#### T52.14 `cox-app` plugin slots: sanitized, bounded widget patches
+
+Depends: T52.13 · Size: ~190 · Files: `crates/cox-app/src/plugin_ui.rs` (new), `crates/cox-app/src/patch.rs`, `crates/cox-app/src/timeline.rs`
+Goal: per session, the granted plugins' `status`, `panel` and `overlay` slots and `tool:`/`item:` renderers reach the app as a `WidgetView` — the PL§8 tree with every string through `cox_sanitize::sanitize` and PL§8's limits (512 nodes, depth 8, 16 KiB, else one "plugin output too large" line) — in an `AppPatch::PluginSlot` or on the `Plugin` block; redraws follow PL§8's model (asked, resized, became visible); three missed deadlines show "⚠ <id> slow" and stop the slot, as in the TUI. Plugin commands join the completion list as `/<id>:<name>` after the built-ins.
+Check: `mise exec -- cargo nextest run -p cox-app plugin_widget_strings_are_sanitized plugin_widget_over_limit_is_one_line plugin_slot_stops_after_three_misses plugin_command_never_shadows_a_builtin` (inline-WAT plugin as in the host tests).
+
+#### T52.15 `cox-ffi` carries the widget tree
+
+Depends: T52.14 · Size: ~90 · Files: `crates/cox-ffi/src/types.rs`, `crates/cox-ffi/src/lib.rs`
+Goal: `WidgetView`, `PluginSlot` and plugin command/key calls as UniFFI records and forwards (A90; the type declarations do not count, A88).
+Check: the A90 forwarder test; `just desktop-xcframework`.
+
+#### T52.16 CoxUI draws the closed `Widget` tree natively
+
+Depends: T52.15 · Size: ~190 · Files: CoxUI `PluginWidgetView` (new), its snapshots, the DS§6 catalogue row
+Goal: one SwiftUI view per variant — `Text`, `List`, `Table`, `KeyValue`, `Gauge`, `Stack`, `Block` — with each `StyleToken` mapped to a CoxUI colour token (no raw colours; themes and High Contrast keep working), built from plain values so CoxUI still imports no other cox package.
+Check: a CoxUI snapshot per variant plus a nested one, light, dark and increased contrast; swiftlint strict and swift-format clean.
+
+#### T52.17 Plugin panels, status segments, overlays and commands in the app
+
+Depends: T52.16 · Size: ~150 · Files: `desktop/macos/App` session scene, CoxModel `SessionStore` plugin state, CoxUI toolbar status area
+Goal: a `panel` slot above the composer (≤ 8 rows, toggled by its command), `status.left`/`status.right` segments in the toolbar status area (dropped first when narrow), `overlay` as a sheet (Esc closes), renderer widgets inside tool cards, `/<id>:<name>` in the palette.
+Check: a CoxModel test that a slot patch updates only its slot; CoxUI snapshots of a panel and a status segment; `just desktop-app` builds.
+
+#### T52.18 App-server wire protocol and its schema
+
+Depends: — · Size: ~170 · Files: `crates/cox-app/src/wire.rs` (new), `docs/app-server.schema.json` (generated), the drift test in `crates/cox-app`
+Goal: the requests, responses and server notifications that mirror `App` and `SessionHandle` (projects, sessions, search, open, send, snapshot, expand, complete, changes, plan, close; patches and app patches as notifications) as serde + `JsonSchema` types over the existing patch types (DT§4.4: no second protocol), one JSON object per line, with a version field; `docs/app-server.schema.json` is committed with a drift test. Secrets have no message at all.
+Check: `mise exec -- cargo nextest run -p cox-app app_server_schema_drift wire_round_trips_every_message wire_has_no_secret_message`.
+
+#### T52.19 `cox app-server --stdio`
+
+Depends: T52.18 · Size: ~200 · Files: `crates/cox-app/src/server.rs` (new), `crates/cox/src/cli.rs`, `crates/cox/src/main.rs`
+Goal: a subcommand that serves T52.18's protocol on stdin/stdout for one client: requests call the local `Workspace`, patches stream as notifications with the same coalescing and backpressure (a stalled client costs memory per changed block, DT§4.5). Its `Host`: `secret` always `None` (keys come from the remote machine's own env or keyring only), `open_url` and `notify` become notifications the client shows and, for a URL, opens only after the user confirms and only for `http(s)`. Logs go to stderr, never stdout.
+Check: `mise exec -- cargo nextest run -p cox-app app_server_serves_a_scripted_turn app_server_never_answers_a_secret app_server_stalled_client_does_not_delay_the_turn` (in-memory pipes, scripted provider); `COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- app-server --stdio < fixture.jsonl` answers the projects request.
+
+#### T52.20 `cox-app` remote workspace over SSH
+
+Depends: T52.19 · Size: ~190 · Files: `crates/cox-app/src/remote.rs` (new), `crates/cox-app/src/lib.rs`, `crates/cox-ffi/src/lib.rs`
+Goal: `RemoteWorkspace::connect(host)` runs `/usr/bin/ssh -T -o BatchMode=yes -o ForwardAgent=no -o ClearAllForwardings=yes -- <host> cox app-server --stdio` (the host name validated: no leading `-`, no whitespace or control characters), with no environment forwarded, and exposes the same session-handle surface as a local session, so CoxModel's `CoreClient` works unchanged; authentication is the user's own ssh configuration and agent, never a password field in the app; a dropped connection marks its sessions disconnected with a reconnect action. `App.connect_remote` forwards it (A90).
+Check: `mise exec -- cargo nextest run -p cox-app remote_host_with_leading_dash_is_refused remote_spawn_forwards_no_agent_and_no_env remote_session_streams_through_a_fake_ssh` (a fake `ssh` script that execs the local `cox app-server --stdio`); the A90 forwarder test.
+
+#### T52.21 Connect to a host from the app
+
+Depends: T52.20 · Size: ~150 · Files: CoxUI "Connect to host" sheet and sidebar host group, CoxModel `AppStore` remote workspaces, `crates/cox-protocol/src/config.rs` (`desktop.remote_hosts`)
+Goal: File › Connect to Host… takes an ssh host alias; connected hosts appear as their own sidebar groups with a host badge and a disconnected state; saved hosts live in `desktop.remote_hosts` (user config; a project config cannot set it — project-config guard) with a schema and a `docs/config.md` row.
+Check: CoxUI snapshots of the sheet and a host group (connected, disconnected); `mise exec -- cargo nextest run -p cox-config` (schema drift, guard); `just desktop-app` builds.
+
+#### T52.22 App-server and remote-session docs
+
+Depends: T52.21 · Size: ~80 (docs) · Files: `docs/app-server.md` (new), `docs/how-it-works.md` (surfaces list), `AGENTS.md` ("What this is" names `cox app-server`)
+Goal: how to run `cox app-server --stdio` on a remote machine, what crosses the wire and what never does (keys, the ssh agent), and how the app connects.
+Check: the docs link and command-coverage tests pass (`mise exec -- cargo nextest run -p cox --test docs`).
+
+### P53 — Plugin distribution (goal: a plugin installs from git or a URL through the same validation and per-digest grant as a local folder, and the plugin API, the Rust SDK and the Go SDK are ready to publish once `api = 1` is frozen)
+
+Rationale in §6 A121. Design: `docs/design/plugins.md` PL§1 (package, digest, install, update), §4 (ABI and versioning), §9, §12, §13. Install cards (T53.1–T53.4) come first and do not wait for the ABI freeze.
+
+Every card in this phase:
+- ends every install in the existing local-directory install: validate the manifest, digest the tree, copy into `versions/<digest12>/`, ask for the grant — no second path, no plugin runs before its grant;
+- treats a downloaded or cloned tree as untrusted repository content: nothing in it runs during install, symlinks and paths that leave the staging directory are refused;
+- stops before anything outward-facing: no `cargo publish`, no tag push, no release — the card prepares metadata, docs and a dry run, and the creator publishes.
+
+#### T53.1 Design: plugin install from git or a URL (PL§1, PL§12)
+
+Depends: — · Size: ~80 (docs) · Files: `docs/design/plugins.md`
+Goal: PL§1 gains the two approved sources and PL§12's out-of-scope line keeps only the marketplace and signatures: `cox plugin install <https-url> --sha256 <hex>` for a `.tar.gz` archive (the hash is required; `http`, `file` and other schemes are refused), and `cox plugin install git+<url> --rev <tag|commit> [--path <subdir>]` (the ref is required, a branch name is refused so `update` never follows a moving target silently); the recorded source shapes `{kind: "url", url, sha256}` and `{kind: "git", url, rev, commit, path}`; staging under `~/.cox/plugins/.staging/`, removed on every exit; git is shelled to as A13 does (no `git2`/`gix`), with `GIT_TERMINAL_PROMPT=0`, `--depth 1`, no submodules; archive extraction reuses the `tar` shell-out `self_update` uses; `update` semantics per source (T53.4). No new dependency.
+Check: the section exists and names every refusal above; the creator approves it before T53.2.
+
+#### T53.2 `cox plugin install <https-url> --sha256 <hex>`
+
+Depends: T53.1 · Size: ~170 · Files: `crates/cox/src/plugin_fetch.rs` (new), `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/cli.rs`
+Goal: download with the reqwest client and SHA-256 helper `self_update` already has (extracted into `plugin_fetch.rs` for both, not copied), refuse on a hash mismatch before anything is unpacked, extract with `tar` into the staging directory, refuse any symlink and any entry resolving outside staging, then hand the directory (without the archive) to `plugin_cmd::install`, recording `{kind: "url", url, sha256}`. Headless never approves (PL§1b), as for a folder.
+Check: `mise exec -- cargo nextest run -p cox plugin_install_url_rejects_a_hash_mismatch plugin_install_url_rejects_http plugin_install_url_rejects_a_symlink_entry plugin_install_url_rejects_dot_dot_entries plugin_install_url_records_the_source` (wiremock, already a dev-dependency); `COX_HOME=/tmp/cox-scratch mise exec -- cargo run -- plugin install <local wiremock url> --sha256 <hex>` in the e2e test.
+
+#### T53.3 `cox plugin install git+<url> --rev <ref>`
+
+Depends: T53.1, T53.2 · Size: ~160 · Files: `crates/cox/src/plugin_fetch.rs`, `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/cli.rs`
+Goal: `git clone --depth 1 --no-recurse-submodules --branch <tag>` (or fetch of a commit) into staging with `GIT_TERMINAL_PROMPT=0`, resolve the commit, take `--path` confined inside the clone, copy the package tree without `.git` into the install path, record `{kind: "git", url, rev, commit, path}`; a branch name as `--rev` is refused; `git` is found once in the fixed directories, never through a repository's config.
+Check: `mise exec -- cargo nextest run -p cox plugin_install_git_from_a_local_bare_repo plugin_install_git_refuses_a_branch plugin_install_git_path_cannot_escape_the_clone plugin_install_git_digest_excludes_dot_git` (a `file://` bare repository the test creates).
+
+#### T53.4 `cox plugin update` for URL and git sources
+
+Depends: T53.2, T53.3 · Size: ~130 · Files: `crates/cox/src/plugin_cmd.rs`, `crates/cox/src/plugin_fetch.rs`
+Goal: PL§1b step 1 re-reads a URL source (the same URL and hash: a changed file at that URL is a mismatch, never a silent update; a new version is a new `install` with a new hash) and a git source (the same tag: a tag that moved yields a new digest and asks for the grant again, with the capability diff); `--check` fetches but changes nothing.
+Check: `mise exec -- cargo nextest run -p cox plugin_update_url_same_bytes_is_up_to_date plugin_update_url_changed_bytes_is_refused plugin_update_git_moved_tag_asks_again plugin_update_check_changes_nothing`.
+
+#### T53.5 Freeze ABI `api = 1`
+
+Depends: T33.14, T33.18, T33.34, T33.40.1, and the creator's confirmation that the ABI is stable · Size: ~100 · Files: `docs/plugin-abi.v1.schema.json` (frozen copy), the compatibility test in `crates/cox-plugin-api`, `docs/design/plugins.md` §4
+Goal: PL§12 falsifier 3 has been checked by the Jev plugin (T33.40.1) and the open ABI cards have landed, so `api = 1` is frozen: a committed copy of the v1 ABI schema and a test that the current `docs/plugin-abi.schema.json` only adds optional fields, exports and host functions to it (PL§4's minor-change rule); PL§4 records the freeze.
+Check: `mise exec -- cargo nextest run -p cox-plugin-api abi_v1_changes_are_additive_only abi_schema_drift`.
+
+#### T53.6 `cox-plugin-api` ready for crates.io
+
+Depends: T53.5 · Size: ~80 · Files: `crates/cox-plugin-api/Cargo.toml`, `crates/cox-plugin-api/README.md` (new), `release-plz.toml`
+Goal: `description`, `readme`, `documentation`, `keywords`, `categories`, `include` and the licence (`MIT OR Apache-2.0`, A68) set; rustdoc on every public item with a compiling example; the name checked free on the crates.io API (URL and date in the commit message); release-plz configured to publish this crate only when the creator runs it, the rest of the workspace stays `publish = false`. Stops before `cargo publish`.
+Check: `mise exec -- cargo publish --dry-run -p cox-plugin-api` succeeds; `mise exec -- cargo doc -p cox-plugin-api --no-deps` has no warnings; `cargo package --list -p cox-plugin-api` lists no test fixtures.
+
+#### T53.7 `cox-plugin-sdk` ready for crates.io
+
+Depends: T53.6 · Size: ~80 · Files: `plugins/sdk/Cargo.toml`, `plugins/sdk/README.md` (new), `plugins/Cargo.toml`
+Goal: the same metadata and docs for the guest SDK; its `cox-plugin-api` dependency carries a version beside the path; the name checked free. Stops before `cargo publish`; its full dry run needs `cox-plugin-api` on crates.io, which the creator publishes first.
+Check: `cargo package --list --no-verify` in `plugins/` lists the expected files; `cargo doc --no-deps -p cox-plugin-sdk` has no warnings; after the creator publishes `cox-plugin-api`, `cargo publish --dry-run -p cox-plugin-sdk` succeeds.
+
+#### T53.8 Go SDK module ready to tag
+
+Depends: T33.34, T53.5 · Size: ~70 · Files: `plugins/sdk-go/go.mod`, `plugins/sdk-go/README.md`, `plugins/sdk-go/doc.go`
+Goal: the Go SDK from T33.34 as a module at its repository path (`github.com/listepo/cox/plugins/sdk-go`) with package docs and an example; the tag it needs (`plugins/sdk-go/v0.1.0`) is written in the README and the card's report for the creator to push. Stops before the tag push.
+Check: `go vet ./...` and `go test ./...` in `plugins/sdk-go` (toolchain from `plugins/mise.toml`); `GOFLAGS=-mod=mod go list -m` prints the module path.
+
+#### T53.9 Templates and docs use the published SDKs
+
+Depends: T53.7, T53.8, and the creator's publish of both crates and the Go tag · Size: ~60 · Files: `plugins/templates/rust/Cargo.toml.tmpl`, `plugins/templates/go/go.mod.tmpl`, `docs/plugins.md`
+Goal: `cox plugin new` generates a plugin that depends on the published `cox-plugin-sdk` version and Go module tag instead of a path into this repository, and `docs/plugins.md` shows the published names; the in-repo examples keep their path dependencies.
+Check: `mise exec -- cargo nextest run -p cox plugin_new_` (template snapshots re-recorded on purpose); `just plugin-examples rust` and `just plugin-examples go` build a freshly scaffolded plugin.
+
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
@@ -3023,6 +3418,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A118 T37.44.3 — by the creator (2026-09-28): the Figma file uses SF Pro and SF Mono, which the creator installs locally; no substitute font. Why: the app draws in SF, and a substitute would change the metrics being compared in T37.44.2.
 - A119 T37.44.4–T37.44.8 — faster layout work, by the creator (2026-09-28): layout fixes iterate in the CoxUI package alone (it depends on neither the Rust core nor the XCFramework), compare a snapshot with its frame by a pixel-diff command, and split the Figma comparison by page so agents work on separate screens in parallel. Why: each layout check was rebuilding the XCFramework and the app and one agent at a time owned every screen.
 - A120 T37.45.1–T37.45.5 — by the creator (2026-09-28, "do what is best"): controls the mockups show and the design doc already names but the app lacks — settings filter, provider keys and model pop-ups, permission rules editor and session grants, MCP status and log, the onboarding drop zone — become cards; the settings sidebar stays the floating glass one of DESIGN.md §6.5, not the mockups' flush 220 pt one; the M2/M3 mockups (24–27) stay out of scope. Why: the design pass (T37.44.5) found them missing, and they are features, not layout.
+- A121 §3 (new P51: T51.1–T51.21, P52: T52.1–T52.22, P53: T53.1–T53.9), `roadmap.md`, by the creator (2026-09-28): every `roadmap.md` item moves into the plan as described cards — desktop M2 and the dark glass theme as P51, desktop M3 as P52 (the ACP host no longer waits for a blocked card, A67 §11 Q8), plugin install from git or a URL and the publishing of `cox-plugin-api`, `cox-plugin-sdk` and the Go module as P53. The approved looks are mockups 24-terminal-pane-m2, 25-browser-preview-m2, 26-menu-bar-extra-m2 and 27-external-agents-acp-m3 in `desktop/design/mockups/mockups.html`, which T37.44.11 and A120 left out of P37. One agent implements the cards serially without building or running tests (the creator's instruction); a later verification pass runs each card's Check, builds and tests, and only then does the card merge and move to `done.md`. Decisions taken with them: business logic stays in Rust (`cox-app`), `cox-ffi` stays a one-expression forwarder (D11, A90), Swift never spawns a process; the terminal pane runs the user's login shell in the session cwd under the session's own `cox_sandbox::sandbox::Policy`; browser page text reaching the model is untrusted and passes `cox_sanitize::sanitize` and the archive; remote SSH sessions never send API keys or forward the ssh agent; install from a URL needs a pinned sha256 and from git a named ref, and both end in the existing local-directory install and per-digest grant; publishing stops at a dry run — `cargo publish` and tag pushes are the creator's. New dependencies: SwiftTerm (research.md §9.5.2) and KeyboardShortcuts (§9.5.7) in Swift, `portable-pty` promoted from a dev-dependency to a `cox-app` dependency; each gets its §1.1 and `toolchain.md` rows in the implementing commit. Plugin install from git or a URL reverses PL§12's "out of scope" line for those two sources only (T53.1). Why: the creator approved these items in `roadmap.md` and asked to have all of them planned; `roadmap.md` is left with no items.
 
 ## 7. Risk register
 

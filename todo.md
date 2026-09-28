@@ -97,3 +97,55 @@
 - T49.5. Cursor Cloud Agents API as a background-task backend — scope gate
 - T50.3. The volatile block shows the live permission mode
 - T50.5. `cox --plain` shows the mode after `/permissions`
+- T51.1. Dark glass: mock the dark glass surfaces and give them token values
+- T51.2. One sandbox argv for `sh -c` commands and interactive programs
+- T51.3. `cox-app` terminal: the login shell in a PTY, in the session cwd, under the session's sandbox
+- T51.4. `cox-ffi` forwards the terminal handle
+- T51.5. CoxPlatform terminal view over SwiftTerm
+- T51.6. Terminal pane in the session window (mockup 24)
+- T51.7. Browser tools in `cox-app`: open, read, screenshot through the host
+- T51.8. Browser methods across `cox-ffi` and the host bridge
+- T51.9. CoxPlatform browser controller over `WebPage`
+- T51.10. Browser preview pane (mockup 25)
+- T51.11. Pop a session out into its own window or a native tab
+- T51.12. `cox-app` menu-bar summary: today's cost and sessions
+- T51.13. CoxUI menu-bar panel (mockup 26)
+- T51.14. Menu-bar extra scene and its setting
+- T51.15. Global hotkey for the menu-bar panel and a new session
+- T51.16. Spotlight indexes session titles
+- T51.17. App Intents: "Ask cox in <project>" and "Open session"
+- T51.18. `revert_hunk`: undo one hunk of a file's net diff
+- T51.19. `Submission::RevertHunk` in the core, checkpointed
+- T51.20. `cox-app` and `cox-ffi` carry the hunk revert
+- T51.21. Review: Revert hunk button
+- T52.1. ACP host design: launch table for Claude Code, Codex, Gemini CLI and Cursor
+- T52.2. `[external_agents.<name>]` in user config, resolved through the one sandboxed constructor
+- T52.3. ACP `session/update` to `Event` mapper
+- T52.4. `cox-app` drives a top-level session through an external ACP agent
+- T52.5. An external agent's permission requests reach the inbox
+- T52.6. External-agent sessions are stored and reopen
+- T52.7. `cox-ffi` and CoxModel: pick an agent for a new session
+- T52.8. CoxUI and app: agent picker, ACP banner, Agents list (mockup 27)
+- T52.9. `cox-app` best-of-n launcher: one prompt, n candidates, n worktrees
+- T52.10. Best-of-n comparison and pick
+- T52.11. `cox-ffi` and CoxModel carry best-of-n
+- T52.12. CoxUI best-of-n control and compare view
+- T52.13. Plugin UI service moves from `crates/cox` into `cox-session` (DT§4.7 G9)
+- T52.14. `cox-app` plugin slots: sanitized, bounded widget patches
+- T52.15. `cox-ffi` carries the widget tree
+- T52.16. CoxUI draws the closed `Widget` tree natively
+- T52.17. Plugin panels, status segments, overlays and commands in the app
+- T52.18. App-server wire protocol and its schema
+- T52.19. `cox app-server --stdio`
+- T52.20. `cox-app` remote workspace over SSH
+- T52.21. Connect to a host from the app
+- T52.22. App-server and remote-session docs
+- T53.1. Design: plugin install from git or a URL (PL§1, PL§12)
+- T53.2. `cox plugin install <https-url> --sha256 <hex>`
+- T53.3. `cox plugin install git+<url> --rev <ref>`
+- T53.4. `cox plugin update` for URL and git sources
+- T53.5. Freeze ABI `api = 1`
+- T53.6. `cox-plugin-api` ready for crates.io
+- T53.7. `cox-plugin-sdk` ready for crates.io
+- T53.8. Go SDK module ready to tag
+- T53.9. Templates and docs use the published SDKs
