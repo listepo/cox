@@ -165,8 +165,9 @@ struct CardAppearance<Content: View>: View {
 }
 
 extension TranscriptStyle {
-  /// The transcript drawn with CoxUI's tokens: `font.transcript` prose, `font.transcript.h3`
-  /// headings and `font.mono.code` code at the user's text size, each at its token's line
+  /// The transcript drawn with CoxUI's tokens: `font.transcript` prose, `font.transcript.h1`,
+  /// `h3` and `h4` headings (A94; one line height, the three tokens share it) and
+  /// `font.mono.code` code at the user's text size, each at its token's line
   /// height but the prose at `lineHeight` (A93), lists indented as the
   /// mockup's (`space.xxl`), readable colours only (DS§8) — the status colours miss
   /// 4.5:1 as text, so `ok`, `warn`, `error` and the diff tokens keep `text.primary`. A prompt
@@ -181,7 +182,10 @@ extension TranscriptStyle {
     return TranscriptStyle(
       body: FontToken.transcript.nsFont(scale: textScale),
       code: FontToken.monoCode.nsFont(scale: textScale),
-      heading: FontToken.transcriptH3.nsFont(scale: textScale),
+      headings: .init(
+        h1: FontToken.transcriptH1.nsFont(scale: textScale),
+        h3: FontToken.transcriptH3.nsFont(scale: textScale),
+        h4: FontToken.transcriptH4.nsFont(scale: textScale)),
       text: TextColour.primary.nsColor,
       colors: [
         .dim: secondary, .tool: secondary, .diffHunk: secondary,

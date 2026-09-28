@@ -37,9 +37,9 @@ excluded:
   - Spikes
   - Packages/*/.build
 
-# Token steps are short by design (`Space.l`, `Radius.xs`, `.e2`, DS§3).
+# Token steps are short by design (`Space.l`, `Radius.xs`, `.e2`, the `h1` heading, DS§3).
 identifier_name:
-  excluded: [id, x, y, s, m, l, xs, ml, xl, e0, e1, e2, e3, e4, e5]
+  excluded: [id, x, y, s, m, l, xs, ml, xl, e0, e1, e2, e3, e4, e5, h1, h3, h4]
 
 disabled_rules:
   # swift-format adds trailing commas to multi-line collections; SwiftLint's default

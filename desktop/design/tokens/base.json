@@ -324,9 +324,30 @@
           }
         }
       },
+      "h1": {
+        "$type": "typography",
+        "$description": "Level-1 Markdown headings in the transcript (DT§5.9, A94)",
+        "$value": {
+          "fontFamily": [
+            "SF Pro Text",
+            "-apple-system",
+            "system-ui"
+          ],
+          "fontSize": {
+            "value": 17,
+            "unit": "px"
+          },
+          "fontWeight": 600,
+          "lineHeight": 1.35,
+          "letterSpacing": {
+            "value": 0,
+            "unit": "rem"
+          }
+        }
+      },
       "h3": {
         "$type": "typography",
-        "$description": "Markdown headings in the transcript",
+        "$description": "Level-2 Markdown headings in the transcript, and levels 4-6, which DT§5.9 does not size (A94)",
         "$value": {
           "fontFamily": [
             "SF Pro Text",
@@ -335,6 +356,27 @@
           ],
           "fontSize": {
             "value": 15,
+            "unit": "px"
+          },
+          "fontWeight": 600,
+          "lineHeight": 1.35,
+          "letterSpacing": {
+            "value": 0,
+            "unit": "rem"
+          }
+        }
+      },
+      "h4": {
+        "$type": "typography",
+        "$description": "Level-3 Markdown headings in the transcript (DT§5.9, A94)",
+        "$value": {
+          "fontFamily": [
+            "SF Pro Text",
+            "-apple-system",
+            "system-ui"
+          ],
+          "fontSize": {
+            "value": 13,
             "unit": "px"
           },
           "fontWeight": 600,

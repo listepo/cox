@@ -80,8 +80,12 @@ public extension FontToken {
     static let body = FontToken(size: 13, weight: .regular, design: .default, lineHeight: 1.45, tracking: 0)
     /// Assistant and user messages
     static let transcript = FontToken(size: 13.5, weight: .regular, design: .default, lineHeight: 1.55, tracking: 0)
-    /// Markdown headings in the transcript
+    /// Level-1 Markdown headings in the transcript (DT§5.9, A94)
+    static let transcriptH1 = FontToken(size: 17, weight: .semibold, design: .default, lineHeight: 1.35, tracking: 0)
+    /// Level-2 Markdown headings in the transcript, and levels 4-6, which DT§5.9 does not size (A94)
     static let transcriptH3 = FontToken(size: 15, weight: .semibold, design: .default, lineHeight: 1.35, tracking: 0)
+    /// Level-3 Markdown headings in the transcript (DT§5.9, A94)
+    static let transcriptH4 = FontToken(size: 13, weight: .semibold, design: .default, lineHeight: 1.35, tracking: 0)
     /// Buttons, capsules, segmented items
     static let control = FontToken(size: 12.5, weight: .medium, design: .default, lineHeight: 1.2, tracking: 0)
     /// Thinking line, notices

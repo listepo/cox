@@ -1,4 +1,4 @@
-// A reply's structure in the text (T37.23.8, A92): a heading in the heading font
+// A reply's structure in the text (T37.23.8, A92): a heading in its level's font (A94)
 // without its `#` run, a list item's marker in the gutter before its text, a quote
 // line past a bar per quote, a table on tab stops, a rule as one character, and a
 // streamed reply with the same paragraph styles a whole load gives it.
@@ -29,9 +29,10 @@ private let structured: [DocBlock] = [
 
 @MainActor private let style: TranscriptStyle = {
   var style = TranscriptStyle.system
-  (style.heading, style.indent, style.thought.indent) = (
-    .preferredFont(forTextStyle: .title3), 20, 12
-  )
+  style.headings = .init(
+    h1: .preferredFont(forTextStyle: .title1), h3: .preferredFont(forTextStyle: .title3),
+    h4: .preferredFont(forTextStyle: .headline))
+  (style.indent, style.thought.indent) = (20, 12)
   return style
 }()
 
@@ -54,7 +55,7 @@ struct TranscriptStructureTests {
 
     #expect(view.string.hasPrefix("Plan\n"), "a heading shows without its `#` run")
     let font = view.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
-    #expect(font == style.heading)
+    #expect(font == style.headings.h3)
     let one = try #require(paragraph(view, at: "\t•\tone"))
     #expect(one.firstLineHeadIndent == 0 && one.headIndent == style.indent)
     #expect(one.tabStops.map(\.location).last == style.indent, "the text starts past the gutter")
@@ -66,6 +67,28 @@ struct TranscriptStructureTests {
     #expect(!view.string.contains("│") && !view.string.contains("#"))
     #expect(try #require(paragraph(view, at: "k\tvalue")).tabStops.count == 1)
     #expect(view.string.contains("\n\u{FFFC}\n"), "a rule is one character on its own line")
+  }
+
+  @Test func eachHeadingLevelTakesItsTokensFontAndLineHeight() throws {
+    let levels = (1...6).map { level in
+      DocBlock.text(kind: .heading(UInt8(level)), lines: [TextLine([span("Level \(level)")])])
+    }
+    var style = style
+    style.lineHeights.heading = 1.5
+    let view = TranscriptTextView.make(style: style)
+    view.load([reply(levels)])
+    let text = view.string as NSString
+    let fonts = (1...6).map { level in
+      view.textStorage?.attribute(
+        .font, at: text.range(of: "Level \(level)").location, effectiveRange: nil) as? NSFont
+    }
+    let (h1, h3, h4) = (style.headings.h1, style.headings.h3, style.headings.h4)
+    #expect(fonts == [h1, h3, h4, h3, h3, h3], "DT§5.9 sizes levels 1–3; 4–6 keep h3")
+    let spacing = { (font: NSFont) in
+      TranscriptStyle.lines(font, style.lineHeights.heading).lineSpacing
+    }
+    #expect(try #require(paragraph(view, at: "Level 1")).lineSpacing == spacing(h1))
+    #expect(try #require(paragraph(view, at: "Level 3")).lineSpacing == spacing(h4))
   }
 
   @Test func aStreamedReplyHasTheParagraphStylesAWholeLoadGivesIt() {
