@@ -4862,3 +4862,20 @@ Check:
 - CoxTranscript 31 (`PinnedDecisionTests`: light/dark snapshot of the pending `approve-write` fixture with the bar; ⌘⏎ through `NSApp.sendEvent` sends `.approve(call:, decision: .allow)` and the bar clears when the decision lands; ⌘⌫ denies; block-to-bar mapping). CoxUI 139 (`DecisionBarSnapshotTests`, 3 states × 4 variants). swiftlint and swift-format clean.
 - After merging into `p37-desktop`: CoxTranscript 31/31, CoxUI DecisionBar 1/1.
 Not done: app wiring (T37.22.3); the composer's ⌘V monitor could reuse `WindowKeys` (T37.27.8).
+
+#### T37.24.9 Caret-aware completion and the failure notice
+
+Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxUI/…/Composer.swift`, `desktop/macos/Packages/CoxModel/…/ComposerStore.swift`
+Goal: completion uses the token at the caret, not the end of the draft, and `ComposerStore.failure` shows as a `NoticeRow` above the composer.
+Check: a UI test completes mid-text; a snapshot with a failure.
+Status: done 2026-09-28
+Result:
+- Completion uses the `@` or `/` word that ends at the caret: `ComposerStore` keeps the editor's selection as UTF-16 offsets (`selectedRange`, `select(_:)`); a pick replaces that word in place, keeps the rest and puts the caret after the insert and one space; no rows while the caret is inside a word or text is selected.
+- The composer's `TextEditor` uses a selection binding and edits its own copy of text and selection (`Organisms/ComposerDraft.swift`), sends `.edit` then the new `.select(Range<Int>)`, and takes back what the store returns (after a pick, a recalled prompt, a send or `!`). `NSTextView` reports a keystroke's caret before its text, so reading the text straight from the value made the caret jump to 0.
+- `Composer.State.failure` shows as an error `NoticeRow` on its own glass strip above the composer (DS§8 contrast); `SessionComposer` passes `store.failure` and `store.selectedRange`.
+Deviations: a fourth source file, `ComposerDraft.swift`, keeps `Composer.swift` under SwiftLint's 400-line limit.
+Check:
+- `aTokenTypedMidTextIsCompletedInPlaceAndTheCaretFollowsTheInsert` (real key events: types "fix it", moves the caret, types " @", picks with ⏎, caret 17, sends), `aBangTypedIntoTheEmptyComposerLeavesTheEditorEmptyInShellMode`, store test `theTokenAtTheCaretIsCompletedMidTextAndTheRestStays` (non-ASCII UTF-16 offsets), `ComposerFailureTests` (4 variants).
+- CoxModel 40, CoxTranscript 29, CoxUI 139; `ComposerFlowTests` 7/7 on two more runs; swiftlint and swift-format clean.
+- After merging into `p37-desktop` with T37.27.5: CoxModel 40/40, CoxTranscript 33/33, CoxUI Composer and DecisionBar 5/5.
+Not done: a dismiss control on the notice (it clears on the next successful send).

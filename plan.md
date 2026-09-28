@@ -34,7 +34,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.25.1 | todo | P2 | 3 | 0% | |
 | T37.24.7 | todo | P2 | 3 | 0% | |
 | T37.24.8 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.24.9 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.27.6 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.27.8 | todo | P3 | 1 | 0% | |
 | T37.28 | todo | P1 | 4 | 0% | |
@@ -2797,12 +2796,6 @@ Check: snapshots in the four cells; ⇧⇥ sends `setMode`.
 Depends: — · Size: ~100 · Files: `crates/cox-app/…`, `desktop/macos/Packages/CoxModel/…/ComposerStore.swift`
 Goal: `Intent::Queue` carries attachments and the status patch reports the queue length, so `ComposerStore` stops deriving it from block turn numbers and a draft with attachments can be queued.
 Check: cox-app tests for both; the Swift count comes from the patch.
-
-#### T37.24.9 Caret-aware completion and the failure notice
-
-Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxUI/…/Composer.swift`, `desktop/macos/Packages/CoxModel/…/ComposerStore.swift`
-Goal: completion uses the token at the caret, not the end of the draft, and `ComposerStore.failure` shows as a `NoticeRow` above the composer.
-Check: a UI test completes mid-text; a snapshot with a failure.
 
 #### T37.27.6 Approval Edit… and the grant preview
 
