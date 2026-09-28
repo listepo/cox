@@ -62,12 +62,31 @@ public enum TimelinePatch: Equatable, Sendable {
   case status(status: Status)
 }
 
-/// `cox_app::Status`: what the session reports beside its blocks.
+/// `cox_app::Status`: what the session reports beside its blocks; `nil` is not known yet.
 public struct Status: Equatable, Sendable, Decodable {
   /// Turns queued behind the running one that have not started yet.
   public var queued: UInt32
+  /// The permission mode in force.
+  public var mode: PermissionMode?
+  /// The mode ⇧⇥ asks for, as the core cycles them.
+  public var nextMode: PermissionMode?
+  /// The model the main turn runs on, and its effort.
+  public var model: String?
+  public var effort: Effort?
 
-  public init(queued: UInt32 = 0) { self.queued = queued }
+  public init(
+    queued: UInt32 = 0, mode: PermissionMode? = nil, nextMode: PermissionMode? = nil,
+    model: String? = nil, effort: Effort? = nil
+  ) {
+    (self.queued, self.mode, self.nextMode, self.model, self.effort) = (
+      queued, mode, nextMode, model, effort
+    )
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case queued, mode, model, effort
+    case nextMode = "next_mode"
+  }
 }
 
 public enum ToolState: String, Equatable, Sendable, Decodable { case running, done, failed }

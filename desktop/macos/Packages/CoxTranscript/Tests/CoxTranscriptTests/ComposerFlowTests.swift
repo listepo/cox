@@ -4,7 +4,7 @@
 // brings back the session's earlier prompts, which the fixture client serves without Rust.
 // T37.24.5's: ⌘V of a PNG from a private pasteboard attaches it, and ⌘V of text is left to
 // the Edit menu's Paste. T37.24.9's: `@` typed mid-text is completed in place, the caret after
-// the insert.
+// the insert. T37.24.7's: ⇧⇥ sends the mode the core's status names next.
 
 import AppKit
 import CoxClient
@@ -123,6 +123,20 @@ import Testing
     #expect(host.editor.string == "run the tests")
   }
 
+  @Test func shiftTabAsksForTheModeTheCoreNamesNext() async throws {
+    let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []))
+    let transcript = SessionStore(session: session)
+    transcript.apply([.status(status: Status(mode: .plan, nextMode: .auto))])
+    let store = ComposerStore(session: transcript)
+    let host = ComposerHost(SessionComposer(store: store))
+    defer { host.close() }
+
+    host.press(.shiftTab)
+    await host.settle(until: { !session.sent.isEmpty })
+    #expect(session.sent == [.setMode(mode: .auto)])
+    #expect(host.editor.string.isEmpty)
+  }
+
   @Test func pastingAPNGAttachesItAndSendCarriesIt() async throws {
     let board = NSPasteboard(name: NSPasteboard.Name("cox.test.\(UUID())"))
     defer { board.releaseGlobally() }
@@ -171,20 +185,23 @@ private final class ComposerHost {
   let editor: NSTextView
 
   enum Key {
-    case upArrow, downArrow, `return`, commandReturn
+    case upArrow, downArrow, `return`, commandReturn, shiftTab
 
     var code: UInt16 {
       switch self {
       case .upArrow: 126
       case .downArrow: 125
       case .return, .commandReturn: 36
+      case .shiftTab: 48
       }
     }
+    /// What a keyboard sends; ⇧⇥ arrives as the back-tab character.
     var characters: String {
       switch self {
       case .upArrow: "\u{F700}"
       case .downArrow: "\u{F701}"
       case .return, .commandReturn: "\r"
+      case .shiftTab: "\u{19}"
       }
     }
     var modifiers: NSEvent.ModifierFlags {
@@ -192,6 +209,7 @@ private final class ComposerHost {
       case .upArrow, .downArrow: [.numericPad, .function]
       case .return: []
       case .commandReturn: .command
+      case .shiftTab: .shift
       }
     }
   }

@@ -18,6 +18,7 @@ pub mod meter_text;
 pub mod onboarding;
 pub mod patch;
 pub mod settings;
+pub mod status;
 pub mod summary;
 pub mod tasks;
 pub mod timeline;

@@ -200,3 +200,21 @@ private func usage(done: Bool) -> UsageView {
   store.edit("second, edited")
   #expect(!store.isRecalling)
 }
+
+/// T37.24.7: the chips show the mode and the model with its effort as the core's status reports
+/// them, and ⇧⇥ asks for the mode the core named next, leaving the chip to the core's answer.
+@MainActor
+@Test func theStatusNamesTheModeAndModelAndCycleAsksForTheCoresNextMode() async {
+  let (store, session) = composer()
+  #expect(store.mode == nil && store.model == nil)
+  await store.cycleMode()
+  #expect(session.sent.isEmpty)
+
+  let status = Status(mode: .default, nextMode: .plan, model: "claude-sonnet-5", effort: .high)
+  store.session.apply([.status(status: status)])
+  #expect(store.mode == .default)
+  #expect(store.model == "claude-sonnet-5 · high")
+  await store.cycleMode()
+  #expect(session.sent == [.setMode(mode: .plan)])
+  #expect(store.mode == .default)
+}

@@ -152,6 +152,10 @@ pub enum TimelinePatch {
 #[uniffi::remote(Record)]
 pub struct Status {
     pub queued: u32,
+    pub mode: Option<PermissionMode>,
+    pub next_mode: Option<PermissionMode>,
+    pub model: Option<ModelId>,
+    pub effort: Option<Effort>,
 }
 
 #[uniffi::remote(Record)]

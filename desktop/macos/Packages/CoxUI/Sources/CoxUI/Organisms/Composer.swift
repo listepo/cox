@@ -1,9 +1,9 @@
 // `Composer` (DS§6.4 row `Composer`, the mockup's `.composer`; DT§5.3; mockup screens 1, 5–7):
 // where the next message is written — the text, the files it mentions and attaches, shell mode with its
 // "share output" switch, the prompts queued behind the running turn, the completion rows for
-// the `@` or `/` token at the caret, why the last send failed, and Send. Separate so the
-// transcript column shows it from one value and reports every key and click as an intent; the
-// store behind it decides what each one sends.
+// the `@` or `/` token at the caret, why the last send failed, the permission mode and the model
+// with its effort, and Send. Separate so the transcript column shows it from one value and
+// reports every key and click as an intent; the store behind it decides what each one sends.
 
 import AppKit
 import SwiftUI
@@ -12,8 +12,9 @@ import SwiftUI
 /// floats highest in a pane (DS§3.4). The completion rows float above it; why the last send
 /// failed stands above it as a `NoticeRow`. ⏎ sends (or picks the selected row while rows
 /// show), ⇧⏎ breaks the line, ⌘⏎ sends now, ↑ ↓ ⇥ and ⎋ drive the rows, ↑ in an empty composer
-/// walks the earlier prompts, ⌫ in an empty shell line leaves shell mode, and ⌘V of files or an
-/// image attaches them. The draft is the caller's: the editor's copy reports every change.
+/// walks the earlier prompts, ⌫ in an empty shell line leaves shell mode, ⇧⇥ asks for the next
+/// permission mode, and ⌘V of files or an image attaches them. The draft is the caller's: the
+/// editor's copy reports every change.
 public struct Composer: View {
   public struct State: Equatable, Sendable {
     public var text = ""
@@ -43,6 +44,10 @@ public struct Composer: View {
     public var tokens: TokenPopover.State?
     /// Why the last send failed; the draft is still there to send again.
     public var failure: String?
+    /// The permission mode in force; `nil` hides its chip until the core reports it.
+    public var mode: SessionMode?
+    /// The model and its effort as the core names them, `claude-sonnet-5 · high`; `nil` hides it.
+    public var model: String?
 
     public init() {}
   }
@@ -100,6 +105,8 @@ public struct Composer: View {
     case removeAttachment(String)
     /// The token meter: opens or closes its popover.
     case toggleTokens
+    /// ⇧⇥ or the mode chip: the next permission mode, which the core picks.
+    case cycleMode
   }
 
   let state: State
@@ -244,6 +251,10 @@ private struct ComposerEditor: View {
     switch press.key {
     case .return where press.modifiers.contains(.shift):
       return .ignored
+    // AppKit spells ⇧⇥ as the back-tab character, and ⇥ with ⇧ held.
+    case KeyEquivalent("\u{19}"),
+      .tab where press.modifiers.contains(.shift):
+      send(.cycleMode)
     case .return where press.modifiers.contains(.command):
       send(.submitNow)
     case .return:
@@ -312,7 +323,8 @@ private enum ComposerPaste {
   }
 }
 
-/// Shell mode and its switch, the mentioned files, the queue count and Send.
+/// The mode and the model, shell mode and its switch, the mentioned files, the queue count and
+/// Send.
 private struct ComposerChipRow: View {
   let state: Composer.State
   let send: (Composer.Intent) -> Void
@@ -327,6 +339,16 @@ private struct ComposerChipRow: View {
       .buttonStyle(CoxButtonStyle(.plain, size: .small))
       .help("Attach files")
       .accessibilityLabel("Attach files")
+      if let mode = state.mode {
+        Button {
+          send(.cycleMode)
+        } label: {
+          ComposerChip(mode.title, kind: .mode(mode), shortcut: "⇧⇥")
+        }
+        .buttonStyle(.plain)
+        .help("Next permission mode (⇧⇥)")
+      }
+      if let model = state.model { ComposerChip(model, kind: .model) }
       if state.isShell {
         ComposerChip("Shell", kind: .shell) { send(.leaveShell) }
         Toggle(
@@ -366,3 +388,4 @@ private struct ComposerChipRow: View {
 #Preview("shell, queued") { PreviewMatrix { ComposerSample(state: PreviewState.composerShell) } }
 #Preview("tokens") { PreviewMatrix { ComposerSample(state: PreviewState.composerTokens) } }
 #Preview("failure") { PreviewMatrix { ComposerSample(state: PreviewState.composerFailure) } }
+#Preview("status") { PreviewMatrix { ComposerSample(state: PreviewState.composerStatus) } }

@@ -258,3 +258,39 @@ pub fn why_text(why: &Why) -> String {
         Why::Policy { policy } => format!("approval policy {policy:?} requires approval"),
     }
 }
+
+/// `Shift+Tab`: default → plan → auto → default (§1.13); bypass is never
+/// cycled into, only left. Here, beside the modes' meaning, so the TUI and
+/// the desktop composer (T37.24.7) cycle in the same order.
+pub fn next_mode(mode: PermissionMode) -> PermissionMode {
+    match mode {
+        PermissionMode::Default => PermissionMode::Plan,
+        PermissionMode::Plan => PermissionMode::Auto,
+        PermissionMode::Auto | PermissionMode::Bypass => PermissionMode::Default,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shift_tab_cycles_default_plan_auto_and_leaves_bypass() {
+        let from = [
+            PermissionMode::Default,
+            PermissionMode::Plan,
+            PermissionMode::Auto,
+            PermissionMode::Bypass,
+        ];
+        let to = from.map(next_mode);
+        assert_eq!(
+            to,
+            [
+                PermissionMode::Plan,
+                PermissionMode::Auto,
+                PermissionMode::Default,
+                PermissionMode::Default,
+            ]
+        );
+    }
+}

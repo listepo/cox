@@ -19,6 +19,7 @@ use tokio::task::JoinHandle;
 use crate::app::{App, AppError};
 use crate::changes::{self, Changes};
 use crate::info::{self, Info};
+use crate::status::StatusFold;
 use crate::tasks::{self, TaskTarget};
 use crate::{Block, Completer, Completion, Controller, Dispatch, Intent, Timeline};
 use crate::{TimelinePatch, dispatch};
@@ -47,13 +48,15 @@ impl LiveSession {
         resume: Option<(SessionId, History)>,
         theme: String,
     ) -> Result<Arc<Self>, AppError> {
+        let config = app.config(&cwd)?;
         let mut timeline = Timeline::new(&theme);
+        let mut status = StatusFold::open(&config);
         if let Some((id, _)) = &resume {
             for event in cox_store::Store::open(&app.home)?.rollout_read(id)? {
                 timeline.apply(&event);
+                status.apply(&event);
             }
         }
-        let config = app.config(&cwd)?;
         let (login, keys) = (Arc::clone(&app.host), Arc::clone(&app.host));
         let spec = SessionSpec {
             config,
@@ -76,7 +79,7 @@ impl LiveSession {
         let claude_home = cox_config::load::home_dir().join(".claude");
         Ok(Arc::new(Self {
             completer: Completer::load(&cwd, &app.home, &claude_home),
-            controller: Arc::new(Controller::spawn(timeline, events)),
+            controller: Arc::new(Controller::open(timeline, status, events)),
             warnings: opened.warnings.iter().map(ToString::to_string).collect(),
             turn: Mutex::new(None),
             app,

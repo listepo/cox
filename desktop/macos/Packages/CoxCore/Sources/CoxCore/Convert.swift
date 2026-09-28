@@ -66,7 +66,7 @@ extension CoxClient.TimelinePatch {
       self = .docTail(id: id, from: from, blocks: blocks.map { CoxClient.DocBlock($0) })
     case .remove(let id): self = .remove(id: id)
     case .usage(let usage): self = .usage(usage: .init(usage))
-    case .status(let status): self = .status(status: .init(queued: status.queued))
+    case .status(let status): self = .status(status: .init(status))
     }
   }
 }
