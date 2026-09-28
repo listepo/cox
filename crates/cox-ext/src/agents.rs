@@ -86,7 +86,7 @@ pub fn discover(dirs: &[PathBuf]) -> Discovered {
             .collect();
         paths.sort();
         for path in paths {
-            match parse_agent(&path, &mut found.notices) {
+            match parse_file(&path, &mut found.notices) {
                 Ok(def) => {
                     found.agents.retain(|a| a.name != def.name);
                     found.agents.push(def);
@@ -100,9 +100,30 @@ pub fn discover(dirs: &[PathBuf]) -> Discovered {
     found
 }
 
-fn parse_agent(path: &Path, notices: &mut Vec<String>) -> Result<AgentDef, String> {
+/// One definition file, parsed by the same code `discover` uses; `pub`
+/// for a granted plugin's `[[agents]]` files (T45.4), which live outside
+/// the agent dirs. `notices` gets what loads with a caveat (T45.2).
+pub fn parse_file(path: &Path, notices: &mut Vec<String>) -> Result<AgentDef, String> {
     let text = fs::read_to_string(path).map_err(|e| e.to_string())?;
     parse_agent_text(path, &text, notices)
+}
+
+/// Adds one plugin's definitions to `local` (T45.4, PL§14 decision 15): a
+/// name already present — a user or project file, an embedded preset or
+/// an earlier plugin's — is kept, and the plugin's is skipped with a
+/// notice, so installing a plugin never silently replaces a definition
+/// the user wrote.
+pub fn merge(local: &mut Discovered, plugin: Vec<AgentDef>, plugin_id: &str) {
+    for def in plugin {
+        if local.agents.iter().any(|a| a.name == def.name) {
+            local.notices.push(format!(
+                "plugin {plugin_id}: agent {} skipped; a definition with that name is already loaded",
+                def.name
+            ));
+        } else {
+            local.agents.push(def);
+        }
+    }
 }
 
 /// A def that parses but carries something cox cannot honour (an unknown
@@ -188,6 +209,41 @@ mod tests {
         .unwrap();
         assert!(!enabled.disabled);
         assert!(notices.is_empty(), "{notices:?}");
+    }
+
+    #[test]
+    fn merge_keeps_local_definition_and_names_skipped_plugin_agent() {
+        let def = |name: &str, body: &str| AgentDef {
+            name: name.into(),
+            description: "d".into(),
+            tools: Vec::new(),
+            model: None,
+            path: PathBuf::from(format!("<test>/{name}.md")),
+            body: body.into(),
+            disabled: false,
+            permission_mode: None,
+        };
+        let mut found = Discovered {
+            agents: vec![def("reviewer", "local")],
+            notices: Vec::new(),
+        };
+        merge(
+            &mut found,
+            vec![def("reviewer", "plugin"), def("tester", "plugin")],
+            "review-kit",
+        );
+        let bodies: Vec<(&str, &str)> = found
+            .agents
+            .iter()
+            .map(|a| (a.name.as_str(), a.body.as_str()))
+            .collect();
+        assert_eq!(bodies, [("reviewer", "local"), ("tester", "plugin")]);
+        assert_eq!(found.notices.len(), 1, "{:?}", found.notices);
+        assert!(
+            found.notices[0].contains("review-kit") && found.notices[0].contains("reviewer"),
+            "{:?}",
+            found.notices
+        );
     }
 
     #[test]

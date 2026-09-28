@@ -234,7 +234,10 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
         Some(_) => vec![cwd.to_path_buf()],
         None => config.core.workspace_roots.clone(),
     };
-    let plugins = load_plugins(&config, &home, cwd, store.clone(), Some(&writable));
+    let mut plugins = load_plugins(&config, &home, cwd, store.clone(), Some(&writable));
+    // T45.4: taken now, before `catalog_rows` borrows `plugins`; merged
+    // into the discovered definitions below.
+    let plugin_agent_defs = std::mem::take(&mut plugins.agent_defs);
     config.providers.custom.extend(plugins.providers.clone());
     // T33.44: granted plugins' `[[models]]` join the catalog the provider
     // reads its context window from (PL§7b).
@@ -286,11 +289,16 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
     // build, the same roots `cox ext list` reads — never inside `cox-core`,
     // which does no filesystem I/O of its own (`agent_defs` on `Session`
     // is set below, after construction, like `set_worktrees`).
-    let agents_found = cox_ext::agents::discover(&cox_ext::agents::agent_dirs(
+    let mut agents_found = cox_ext::agents::discover(&cox_ext::agents::agent_dirs(
         Some(&home),
         Some(&claude_home),
         Some(&project),
     ));
+    // T45.4: granted plugins' definitions join after the files, so a local
+    // definition of the same name wins (PL§14 decision 15).
+    for (id, defs) in plugin_agent_defs {
+        cox_ext::agents::merge(&mut agents_found, defs, &id);
+    }
     warnings.extend(agents_found.notices.into_iter().map(Warning::Agent));
     let (instructions, skills_index, dropped) = prefix_texts(
         &home,
