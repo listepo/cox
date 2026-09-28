@@ -31,7 +31,6 @@
 - T37.27.6. Approval Edit… and the grant preview
 - T37.27.8. One app-local key monitor for the composer and the decision bar
 - T37.28. Review pane and rewind timeline
-- T37.29.2. Inspector Plan tab
 - T37.29.3. Inspector Context & Cost tab
 - T37.29.5. Inspector Info tab
 - T37.29.6. Open a task's transcript from the Tasks tab

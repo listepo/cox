@@ -37,7 +37,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.27.6 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.27.8 | todo | P3 | 1 | 0% | |
 | T37.28 | todo | P1 | 4 | 0% | |
-| T37.29.2 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.29.3 | todo | P2 | 4 | 0% | |
 | T37.29.5 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.29.6 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
@@ -2814,12 +2813,6 @@ Check: `ComposerFlowTests` paste tests and `PinnedDecisionTests` pass unchanged.
 Depends: T37.23, T37.21.9 · Size: split at claim · Files: `…/Organisms/ReviewPane.swift`, `…/Organisms/RewindTimeline.swift`
 Goal: DT§5 review of the session's changes and rewind to a checkpoint (code, conversation or both).
 Check: fixture rewind restores the expected files in a scratch worktree.
-
-#### T37.29.2 Inspector Plan tab
-
-Depends: — · Size: ~120 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/PlanTab.swift`, `crates/cox-app/…`
-Goal: the live todo list with statuses (DT§5), from the structured todo result (T37.3) through a cox-app view; a DS§6 row.
-Check: a snapshot per cell; a cox-app test that the latest todo result is the view.
 
 #### T37.29.3 Inspector Context & Cost tab
 

@@ -4879,3 +4879,23 @@ Check:
 - CoxModel 40, CoxTranscript 29, CoxUI 139; `ComposerFlowTests` 7/7 on two more runs; swiftlint and swift-format clean.
 - After merging into `p37-desktop` with T37.27.5: CoxModel 40/40, CoxTranscript 33/33, CoxUI Composer and DecisionBar 5/5.
 Not done: a dismiss control on the notice (it clears on the next successful send).
+
+#### T37.29.2 Inspector Plan tab
+
+Depends: — · Size: ~120 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/PlanTab.swift`, `crates/cox-app/…`
+Goal: the live todo list with statuses (DT§5), from the structured todo result (T37.3) through a cox-app view; a DS§6 row.
+Check: a snapshot per cell; a cox-app test that the latest todo result is the view.
+Status: done 2026-09-28
+Result:
+- cox-app `timeline.rs`: the fold keeps every `todo` result's list with its turn; `Timeline::plan()` returns the latest list (empty before the first `todo` call); a conversation rewind drops the rewound turns' lists; another tool's result of the same shape is ignored. Reaches the app through `Controller::plan()` and `LiveSession::plan()`.
+- cox-ffi `SessionHandle::plan()`, a one-expression forward (A90); `TodoItem`, `TodoState` as `#[uniffi::remote]` in `types.rs`.
+- Swift: CoxClient `Plan.swift` (`TodoItem`, `SessionClient.plan()`, `FixtureSession(plan:)`); CoxCore conversion in `ChangesConvert.swift` and `LiveSession.plan()`; CoxUI `Organisms/PlanTab.swift` (`PlanTab(state:)`, read-only): one section "Plan · 2 of 5", a box per step (empty pending, `accent` in progress, checked `status.success` when done, struck through in `text.secondary`), "No plan yet" when empty; fixtures in `Previews/PreviewState+Plan.swift`.
+- DS§6.4 `PlanTab` row; `plan` on SessionHandle in `docs/design/desktop.md`.
+Deviations:
+- No "updated 14:03" or "From the model" note: no event carries the time.
+- Pulled on request through the FFI like `changes()` (the blocks do not carry the list); about 16 files.
+Check:
+- `cargo nextest run -p cox-app -p cox-ffi`: 64/64, including `the_plan_is_the_latest_todo_result_and_a_rewind_restores_the_one_before` and `forward_only`; clippy and fmt clean.
+- CoxUI 141 (5 PlanTab snapshots), CoxModel 39, CoxCore 11 (`aTodoItemConvertsWithEachState`, against a debug XCFramework); swiftlint and swift-format clean.
+- After merging into `p37-desktop`: cox-app and cox-ffi 64/64; CoxModel 40/40; CoxUI PlanTab 3/3; CoxTranscript builds with its tests.
+Not done: app wiring (pull again when a `todo` call finishes; T37.22.3).
