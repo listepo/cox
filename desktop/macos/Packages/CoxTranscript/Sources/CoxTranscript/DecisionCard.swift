@@ -1,7 +1,8 @@
 // The card an approval or question block shows (T37.27, DT§5.2): CoxUI's `ApprovalCard` or
-// `QuestionCard`, filled from the block, with what the person picks sent as an `Intent`. Separate
-// from `TranscriptCard` so the one place that turns a waiting block into a card and a choice
-// into an intent is its own file; like `TranscriptCard`, it maps enums to words and lays out.
+// `QuestionCard`, filled from the block, with what the person picks sent as an `Intent`; and the
+// same block as the `DecisionBar` pinned above the composer (T37.27.5). Separate from
+// `TranscriptCard` so the one place that turns a waiting block into a card and a choice into an
+// intent is its own file; like `TranscriptCard`, it maps enums to words and lays out.
 
 import CoxClient
 import CoxModel
@@ -70,6 +71,37 @@ extension ApprovalCard.Content {
       title: tool == "bash" ? "Run this command?" : "Allow \(tool)?", command: summary,
       reason: why.text, source: source?.label, risk: risk,
       outcome: decision.map { .init(text: $0.outcome(by: decidedBy), isAllowed: $0.allows) })
+  }
+}
+
+extension SessionStore {
+  /// The first approval or question the session waits on: its call and its pinned bar (T37.27.5).
+  var waiting: (call: String, bar: DecisionBar.Content)? {
+    blocks.values.lazy.compactMap(\.waiting).first
+  }
+}
+
+extension Block {
+  /// A pending approval or question as its call and bar; `nil` for any other block or once
+  /// decided. A bash call shows its command, as the mockup does; another call names its tool.
+  var waiting: (call: String, bar: DecisionBar.Content)? {
+    switch kind {
+    case .approval(let call, let tool, let summary, _, _, .none, _):
+      (call, .approval(tool == "bash" ? summary : "\(tool) \(summary)"))
+    case .question(let call, let question, let options, .none):
+      (call, .question(question, options: options))
+    default: nil
+    }
+  }
+}
+
+extension DecisionBar.Choice {
+  /// What the core expects for the choice on `call`, as the card sends it.
+  func intent(call: String) -> Intent {
+    switch self {
+    case .decide(let action): .approve(call: call, decision: action.decision)
+    case .answer(let text): .answer(question: call, text: text)
+    }
   }
 }
 

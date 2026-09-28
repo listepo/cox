@@ -10,7 +10,8 @@ import CoxUI
 import Foundation
 import SwiftUI
 
-/// The composer under a session's transcript. The paperclip opens the system file picker.
+/// The composer under a session's transcript. The paperclip opens the system file picker. While
+/// the session waits on an approval or question, its `DecisionBar` sits above the composer.
 public struct SessionComposer: View {
   let store: ComposerStore
   @State private var isPicking = false
@@ -21,6 +22,29 @@ public struct SessionComposer: View {
   }
 
   public var body: some View {
+    VStack(spacing: Space.m) {
+      // The approval or question the turn waits on, pinned while its card stays in the
+      // transcript (T37.27.5).
+      if let waiting = store.session.waiting {
+        DecisionBar(waiting.bar) { decide($0.intent(call: waiting.call)) }
+      }
+      composer
+    }
+  }
+
+  /// An Allow, Deny or answer from the bar, sent as the card sends it; a failure shows as the
+  /// composer's.
+  private func decide(_ intent: Intent) {
+    Task {
+      do {
+        _ = try await store.session.send(intent)
+      } catch {
+        store.report(error)
+      }
+    }
+  }
+
+  private var composer: some View {
     Composer(state: state, send: handle)
       .fileImporter(
         isPresented: $isPicking, allowedContentTypes: [.item], allowsMultipleSelection: true
