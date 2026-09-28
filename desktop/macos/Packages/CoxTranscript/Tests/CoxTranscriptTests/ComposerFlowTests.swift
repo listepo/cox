@@ -3,7 +3,8 @@
 // fixture client, which answers the completion without Rust. T37.24.6's: ↑ in the empty composer
 // brings back the session's earlier prompts, which the fixture client serves without Rust.
 // T37.24.5's: ⌘V of a PNG from a private pasteboard attaches it, and ⌘V of text is left to
-// the Edit menu's Paste.
+// the Edit menu's Paste. T37.24.9's: `@` typed mid-text is completed in place, the caret after
+// the insert.
 
 import AppKit
 import CoxClient
@@ -40,6 +41,44 @@ import Testing
     await host.settle(until: { !session.sent.isEmpty && host.editor.string.isEmpty })
     #expect(session.sent == [.send(text: "@src/main.rs explain it", attachments: [])])
     #expect(host.editor.string.isEmpty)
+  }
+
+  @Test func aTokenTypedMidTextIsCompletedInPlaceAndTheCaretFollowsTheInsert() async throws {
+    let rows = [Completion(insert: "@src/main.rs", detail: "src/main.rs")]
+    let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []), completions: rows)
+    let store = ComposerStore(session: SessionStore(session: session))
+    let host = ComposerHost(SessionComposer(store: store))
+    defer { host.close() }
+
+    host.type("fix it")
+    host.editor.setSelectedRange(NSRange(location: 3, length: 0))
+    host.settle()
+    host.type(" ")
+    host.type("@")
+    #expect(store.completions.map(\.insert) == ["@src/main.rs"])
+    host.press(.return)
+    #expect(host.editor.string == "fix @src/main.rs it")
+    #expect(host.editor.selectedRange() == NSRange(location: 17, length: 0))
+
+    host.type("and ")
+    host.press(.return)
+    await host.settle(until: { !session.sent.isEmpty })
+    #expect(session.sent == [.send(text: "fix @src/main.rs and it", attachments: [])])
+  }
+
+  /// The editor keeps its own copy of the text, so the `!` the store turns into shell mode must
+  /// leave it too.
+  @Test func aBangTypedIntoTheEmptyComposerLeavesTheEditorEmptyInShellMode() {
+    let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []))
+    let store = ComposerStore(session: SessionStore(session: session))
+    let host = ComposerHost(SessionComposer(store: store))
+    defer { host.close() }
+
+    host.type("!")
+    #expect(store.isShell)
+    #expect(host.editor.string.isEmpty)
+    host.type("ls")
+    #expect(store.text == "ls")
   }
 
   @Test func whileATurnRunsReturnQueuesAndCommandReturnInterruptsAndSends() async throws {

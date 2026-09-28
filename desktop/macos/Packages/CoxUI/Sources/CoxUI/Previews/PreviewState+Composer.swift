@@ -82,6 +82,17 @@ extension PreviewState {
     return state
   }
 
+  /// A send the store refused, the draft and its file still there (T37.24.9).
+  static var composerFailure: Composer.State {
+    var state = Composer.State()
+    state.text = "Compare this log with the last run"
+    state.attachments = [Composer.Attachment(id: "0", name: fileName)]
+    state.isRunning = true
+    state.canSend = true
+    state.failure = "Attachments cannot wait in the queue; ⌘⏎ sends them now."
+    return state
+  }
+
   static let fileCompletion = CompletionList.State(
     title: "Files",
     rows: [

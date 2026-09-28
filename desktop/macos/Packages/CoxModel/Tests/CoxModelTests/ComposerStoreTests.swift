@@ -34,6 +34,29 @@ private func composer() -> (ComposerStore, FixtureSession) {
   #expect(store.text.isEmpty && store.mentions.isEmpty)
 }
 
+/// T37.24.9: the token is the word the caret ends, wherever it stands; the offsets are UTF-16, so
+/// the `é` before it counts once.
+@MainActor
+@Test func theTokenAtTheCaretIsCompletedMidTextAndTheRestStays() {
+  let (store, _) = composer()
+  store.edit("café @ma and more")
+  #expect(store.completions.isEmpty)
+  store.select(8..<8)
+  #expect(store.completions.map(\.insert) == ["@src/main.rs"])
+
+  store.pick(0)
+  #expect(store.text == "café @src/main.rs and more")
+  #expect(store.selectedRange == 18..<18)
+  #expect(store.mentions == ["@src/main.rs"])
+
+  store.select(6..<6)
+  #expect(store.completions.isEmpty)
+  store.select(5..<9)
+  #expect(store.completions.isEmpty)
+  store.select(26..<26)
+  #expect(store.selectedRange == nil)
+}
+
 @MainActor
 @Test func aSlashTokenOffersCommandsOnlyAsTheFirstWord() async {
   let (store, session) = composer()
