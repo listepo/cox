@@ -288,11 +288,6 @@ pub fn strip_thinking_before(mut messages: Vec<Message>, turn_start: usize) -> V
     out
 }
 
-// The `/context` payload surface below is called from `session.rs`'s
-// `Submission::Command` dispatch — the wiring split out of T25.7's 3-file
-// budget (recorded in the card) — so until that lands nothing in the crate
-// reaches it and `dead_code` is allowed one item at a time, never blanket.
-#[allow(dead_code)]
 /// The marker `compact.rs` prefixes its summary message with; otherwise a
 /// summary is an indistinguishable plain user message (append-only history,
 /// `ItemKind::Summary` replays as one) and could not fill `summary` below.
@@ -332,17 +327,6 @@ impl Breakdown {
             history: self.history_verbatim + self.history_pointers + self.summary,
             cached: self.cached_estimate,
         }
-    }
-
-    /// The `structured` payload `/context`'s notice carries (T25.7 step 2).
-    #[allow(dead_code)]
-    pub fn to_json(&self) -> serde_json::Value {
-        serde_json::json!({
-            "tools": self.tools, "system": self.system, "instructions": self.instructions,
-            "skills": self.skills, "memory": self.memory, "volatile": self.volatile,
-            "history_verbatim": self.history_verbatim, "history_pointers": self.history_pointers,
-            "summary": self.summary, "total": self.total, "cached_estimate": self.cached_estimate,
-        })
     }
 }
 
@@ -565,7 +549,6 @@ mod tests {
         );
         assert!(b.summary > 0 && b.history_pointers > 0 && b.instructions > 0);
         assert_eq!(b.cached_estimate, usage.cache_read_tokens);
-        assert_eq!(b.to_json()["total"], b.total);
     }
 
     /// T30.1: the minimal profile holds its tool list, prompt and discovery
