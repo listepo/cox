@@ -33,6 +33,7 @@ diesel::table! {
         turns -> Integer,
         cost_usd -> Double,
         state -> Text,
+        title_source -> Nullable<Text>,
     }
 }
 

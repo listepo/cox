@@ -234,6 +234,9 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `extract` = `false` — end-of-session extraction on cheap tier
 - `dir` = `""` — default ~/.cox/projects/<slug>/memory
 - `salience_min` = `0.3` — an extracted item scoring below this against salience's Score is dropped; the plugin cannot move this bar
+## `[session]`
+
+- `auto_title` = `true` — after the first turn, one cheap `title` job names the session (A113); a title the user set is never replaced
 ## `[telemetry]`
 
 - `otel` = `false`

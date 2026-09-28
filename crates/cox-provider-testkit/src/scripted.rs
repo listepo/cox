@@ -48,7 +48,7 @@
 
 use cox_protocol::errors::ProviderError;
 use cox_protocol::ids::CallId;
-use cox_protocol::types::{ModelId, ProviderEvent, StopReason, Usage};
+use cox_protocol::types::{Job, ModelId, ProviderEvent, StopReason, Usage};
 
 use figment::Figment;
 use figment::providers::{Format, Toml};
@@ -88,6 +88,12 @@ pub struct TurnSpec {
     /// tool lists two surfaces build for the same `COX_HOME`.
     #[serde(default)]
     pub echo_tools: bool,
+    /// A113: pins this turn to requests of one job (`job = "title"`). A
+    /// `title` request is answered only by a turn pinned to it, so a
+    /// scenario written without one keeps its order and the title is
+    /// skipped; a pinned turn never answers another job.
+    #[serde(default)]
+    pub job: Option<Job>,
 }
 
 #[derive(serde::Deserialize)]
@@ -191,6 +197,7 @@ tool_calls = [
             error: None,
             when_contains: None,
             echo_tools: false,
+            job: None,
         };
         let usage = Usage {
             input_tokens: 1,
