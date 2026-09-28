@@ -14,8 +14,10 @@ use cox_protocol::types::{
 pub struct History {
     /// Model-visible messages, in order.
     pub messages: Vec<Message>,
-    /// Last permission mode; `Default` until T2.2 persists a mode event.
-    pub permission_mode: PermissionMode,
+    /// The mode of the last recorded `StateChanged` (T50.2, T37.5); `None`
+    /// when the rollout never recorded one, as in every rollout written
+    /// before T50.2.
+    pub permission_mode: Option<PermissionMode>,
     /// Persistent `(tool, subject)` grants from `AllowForSession`.
     pub grants: Vec<(String, String)>,
     /// True when the caller dropped a truncated last JSONL line.
@@ -65,6 +67,7 @@ impl History {
         let mut pending_results: Vec<Content> = Vec::new();
         let mut calls: HashMap<CallId, ToolCall> = HashMap::new();
         let mut grants = Vec::new();
+        let mut permission_mode = None;
         let mut turns = 0u32;
         let mut current_seq = 0u32;
         let mut item_seq: HashMap<ItemId, u32> = HashMap::new();
@@ -182,6 +185,7 @@ impl History {
                     }
                     starts = starts_from(&turn_of, &item_seq);
                 }
+                Event::StateChanged { mode, .. } => permission_mode = Some(*mode),
                 Event::Checkpoint { files, .. } => {
                     *checkpoint_counts.entry(current_seq).or_default() += files.len();
                 }
@@ -233,7 +237,7 @@ impl History {
 
         Self {
             messages,
-            permission_mode: PermissionMode::Default,
+            permission_mode,
             grants,
             truncated,
             turns,
@@ -317,6 +321,12 @@ mod tests {
         assert_eq!(level, Level::Warn);
         assert!(text.contains("truncated"));
         assert!(History::from_events(&[]).truncated_notice().is_none());
+    }
+
+    #[test]
+    fn old_rollout_without_mode_record_has_no_mode() {
+        let events = vec![user_item(ItemId::new(), "hi")];
+        assert_eq!(History::from_events(&events).permission_mode, None);
     }
 
     #[test]

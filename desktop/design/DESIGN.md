@@ -343,7 +343,7 @@ colour tokens that do not exist yet, so pages show the plain symbol.
 - VoiceOver rotors: Approvals, Tool calls, Errors. The token meter reads as "218 thousand tokens sent,
   9.8 thousand received, 71 tokens per second".
 - Honour Reduce Transparency, Reduce Motion and Increase Contrast (§1.6). `high-contrast.mjs` derives
-  the Increase Contrast palettes `color.*-hc.json` (A74) and checks them in `just desktop-tokens`: text
+  the Increase Contrast palettes `color.*-hc.json` (A89) and checks them in `just desktop-tokens`: text
   at least 7:1 on its surface, borders solid and at least 3:1, glass more opaque.
 
 ## 9. Rules for agents generating SwiftUI

@@ -27,7 +27,7 @@ cox-config = { path = "../cox-config", version = "0.1.2" }
 cox-ext = { path = "../cox-ext", version = "0.1.2" }
 cox-search = { path = "../cox-search", version = "0.1.2" }
 thiserror = { workspace = true }
-# T37.39 (A71): the app owns its sessions — `cox-session` builds, resumes,
+# T37.39 (A86): the app owns its sessions — `cox-session` builds, resumes,
 # forks and hands them off; `cox-core`'s `Session` is what it drives;
 # `cox-tools`'s `GitWorktrees` backs the workspace's worktree list.
 cox-session = { path = "../cox-session", version = "0.1.2" }

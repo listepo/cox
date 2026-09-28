@@ -29,6 +29,8 @@ tokio-util = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# T41.2: `LspError`, the first error enum this crate owns.
+thiserror = { workspace = true }
 schemars = { workspace = true }
 # T3.4 (`edit`): unified diffs + closest-line ratio for NotFound suggestions.
 similar = { workspace = true }

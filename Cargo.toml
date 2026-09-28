@@ -37,12 +37,13 @@ schemars = "1"
 thiserror = "2"
 ulid = { version = "3", features = ["serde"] }
 tokio-util = "0.7"
+# T40.1 (A81): image payloads decode and encode base64 in `cox_protocol::image`;
+# also `cox-tui`'s OSC 52 clipboard write, which replaced its own encoder, and
+# `cox-core`'s attached text file (T37.6).
+base64 = "0.23"
 
 # cox-core
 tokio = { version = "1", features = ["full"] }
-# T37.6: decodes an attached text file for the model; already in the lock
-# through transitive users, so no new download.
-base64 = "0.23"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"

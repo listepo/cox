@@ -12,7 +12,7 @@ Core tools are always in context; deferred tools join through `tool_search`
 
 | Tool | Risk | Deferred | Subject | Notes |
 |---|---|---|---|---|
-| `read` | ReadOnly | no | path | whole / `lines="a-b"` / `mode="outline"` |
+| `read` | ReadOnly | no | path | whole / `lines="a-b"` / `mode="outline"`; images returned as images, other binaries refused |
 | `grep` | ReadOnly | no | pattern | ripgrep libs, respects `.gitignore` |
 | `glob` | ReadOnly | no | pattern | mtime order, fuzzy with `query` |
 | `edit` | Write | no | path | exact `str_replace`, ambiguity errors |
@@ -24,7 +24,7 @@ Core tools are always in context; deferred tools join through `tool_search`
 | `ask_user` | ReadOnly | yes | question | blocks the turn; `--answer` headless; TUI: modal |
 | `tool_search` | ReadOnly | no | query | reveals up to 5 deferred schemas |
 | `web_fetch` | ReadOnly | yes | URL | readability fallback; domain rules apply |
-| `agent` | max of its tools | yes | preset | `explore` / `shell` presets, own budget |
+| `agent` | max of its tools; Destructive with `isolation: "worktree"` | yes | preset | `explore` / `shell` presets, own budget; worktree isolation asks (denied in plan) |
 | `memory_save` | Write | yes | name | one fact file + index + FTS row |
 | `memory_search` | ReadOnly | yes | query | FTS first, then files; top 5 capped |
 | `mcp__<server>__<tool>` | from server annotations (default Write) | yes | namespaced name | fail-open servers |
@@ -32,3 +32,10 @@ Core tools are always in context; deferred tools join through `tool_search`
 Edits are diff-shaped (`edit`, `apply_patch`); `write` is for new files.
 Every path from the model passes `path::confine`; every shell command runs
 under the platform sandbox unless the session chose `danger-full-access`.
+
+`read` returns a PNG, JPEG, GIF or WebP file (sniffed by its magic bytes,
+not its extension) as an image: a one-line `media type, size` text plus the
+image itself, which `lines` and `mode` do not apply to. One image is capped
+at 3,750,000 bytes (5,000,000 once base64-encoded, the smallest per-image
+limit a supported provider documents); a larger one is refused as
+`too_large`. These are the four formats Anthropic and OpenAI both accept.

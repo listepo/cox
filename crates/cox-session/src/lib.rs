@@ -88,11 +88,18 @@ pub enum Warning {
     /// The login shell's environment could not be read; the process's own
     /// environment stands in (T37.11, DT§4.8).
     Env(String),
+    /// An `AGENTS.md`/`CLAUDE.md` file or include dropped from `system[2]`
+    /// (T50.1).
+    Instruction(String),
 }
 
 impl std::fmt::Display for Warning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let (Self::Skill(text) | Self::Agent(text) | Self::Mcp(text) | Self::Env(text)) = self;
+        let (Self::Skill(text)
+        | Self::Agent(text)
+        | Self::Mcp(text)
+        | Self::Env(text)
+        | Self::Instruction(text)) = self;
         f.write_str(text)
     }
 }
@@ -284,6 +291,14 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
         Some(&project),
     ));
     warnings.extend(agents_found.notices.into_iter().map(Warning::Agent));
+    let (instructions, skills_index, dropped) = prefix_texts(
+        &home,
+        &claude_home,
+        cwd,
+        config.context.instruction_budget_tokens,
+        &found.skills,
+    );
+    warnings.extend(dropped.into_iter().map(Warning::Instruction));
     let mut all = tools(answer, &store, mdir);
     if questions {
         all = tools::with_question_surface(all);
@@ -344,6 +359,7 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
         session.set_writable_roots(vec![cwd.to_path_buf()]);
     }
     session.set_agent_defs(agents_found.agents);
+    session.set_instructions(instructions, skills_index);
     // T35.13: one driver per granted `[[external_agents]]` entry; an entry
     // whose CLI or key is missing is left out with one warning (EA§7).
     #[cfg(feature = "plugins")]
@@ -416,6 +432,37 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
         config: base,
         warnings,
     })
+}
+
+/// Where the `AGENTS.md`/`CLAUDE.md` chain is read from for `cwd`: one
+/// place, so `cox ext` lists exactly the files a session sends (T50.1).
+pub fn instruction_roots(
+    cox_home: &Path,
+    claude_home: &Path,
+    cwd: &Path,
+) -> cox_ext::instructions::Roots {
+    cox_ext::instructions::Roots {
+        cox_home: Some(cox_home.to_path_buf()),
+        claude_home: Some(claude_home.to_path_buf()),
+        git_root: cox_config::load::find_git_root(cwd),
+        cwd: cwd.to_path_buf(),
+    }
+}
+
+/// T50.1: the two `system[2]` texts a session opens with — the
+/// `AGENTS.md`/`CLAUDE.md` chain under the instruction budget and the skills
+/// index — read once here, since `cox-core` reads no files — plus what the
+/// load dropped (a file or include cycle), a warning, never fatal (D14).
+fn prefix_texts(
+    home: &Path,
+    claude_home: &Path,
+    cwd: &Path,
+    budget_tokens: u32,
+    skills: &[cox_ext::skills::Skill],
+) -> (String, String, Vec<String>) {
+    let roots = instruction_roots(home, claude_home, cwd);
+    let loaded = cox_ext::instructions::load(&roots, budget_tokens);
+    (loaded.block, cox_ext::skills::index(skills), loaded.notices)
 }
 
 /// One worktree-aware project identity for presence writes and polling.
@@ -501,5 +548,70 @@ mod tests {
                 "an empty root list became cwd"
             );
         });
+    }
+
+    /// T50.1: the `AGENTS.md` chain and the skills index a session opens
+    /// with reach `system[2]`, and the next turn sends the same prefix bytes.
+    #[tokio::test]
+    async fn instruction_files_and_skills_index_reach_system_two() {
+        use crate::testing::{Recorder, user_turn};
+        let (home, claude, work) = (
+            tempfile::tempdir().expect("home"),
+            tempfile::tempdir().expect("claude"),
+            tempfile::tempdir().expect("work"),
+        );
+        std::fs::write(work.path().join("AGENTS.md"), "Answer in haiku.\n").expect("agents");
+        let skill = work.path().join(".cox").join("skills").join("greet");
+        std::fs::create_dir_all(&skill).expect("skill dir");
+        std::fs::write(
+            skill.join("SKILL.md"),
+            "---\nname: greet\ndescription: Greet the user first.\n---\nSay hello.\n",
+        )
+        .expect("skill");
+        let found = cox_ext::skills::discover(&cox_ext::skills::skill_dirs(
+            Some(home.path()),
+            Some(claude.path()),
+            Some(work.path()),
+        ));
+        let config = Config::default();
+        let (block, index, _) = prefix_texts(
+            home.path(),
+            claude.path(),
+            work.path(),
+            config.context.instruction_budget_tokens,
+            &found.skills,
+        );
+        let store = Arc::new(Store::open(home.path()).expect("store"));
+        let recorder = Arc::new(Recorder {
+            inner: cox_provider::scripted::Scripted::from_toml(
+                "[[turn]]\ntext = \"one\"\n[[turn]]\ntext = \"two\"\n",
+                "",
+            )
+            .expect("scenario"),
+            sent: std::sync::Mutex::default(),
+        });
+        let session = Session::new_with_id(
+            SessionId::new(),
+            config,
+            recorder.clone(),
+            vec![],
+            store.clone(),
+            store,
+            work.path().to_path_buf(),
+        )
+        .expect("session");
+        session.set_instructions(block, index);
+        user_turn(&session, "one").await;
+        user_turn(&session, "two").await;
+        let sent = recorder.sent.lock().expect("sent").clone();
+        assert_eq!(sent.len(), 2);
+        let two = &sent[0].system[2].text;
+        assert!(two.contains("# Instructions\n"), "{two}");
+        assert!(two.contains("Answer in haiku."), "{two}");
+        assert!(two.contains("- greet: Greet the user first."), "{two}");
+        let prefix = |r: &cox_protocol::types::Request| {
+            serde_json::to_vec(&r.system[0..=2]).expect("prefix")
+        };
+        assert_eq!(prefix(&sent[0]), prefix(&sent[1]));
     }
 }

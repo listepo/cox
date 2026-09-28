@@ -1,5 +1,7 @@
 //! Resume rebuilds the same `Request` a live session would assemble (T2.4).
 
+mod common;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -8,7 +10,9 @@ use cox_core::{History, MemoryStore, Session, assemble};
 use cox_protocol::errors::ToolError;
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::{Store, Tool, ToolCx};
-use cox_protocol::types::{Concurrency, Event, Risk, Submission, ToolOutput, ToolSpec};
+use cox_protocol::types::{
+    Concurrency, Event, PermissionMode, Risk, Submission, ToolOutput, ToolSpec,
+};
 use cox_provider::scripted::Scripted;
 use serde_json::Value;
 
@@ -145,4 +149,117 @@ async fn resume_session_reuses_id_and_history() {
     let live_req = assemble(&live, &config, &tools, &cwd, "");
     let resume_req = assemble(&resumed_history, &config, &tools, &cwd, "");
     assert_eq!(live_req, resume_req);
+}
+
+/// T50.2: a mode change is written to the rollout, so resume rebuilds the
+/// last recorded mode instead of always coming back in `Default`.
+#[tokio::test]
+async fn resume_restores_last_recorded_permission_mode() {
+    let provider = Arc::new(Scripted::from_toml(&scenario(), "").expect("scenario"));
+    let store = Arc::new(MemoryStore::new());
+    let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Echo)];
+    let cwd = PathBuf::from("/tmp/cox-turn");
+    let config = cox_protocol::Config::default();
+    let session =
+        Session::new(config, provider, tools, store.clone(), store.clone(), cwd).expect("session");
+    for mode in [PermissionMode::Plan, PermissionMode::Auto] {
+        let sub = Submission::SetPermissionMode { mode };
+        session.submit(sub).await.expect("set mode");
+    }
+    let events = store.rollout_read(&session.id()).expect("rollout");
+    let history = History::from_events(&events);
+    assert_eq!(history.permission_mode, Some(PermissionMode::Auto));
+}
+
+/// T50.4: runs one turn of `turn` in a session configured `configured`, then
+/// resumes it under `resumed_config` (after `edit` rewrites its rollout) and
+/// runs `ask_then_deny`, whose `touch` is a write. Returns the resumed
+/// turn's events, stopping at the first `ApprovalRequired` so a session
+/// that asks does not hang waiting for an answer.
+async fn resume_then_write(
+    configured: PermissionMode,
+    resumed_config: cox_protocol::Config,
+    edit: impl Fn(Vec<Event>) -> Vec<Event>,
+) -> Vec<Event> {
+    let mut config = cox_protocol::Config::default();
+    config.permissions.mode = configured;
+    let (session, store, mut rx) = common::open(&common::scenario("text_only"), config);
+    common::spawn_turn(&session, "hi")
+        .await
+        .expect("join")
+        .expect("turn");
+    common::drain(&mut rx).await;
+    let events = edit(store.rollout_read(&session.id()).expect("rollout"));
+    let mut resumed_config = resumed_config;
+    resumed_config.core.workspace_roots = vec![PathBuf::from("/tmp/cox-turn")];
+    let provider =
+        Arc::new(Scripted::from_toml(&common::scenario("ask_then_deny"), "").expect("scenario"));
+    let resumed = Session::resume(
+        resumed_config,
+        provider,
+        common::tools(),
+        store.clone(),
+        store,
+        PathBuf::from("/tmp/cox-turn"),
+        session.id(),
+        History::from_events(&events),
+    )
+    .expect("resume");
+    let mut rx = resumed.events().expect("events");
+    let _running = common::spawn_turn(&resumed, "write");
+    let mut out = Vec::new();
+    loop {
+        let ev = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+            .await
+            .expect("event timeout")
+            .expect("stream closed");
+        let stop = matches!(ev, Event::TurnDone { .. } | Event::ApprovalRequired { .. });
+        out.push(ev);
+        if stop {
+            return out;
+        }
+    }
+}
+
+fn denied_as_plan(events: &[Event]) -> bool {
+    let asked = events
+        .iter()
+        .any(|e| matches!(e, Event::ApprovalRequired { .. }));
+    let results = common::tool_results(events);
+    !asked && results.len() == 1 && !results[0].0 && results[0].1.contains("plan mode")
+}
+
+/// T50.4: a session configured `plan` that never switched records its
+/// starting mode, so it resumes in Plan even under a `Default` config.
+#[tokio::test]
+async fn resumed_plan_session_denies_a_write_as_plan_does() {
+    let events = resume_then_write(
+        PermissionMode::Plan,
+        cox_protocol::Config::default(),
+        |events| events,
+    )
+    .await;
+    assert!(
+        denied_as_plan(&events),
+        "resumed wider than Plan: {events:?}"
+    );
+}
+
+/// T50.4: a rollout written before any mode record still loads, and
+/// resumes in the configured mode rather than `Default`.
+#[tokio::test]
+async fn resume_without_a_mode_record_uses_the_configured_mode() {
+    let mut plan = cox_protocol::Config::default();
+    plan.permissions.mode = PermissionMode::Plan;
+    let events = resume_then_write(PermissionMode::Default, plan, |events| {
+        events
+            .into_iter()
+            .filter(|e| !matches!(e, Event::StateChanged { .. }))
+            .collect()
+    })
+    .await;
+    assert!(
+        denied_as_plan(&events),
+        "old rollout ignored the configured mode: {events:?}"
+    );
 }

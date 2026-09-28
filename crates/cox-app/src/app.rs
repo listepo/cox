@@ -1,7 +1,7 @@
 //! The session owner (DT§4.3, §4.5): one [`App`] per process holds the
 //! workspace, the inbox across sessions and the [`Host`], and opens and
 //! resumes sessions through `cox-session`; [`crate::live`] runs each one.
-//! Here rather than in `cox-ffi` (T37.39, A71) so the FFI only forwards and
+//! Here rather than in `cox-ffi` (T37.39, A86) so the FFI only forwards and
 //! this logic is tested in Rust once, without a foreign language.
 
 use std::path::{Path, PathBuf};

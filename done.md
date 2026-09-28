@@ -3357,7 +3357,7 @@ Depends: T37.16 · Size: ~200 (throwaway spike plus a result note) · Files: `de
 Goal: decide how the transcript selects text across blocks (A67). Build the same 2 000-block fixture (prose, code, diffs, tool cards) twice: with Textual 0.5.0 (MIT, R§9.5.10) and with our own TextKit 2 view — one `NSTextView` over the whole transcript with the cards as view-backed attachments. Measure: one continuous drag selects across blocks, copy keeps block order as Markdown, clamping to one block when `cross_block_selection = false`, first frame and scroll frame time against the DT§9 budget. If Textual passes, it is taken (§1.1 row); if not, our view becomes its own package `desktop/macos/Packages/CoxTranscriptText` with its own cards. STTextView is out (A68).
 Check: the result table with both measurements is in `research.md` §9.5; T37.23's card names the chosen engine.
 Status: done 2026-09-28
-Result: `desktop/macos/Spikes/Selection/` — a standalone SwiftPM package (Textual pinned exact 0.5.0) with the same 2 000-block fixture built twice: Textual (one view per block, and the whole transcript as one `StructuredText`) and one TextKit 2 `NSTextView` with tool cards as view-backed attachments; 8 headless Swift Testing tests (offscreen window, real `NSEvent` drags through `NSWindow.sendEvent`, frame timing with `CACurrentMediaTime`). `research.md` §9.5.13 holds the table, method, risks and verdict (Textual tag 0.5.0, commit `01b51875`, MIT, released 2026-06-15, checked 2026-09-28); row 9.5.10 marked rejected. Textual fails three of four: per-block views keep a drag in block 0; copy gives plain text and HTML, not Markdown; no clamp API; its one-document shape takes 5.5 s to a first frame with a 640 % hitch ratio. TextKit 2 passes all four: the drag selects across blocks including a tool card; copy gives Markdown in block order; the setting off clamps to the start block both ways; first frame 131–133 ms, no scroll frame over 16.7 ms at 2 000 and 10 000 blocks. Our view becomes `CoxTranscriptText` (T37.40–T37.43, A72); T37.23 names the engine. `Spikes` excluded in `.swiftlint.yml`.
+Result: `desktop/macos/Spikes/Selection/` — a standalone SwiftPM package (Textual pinned exact 0.5.0) with the same 2 000-block fixture built twice: Textual (one view per block, and the whole transcript as one `StructuredText`) and one TextKit 2 `NSTextView` with tool cards as view-backed attachments; 8 headless Swift Testing tests (offscreen window, real `NSEvent` drags through `NSWindow.sendEvent`, frame timing with `CACurrentMediaTime`). `research.md` §9.5.13 holds the table, method, risks and verdict (Textual tag 0.5.0, commit `01b51875`, MIT, released 2026-06-15, checked 2026-09-28); row 9.5.10 marked rejected. Textual fails three of four: per-block views keep a drag in block 0; copy gives plain text and HTML, not Markdown; no clamp API; its one-document shape takes 5.5 s to a first frame with a 640 % hitch ratio. TextKit 2 passes all four: the drag selects across blocks including a tool card; copy gives Markdown in block order; the setting off clamps to the start block both ways; first frame 131–133 ms, no scroll frame over 16.7 ms at 2 000 and 10 000 blocks. Our view becomes `CoxTranscriptText` (T37.40–T37.43, A87); T37.23 names the engine. `Spikes` excluded in `.swiftlint.yml`.
 
 Deviations: ~890 lines in 11 files (throwaway spike plus tests); also measured at 10 000 blocks, the DT§1 scroll budget's size.
 
@@ -3720,10 +3720,10 @@ Not done: the ≤400 ms budget was not measured on the M1 Air.
 #### T37.17.1 High Contrast palette
 
 Depends: — · Size: ~80 plus generated files · Files: `desktop/design/tokens/color.light-hc.json`, `desktop/design/tokens/color.dark-hc.json`, the generated outputs
-Goal: the High Contrast appearances (A74) derived from the light and dark palettes by one rule. Text is at least 7:1 on its surface, hairlines and borders are solid and at least 3:1, glass opacity is raised and the specular sweep is off. The pipeline emits the HC variants into `Colors.xcassets` and `tokens.css`.
+Goal: the High Contrast appearances (A89) derived from the light and dark palettes by one rule. Text is at least 7:1 on its surface, hairlines and borders are solid and at least 3:1, glass opacity is raised and the specular sweep is off. The pipeline emits the HC variants into `Colors.xcassets` and `tokens.css`.
 Check: `just desktop-tokens` emits both HC appearances; a test or script checks every HC text/surface pair at ≥7:1 and every border at ≥3:1; the `desktop-tokens` drift job is clean.
 Status: done 2026-09-28
-Result: `desktop/design/high-contrast.mjs` (node) derives `tokens/color.light-hc.json` and `tokens/color.dark-hc.json` from the light and dark palettes using A74's rule, then reads them back and checks them. It covers 166 declared pairs per mode:
+Result: `desktop/design/high-contrast.mjs` (node) derives `tokens/color.light-hc.json` and `tokens/color.dark-hc.json` from the light and dark palettes using A89's rule, then reads them back and checks them. It covers 166 declared pairs per mode:
 - text at least 7:1;
 - `separator` and `surface.capsuleBorder` solid and at least 3:1;
 - context-bar segments and tile glyphs at least 3:1;
@@ -3858,3 +3858,341 @@ Check: `swift test --no-parallel` in CoxTranscriptText: 23/23. `BlockSelectionTe
 - the menu item is reached through a real right-click and read back from a private named pasteboard.
 The ⇧-click and menu tests fail with the extension disabled. `tenThousandBlocksBuiltPatchByPatchFitTheLaunchBudget` missed 400 ms once at load average 74, then passed alone and on a full rerun. Lints are clean.
 Not done: DT§4.6's CoxTranscriptText row is not updated.
+
+#### T45.1 A child inherits the parent's live permission mode
+
+
+Model: Claude Code / opus-5.5 · Depends: - · Size: ~70 · Priority: P0 · Complexity: 3
+
+Goal: a subagent is never wider than its parent at spawn time.
+
+Files:
+- `crates/cox-core/src/session.rs`
+- `crates/cox-core/src/subagent.rs`
+
+Steps:
+1. `session.rs`: `pub(crate) async fn permission_mode(&self) -> PermissionMode` reading `Inner.permission_mode`.
+2. `subagent.rs` `AgentTool::call`: after `let mut config = self.parent.config.clone();` set `config.permissions.mode = self.parent.permission_mode().await` (the child's `build` picks it up; grants are not inherited).
+3. Tests: `child_inherits_parent_live_plan_mode`, `child_of_default_parent_does_not_run_auto`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core child_inherits_parent_live_plan_mode child_of_default_parent
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: both tests pass (open question 9: this may deserve P0 outside P45).
+
+Out of scope: per-agent overrides (T45.2).
+
+Plan:
+1. Tests first, both failing on `main`. `child_inherits_parent_live_plan_mode` (unit, `subagent.rs` `mod tests`): parent configured `auto`, `SetPermissionMode { Plan }`, one `agent` (explore) call; the `Recording` provider also keeps each request's volatile system block, and the child's (cheap-tier) request must say `permission_mode=Plan` (`context.rs` renders it from the child's `config.permissions.mode`, the same field `Session::build` seeds the engine mode from). `child_of_default_parent_does_not_run_auto` (`crates/cox-core/tests/subagent.rs`, inline scenario): parent configured `auto`, live `Default`, a `shell` child limited to the `touch` (`Risk::Write`) tool; after the parent's own `agent` approval the child's `touch` must raise `ApprovalRequired` labelled with the agent (under `auto` it ran unasked).
+2. `session.rs`: `pub(crate) async fn permission_mode(&self)` reads `Inner.permission_mode`.
+3. `subagent.rs` `AgentTool::call`: after `let mut config = self.parent.config.clone();` set `config.permissions.mode = self.parent.permission_mode().await`. Grants stay per session; `cox_permission::Engine` is untouched.
+4. Verify: the two tests, then fmt, clippy, nextest.
+Status: done 2026-09-28
+Result: `AgentTool::call` (`crates/cox-core/src/subagent.rs`) now sets the child's `config.permissions.mode` from the parent's live mode (`Session::permission_mode`, new in `crates/cox-core/src/session.rs`) instead of copying the configured one, so `Session::build` seeds the child's engine mode and its volatile system block from what the parent runs under right now. Grants are not inherited; `cox_permission::Engine` is unchanged. No new dependency. 3 files, about 110 LOC including tests (6 in `session.rs`, 4 in `AgentTool::call`).
+Check output:
+- `child_inherits_parent_live_plan_mode` (unit, `subagent.rs`; the test `Recording` provider now also keeps each request's system blocks): failed before the fix (the child's request said `permission_mode=Auto`), passes after.
+- `child_of_default_parent_does_not_run_auto` (`crates/cox-core/tests/subagent.rs`): failed before the fix ("the child's write ran without asking"), passes after.
+- In the worktree: nextest 1316 passed, 4 skipped; fmt and clippy clean.
+- Not run: the real binary. Headless runs cannot change the mode mid-session, so the bug needs the TUI's Shift+Tab; the core tests drive the same `SetPermissionMode` submission the TUI sends.
+Follow-ups found (not in this card): a finished child woken by `TaskMessage` is restarted from its rollout (`subagent.rs` `restart`), and `History::from_events` always returns `PermissionMode::Default` because mode changes are not recorded, so a child of a plan-mode parent wakes in `Default`; the same applies to resuming any session. The parent's own volatile system block (`context.rs`) also renders `config.permissions.mode`, not the live mode.
+
+#### T40.1 `cox_protocol::image`: sniff, cap and encode
+
+- Model: Claude Code / opus-5.5 (card: sonnet)
+- Depends: -
+- Size: ~140
+- Priority: P1
+- Complexity: 2
+- Goal: one pure helper decides whether bytes are an image cox accepts, and turns them into a checked `Attachment` or tool-output payload. Surfaces, `read` and the core share it, with no second check anywhere.
+- Files: `crates/cox-protocol/src/image.rs` (new), `crates/cox-protocol/src/lib.rs`. Manifests: root `Cargo.toml`, `crates/cox-protocol/Cargo.toml`.
+- Steps:
+  1. `sniff(bytes) -> Option<&'static str>` by magic bytes: PNG `89 50 4E 47`, JPEG `FF D8 FF`, GIF `GIF87a`/`GIF89a`, WebP `RIFF....WEBP`.
+  2. `pub const MAX_IMAGE_BYTES: usize = 3_750_000` (why: the smallest documented per-image limit, 5 MB base64; see the phase intro).
+  3. `pub const IMAGE_TOKEN_ESTIMATE: u64 = 1600` (why: the standard-tier cap of 1568 visual tokens, rounded; provider-reported usage corrects it).
+  4. `ImageError` (thiserror): `NotAnImage`, `TooLarge { bytes, cap }`, `MediaTypeMismatch { declared, sniffed }`, `BadBase64`.
+  5. `attachment(name, bytes) -> Result<Attachment, ImageError>` and `validate(&Attachment) -> Result<(), ImageError>`. The latter decodes only enough to sniff, and checks the declared type and the decoded length.
+  6. `to_structured(media_type, bytes) -> Value` and `take_structured(&mut ToolOutput) -> Option<(String, String)>`, keyed `structured["image"]`. `ToolOutput` has 69 literal constructions, so no new field.
+  7. Base64: needs the new dependency `base64` (see Open questions). Alternative with no new dependency: move `base64_encode` out of `crates/cox-tui/src/term.rs:247` into this module, add a matching decoder, and have `term.rs` call it (3 files, ~40 LOC more).
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-protocol -E 'test(image)'
+  ```
+- Done when: there is a test per format, one for the cap, one for mismatch and one for bad base64. Any new dependency has its row in §1.1 and a reason in the commit.
+- Out of scope: resizing or downscaling (no image crate; see open questions).
+- Plan:
+  1. Manifests: `base64 = "0.23"` in root `[workspace.dependencies]` (creator-approved, A81; already in `Cargo.lock` as 0.23.1, the latest on crates.io 2026-09-28), `base64 = { workspace = true }` in `cox-protocol`. Rows in §1.1 (`cox-protocol`, `cox-tui`) and `toolchain.md`; `rust.md` already lists `base64`.
+  2. Tests first in `crates/cox-protocol/src/image.rs` against stub bodies, and watch them fail: one `sniff` case per format (PNG, JPEG, GIF87a, GIF89a, WebP), a non-image and a non-WebP RIFF, the cap (at the cap accepted, one byte over refused, an over-cap base64 refused before decoding), a declared/sniffed mismatch, bad base64, an `attachment` → `validate` round trip, and `take_structured` returning the pair and dropping an emptied payload while keeping other keys.
+  3. Implement per steps 1–6. `validate` bounds the decoded length from the base64 length first, then decodes the whole string (allocation bounded by the cap), so bad base64 anywhere is caught, not only in the sniffed prefix. `pub mod image` plus its line in the `lib.rs` header.
+  4. A81: a second small commit replaces `base64_encode` in `crates/cox-tui/src/term.rs` with `base64::engine::general_purpose::STANDARD` (+ `crates/cox-tui/Cargo.toml`); the known-vector test moves onto `copy` so the OSC 52 bytes stay identical. Separate because it would take the card past three files.
+  5. Verify: the Check, then `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo nextest run --workspace`, `cargo deny check`.
+
+Status: done 2026-09-28
+Result: `crates/cox-protocol/src/image.rs` (new, 140 lines without tests): `sniff` by magic bytes, `MAX_IMAGE_BYTES`, `IMAGE_TOKEN_ESTIMATE`, `ImageError`, `attachment`, `validate`, `to_structured`, `take_structured` (keyed `structured["image"]`; an emptied payload becomes `None`). `validate` refuses an oversized image from the base64 length before allocating, then decodes the whole string, so bad base64 after a valid prefix is caught too; the declared type is compared case-insensitively. New workspace dependency `base64` 0.23 (0.23.1, already in `Cargo.lock` transitively; creator-approved in A81), rows in §1.1 and `toolchain.md`; `rust.md` already listed it. A81's replacement of the hand-rolled encoder in `crates/cox-tui/src/term.rs` is the next commit.
+Deviations: step 5 — `validate` decodes the whole string instead of only the sniffed prefix (bounded by the cap), so a corrupt tail cannot reach a wire; same errors, same signature. The `term.rs` switch is a separate commit to keep this one within three code files.
+Check output:
+- `cargo nextest run -p cox-protocol -E 'test(image)'`: 18 passed — `sniff_names_each_accepted_format` (png, jpeg, gif87a, gif89a, webp), `sniff_refuses_anything_else` (text, empty, riff_wave, truncated_png), `attachment_at_the_cap_is_accepted_and_one_byte_over_is_too_large`, `attachment_refuses_bytes_that_are_not_an_image`, `attachment_round_trips_through_validate`, `validate_refuses_over_cap_base64`, `validate_refuses_a_declared_type_the_bytes_contradict`, `validate_refuses_bad_base64_even_after_a_valid_prefix`, `validate_refuses_encoded_bytes_that_are_not_an_image`, `take_structured_returns_the_image_and_drops_the_emptied_payload`, `take_structured_keeps_other_keys_and_ignores_outputs_without_an_image`. Against stub bodies 11 of them failed first.
+- Workspace (with the `term.rs` switch applied): fmt and clippy `-D warnings` clean; `cargo deny check`: advisories, bans, licenses, sources ok; nextest 1331 passed, 1 failed, 4 skipped — the failure, `cox::subagent_messaging headless_run_does_not_wait_for_a_background_shell`, touches neither base64 nor images and passed 3 of 3 runs alone (timing under full-workspace load).
+
+#### T40.4 `read` returns an image instead of refusing it
+
+- Model: Claude Code / opus-5.5 (card: sonnet)
+- Depends: T40.1
+- Size: ~90
+- Priority: P1
+- Complexity: 2
+- Goal: `read` on a confined path whose bytes sniff as an accepted image returns a short text line (`image/png, 48.2 KiB`) plus the image in `structured["image"]`. Over the cap it returns `ToolError::TooLarge { bytes, cap }`. Other binary files still return `ToolError::Binary`.
+- Files: `crates/cox-tools/src/read.rs`. Docs: `docs/tools.md`, and the plan.md §1.11 `read` row ("images v0.2") is updated when the card closes.
+- Steps:
+  1. In `read.rs`, run `image::sniff` before the NUL-byte sniff. The path has already been confined by the existing `path::confine` call; no new guard.
+  2. Build the output with `image::to_structured`. `mode`, `offset` and `limit` are ignored for images and said so in the text line.
+  3. Update the tool description so the model knows images are readable.
+  4. Tests: `read_png_returns_structured_image`, `read_oversized_image_is_too_large`, and keep `read_binary_file_is_rejected_with_binary_error`.
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-tools -E 'test(read_)'
+  ```
+- Done when: the tests pass. `docs/tools.md` states the cap and the four formats.
+- Plan:
+  1. Tests first in `crates/cox-tools/src/read.rs`: `read_png_returns_structured_image` (a tiny PNG; text line `image/png, …`, `image::take_structured` yields the same media type and base64 of the file), `read_oversized_image_is_too_large` (a PNG header padded to `MAX_IMAGE_BYTES + 1` → `TooLarge { bytes, cap }`), and keep `read_binary_file_is_rejected_with_binary_error`. Watch the first two fail on current code (they hit `Binary`/text).
+  2. In `call`, after `confine` and the read, `image::sniff` the bytes before the NUL sniff. An image over `MAX_IMAGE_BYTES` → `ToolError::TooLarge`; otherwise text `<media_type>, <size>` (plus a note when `lines`/`mode` were passed, since they do not apply) and `structured = image::to_structured(..)`. No new path handling.
+  3. Tool description: images (PNG, JPEG, GIF, WebP, up to the cap) are returned as images; other binaries are still refused.
+  4. `docs/tools.md`: the `read` row and a line with the cap and the four formats. On close, the plan.md §1.11 `read` row drops "images v0.2".
+  5. Verify: the Check; the real binary with the scripted provider reading a PNG under `COX_HOME=/tmp/cox-t40.4` if a scenario can drive `read`; then fmt, clippy `-D warnings`, workspace nextest.
+- Out of scope:
+  - The ACP `FsReadTool` swap (it reads through the editor's text API; images there stay unsupported and say so).
+  - Forwarding the image to the model (T40.5).
+
+Status: done 2026-09-28
+Result: `crates/cox-tools/src/read.rs`: after `confine` and the read, `image::sniff` runs before the NUL sniff. An accepted image over `image::MAX_IMAGE_BYTES` returns `ToolError::TooLarge { bytes, cap }` before any encoding; otherwise the output is `<media type>, <size>` (e.g. `image/png, 16 B`, `48.2 KiB`), plus a note that `lines` and `mode` do not apply to images when either was passed, and `structured = image::to_structured(..)`. Other binaries still return `ToolError::Binary`. The tool description says images are returned. `docs/tools.md`: the `read` row plus a paragraph with the cap and the four formats. plan.md §1.11 `read` row: "images v0.2" replaced.
+Deviations: the card names `offset` and `limit`; `read` has `lines` and `mode`, so the note names those. The cap is compared in `read.rs` against the shared `MAX_IMAGE_BYTES` (not through `image::attachment`) so an image is base64-encoded once, only after the check.
+Check output:
+- `cargo nextest run -p cox-tools -E 'test(read_)'`: 14 passed, among them `read_png_returns_structured_image`, `read_oversized_image_is_too_large`, `read_binary_file_is_rejected_with_binary_error`. Before the change the two new tests failed (a PNG with NUL bytes was refused as `Binary`).
+- Real binary, scratch `COX_HOME=/tmp/cox-t40.4` (removed afterwards), scripted provider calling `read` on a 16-byte PNG, `--output-format stream-json`: `tool_call_done` with `"ok":true,"visible":"image/png, 16 B"`, run ended `done`, exit 0.
+- Workspace: `cargo fmt --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo nextest run --workspace`: 1336 passed, 4 skipped.
+
+#### T50.1 Instruction files and the skills index reach system[2]
+
+Model: Claude Code / opus-5.5 · Depends: — · Size: ~150 · Files: `crates/cox-core/src/context.rs`, `crates/cox-core/src/session.rs`, `crates/cox/src/session.rs` (the caller that already owns `cox_ext`)
+
+Goal: the `AGENTS.md`/`CLAUDE.md` hierarchy (`cox_ext::instructions::load`) and the skills index are sent to the model in system[2]. Today system[2] is the `INSTRUCTIONS` constant ("Instruction-file stub until T7.1") in `context.rs`, `instructions::load` is called only by `cox ext` listing (`crates/cox/src/ext_cmd.rs`), and the core is handed an empty skills index. The loaded text is passed into the core as data (the core does no I/O), stays byte-stable for the whole session (cache-stable prefix, §1.9) and is not re-read mid-session.
+
+Check: a test builds a request for a session opened on a scratch tree with an `AGENTS.md` and one skill and finds both texts in system[2]; a second turn's system[2] is byte-identical (`prefix_bytes_identical_between_turns` stays green); the test fails on current `main`. Run the real binary against a `COX_HOME` scratch tree with `--output-format stream-json` and a scripted provider (or the request dump) to see the text in the request.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: re-reading instruction files mid-session; the repo map (P43).
+
+Plan:
+1. `context.rs`: `assemble_with_skills` gains `instructions: &str` (the `instructions::load` block) before `skills_index`; system[2] = the `INSTRUCTIONS` line, then the block, then the index, each joined by `\n` only when non-empty, so a tree with neither keeps today's bytes. The block joins under every profile (the user's rules); `minimal` still drops the index.
+2. `cox-core/src/session.rs`: `Session::set_instructions(block, skills_index)`, set once by the surface like `set_agent_defs` (a later call is ignored, so system[2] cannot change mid-session); the one `assemble_with` call site passes both. A child shares the parent's block (not the index: its tools may lack `skill`).
+3. `crates/cox/src/session.rs`: at session build, load the chain with `cox_ext::instructions::load` under `context.instruction_budget_tokens` (notices are warnings, D14) and build the index with `cox_ext::skills::index` before `SkillTool` takes the skills; call `set_instructions` for new and resumed sessions. `crates/cox/src/ext_cmd.rs` (a 4th file): its `Roots` construction becomes one shared `instruction_roots` helper so `cox ext` and the session read the same chain.
+4. Test `instruction_files_and_skills_index_reach_system_two` in `crates/cox/src/session.rs`: scratch tree with `AGENTS.md` and one skill, a recording scripted provider, two turns; both texts in system[2], and system[0..=2] byte-identical between the turns. Fails on `main` (system[2] is the stub).
+5. Real binary: `COX_HOME=/tmp/cox-t50.1 cargo run -- run -p … --output-format stream-json` with a scripted provider or the request dump from a scratch tree with an `AGENTS.md`; then the three AGENTS.md commands.
+
+Status: done 2026-09-28
+Result: `crates/cox/src/session.rs` reads the `AGENTS.md`/`CLAUDE.md` chain once at session build (`cox_ext::instructions::load` under `context.instruction_budget_tokens`, notices as warnings) and the skills index (`cox_ext::skills::index`) in `prefix_texts`, and hands both to the new `Session::set_instructions` (a `OnceLock`, so a second call cannot change the prefix mid-session). `context::assemble_with_skills` takes the block before the index: system[2] is the old `INSTRUCTIONS` line, then the block, then the index, each only when non-empty, so a tree with neither sends the old bytes. The block joins under every profile; `minimal` still drops the index. A subagent shares its parent's block but not the index (its tools may lack `skill`). The core still reads no files.
+Deviations: 4 files instead of ≤3: `crates/cox/src/ext_cmd.rs` gives its `Roots` construction to a shared `instruction_roots`, so `cox ext` lists exactly the chain a session sends instead of a second copy. About 190 lines including the two tests. The `Recorder` test provider in `crates/cox/src/session.rs` lost its `plugins` feature gate so the new test can use it.
+Check output:
+- `instruction_files_and_skills_index_reach_system_two` (`crates/cox/src/session.rs`): a scratch tree with an `AGENTS.md` and one skill, a recording scripted provider, two turns; both texts in system[2], system[0..=2] byte-identical between the turns. Failed before the core change (system[2] was the stub line only), passes now.
+- `instructions_precede_skills_index_and_survive_minimal` (`crates/cox-core/src/context.rs`) pins the order and the `minimal` rule; `prefix_bytes_identical_between_turns`, `skills_index_is_in_system_2` and `minimal_prefix_under_1000_tokens` stay green.
+- Real binary, `COX_HOME=/tmp/cox-t50.1`, `--provider local run -p hi --output-format stream-json` against a local capturing HTTP stand-in: the request's system text carried `# Instructions`, the `AGENTS.md` body and `- greet: …` after the stub line. Scratch tree removed.
+- nextest 1316 passed, 4 skipped; fmt and clippy clean.
+
+#### T50.2 Permission-mode changes are recorded, so resume and a woken child keep the live mode
+
+Model: Claude Code / opus-5.5 · Depends: — · Size: ~150 · Priority: P0 · Complexity: 3
+
+Files:
+- `crates/cox-protocol/src/types.rs`
+- `docs/protocol.jsonschema` (generated)
+- `crates/cox-core/src/rollout.rs`
+- `crates/cox-core/src/session.rs`
+- `crates/cox-core/src/subagent.rs`
+- `crates/cox-tui/src/state.rs`
+- `crates/cox-core/tests/subagent.rs`, `crates/cox-core/tests/resume.rs` (tests)
+
+Goal: a mode change (`Submission::SetPermissionMode`, Shift+Tab) is written to the rollout, and `History::from_events` rebuilds the last recorded mode instead of always returning `PermissionMode::Default` (`rollout.rs` ~236). Then a resumed session comes back in the mode it had, and a finished child woken by `TaskMessage` (`subagent.rs` `restart`) is never wider than its parent: it takes the parent's live mode (T45.1), or its own recorded mode if that is narrower. Found by T45.1.
+
+Check: a test switches a parent to Plan, runs a child to completion, wakes it with `TaskMessage` and asserts the child's write raises `ApprovalRequired`/is denied as in Plan; a resume test asserts the rebuilt `History.permission_mode` equals the last recorded mode. Both fail on current `main`. Older rollouts with no mode record still load (as `Default`).
+
+Plan:
+1. Tests first, failing on `main`. `woken_child_keeps_parent_plan_mode` (`crates/cox-core/tests/subagent.rs`): a `Default` parent approves a `shell` child limited to `touch` (`Risk::Write`), the child answers without writing, the parent switches to Plan, a `TaskMessage` wakes the child and its `touch` must be denied without an `ApprovalRequired` (today it asks, as in `Default`). `resume_restores_last_recorded_permission_mode` (`crates/cox-core/tests/resume.rs`): `SetPermissionMode` Plan then Auto, the rebuilt `History.permission_mode` is `Some(Auto)`. `old_rollout_without_mode_record_has_no_mode` (`rollout.rs`): no record reads as `None`.
+2. `crates/cox-protocol/src/types.rs`: new `Event::PermissionModeChanged { mode }`, a roundtrip case; regenerate `docs/protocol.jsonschema` through its drift test. A typed event, not a parsed `Notice`, because the rollout is replayed by type.
+3. `session.rs`: `SetPermissionMode` emits the new event (the human-facing `Notice` stays, so no surface changes); resume seeds the live mode with `history.permission_mode.unwrap_or(Default)`, today's behaviour for old rollouts.
+4. `rollout.rs`: `History.permission_mode` becomes `Option<PermissionMode>`, the last recorded mode, `None` when the rollout never recorded one.
+5. `subagent.rs` `restart`: the woken child runs in the parent's live mode, or its own recorded mode when that is narrower (a private `narrower`, width Plan < Default < Auto < Bypass, with a unit test). `cox_permission::Engine` is untouched.
+6. Verify: the tests, fmt, clippy, nextest; the real binary resumed against `COX_HOME=/tmp/cox-t50.2` if a headless run can reach it. More than 3 files (protocol type, generated schema, two integration test files) because the record is a new wire event.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: the model's view of the mode (T50.3).
+Status: done 2026-09-28
+Result: `Submission::SetPermissionMode` now also emits a new `Event::PermissionModeChanged { mode }` (`crates/cox-protocol/src/types.rs`; `docs/protocol.jsonschema` regenerated through its drift test), so the change lands in the rollout; the human-facing `Notice` stays. `History.permission_mode` (`rollout.rs`) is now `Option<PermissionMode>`: the last recorded mode, `None` for a rollout with no record. Resume seeds the live mode with `unwrap_or(Default)`, so rollouts written before this change load as before. `subagent.rs` `restart` gives a woken child the parent's live mode (`Session::permission_mode`, T45.1), or its own recorded mode when that is narrower (private `narrower`, Plan < Default < Auto < Bypass). The TUI's exhaustive event match ignores the new event (its `set_mode` already updated the status line). `cox_permission::Engine` is unchanged; no new dependency. 8 files, about 210 added lines, most of it tests and the generated schema: more than 3 files because the record is a new wire event (protocol type, generated schema, the TUI's exhaustive match) and the two Check tests live in two integration test files.
+Check output:
+- `woken_child_keeps_parent_plan_mode` (`crates/cox-core/tests/subagent.rs`): failed on `main` ("the woken child asked as in Default, not Plan"), passes after.
+- `resume_restores_last_recorded_permission_mode` (`crates/cox-core/tests/resume.rs`): Plan then Auto, the rebuilt `History.permission_mode` is `Some(Auto)`. On `main` it does not compile (the field was a bare `PermissionMode`, always `Default`).
+- `old_rollout_without_mode_record_has_no_mode` (`rollout.rs`) and `narrower_mode_is_the_less_permissive_of_the_two` (`subagent.rs`): pass.
+- Real binary against `COX_HOME=/tmp/cox-t50.2` (removed afterwards), scripted provider: `cox --plain` with `/permissions auto` and one turn, then `cox run -p --continue --output-format stream-json` whose script calls `write`: the resumed run wrote the file. The same with `/permissions default`: the write was denied (headless approval `never`).
+- In the worktree: nextest 1321 passed, 4 skipped; fmt and clippy clean.
+Follow-ups found (not in this card): resume ignores the configured mode and `--permission-mode` entirely (it takes the rollout's mode, `Default` when none), so a session started in a non-default configured mode and never switched still resumes in `Default`; recording the initial mode at session start would close that. `cox --plain`'s status line keeps showing the configured mode after `/permissions` (`plain.rs` submits the change but never updates its own status mode). A woken child's volatile block still renders its spawn-time `config.permissions.mode` (the T50.3 fix covers it if it renders the live mode).
+
+#### T39.1 Chat wire captures a tool call's thought signature
+
+- Model: Claude Code / opus-5.5
+- Status: done 2026-09-28
+- Depends: T38.1 (Chat wire emits `ToolUseEnd`)
+- Size: ~150
+- Priority: P1
+- Complexity: 3
+- Goal: when a Chat Completions stream carries `extra_content.google.thought_signature` on a tool-call chunk, the stream emits one new `ProviderEvent::ToolUseSignature { signature }` between that call's `ToolUseStart` and `ToolUseEnd`, and `consume_provider` keeps it keyed by call id.
+- Files: `crates/cox-protocol/src/types.rs`, `crates/cox-provider-openai/src/chat.rs`, `crates/cox-core/src/turn.rs` (plus the regenerated `docs/protocol.jsonschema`)
+- Steps:
+  1. Add `ProviderEvent::ToolUseSignature { signature: String }` in `types.rs`, with a doc comment saying it is opaque, is replayed only to the wire that produced it, and follows its `ToolUseStart`. Add an rstest case beside the existing `ProviderEvent` serde cases. Regenerate `docs/protocol.jsonschema` through its drift test.
+  2. `chat.rs`: add `signature: Option<String>` and `wire_id: Option<String>` to `AccruedCall`. In `on_tool_call_chunk`, read `chunk["extra_content"]["google"]["thought_signature"]` (a string; the last one wins) and `chunk["id"]`.
+  3. Robustness: `index` currently defaults to 0 when absent, which would merge parallel calls from a server that omits it. When a chunk has no `index` and carries a wire `id` different from the current call's `wire_id`, start a new call instead.
+  4. `flush` emits `ToolUseSignature` after `ToolUseStart` and before the input delta when a signature was captured.
+  5. `turn.rs`: add `signatures: HashMap<CallId, String>` to `Streamed` (it derives `Default`). The new match arm stores the signature under `current`'s id. This is the only exhaustive match on `ProviderEvent` outside the provider crates (checked with grep on 2026-09-28).
+  6. Tests:
+     - `chat_stream_emits_signature_between_start_and_end`, from a new fixture `fixtures/openai-chat/gemini-tool-signature.sse`.
+     - `chat_stream_splits_calls_without_index_by_wire_id`.
+     - A `consume_provider` unit test proving the signature lands in `Streamed.signatures`.
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-provider-openai -E 'test(signature) | test(without_index)'
+  mise exec -- cargo nextest run -p cox-core -E 'test(consume_provider)'
+  mise exec -- cargo nextest run -p cox-protocol
+  ```
+- Done when: the three tests pass and the schema drift test is green. done.md records that the field path is unverified until T39.7.
+- Out of scope:
+  - Putting the signature into history (T39.2) and replaying it (T39.3).
+  - The Anthropic `signature_delta`, which is still dropped by `cox-provider-anthropic/src/stream.rs`; that stays as is.
+- Execution plan:
+  1. Tests first: fixture `fixtures/openai-chat/gemini-tool-signature.sse` (one `read` call whose chunk carries `extra_content.google.thought_signature`); `chat_stream_emits_signature_between_start_and_end` and `chat_stream_splits_calls_without_index_by_wire_id` in `chat.rs`; `consume_provider_keeps_signature_by_call_id` in `turn.rs`; a `provider_event_json_roundtrip` rstest in `types.rs` with the new variant. Confirm they fail (do not compile) on the current code.
+  2. `types.rs`: `ProviderEvent::ToolUseSignature { signature }` with the opaque/replay-to-its-own-wire doc comment.
+  3. `chat.rs`: `AccruedCall.{signature, wire_id}`; the field path is read in one helper, `thought_signature(chunk)`, commented as unverified until T39.7; an index-less chunk with a new wire id starts a new call; `flush` emits the signature after `ToolUseStart`.
+  4. `turn.rs`: `Streamed.signatures`, stored under the current call's id.
+  5. Verify: the card's Check, then fmt, clippy and the full nextest run. `docs/protocol.jsonschema` covers only `Event`/`Submission`, so its drift test should stay green unchanged.
+- Check output:
+  - `cargo nextest run -p cox-provider-openai -E 'test(signature) | test(without_index)'`: `chat_stream_emits_signature_between_start_and_end` and `chat_stream_splits_calls_without_index_by_wire_id` pass (2 passed).
+  - `cargo nextest run -p cox-core -E 'test(consume_provider)'`: `consume_provider_keeps_signature_by_call_id` passes (1 passed).
+  - `cargo nextest run -p cox-protocol`: 90 passed, including `provider_event_json_roundtrip` (3 cases) and `protocol_jsonschema_matches_committed_file`. `docs/protocol.jsonschema` covers only `Event` and `Submission`, so the new `ProviderEvent` variant leaves it unchanged.
+  - Before the fix the new tests did not compile (no `ToolUseSignature` variant); by inspection, the old `index` default of 0 merged the index-less calls into one.
+  - Workspace: nextest 1344 passed, 4 skipped; clippy `-D warnings` and `fmt --check` clean.
+- Note: the field path `extra_content.google.thought_signature` is **unverified** until the live check in T39.7. It is read in one place, `thought_signature` in `crates/cox-provider-openai/src/chat.rs`, which says so in its comment. The fixture `fixtures/openai-chat/gemini-tool-signature.sse` encodes the same unverified path.
+
+#### T41.2 LSP stdio framing and JSON-RPC client
+
+- Model: Claude Code / opus-5.5 (card: sonnet)
+- Depends: -
+- Size: ~190
+- Priority: P1
+- Complexity: 3
+- Goal: `lsp::client::Client` speaks `Content-Length` framed JSON-RPC over any `AsyncRead`/`AsyncWrite`, with requests (id → oneshot, per-call timeout), notifications out, a notification stream in, and a message-size cap.
+- Files: `crates/cox-tools/src/lsp/client.rs` (new), `crates/cox-tools/src/lsp/mod.rs` (new, `mod` lines only), `crates/cox-tools/src/lib.rs`
+- Steps:
+  1. `read_message`/`write_message`: parse headers until `\r\n\r\n` and require `Content-Length`. Reject a body over `MAX_MESSAGE_BYTES = 16 MiB` with `LspError::TooLarge`.
+  2. `Client::start(reader, writer)` spawns one reader task. Responses resolve pending oneshots. Server requests (for example `workspace/configuration`, `window/workDoneProgress/create`) get a `null` result or a `MethodNotFound` error so the server never blocks. Notifications go to an `mpsc`.
+  3. `request(method, params, timeout)` and `notify(method, params)`.
+  4. `LspError` (thiserror): `Io`, `Parse`, `TooLarge`, `Timeout`, `Closed` and `Server { code, message }`.
+  5. Tests over `tokio::io::duplex`:
+     - `framing_round_trips`
+     - `oversized_message_is_rejected`
+     - `server_request_is_answered`
+     - `request_times_out`
+     - `closed_pipe_fails_pending_requests`
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-tools -E 'test(lsp::client)'
+  ```
+- Done when: all five tests pass, with no `unwrap` outside the tests.
+- Plan:
+  1. Tests first in `crates/cox-tools/src/lsp/client.rs` against stub bodies: the five card tests plus the framing edge cases — `split_headers_and_back_to_back_messages_are_framed` (bytes written in small chunks across the header boundary, two messages in one write, header name case-insensitive, `Content-Type` ignored), `partial_message_is_closed`, `missing_or_bad_content_length_is_a_parse_error`, `responses_match_ids_out_of_order` (with an error response → `Server { code, message }`), `notifications_reach_the_stream`. Watch them fail.
+  2. `read_message` over `AsyncBufRead`: header lines read through a bounded `take` (a line with no `\n` within 8 KiB is `Parse`), clean EOF before a message is `Ok(None)`, EOF mid-message is `Closed`, a length over `MAX_MESSAGE_BYTES` is `TooLarge` before any body is read. `write_message` writes header, body and flushes.
+  3. `Client::start(reader, writer) -> (Client, UnboundedReceiver<Notification>)`: one reader task; responses resolve the pending oneshot by integer id; server requests are answered (`workspace/configuration` → one `null` per item, `window/workDoneProgress/create`, `client/(un)registerCapability`, `window/showMessageRequest` → `null`, anything else → `-32601`); on EOF or a framing error the pending map is closed and emptied, so waiters get `Closed`. The notification channel is unbounded on purpose: a bounded one would stall the reader, and with it every response, while the consumer awaits a request (T41.4 drains it). `request` removes its entry and sends `$/cancelRequest` on timeout; `params: null` is omitted from the wire. `Drop` aborts the reader task.
+  4. Wiring: `lsp/mod.rs` (`pub mod client;`), `pub mod lsp;` in `lib.rs`, `thiserror` (workspace dependency, already in §1 and `toolchain.md`) added to `crates/cox-tools/Cargo.toml` for `LspError`; the §1 `cox-tools` row gains the LSP client and `thiserror`. Four files because the crate had no `thiserror` yet.
+  5. Verify: the Check, then fmt, clippy `-D warnings`, workspace nextest.
+- Out of scope: process spawning and the document protocol (T41.4).
+
+Status: done 2026-09-28
+Result: `crates/cox-tools/src/lsp/client.rs` (new): `read_message`/`write_message` (`Content-Length` framing; header lines bounded to 8 KiB through `take`; clean EOF between messages is `Ok(None)`, EOF inside one or a broken pipe is `Closed`; a body over `MAX_MESSAGE_BYTES` = 16 MiB is `TooLarge` before it is read, and on write too), `LspError` (`Io`, `Parse`, `TooLarge`, `Timeout { method }`, `Closed`, `Server { code, message }`), `Notification`, and `Client::start(reader, writer) -> (Client, UnboundedReceiver<Notification>)` with one reader task. Responses resolve the pending oneshot by integer id (unknown ids ignored); server requests are answered from their own task (`workspace/configuration` → one `null` per item; `window/workDoneProgress/create`, `client/(un)registerCapability`, `window/showMessageRequest` → `null`; anything else → `-32601`); notifications go to the stream, which ends with the connection. `request` sends `$/cancelRequest` after a timeout; `null` params are omitted. `crates/cox-tools/src/lsp/mod.rs` (new, `pub mod client;`), `pub mod lsp;` in `lib.rs`, `thiserror` (workspace dependency, already in §1 and `toolchain.md`) added to `crates/cox-tools/Cargo.toml`; the §1 `cox-tools` row names the client and `thiserror`.
+Deviations: four files, since the crate had no `thiserror` yet. Size: ~290 non-comment lines after rustfmt (the card estimated ~190) — the EOF/size handling and the reply, outcome and envelope helpers; kept in one module because they are one wire. The notification channel is unbounded (a bounded one would stall the reader, and with it every response, while the consumer awaits a request); T41.4 drains it.
+Check output:
+- `cargo nextest run -p cox-tools -E 'test(lsp::client)'`: 10 passed — `framing_round_trips`, `split_headers_and_back_to_back_messages_are_framed`, `partial_message_is_closed`, `missing_or_bad_content_length_is_a_parse_error`, `oversized_message_is_rejected`, `server_request_is_answered`, `request_times_out`, `closed_pipe_fails_pending_requests`, `responses_match_ids_out_of_order`, `notifications_reach_the_stream`. Against stub bodies 9 failed first (the parse-error test passed only because the stub returned `Parse`).
+- Workspace: `cargo fmt --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo nextest run --workspace --no-fail-fast`: 1346 passed, 4 skipped. A first fail-fast run stopped on `cox::subagent_messaging headless_run_does_not_wait_for_a_background_shell` (also failed 3 runs alone at 10-20 s under machine load, then passed alone in 2.8 s and in the full run); it touches no LSP code.
+
+#### T44.1 `agent(isolation: "worktree")` asks before it adds a worktree
+
+Model: Claude Code / opus-5.5 · Status: done 2026-09-28 · Depends: - · Size: ~60 · Priority: P1 · Complexity: 2
+
+Goal: fix the gate violation — today an `explore` child with worktree isolation is `Risk::ReadOnly`, so it runs `git worktree add` unasked in every mode, even plan.
+
+Files:
+- `crates/cox-core/src/subagent.rs`
+- `docs/tools.md`
+
+Steps:
+1. `AgentTool::risk`: when `input.isolation == "worktree"`, return `Risk::Destructive` (asks in default/auto, denied in plan, allowed only in bypass or by an allow rule / session grant on `agent(<name>)`). The Engine stays the only decision point; the tool does not check permission itself.
+2. `docs/tools.md`: the `agent` row says worktree isolation asks.
+3. Tests: `worktree_isolation_asks_in_default_mode`, `worktree_isolation_is_denied_in_plan_mode`, `worktree_isolation_respects_an_allow_rule`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core worktree_isolation_
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: the three tests pass (open question 3: `Destructive` vs `Exec`).
+
+Plan:
+1. Tests first in `subagent.rs` `mod tests`: build the `ToolCall` from `AgentTool::risk`/`subject` for `{"task":"x","isolation":"worktree"}` and feed it to `cox_permission::Engine::decide` — `Ask` in default and auto, `Deny` in plan, `Allow { by: Rule }` with an `agent(explore)` allow rule. Confirm the default/auto/plan ones fail on current code (explore is `ReadOnly`).
+2. `AgentTool::risk`: after resolve, `isolation == "worktree"` returns `Risk::Destructive` (above `Exec` for an external agent too); no permission check in the tool.
+3. `docs/tools.md`: the `agent` row says worktree isolation is `destructive` and asks.
+4. Verify: `cargo nextest run -p cox-core worktree_isolation_`, then fmt, clippy, the workspace suite.
+
+Out of scope: removing the isolation option.
+
+Result:
+- `AgentTool::risk` (`crates/cox-core/src/subagent.rs`) returns `Risk::Destructive` when `isolation` is `"worktree"`, checked after `resolve` and before the external-agent and max-of-tools branches, so it wins over `Exec` too. The Engine stays the only decision point.
+- `docs/tools.md`: the `agent` row says worktree isolation is Destructive and asks (denied in plan).
+- Tests (unit, `subagent.rs`, the `ToolCall` built from `risk`/`subject` fed to `Engine::decide`): `worktree_isolation_asks_in_default_mode` (default and auto → `Ask(Risk Destructive)`), `worktree_isolation_is_denied_in_plan_mode` (also pins `isolation: "none"` to `ReadOnly` for explore), `worktree_isolation_respects_an_allow_rule` (`agent(explore)` → `Allow { by: Rule }`). Before the fix the first two failed (`Allow { by: Policy }`); the allow-rule one passed on old code too, since a read-only call was allowed anyway.
+
+Deviations:
+- A third file: `crates/cox-core/tests/subagent.rs` — `subagent_worktree_isolation_runs_child_in_its_worktree` now needs approval, so it sets the allow rule `agent(shell)` for both of its sessions (the proof the rule path works end to end).
+
+Check:
+- `cargo nextest run -p cox-core worktree_isolation`: 4 passed (the three new tests plus the updated integration test).
+- `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`: clean. Workspace nextest (run before the creator's new "no full suite" rule arrived): 1352 passed, 4 skipped.
+- Real binary, scratch `COX_HOME`, scripted `subagent_worktree` scenario in a scratch git repo: `cox run -p` in default mode reports `risk: "destructive"` and denies (headless approval policy `never`); `--permission-mode plan` denies with the plan-mode reason; `git worktree list` shows no worktree was added.
+
+#### T50.4 Resume keeps the session's starting permission mode
+
+Model: Claude Code / opus-5.5 · Depends: — · Priority: P1 · Complexity: 3 · Size: ~120 · Files: `crates/cox-core/src/session.rs`, `crates/cox-core/src/rollout.rs`, `crates/cox/src/session.rs` (or wherever resume applies the flag layer)
+
+Goal: a session started in Plan or Auto through config or `--permission-mode` and never switched comes back in that mode on resume, not in `Default` (a Plan session must never resume wider). The session records its starting mode when it opens (the T50.2 `Event::PermissionModeChanged`, or the same record), so `History.permission_mode` is always `Some` for new rollouts. On resume, an explicit `--permission-mode` flag wins; otherwise the recorded mode; a rollout with no record at all falls back to the configured mode. Found by T50.2.
+
+Check: a test opens a session configured `plan`, runs a turn without switching, resumes, and asserts the resumed session denies a write as Plan does; a second test resumes with an explicit `--permission-mode auto` and gets Auto; both fail on current `main`. Old rollouts still load.
+
+Plan:
+1. Tests first, failing on `main`. `crates/cox-core/tests/resume.rs`: `resumed_plan_session_denies_a_write_as_plan_does` (a session configured `plan` runs a turn without switching, is resumed under a `Default` config, and its `touch` is denied without an `ApprovalRequired`; on `main` it asks, as in `Default`) and `resume_without_a_mode_record_uses_the_configured_mode` (the same rollout with every `PermissionModeChanged` dropped, i.e. an old rollout, loads and resumes in the configured `plan`). `crates/cox/tests/run_cli.rs`, real binary with the scripted provider: `resume_with_an_explicit_permission_mode_flag_uses_it` (started `--permission-mode plan`, resumed with `--permission-mode auto`, the write lands) and `resume_without_a_flag_keeps_the_recorded_mode` (started `--permission-mode auto`, resumed without the flag, the write lands).
+2. `crates/cox-core/src/session.rs` `build`: a top-level session appends `Event::PermissionModeChanged { mode }` for the mode it opens in to its rollout right after `SessionStarted`, fresh or resumed, so every new rollout has a record and a flag override on resume is recorded too. Rollout only, like the persisted `SessionStarted`: the surfaces already know the opening mode from the config they built the session with. Resume takes `history.permission_mode`, else `config.permissions.mode` (was `Default`). Children are unchanged (their mode is the parent's, T45.1/T50.2).
+3. `crates/cox/src/session.rs` `open`: on resume an explicit `--permission-mode` replaces the recorded mode (`history.permission_mode = Some(flag mode)`); otherwise the recorded mode, else config. The resolved mode is written back into `loaded.config.permissions.mode`, so the TUI and `--plain` show the mode the session actually runs in. `cox_permission::Engine` is untouched.
+4. Verify: the tests, fmt, clippy, nextest; the real binary against `COX_HOME=/tmp/cox-t50.4` (a Plan-configured session resumed without the flag stays in Plan), removed afterwards. Four code/test files rather than three: the Check needs both a core test and a binary test for the flag.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: the `--plain` status line (T50.5).
+Status: done 2026-09-28
+Result: a top-level session (`Session::build`, `crates/cox-core/src/session.rs`) now appends `Event::PermissionModeChanged { mode }` for the mode it opens in to its rollout right after `SessionStarted`, fresh or resumed, so every new rollout carries a record and a flag override on resume is recorded too. Rollout only, not the surface stream, like the persisted `SessionStarted`. A rollout with no record resumes in the configured mode (was `Default`). Children are unchanged. `crates/cox/src/session.rs` `open` resolves the resume mode as explicit `--permission-mode`, then the recorded mode, then config, writes it into `History.permission_mode`, and writes it back into `loaded.config.permissions.mode` so the TUI and `--plain` start by showing the mode the session actually runs in. `cox_permission::Engine` and `rollout.rs` are unchanged (`History::from_events` already takes the last record); no new dependency. 4 files, 167 added lines, 128 of them tests: four files rather than three because the Check needs both a core test and a binary test for the flag.
+Check output:
+- `resumed_plan_session_denies_a_write_as_plan_does` and `resume_without_a_mode_record_uses_the_configured_mode` (`crates/cox-core/tests/resume.rs`): failed on `main` (the resumed session asked, as in `Default`), pass after.
+- `resume_with_an_explicit_permission_mode_flag_uses_it` and `resume_without_a_flag_keeps_the_recorded_mode` (`crates/cox/tests/run_cli.rs`, real binary, scripted provider): failed on `main` (the resumed write was denied), pass after.
+- Real binary against `COX_HOME=/tmp/cox-t50.4` (removed afterwards), scripted provider: a session run with `[permissions] mode = "plan"` in config, resumed with `cox run -p --resume <id>` whose script calls `write`: denied with the plan-mode message both with the config still in place and with it removed; the file was not written.
+- In the worktree: `cargo nextest run --workspace` 1347 passed, 4 skipped; `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean.
+Notes: a session started with `--permission-mode bypass` now resumes in Bypass without the flag (the recorded mode wins, as it already did for a `/permissions bypass` switch since T50.2). In the TUI, switching to another session reuses the launch's `--permission-mode` flag, which then wins over that session's record.

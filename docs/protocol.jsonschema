@@ -582,7 +582,7 @@
         ]
       },
       {
-        "description": "The session's permission mode or effort override changed\n(`SetPermissionMode`, `SetEffort`); carries both, as they now stand,\nso a surface sets its state from the event instead of echoing its\nown request (DT G5).",
+        "description": "The session's permission mode or effort override changed\n(`SetPermissionMode`, `SetEffort`); carries both, as they now stand,\nso a surface sets its state from the event instead of echoing its\nown request (DT G5). Also recorded when a top-level session opens\n(T50.4), so resume and a woken subagent rebuild the mode the session\nlast ran under instead of falling back to `Default` (T50.2).",
         "type": "object",
         "properties": {
           "mode": {

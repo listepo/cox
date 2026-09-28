@@ -20,6 +20,7 @@ pub mod expand;
 pub mod git;
 pub mod glob;
 pub mod grep;
+pub mod lsp;
 pub mod memory;
 pub mod read;
 pub mod send_message;

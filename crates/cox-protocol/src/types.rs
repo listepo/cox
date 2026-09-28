@@ -1179,7 +1179,9 @@ pub enum Event {
     /// The session's permission mode or effort override changed
     /// (`SetPermissionMode`, `SetEffort`); carries both, as they now stand,
     /// so a surface sets its state from the event instead of echoing its
-    /// own request (DT G5).
+    /// own request (DT G5). Also recorded when a top-level session opens
+    /// (T50.4), so resume and a woken subagent rebuild the mode the session
+    /// last ran under instead of falling back to `Default` (T50.2).
     StateChanged {
         /// The permission mode now in force.
         mode: PermissionMode,
@@ -1410,6 +1412,13 @@ pub enum ProviderEvent {
         /// The tool name.
         name: String,
     },
+    /// The current tool-use block's thought signature (Gemini over the Chat
+    /// wire). Opaque: cox never reads it, and it is replayed only to the wire
+    /// that produced it. Follows its call's `ToolUseStart`, before `ToolUseEnd`.
+    ToolUseSignature {
+        /// The signature, byte-for-byte as received.
+        signature: String,
+    },
     /// The next chunk of a tool-use block's JSON input.
     ToolUseInputDelta {
         /// The raw JSON chunk (accumulate and parse once `ToolUseEnd` arrives).
@@ -1571,6 +1580,16 @@ mod tests {
     fn event_json_roundtrip(#[case] event: Event) {
         let json = serde_json::to_string(&event).expect("serialize");
         let back: Event = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(event, back);
+    }
+
+    #[rstest]
+    #[case::tool_use_start(ProviderEvent::ToolUseStart { id: CallId::new(), name: "read".into() })]
+    #[case::tool_use_signature(ProviderEvent::ToolUseSignature { signature: "sig-opaque".into() })]
+    #[case::tool_use_end(ProviderEvent::ToolUseEnd)]
+    fn provider_event_json_roundtrip(#[case] event: ProviderEvent) {
+        let json = serde_json::to_string(&event).expect("serialize");
+        let back: ProviderEvent = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(event, back);
     }
 
