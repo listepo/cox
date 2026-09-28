@@ -46,6 +46,8 @@ final class LiveSession: SessionClient {
     }
   }
 
+  func history(limit: UInt32) throws -> [String] { try handle.history(limit: limit) }
+
   func close() { handle.close() }
 }
 

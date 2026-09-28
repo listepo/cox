@@ -138,6 +138,12 @@ impl LiveSession {
         self.completer.complete(token, limit)
     }
 
+    /// This session's earlier prompts, newest first, for ↑ in an empty
+    /// composer (T37.24.6).
+    pub fn history(&self, limit: usize) -> Result<Vec<String>, AppError> {
+        Ok(self.app.workspace().prompts(self.id(), limit)?)
+    }
+
     /// Stops the pull; the session keeps running (DT§4.5).
     pub fn close(&self) {
         self.controller.close();

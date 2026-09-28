@@ -55,6 +55,7 @@ public struct SessionComposer: View {
     state.canSend = store.canSend
     state.isRunning = store.isRunning
     state.queued = store.queued
+    state.isRecalling = store.isRecalling
     return state
   }
 
@@ -63,6 +64,7 @@ public struct SessionComposer: View {
     case .attach: isPicking = true
     case .drop(let urls): Task { await store.attach(urls) }
     case .removeAttachment(let id): if let index = Int(id) { store.removeAttachment(at: index) }
+    case .recall(let step): store.recall(step)
     default: draft(intent)
     }
   }

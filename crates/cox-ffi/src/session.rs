@@ -62,6 +62,14 @@ impl SessionHandle {
             .complete(&token, usize::try_from(limit).unwrap_or(usize::MAX))
     }
 
+    /// This session's earlier prompts, newest first, for ↑ in an empty
+    /// composer (T37.24.6).
+    pub fn history(&self, limit: u32) -> Result<Vec<String>, AppError> {
+        Ok(self
+            .live
+            .history(usize::try_from(limit).unwrap_or(usize::MAX))?)
+    }
+
     /// Stops the pull; the session keeps running (DT§4.5).
     pub fn close(&self) {
         self.live.close();

@@ -152,3 +152,27 @@ private func user(_ turn: UInt32) -> TimelinePatch {
   #expect(session.sent.count == 2)
   #expect(store.queued == 0 && store.attachments.isEmpty)
 }
+
+@MainActor
+@Test func upWalksOlderPromptsStopsAtTheOldestAndDownPastTheNewestEmptiesTheDraft() {
+  let session = FixtureSession(
+    fixture: Fixture(batches: [], snapshot: []), prompts: ["second", "first"])
+  let store = ComposerStore(session: SessionStore(session: session))
+  store.edit("draft")
+  store.recall(-1)
+  #expect(store.text == "draft" && !store.isRecalling)
+
+  store.edit("")
+  store.recall(-1)
+  store.recall(-1)
+  store.recall(-1)
+  #expect(store.text == "first" && store.isRecalling)
+  store.recall(1)
+  #expect(store.text == "second")
+  store.recall(1)
+  #expect(store.text.isEmpty && !store.isRecalling)
+
+  store.recall(-1)
+  store.edit("second, edited")
+  #expect(!store.isRecalling)
+}

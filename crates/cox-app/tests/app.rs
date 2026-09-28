@@ -33,6 +33,15 @@ tool_calls = [{ name = "write", input = { path = "out.txt", content = "approved\
 text = "Done."
 "#;
 
+/// Two plain replies: one per turn.
+const TWO_REPLIES: &str = r#"
+[[turn]]
+text = "One."
+
+[[turn]]
+text = "Two."
+"#;
+
 /// The Keychain as a map; remembers what it was asked and told.
 #[derive(Default)]
 struct MemoryHost {
@@ -228,6 +237,26 @@ async fn resume_reopens_the_session_with_its_blocks() {
     let resumed = resumed.expect("resume");
     assert_eq!(resumed.id(), id);
     assert_eq!(texts(&resumed), before);
+}
+
+#[tokio::test]
+async fn history_is_the_sessions_own_prompts_newest_first() {
+    let dir = scratch(Some(TWO_REPLIES));
+    let app = app(dir.path(), Arc::default());
+    let (cwd, theme) = (dir.path().join("project"), "base16-ocean.dark");
+    let other = app.open(cwd.clone(), None, theme.into()).await;
+    let other = other.expect("open the other session");
+    other.send(send("elsewhere")).await.expect("send");
+    finish(&other).await;
+    let session = app.open(cwd, None, theme.into()).await.expect("open");
+    assert_eq!(session.history(10).expect("history"), Vec::<String>::new());
+    for prompt in ["first prompt", "second prompt"] {
+        session.send(send(prompt)).await.expect("send");
+        finish(&session).await;
+    }
+    let history = session.history(10).expect("history");
+    assert_eq!(history, ["second prompt", "first prompt"]);
+    assert_eq!(session.history(1).expect("history"), ["second prompt"]);
 }
 
 #[tokio::test]
