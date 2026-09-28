@@ -23,8 +23,10 @@ use cox_app::{
     Project, SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind,
     TaskTarget, TurnCosts, TurnUsage, UsageView,
 };
+use cox_app::{KeyValueRow, PluginKey, PluginSlot, SpanView, WidgetView};
 use cox_app::{PermissionRule, RuleKind, SessionGrant};
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
+use cox_protocol::plugin::Slot;
 use cox_protocol::plugin::ui::StyleToken;
 use cox_protocol::traits::WorktreeInfo;
 use cox_protocol::types::{
@@ -168,6 +170,83 @@ pub enum TimelinePatch {
     Status {
         status: Status,
     },
+    PluginSlot {
+        slot: Box<PluginSlot>,
+    },
+}
+
+/// One plugin slot (T52.14, PL§8); the app draws `view` natively.
+#[uniffi::remote(Record)]
+pub struct PluginSlot {
+    pub plugin: String,
+    pub slot: Slot,
+    pub view: Option<WidgetView>,
+    pub visible: bool,
+    pub stopped: bool,
+}
+
+#[uniffi::remote(Enum)]
+pub enum Slot {
+    StatusLeft,
+    StatusRight,
+    Panel,
+    Overlay,
+}
+
+/// PL§8's closed widget tree, sanitized and bounded by cox-app; it recurses
+/// only through lists, which every binding carries as plain arrays.
+#[uniffi::remote(Enum)]
+pub enum WidgetView {
+    Text {
+        lines: Vec<Vec<SpanView>>,
+    },
+    List {
+        items: Vec<Vec<SpanView>>,
+        selected: Option<u32>,
+    },
+    Table {
+        header: Vec<SpanView>,
+        rows: Vec<Vec<SpanView>>,
+        widths: Vec<u16>,
+    },
+    KeyValue {
+        rows: Vec<KeyValueRow>,
+    },
+    Gauge {
+        ratio: f64,
+        label: SpanView,
+    },
+    Stack {
+        vertical: bool,
+        children: Vec<WidgetView>,
+        sizes: Vec<u16>,
+    },
+    Block {
+        title: Option<SpanView>,
+        child: Vec<WidgetView>,
+    },
+}
+
+#[uniffi::remote(Record)]
+pub struct SpanView {
+    pub text: String,
+    pub style: StyleToken,
+    pub bold: bool,
+    pub italic: bool,
+}
+
+#[uniffi::remote(Record)]
+pub struct KeyValueRow {
+    pub key: SpanView,
+    pub value: Vec<SpanView>,
+}
+
+#[uniffi::remote(Record)]
+pub struct PluginKey {
+    pub plugin: String,
+    pub key: String,
+    pub name: String,
+    pub description: String,
 }
 
 #[uniffi::remote(Record)]
