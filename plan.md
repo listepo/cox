@@ -46,7 +46,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.17.2 | todo | P3 | 1 | 0% | |
 | T37.19.5 | todo | P2 | 3 | 0% | |
-| T37.19.6 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.20.5 | todo | P2 | 2 | 0% | |
 | T37.21.11 | todo | P2 | 2 | 0% | |
 | T37.22.3 | todo | P1 | 2 | 0% | |
@@ -2866,12 +2865,6 @@ Check: generated `Tokens.swift` values are unchanged or the changed snapshots ar
 Depends: — · Size: ~120 · Files: `desktop/design/tokens/*.json`, `…/Foundations/…`
 Goal: an on-accent text token replaces the `Color.white` constant on the primary button; a dark e1 highlight token so dark controls lose the bright rim; `surface.capsuleBorder` is either used by capsules or removed; disabled toggle and slider visuals; check the faint vertical bars at a stroked pill's ends on screen and fix them if they are real.
 Check: snapshots re-recorded on purpose for the changed foundations, and every other suite passes unchanged; SwiftLint's no-literal rules stay clean.
-
-#### T37.19.6 Increase Contrast in `Appearance`
-
-Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/Appearance.swift`
-Goal (A100): when the system asks for more contrast (`colorSchemeContrast == .increased`), `Appearance` turns the specular sweep off (`MaterialToken.solidSpecular`) and raises window and pane opacity by A89's quarter rule — `opacity' = 1 − (1 − opacity) × glassKeep`, with a new `material.highContrast.glassKeep = 0.25` token in `base.json` regenerated into `MaterialToken`; Reduce Transparency still wins and forces Solid — the part of A89's High Contrast rule that lives in `material.*` numbers rather than colour tokens (T37.17.1 did the colours).
-Check: a snapshot per material with increased contrast shows no sweep and a more opaque glass; the default snapshots are unchanged.
 
 #### T37.20.5 Atom tokens: project purple, RiskChip colours, named constants
 

@@ -40,7 +40,6 @@
 - T37.33. Performance budget suite
 - T37.17.2. `letterSpacing` in em, mockups on `tokens.css`
 - T37.19.5. Foundation tokens: on-accent text, dark highlight, disabled controls
-- T37.19.6. Increase Contrast in `Appearance`
 - T37.20.5. Atom tokens: project purple, RiskChip colours, named constants
 - T37.21.11. Molecule legibility and small fixes
 - T37.22.3. App window setup and the public CoxUI surface

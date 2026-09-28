@@ -5134,3 +5134,18 @@ Check:
 - Dry runs: a `cox-sanitize` edit gives `rdeps(=cox-sanitize)`; an untracked file in `cox-patch` gives `rdeps(=cox-patch)`; an edited `Cargo.lock` runs the workspace; `ideas.md` alone or a clean tree prints "nothing to run"; `just --dry-run check-all` expands to the old run plus dunnage; nextest parses the generated filter. Unit tests 6/6; fmt clean.
 - After merging into `p37-desktop`: `python -m unittest test_changed_tests` OK; a `cox-sanitize` edit dry-runs `rdeps(=cox-sanitize)`.
 Not done: `check-all` itself was not run (load). `scripts/leftovers.sh` (in `just check`) already fails on `p37-desktop` before this change, on done.md/compat.md entries.
+
+#### T37.19.6 Increase Contrast in `Appearance`
+
+Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/Appearance.swift`
+Goal (A100): when the system asks for more contrast (`colorSchemeContrast == .increased`), `Appearance` turns the specular sweep off (`MaterialToken.solidSpecular`) and raises window and pane opacity by A89's quarter rule — `opacity' = 1 − (1 − opacity) × glassKeep`, with a new `material.highContrast.glassKeep = 0.25` token in `base.json` regenerated into `MaterialToken`; Reduce Transparency still wins and forces Solid — the part of A89's High Contrast rule that lives in `material.*` numbers rather than colour tokens (T37.17.1 did the colours).
+Check: a snapshot per material with increased contrast shows no sweep and a more opaque glass; the default snapshots are unchanged.
+Status: done 2026-09-28
+Result:
+- `desktop/macos/Packages/CoxUI/Sources/CoxUI/Foundations/Appearance.swift`: `EffectiveAppearance` reads `\.colorSchemeContrast`; `effective(…, increaseContrast:)` (default `false`) records it; under Increase Contrast `specular` is `solidSpecular` and `backgroundOpacity` applies A100's rule `1 − (1 − opacity) × MaterialToken.highContrastGlassKeep` to window, pane and readable glass. Reduce Transparency still wins and forces Solid.
+- `material.highContrast.glassKeep = 0.25` in `desktop/design/tokens/base.json`, generated into `Tokens.swift`; `high-contrast.mjs` reads it instead of its own `GLASS_KEEP` and rejects a value outside [0, 1) (the high-contrast palettes came out byte-identical). DESIGN.md §1.6, §3.5, §6.1 and §8 document it.
+Deviations: `Specular.swift` checks the effective specular instead of the material (2 lines; Solid unchanged); 7 files, of which `Appearance.swift` and `Specular.swift` are hand-written source.
+Check:
+- `npm ci && npm run build` (184 pairs pass in each high-contrast palette) and `npm run check`. CoxUI Foundations, Appearance, ButtonStyle, CapsuleStyle, MaterialPicker, AppearancePopover 32/32 with 6 new `glassPaneIncreasedContrast` snapshots (looked at: no sweep, denser glass), default snapshots unchanged; SettingsScreen 7/7; 3 new unit tests; swiftlint and swift-format clean.
+- After merging into `p37-desktop`: CoxUI `Foundations|Appearance|ButtonStyle|CapsuleStyle|MaterialPicker|Settings|GlassPane` 42/42.
+Not done: nothing.
