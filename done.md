@@ -3504,3 +3504,180 @@ Deviations: Markdown goes under its own pasteboard type next to plain text in `.
 Check: `swift test --no-parallel` 11/11 (5 new in `SelectionTests.swift`, real `NSEvent` drags in an offscreen window, a private named `NSPasteboard`): `dragAcrossThreeBlocksCopiesTheirMarkdownInOrder`, `withTheSettingOffTheDragStaysInItsFirstBlockBothWays`; both clamp tests fail with the clamp disabled; `swift build --build-tests` no warnings; `swift-format lint --strict` and `swiftlint --strict` clean (scratch manifests without the plugin). Commit 8ba9d64.
 
 Not done: the "Copy as Markdown" context-menu item and ⇧-click gutter selection (DT§5.2) are not in this card. Mid-stream, `Block.assistant.text` can lag because `docTail` updates only the doc, so a whole-reply copy while streaming may return an older source (fix belongs in `SessionStore`). Partial-reply copy assumes the doc-block layout `TranscriptText.run` produces now.
+
+#### T37.20.1 `Spinner` and `ProgressRing`
+
+Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
+Goal: the DS§6.2 indeterminate spinner and `ProgressRing(fraction)`, with the Reduce Motion fallback resolved in `Appearance`.
+Check: snapshot per variant × light/dark × Solid/Frosted; under Reduce Motion the spinner does not rotate.
+Status: done 2026-09-28
+Result: `Atoms/Spinner.swift` — the mockup's `.spin`: a `fill.secondary` ring with an `accent` quarter arc, turned by a new `coxSpin(period:)` modifier in `Foundations/Appearance.swift` that holds it still under Reduce Motion (Reduce Motion stays read only in Foundations). `Atoms/ProgressRing.swift` — `ProgressRing(fraction)`, the mockup's `.ring`: an `accent` arc clockwise from twelve o'clock over `fill.secondary`; the fraction clamps to 0…1 (NaN as 0) and VoiceOver reads a percent. Headers name their DS§6.2 rows; `#Preview`s through `PreviewMatrix`; fixtures in `Previews/PreviewState+Meter.swift`; tests `ProgressAtomTests.swift` (16 snapshots).
+
+Deviations: the spinner snapshot is taken with Reduce Motion on (the still pose), so the image does not depend on first-frame timing. Named private constants: spinner 12 pt, line 2 pt, arc 0.25; ring 14 pt, line 3 pt; spin period 1 s.
+
+Check: recorded once, two runs pass without re-recording (5 tests); `spinnerTurns` sees more than one distinct frame, `spinnerHoldsStillUnderReduceMotion` exactly one; `swiftlint --strict` and `swift-format lint --strict` clean. Commit 282f6e3.
+
+Not done: nothing.
+
+#### T37.20.2 `Sparkline` and `StackedBar`
+
+Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
+Goal: the token meter's data graphics: `Sparkline(samples)` (tint, gradient fill) and `StackedBar(segments)` (segment colours from tokens).
+Check: snapshots for empty, one-sample and full series and for a bar of each segment mix × light/dark.
+Status: done 2026-09-28
+Result: `Atoms/Sparkline.swift` — `Sparkline(samples, tint:)`: a tinted line over a fill fading to nothing (tint defaults to `meter.received`); the largest sample at the top, negative or non-finite samples drawn as zero, one sample a flat line; fills the caller's frame; hidden from VoiceOver (the meter reads its numbers, DS§8). `Atoms/StackedBar.swift` — `StackedBar(segments)`: one segment per context part (system, tools, instruction files, history) in `context.*` colours over a `fill.secondary` capsule; an overrunning share is cut; VoiceOver reads each part with its share. Fixtures and preview wrappers in `PreviewState+Meter.swift`; tests `MeterAtomTests.swift` (32 snapshots: empty, one-sample, full and sent-tint series; empty, history-only, the mockup's turn and full bars; × light/dark × Solid/Frosted).
+
+Deviations: snapshots also cover Solid/Frosted. Named private constants: line 1.5 pt, fill opacity 0.35, insets 2 pt top and 1 pt bottom, bar height 12.
+
+Check: recorded once, two runs pass (6 tests); both linters clean. The whole CoxUI suite (48 tests, 11 suites) failed once on the older timing test `SegmentedTests.reduceMotionCrossFadesTheSelection` (missed its mid-fade frame under load) and passed alone and in the next two full runs. Commit ec3f05e.
+
+Not done: nothing.
+
+#### T37.21 `CoxUI` Molecules
+
+Depends: T37.20.1–T37.20.4 · Size: split at claim · Files: `…/CoxUI/Molecules/*`
+Goal: every DS§6.3 molecule built only from atoms and foundations.
+Check: snapshot suite green; no molecule imports `CoxCore`; no styling modifier is applied to an atom from outside it except through the atom's own parameters.
+Status: done 2026-09-28
+Result: first set of molecules (split at claim; the rest moved to T37.21.1–T37.21.10) — the ones the window shell (T37.22), Settings (T37.30.1) and the token popover (T37.25) need. `Sources/CoxUI/Molecules/`: SessionRow, SessionFilter, Breadcrumb, ModelCapsule, CostCapsule, ModeSegmented, StopButton, LabeledToggle, LabeledSlider, KeyValueGrid — headers naming their DS§6.3 rows, a `#Preview` per variant, SwiftUI-only imports; fixtures in `Previews/PreviewState+Shell.swift` and `+Settings.swift`; 84 snapshots in `ShellMoleculeTests.swift` and `SettingMoleculeTests.swift`. Foundations: `.symbolStyle(_:)` draws an SF Symbol per DS§3.7 (IconTile and Thumbnail use it, images unchanged); `CoxSegmented` gains `look:`. Timing fix: the segmented slide/cross-fade and spinner tests hold the animation half-way and wait for the first changed frame (`SnapshotHost.bitmap(until:limit:)`), so load delays but cannot change what they see. DESIGN.md §3.7, §6.1, §6.3 updated.
+
+Deviations: ~590 source lines in 17 files. SessionRow cost uses `text.secondary` (readable on frosted glass, DS§8) instead of the mockup's tertiary; its title uses `.body` (no 13 pt medium token); the slider heading reuses SectionHeader; Bypass shows in the mode control only while on. Molecule snapshots render at their ideal size (`fixedSize`) because the harness sizes a sample up to half a point small — fixing the harness would re-record every reference. No new private constants: nearest tokens stand in (grid gaps `Space.xs` × `Space.l`, detail indent `Space.ml`, row gap `Space.m` for 9 px).
+
+Check: the reworked Reduce Motion test fails with the gate removed from `coxMatchedGeometry`, the spinner test with it removed from `coxSpin`; timing tests pass three runs under 12 CPU burners; full `swift test` 62 tests in 16 suites pass twice with nothing re-recorded; `swiftlint --strict` and `swift-format lint --strict` clean (plugin-free manifest locally). Commits b9dacd8, 8b7d55c, be87348.
+
+Not done: T37.21.1–T37.21.10; TokenMeter stays with T37.25.
+
+#### T37.21.8 `MaterialPicker`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the appearance popover's glass picker (frosted, glossy, solid) with depth preview. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `Molecules/MaterialPicker.swift` — `MaterialPicker(selection: Binding<GlassMaterial>)`: three swatch tiles in the mockup's order (frosted, glossy, solid) over the existing `GlassMaterial` values; tiles are readable glass at e1 with a hairline, the selected one with an `accent` ring; each swatch shows a small pane in its own material over a wallpaper, lifted to e2 at the user's Depth (`Appearance.swatch(_:)` keeps depth and text size); VoiceOver sees a picker. Fixture `Previews/PreviewState+Appearance.swift`; tests `MaterialPickerTests.swift` (20 snapshots, 2 unit tests); DS§6.3 row updated.
+
+Deviations: not built on `CoxSegmented` (capsule-high text segments cannot show glass); tile padding `Space.xs`, swatch radius `Radius.m` (concentric, DS§3.3); swatch height 40 pt as a private constant; a hairline rim keeps tiles visible at Flat.
+
+Check: snapshot per selected material plus Flat × light/dark × Solid/Frosted; SwiftUI-only imports; full suite 69 tests in 20 suites pass twice without re-recording; `swiftlint --strict`, `swift-format lint --strict` clean (plugin-free manifest locally). Commit 3eb1f80.
+
+Not done: nothing.
+
+#### T37.21.9 `ChangedFileRow` and `CheckpointRow`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: a changed file with diff stat and actions, and a rewind checkpoint row. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `Molecules/ChangedFileRow.swift` and `Molecules/CheckpointRow.swift` over a shared `Molecules/InspectorRow.swift` (also `RowAction`: title, symbol, `@MainActor` perform). The changed-file row shows `pencil`/`doc.text` for edited/created, the path with its folder dimmed so the file name survives truncation, and a `DiffStat`; the checkpoint row a clock, label and time. Selected rows sit on `accent.soft` at e1 like `SessionRow`; action icons appear on hover or selection with tooltips and as VoiceOver actions. Fixtures `Previews/PreviewState+Inspector.swift`; tests `InspectorRowTests.swift` (16 snapshots, 2 path-split unit tests); DS§6.3 row updated.
+
+Deviations: the shared layout is a third file; the time uses `text.secondary` (readable on frosted glass, DS§8); `DiffStat` shows "−0" for add-only files (atom unchanged); the clock is SF Symbol `clock`, not yet in DS§3.7.
+
+Check: snapshot per variant × light/dark × Solid/Frosted; SwiftUI-only imports; full suite as in T37.21.8. Commit a0a83a6.
+
+Not done: `clock` in the DS§3.7 symbol table; `SessionRow` could reuse the shared selected-row styling.
+
+#### T37.22 Window shell: split view, sidebar, toolbar, inspector frame
+
+Depends: T37.16, T37.21 · Size: ~200 · Files: `…/CoxUI/Organisms/Sidebar.swift`, `…/Organisms/SessionToolbar.swift`, `…/Screens/MainScreen.swift`
+Goal: DS§4 layout with floating glass panes, collapsible sidebar and inspector, the window material from `[desktop.appearance]`.
+Check: snapshots of the main screen in Solid, Frosted and Glossy match `desktop/design/mockups` screens 28–29 in structure.
+Status: done 2026-09-28
+Result: `CoxUI/Screens/MainScreen.swift` composes the window: sidebar, toolbar, transcript column and inspector on the window glass. It takes `MainScreenState`, emits `MainScreenIntent`, and has slots for the transcript (T37.23/T37.24) and inspector tab content (T37.29). The side panes fold with `Motion.durationSlow`. The organisms in `Organisms/`: `ShellPane` draws the window (e5), side (e2) and column (flat) layers from `coxAppearance`; `Sidebar` has the filter, status sections with counts, foldable projects and a footer; `SessionToolbar`; `Inspector` has five tabs and an empty slot. Fixtures from mockup screen 28 are in `Previews/PreviewState+Window.swift`. DESIGN.md §4, §6.1, §6.4 and §6.5 are updated.
+Deviations:
+- The screen lays out its own panes instead of using `NavigationSplitView`: the system split view draws its own glass and toolbar, ignores `[desktop.appearance]` and cannot be snapshotted (DS§4 says why).
+- 7 source files instead of 3 (adds `ShellPane`, `Inspector`, the fixtures and an `isIcon` variant in `CapsuleStyle`).
+- Main-screen snapshots are recorded at 1×; organism snapshots are 2×.
+- Everything is `internal`; the app target will need a public surface.
+- One new named constant: `windowButtonsWidth = 68`.
+Check: `swift test`, run twice against the committed snapshots: 69/69 passed both times (19 new MainScreenTests snapshots). `swiftlint lint --strict` and `swift-format lint --strict` are clean. Mockup screens 28–29 were compared by eye.
+Not done:
+- Shortcuts: DS§4 says ⌘0/⌘⌥0 but DT§5 says ⌘⌃S/⌥⌘I, so neither is bound.
+- Bypass strip: DS puts it at the window top, DT under the toolbar, so it is not drawn.
+- The inspector overlay below 1280 pt and the app window setup (hidden title bar, behind-window blur) are in ideas.md.
+
+#### T37.21.1 `ToolHeader`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the tool card header: icon tile, summary line, state and duration, the disclosure chevron. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `CoxUI/Molecules/ToolHeader.swift` shows the tool icon, a summary with the subject in bold (monospaced for a command), lines added and removed, the risk chip, the state (spinner, check or cross) with its duration, and the disclosure chevron. A header that can open is a button with hover and press states; when expanded it sits on `fill.primary` over a hairline. Fixtures are in `Previews/PreviewState+Tool.swift`; `ToolMoleculeTests` has 20 snapshots (edited, expanded, running, explored, failed). DESIGN.md has the ToolHeader row.
+Deviations: ~181 source lines against a ~150 estimate. A small refactor of the state glyph (no visual change) landed in the T37.21.4 commit.
+Check: `swift test -j 4`, second run against the committed snapshots: 68 tests in 19 suites passed. `swift-format lint --strict` and `swiftlint lint --strict` are clean. After merging into `p37-desktop`, `swift build --build-tests` succeeded.
+Not done: none.
+
+#### T37.21.2 `DiffLineView` and `DiffHunkView`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: diff lines (added, removed, context, gutter numbers) and a hunk with its header, from plain values. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `CoxUI/Molecules/CodeRun.swift` is one value type for code text plus its syntax role. CodeBlockView shares it, and the app maps Rust `StyledDoc` spans to it. `DiffLineView` shows the gutter number, the sign and highlighted code on the added or removed colours. `DiffHunkView` shows the `@@` header with one gutter width for the whole hunk, on `surface.code`. Fixtures are in `PreviewState+Code.swift`. `CodeMoleculeTests` has 16 snapshots plus a unit test of how runs become text. DESIGN.md row updated.
+Deviations: context line numbers use `text.secondary` (the mockup's tertiary misses 4.5:1, DS§8). The hunk header uses `font.mono.code` because there is no 11 pt mono token. About 187 lines over 3 source files.
+Check: the same runs as T37.21.1: 68/68 passed with no re-recording; lints clean; the merged build succeeded.
+Not done: none.
+
+#### T37.21.3 `CodeBlockView`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: a highlighted code block with language label and copy button, taking pre-styled runs as plain values. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `CoxUI/Molecules/CodeBlockView.swift` is a `radius.l` card. It has a language label and an icon-only copy button (`doc.on.doc`, with a tooltip and an accessibility label) over a hairline, and highlighted code that scrolls sideways instead of wrapping. Copy is a closure; the app owns the pasteboard. 8 snapshots, with and without a language. DESIGN.md row updated.
+Deviations: none.
+Check: the same runs as T37.21.1: 68/68 passed with no re-recording; lints clean; the merged build succeeded.
+Not done: none.
+
+#### T37.21.4 `TerminalTail`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the last lines of a running command in an inset well, monospaced, with the exit state. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `CoxUI/Molecules/TerminalTail.swift` shows lines in an inset well on `surface.terminal`, each cut with an ellipsis, in `font.mono.terminal`. Lines and the exit status arrive as ready strings. While running there is no exit line. Success shows a check with the status in `text.terminalOk`. Failure shows a `status.danger` cross with the status in `text.terminal`, because danger-coloured text misses 4.5:1 on the well. 12 snapshots. DESIGN.md row updated.
+Deviations: carries the small ToolHeader state-glyph refactor (no visual change).
+Check: the same runs as T37.21.1: 68/68 passed with no re-recording; lints clean; the merged build succeeded.
+Not done: none.
+
+#### T37.21.5 `UserBubble` and `ThinkingDisclosure`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the user turn bubble with attachments row, and the collapsible thinking block. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `CoxUI/Molecules/UserBubble.swift` shows the prompt on a readable face at e2, with a row of `Thumbnail`s built from `UserBubble.Attachment`. `ThinkingDisclosure.swift` shows a chevron and the summary; opened, it shows the reasoning in italics beside a hairline, and the open state is the view's own `@State` animated with `Motion.durationBase`. Fixtures are in `Previews/PreviewState+Turn.swift` and snapshots in `TurnMoleculeTests`. DS§6.3 rows give the signatures.
+Deviations: the bubble draws its glass face in `.background`, because the specular sweep over the content washed out the prompt text (DS§8). The nearest tokens stand in for the mockup's 14 px sides (`Space.l`) and its 2 px thinking rule (the hairline).
+Check: each new suite recorded its snapshots once and then passed without re-recording. After the last commit the full `swift test` ran twice: 71 tests in 21 suites passed both times. `swiftlint lint --strict` and `swift-format lint --strict` are clean. After merging into `p37-desktop`, `swift build --build-tests` succeeded.
+Not done: none.
+
+#### T37.21.6 `NoticeRow`, `TurnDivider` and `TurnMeta`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: notices (info, warning, error), the divider between turns, and the per-turn meta line (tokens, cost, duration, stop reason). Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `NoticeRow` (info, warning, error, optional symbol), `TurnDivider` (`Hairline` atoms around an optional caption) and `TurnMeta` (a `Facts` value in the mockup's order) are in `CoxUI/Molecules/`, with fixtures and snapshots in the turn files and a unit test on the order of the meta facts.
+Deviations: warning and error text is `text.primary`, with the colour on the symbol only; the meta line is `text.secondary` in `font.footnote`. The mockup's red and tertiary text miss DS§8.
+Check: each new suite recorded its snapshots once and then passed without re-recording. After the last commit the full `swift test` ran twice: 71 tests in 21 suites passed both times. `swiftlint lint --strict` and `swift-format lint --strict` are clean. After merging into `p37-desktop`, `swift build --build-tests` succeeded.
+Not done: none.
+
+#### T37.21.7 `ComposerChip`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: the composer's mention, attachment and command chips with remove affordance. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `CoxUI/Molecules/ComposerChip.swift`, `ComposerChip(label, kind:, shortcut:, onRemove:)`, handles mention, attachment and command chips. It shows a symbol, the label, an optional `KeyCap` and an `xmark` remove button on a readable capsule at e1; mention and command chips use the accent tint. Fixtures are in `PreviewState+Composer.swift` and snapshots in `ComposerMoleculeTests`.
+Deviations: `Size.buttonHeightSmall` and `Space.xs` stand in for the 26 px height and 5 px gap. The symbols were picked in the task: `at`, `paperclip`, `bolt`.
+Check: each new suite recorded its snapshots once and then passed without re-recording. After the last commit the full `swift test` ran twice: 71 tests in 21 suites passed both times. `swiftlint lint --strict` and `swift-format lint --strict` are clean. After merging into `p37-desktop`, `swift build --build-tests` succeeded.
+Not done: none.
+
+#### T37.21.10 `SettingRow`
+
+Depends: T37.21 · Size: ~150 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Molecules/*`, its tests and snapshots
+Goal: a Settings row — label, control and the source-layer badge (mockup `.group .gr`); DS§6.3 gains its row. Built only from atoms and foundations (DS§6.3).
+Check: snapshot per variant × light/dark × Solid/Frosted; imports SwiftUI only.
+Status: done 2026-09-28
+Result: `CoxUI/Molecules/SettingRow.swift` shows a LabeledToggle, a LabeledSlider or a `SettingLabel` beside any control, followed by a Badge that names the source layer. `SettingSource` lists default, user, project, claude-settings, env and flag. A value from project, claude-settings, env or flag is read-only: the control is disabled and a lock with a tooltip sits before the badge. A unit test checks which layers lock a setting. DS§6.3 has a row for it.
+Deviations: adds the `claude-settings` layer, which `cox-config` reports (D13). `SettingLabel.swift` is extracted from `LabeledToggle`; its snapshots are unchanged.
+Check: each new suite recorded its snapshots once and then passed without re-recording. After the last commit the full `swift test` ran twice: 71 tests in 21 suites passed both times. `swiftlint lint --strict` and `swift-format lint --strict` are clean. After merging into `p37-desktop`, `swift build --build-tests` succeeded.
+Not done: none.

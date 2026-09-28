@@ -172,6 +172,7 @@ names map one-to-one:
 | paint | `paintbrush` | refresh | `arrow.clockwise` |
 | insp | `sidebar.right` | comment | `text.bubble` |
 | sparkle | `sparkle` | bolt | `bolt` |
+| branch | `arrow.triangle.branch` | stop | `stop.fill` |
 
 ## 4. Layout
 
@@ -187,7 +188,13 @@ names map one-to-one:
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- `NavigationSplitView` with three columns; sidebar and inspector are collapsible (⌘0, ⌘⌥0).
+- `MainScreen` lays the panes out itself (`ShellPane`: window, sidebar, column, inspector) rather than
+  in a `NavigationSplitView`: the system's split view draws its own sidebar glass and toolbar, which
+  follow neither `[desktop.appearance]` (material, opacity, Depth) nor the tokens, and a window
+  toolbar cannot be rendered by the snapshot harness. Sidebar and inspector are collapsible; the
+  system window buttons sit over the sidebar's top row, and the toolbar leaves room for them while the
+  sidebar is hidden. The app window hides its title bar and puts the behind-window blur under the
+  window pane.
 - The reading column is `size.readingWidth` wide and centred; the composer shares its width.
 - Minimum window `size.windowMinWidth` × `size.windowMinHeight`. Below 1280 pt the inspector becomes
   an overlay instead of a column.
@@ -231,9 +238,10 @@ component.
 | `.hairline(_ edges:)`, `.hairline(in:)` | 0.5 pt `separator` line on edges or around a shape | `size.hairline`, `separator` | `border:.5px` |
 | `.insetWell(_ surface:, cornerRadius:)` | Pressed-in look for terminal and fields | `surface.terminal`, inner shadow | `.tail`, `.filter` |
 | `.textStyle(_ token:, tabularDigits:)` | Font at the text size, line height, tracking, tabular digits | `font.*` | font rules |
+| `.symbolStyle(_ token:)` | An SF Symbol at a font token's size, weight medium, rendered hierarchical (§3.7) | `font.*` | `svg` icons |
 | `CoxButtonStyle(.primary/.secondary/.danger/.plain, size: .regular/.small)` | All push buttons: e1 face with specular; hover tints, press sinks to e0; disabled keeps the readable floor and a `text.secondary` label | `size.button*`, `radius.m`, `font.control`, `fill.*` | `.pb`, `.pri`, `.dan` |
-| `CapsuleStyle(.plain/.active)` | Toolbar capsules and filter chips: readable glass face at e1 with a hairline; active takes `surface.window`, an `accent` label and an `accent.soft` halo; states as `CoxButtonStyle` | `size.capsuleHeight`, `radius.capsule`, `surface.capsule`, `font.control` | `.cap`, `.cap.hot` |
-| `CoxSegmented(_ label:, selection:, options:, title:)` | Segmented control; the e1-lifted selection pill slides between segments, or cross-fades under Reduce Motion (`coxMatchedGeometry`). A view, not a `PickerStyle`: SwiftUI has no public hook to restyle segments on macOS | `e1`, `surface.capsule`, `font.control` | `.seg` |
+| `CapsuleStyle(.plain/.active, isIcon:)` | Toolbar capsules and filter chips; `isIcon` makes a round capsule for a symbol alone (`.cap.icon`): readable glass face at e1 with a hairline; active takes `surface.window`, an `accent` label and an `accent.soft` halo; states as `CoxButtonStyle` | `size.capsuleHeight`, `radius.capsule`, `surface.capsule`, `font.control` | `.cap`, `.cap.hot` |
+| `CoxSegmented(_ label:, selection:, options:, look:, title:)` | Segmented control; the e1-lifted selection pill slides between segments, or cross-fades under Reduce Motion (`coxMatchedGeometry`). `look` marks the selected segment per option: `plain`, `tinted(colour)` label, or `filled(colour)` pill with a white label (the §3.1 mode colours). A view, not a `PickerStyle`: SwiftUI has no public hook to restyle segments on macOS | `e1`, `surface.capsule`, `font.control` | `.seg` |
 | `CoxToggleStyle`, `CoxSlider(_ label:, value:, in:)` | Toggles and sliders with the shared 3D `Knob` (white disc, hairline rim, e1) over an `insetWell` track filled with `accent`; the toggle's knob slides, or cross-fades under Reduce Motion. The slider is a view: macOS has no public `SliderStyle` | `e1`, `accent`, `fill.secondary` | `.tog`, `.slider` |
 
 ### 6.2 Atoms
@@ -258,32 +266,34 @@ component.
 
 | Molecule | Built from | CSS |
 | --- | --- | --- |
-| `SessionRow` | StatusDot, title, subtitle, cost | `.row` |
-| `SessionFilter` | search field, KeyCap | `.filter` |
-| `Breadcrumb` | title, project, branch | `.crumb` |
-| `ModelCapsule`, `CostCapsule` | CapsuleStyle, ProgressRing | `.cap` |
-| `ModeSegmented` | SegmentedStyle; ask, plan, auto, bypass | `.seg` |
-| `StopButton` | KeyCap | `.stop` |
-| `ToolHeader` | IconTile, summary, RiskChip, status, disclosure | `.tool .h` |
-| `DiffLineView`, `DiffHunkView` | gutter, syntax runs | `.diff .ln`, `.hh` |
-| `CodeBlockView` | header, copy button, highlighted runs | `.codeblock` |
-| `TerminalTail` | insetWell, lines | `.tail` |
-| `UserBubble` | text, Thumbnail | `.user` |
-| `ThinkingDisclosure` | caption, disclosure | `.think` |
-| `NoticeRow`, `TurnDivider`, `TurnMeta` | icon, caption | `.notice`, `.divider`, `.meta` |
-| `ComposerChip` | icon, label, KeyCap | `.chip` |
+| `SessionRow(item, isSelected:)` | StatusDot, title, subtitle, cost; selected on `accent.soft` at e1 | `.row` |
+| `SessionFilter(text:, prompt:, shortcut:)` | search field in an `insetWell`, KeyCap | `.filter` |
+| `Breadcrumb(title, project:, branch:)` | title, project, branch | `.crumb` |
+| `ModelCapsule(model, isOpen:)`, `CostCapsule(cost:, context:, fraction:, isOpen:)` | CapsuleStyle (active while open), ProgressRing | `.cap` |
+| `ModeSegmented(selection:)` | CoxSegmented; ask, plan, auto, bypass (offered only while on) | `.seg` |
+| `StopButton` | KeyCap; inverted `text.primary` capsule answering ⌘. | `.stop` |
+| `ToolHeader(item, isExpanded:)` | IconTile, summary (subject bold, monospaced for a command), DiffStat, RiskChip, Spinner / check / cross and duration, disclosure chevron; expanded on `fill.primary` over a hairline | `.tool .h` |
+| `DiffLineView(line, widestNumber:)`, `DiffHunkView(header:, lines:)` | gutter number (`text.secondary`, `text.primary` on a `diff.*Gutter`), sign, `CodeRun` syntax runs on `diff.add` / `diff.del`; the hunk: header on `fill.primary`, one gutter width, `surface.code` | `.diff .ln`, `.hh` |
+| `CodeBlockView(language:, lines:, copy:)` | header (language, icon-only `doc.on.doc` copy button, `CoxButtonStyle(.plain, size: .small)`), `CodeRun` lines scrolling sideways on `surface.code`, `radius.l` | `.codeblock` |
+| `TerminalTail(lines, exit:)` | insetWell on `surface.terminal`, `font.mono.terminal` lines in `text.terminal`, cut with an ellipsis; exit line: check + status in `text.terminalOk`, or `status.danger` cross + status in `text.terminal`; none while running | `.tail` |
+| `UserBubble(text, attachments:)` | prompt in `font.transcript`, a row of Thumbnail; readable face at e2, the glass sweep behind the text | `.user`, `.user .att` |
+| `ThinkingDisclosure(summary, text:, isExpanded:)` | chevron and caption summary; open, the reasoning in italic caption beside a hairline; open state is the view's own | `.think`, `.think-body` |
+| `NoticeRow(text, kind:, symbol:)`, `TurnDivider(label)`, `TurnMeta(facts)` | symbol in the kind's colour (info, warning, error) + caption in a readable colour / Hairline, caption, Hairline / model, tokens, cache, cost, duration, stop reason in tabular footnote | `.notice`, `.divider`, `.meta` |
+| `ComposerChip(label, kind:, shortcut:, onRemove:)` | mention, attachment, command: symbol, caption label, optional KeyCap and `xmark` remove button on a readable capsule at e1; mention and command tinted `accent` | `.chip`, `.chip.blue` |
 | `TokenMeter` | ↑ sent, ↓ received, StatusDot, tok/s, Sparkline | `.meter` |
-| `KeyValueGrid` | rows of label / values | `.tokpop .grid` |
-| `MaterialPicker` | three swatches | `.mat` |
-| `LabeledSlider`, `LabeledToggle` | CoxSliderStyle / CoxToggleStyle | `.appear .lbl` |
-| `ChangedFileRow`, `CheckpointRow` | icon, path, DiffStat / time | inspector rows |
+| `KeyValueGrid(columns:, rows:)` | rows of label / values under optional column headers; detail rows indented in `text.secondary` | `.tokpop .grid` |
+| `MaterialPicker(selection:)` | three swatch tiles (Frosted, Glossy, Solid) on readable glass at e1 with a hairline, the selected one ringed in `accent`; each shows a pane of its own material over a wallpaper, lifted to e2 at the user's Depth | `.mat` |
+| `LabeledSlider(title, value:, in:, valueText:, ends:)`, `LabeledToggle(title, detail:, isOn:)` | SectionHeader + CoxSlider + end labels / CoxToggleStyle with an optional detail line | `.appear .lbl`, `.row2` |
+| `ChangedFileRow(file, isSelected:, actions:)`, `CheckpointRow(checkpoint, isSelected:, actions:)` | the shared `InspectorRow`: DS§3.7 glyph (`pencil`/`doc.text` by change, `clock`), path with its directory in `text.secondary` and the file name kept on truncation / label, DiffStat / time in `text.secondary`, then the `RowAction` icon buttons (tooltip = title) while hovered or selected; selected on `accent.soft` at e1 | `.fr` (inspector rows) |
+| `SettingRow(source:, content:)`, `SettingRow(title, detail:, source:, control:)`, `SettingLabel(title, detail:)` | a LabeledToggle / LabeledSlider, or a SettingLabel beside any control; then a Badge of the source layer (`SettingSource`: default, user, project, claude-settings, env, flag). A layer above the user's config (project, claude-settings, env, flag) makes the row read-only: the control is disabled and a lock precedes the badge. LabeledToggle names its setting with the same SettingLabel | `.group .gr` |
 
 ### 6.4 Organisms
 
 | Organism | Built from | CSS |
 | --- | --- | --- |
-| `Sidebar` | SessionFilter, SectionHeader, SessionRow, SidebarFooter | `.sidebar` |
-| `SessionToolbar` | Breadcrumb, ModelCapsule, ModeSegmented, CostCapsule, StopButton | `.toolbar` |
+| `ShellPane(.window/.sidebar/.column/.inspector)` | glassPane, hairline, elevation: e5 window, e2 side panes, flat column | `.window`, `.sidebar`, `.col`, `.insp` |
+| `Sidebar` | ShellPane, SessionFilter, SectionHeader + CountBadge, project disclosure, SessionRow, footer (New session, provider StatusDot) | `.sidebar` |
+| `SessionToolbar` | Breadcrumb, ModelCapsule, ModeSegmented, CostCapsule, StopButton, icon CapsuleStyle buttons (Appearance, inspector, sidebar while hidden) | `.toolbar` |
 | `ToolCard` | ToolHeader + one body: DiffHunkView, TerminalTail, CodeBlockView | `.tool`, `.tool.exp` |
 | `ApprovalCard` | header, command well, reasons, CoxButtonStyle row | `.appr` |
 | `AssistantMessage` | markdown runs, InlineCode, CodeBlockView | `.asst` |
@@ -292,12 +302,13 @@ component.
 | `Composer` | text field, ComposerChip, TokenMeter, send button | `.composer` |
 | `TokenPopover` | metric, Sparkline, KeyValueGrid, StackedBar, legend | `.tokpop` |
 | `AppearancePopover` | MaterialPicker, LabeledSlider ×3, LabeledToggle ×2 | `.appear` |
-| `Inspector` | tabs + ChangedFileRow, CheckpointRow, KeyValueGrid | `.insp` |
+| `Inspector` | ShellPane, title, tab strip; each tab's content (ChangedFileRow, CheckpointRow, KeyValueGrid) is a slot | `.insp` |
 
 ### 6.5 The glass main screen, decomposed
 
-`MainScreen` = `Sidebar` + `SessionToolbar` + `TranscriptView` + `Composer` + `Inspector`, with
-`AppearancePopover` or `TokenPopover` as popovers. It holds no styling of its own.
+`MainScreen` = `ShellPane(.window)` holding `Sidebar` + `SessionToolbar` + `ShellPane(.column)`
+(`TranscriptView` + `Composer`) + `Inspector`, with `AppearancePopover` or `TokenPopover` as popovers.
+It holds no styling of its own; it takes `MainScreenState` and reports `MainScreenIntent`.
 
 ## 7. Data shown in the token meter
 

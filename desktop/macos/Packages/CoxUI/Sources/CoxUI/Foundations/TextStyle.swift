@@ -11,6 +11,12 @@ extension View {
   func textStyle(_ token: FontToken, tabularDigits: Bool = false) -> some View {
     modifier(TextStyle(token: token, tabularDigits: tabularDigits || token == .metric))
   }
+
+  /// An SF Symbol at the token's size, weight medium, rendered hierarchical (DS§3.7), so a
+  /// glyph scales with the text beside it.
+  func symbolStyle(_ token: FontToken = .body) -> some View {
+    textStyle(token).fontWeight(.medium).symbolRenderingMode(.hierarchical)
+  }
 }
 
 private struct TextStyle: ViewModifier {

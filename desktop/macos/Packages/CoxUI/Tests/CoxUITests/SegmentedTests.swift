@@ -16,40 +16,47 @@ import Testing
     }
   }
 
+  /// Half way the pill sits on the middle segment and has left both ends.
   @Test func selectionSlidesThroughTheMiddleSegment() throws {
-    let frames = try animate(reduceMotion: false)
-    #expect(frames.contains { $0[1] > 0.5 })
-    #expect(!frames.contains(where: Self.fadingAtBothEnds))
+    let cover = try halfWay(reduceMotion: false)
+    #expect(cover[1] > 0.4, "\(cover)")
+    #expect(cover[0] < 0.1 && cover[2] < 0.1, "\(cover)")
   }
 
+  /// Half way both ends hold part of the pill and the middle none of it.
   @Test func reduceMotionCrossFadesTheSelection() throws {
-    let frames = try animate(reduceMotion: true)
-    #expect(!frames.contains { $0[1] > 0.1 })
-    #expect(frames.contains(where: Self.fadingAtBothEnds))
+    let cover = try halfWay(reduceMotion: true)
+    #expect(cover[1] < 0.1, "\(cover)")
+    #expect([cover[0], cover[2]].allSatisfy { $0 > 0.1 && $0 < 0.9 }, "\(cover)")
   }
 
-  /// Mid-fade both ends hold part of the pill.
-  private static func fadingAtBothEnds(_ cover: [Double]) -> Bool {
-    [cover[0], cover[2]].allSatisfy { $0 > 0.1 && $0 < 0.9 }
-  }
-
-  /// Moves the selection from the first mode to the last and returns, for each frame in
-  /// between, how much of the pill covers each segment (0 bare … 1 selected).
-  private func animate(reduceMotion: Bool) throws -> [[Double]] {
+  /// Moves the selection from the first mode to the last under an animation held at half its
+  /// progress, and returns how much of the pill covers each segment (0 bare … 1 selected) in
+  /// the first frame where it has left the first segment. The held animation, not the time a
+  /// frame took, decides what that frame shows (T37.21: the sampled version missed its
+  /// mid-fade frame under load).
+  private func halfWay(reduceMotion: Bool) throws -> [Double] {
     let (first, last) = (SegmentedSample.modes[0], SegmentedSample.modes[2])
-    let control = SnapshotHost(
-      SegmentedSample(selection: first), Variant(scheme: .light, material: .solid),
-      reduceMotion: reduceMotion)
-    let before = try control.bitmap()
-    control.update(SegmentedSample(selection: last))
-    var frames: [NSBitmapImageRep] = []
-    let end = Date().addingTimeInterval(Motion.durationBase * 2)
-    while Date() < end {
-      RunLoop.main.run(until: Date().addingTimeInterval(Motion.durationBase / 20))
-      frames.append(try control.bitmap())
-    }
-    let probe = try PillProbe(before: before, after: try #require(frames.last))
-    return frames.map(probe.cover)
+    let cell = Variant(scheme: .light, material: .solid)
+    let choice = Choice(selection: first)
+    let control = SnapshotHost(LiveSample(choice: choice), cell, reduceMotion: reduceMotion)
+    let probe = try PillProbe(
+      before: control.bitmap(),
+      after: SnapshotHost(SegmentedSample(selection: last), cell).bitmap())
+    // `disablesAnimations` keeps the control's own implicit animation from replacing this one.
+    var held = Transaction(animation: Animation(HalfWay()))
+    held.disablesAnimations = true
+    withTransaction(held) { choice.selection = last }
+    return probe.cover(try control.bitmap { probe.cover($0)[0] < 0.9 })
+  }
+}
+
+/// An animation that stays at half its progress for as long as it runs.
+private struct HalfWay: CustomAnimation {
+  func animate<V: VectorArithmetic>(
+    value: V, time: TimeInterval, context: inout AnimationContext<V>
+  ) -> V? {
+    value.scaled(by: 0.5)
   }
 }
 
@@ -95,5 +102,21 @@ private struct SegmentedSample: View {
     CoxSegmented("Mode", selection: .constant(selection), options: Self.modes) {
       Text(verbatim: $0)
     }
+  }
+}
+
+@MainActor @Observable private final class Choice {
+  var selection: String
+  init(selection: String) { self.selection = selection }
+}
+
+/// The control bound to a model, so a test changes its selection inside a transaction.
+private struct LiveSample: View {
+  let choice: Choice
+
+  var body: some View {
+    CoxSegmented(
+      "Mode", selection: Bindable(choice).selection, options: SegmentedSample.modes
+    ) { Text(verbatim: $0) }
   }
 }

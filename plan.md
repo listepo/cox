@@ -29,19 +29,15 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.41 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.43 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
-| T37.20.1 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.20.2 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.21 | todo | P0 | 4 | 0% | |
-| T37.22 | todo | P0 | 3 | 0% | |
 | T37.23 | todo | P0 | 5 | 0% | |
 | T37.24 | todo | P0 | 4 | 0% | |
 | T37.25 | todo | P1 | 3 | 0% | |
-| T37.26 | todo | P1 | 3 | 0% | |
+| T37.26 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.27 | todo | P0 | 3 | 0% | |
 | T37.28 | todo | P1 | 4 | 0% | |
 | T37.29 | todo | P1 | 3 | 0% | |
-| T37.30.1 | todo | P1 | 3 | 0% | |
-| T37.30.2 | todo | P1 | 2 | 0% | |
+| T37.30.1 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.30.2 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.30.3 | todo | P1 | 3 | 0% | |
 | T37.30.4 | todo | P2 | 2 | 0% | |
 | T37.31 | todo | P2 | 2 | 0% | |
@@ -68,7 +64,7 @@ How to read this file: §0 decisions are settled; §1 is the design every task m
 | D8 | **Edits are diff-shaped.** `edit` = exact `str_replace` with a whitespace-insensitive fallback and a uniqueness check; `apply_patch` = V4A grammar (Add/Update/Delete, `@@` context, progressive matching). `write` is for new files; rewriting an existing file over 200 lines is denied with a hint. | 5–20× fewer output tokens than whole-file writes (R§4.2); OpenAI models are trained on V4A and Claude on `str_replace`, so supporting both removes a class of edit failures. |
 | D9 | **One SQLite file plus human-readable rollouts, through a sync ORM.** `~/.cox/cox.db` (Diesel 2.2 `sqlite` + bundled `libsqlite3-sys` 0.30 with FTS5, WAL): sessions, usage ledger, tool-output archive index, memory. Typed Diesel models and `schema.rs`; migrations embedded with `diesel_migrations`; FTS5 virtual tables via `diesel::sql_query` (Diesel cannot model `VIRTUAL TABLE`). `cox-store` is the only crate that contains SQL. Each session is also `~/.cox/sessions/<id>.jsonl` — the event stream itself — used for resume, replay tests and export. Archived payloads over 16 KiB live under `~/.cox/archive/`. | Same choice as rtok D13 (user request): typed models make the ledger queries (`stats`, budget, cache diagnostics) joins instead of hand-written SQL, and Diesel is sync, so hooks, tests and `cox stats` need no async runtime. Async ORMs (SeaORM, SQLx) would need a runtime per hook. Codex stores rollouts as JSONL; Claude Code uses JSONL; engram/claude-mem converge on SQLite+FTS5 (R§1.5). |
 | D10 | **TUI = ratatui 0.30 + crossterm 0.29 in TEA form, inline viewport.** `State`, `update(State, Msg) -> State`, `view(&State, Frame)`. Inline (non-alternate-screen) rendering so native scrollback keeps the transcript. Every widget has an `insta` snapshot through `TestBackend`; end-to-end through `portable-pty` + `vt100`. | Codex made the same choices and tests them the same way (R§1.6). TEA makes `update` a pure function that a test can drive without a terminal. |
-| D11 | **Four surfaces from day one: `cox` (TUI), `cox run -p` (headless; `text`/`json`/`stream-json`), `cox acp` (Agent Client Protocol 2.0 for Zed/JetBrains/neovim), `cox mcp` (built-in tools as an MCP server).** Each is ≤ 300 LOC over the event stream. A fifth, the macOS app (P37, A67), consumes the same stream through `cox-app`; the 300-LOC limit applies to `cox-ffi`'s surface, while the view model lives in `cox-app` and the Swift code outside the Cargo workspace. | D2 makes them cheap; ACP is what gets a terminal agent into editors without an extension per IDE (R§3.2); `cox mcp` lets Claude Code or Codex borrow cox's tools. |
+| D11 | **Four surfaces from day one: `cox` (TUI), `cox run -p` (headless; `text`/`json`/`stream-json`), `cox acp` (Agent Client Protocol 2.0 for Zed/JetBrains/neovim), `cox mcp` (built-in tools as an MCP server).** Each is ≤ 300 LOC over the event stream. A fifth, the macOS app (P37, A67), consumes the same stream through `cox-app`; the 300-LOC limit applies to `cox-ffi`'s surface (`lib.rs`, `session.rs`, `host.rs`; the one-per-type `#[uniffi::remote]` declarations in `types.rs` do not count, A73), while the view model lives in `cox-app` and the Swift code outside the Cargo workspace. | D2 makes them cheap; ACP is what gets a terminal agent into editors without an extension per IDE (R§3.2); `cox mcp` lets Claude Code or Codex borrow cox's tools. |
 | D12 | **No test touches the network or needs an API key.** `Provider` has `Scripted` (fixtures) and `Replay` (recorded cassettes, re-recorded on demand with `cox record`) implementations; tools run in `tempfile` trees; the patch parser and `str_replace` have `proptest` suites; transcripts and TUI frames are `insta` snapshots; the real binary is driven by `assert_cmd` against `COX_HOME`. Evals (Terminal-Bench adapter) are a separate, opt-in `just eval`. | A coding agent is a distributed system with a nondeterministic component; the only cheap regression suite is one that replays events instead of models (R§5). |
 | D13 | **One config file; every flag is a key.** `~/.cox/config.toml` < `<git root>/.cox/config.toml` < `COX_<SECTION>_<KEY>` < flags, via clap 4 (derive) + figment + toml_edit. `cox config show --sources` reports provenance. `.claude/settings.json` permissions and hooks are *imported* (read-only) when present. `.env` / `.env.local` (dotenvy, T0.7) are not a config layer: they inject unset process env before figment reads `COX_*`, and never override variables already set (CI, `COX_HOME=...` tests). | Same rule as rtok D12/D14; it worked. Headless and ACP runs are launched with fixed command lines, so flags alone cannot configure them. Local API keys live in `.env`, which gitignores. |
 | D14 | **Everything not written by cox is untrusted, and extensions fail open.** Model output, tool results, MCP responses, hook stdout, skill files and repository instruction files pass the guards in `AGENTS.md` → Trust boundaries. A broken hook, server or skill is warned about and skipped. | Aider's credential leak and Claude Code's escape-sequence incidents are both "trusted text from the wrong side" bugs (R§2.2). |
@@ -1092,40 +1088,16 @@ Depends: T37.40 · Size: ~200 · Files: `…/CoxTranscriptText/…`
 Goal: the text storage is built from Rust `StyledDoc` spans (T37.7) and appended as patches arrive instead of rebuilt; the spike took ~630 ms to build 10 000 blocks at once, over the 400 ms launch budget (research.md §9.5.13).
 Check: building the 10 000-block fixture incrementally stays within the DT§1 launch budget; a streamed `AppendText` patch edits only its block's range.
 
-#### T37.20.1 `Spinner` and `ProgressRing`
-
-Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
-Goal: the DS§6.2 indeterminate spinner and `ProgressRing(fraction)`, with the Reduce Motion fallback resolved in `Appearance`.
-Check: snapshot per variant × light/dark × Solid/Frosted; under Reduce Motion the spinner does not rotate.
-
-#### T37.20.2 `Sparkline` and `StackedBar`
-
-Depends: T37.20 · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/Sources/CoxUI/Atoms/*`, its tests and snapshots
-Goal: the token meter's data graphics: `Sparkline(samples)` (tint, gradient fill) and `StackedBar(segments)` (segment colours from tokens).
-Check: snapshots for empty, one-sample and full series and for a bar of each segment mix × light/dark.
-
-#### T37.21 `CoxUI` Molecules
-
-Depends: T37.20.1–T37.20.4 · Size: split at claim · Files: `…/CoxUI/Molecules/*`
-Goal: every DS§6.3 molecule built only from atoms and foundations.
-Check: snapshot suite green; no molecule imports `CoxCore`; no styling modifier is applied to an atom from outside it except through the atom's own parameters.
-
-#### T37.22 Window shell: split view, sidebar, toolbar, inspector frame
-
-Depends: T37.16, T37.21 · Size: ~200 · Files: `…/CoxUI/Organisms/Sidebar.swift`, `…/Organisms/SessionToolbar.swift`, `…/Screens/MainScreen.swift`
-Goal: DS§4 layout with floating glass panes, collapsible sidebar and inspector, the window material from `[desktop.appearance]`.
-Check: snapshots of the main screen in Solid, Frosted and Glossy match `desktop/design/mockups` screens 28–29 in structure.
-
 #### T37.23 Transcript view and the DT§9 benchmark gate
 
-Depends: T37.22, T37.40–T37.43 · Size: split at claim · Files: `…/Organisms/TranscriptView.swift`, `…/Organisms/TurnView.swift`, `…/Organisms/ToolCard.swift`
+Depends: T37.22, T37.40–T37.43, T37.21.1–T37.21.6 · Size: split at claim · Files: `…/Organisms/TranscriptView.swift`, `…/Organisms/TurnView.swift`, `…/Organisms/ToolCard.swift`
 Goal: lazy transcript from timeline patches with `UserBubble`, `ThinkingDisclosure`, `ToolCard`, `AssistantMessage` and `ApprovalCard` slots; text selection runs across blocks like a document (copy keeps block order and gives Markdown), and `cross_block_selection = false` clamps it to one block (A67); the DT§9 rendering bet is decided by its benchmark with selection on.
 Selection engine (T37.37, `research.md` §9.5.13): our own TextKit 2 view — one `NSTextView` over the transcript with blocks as ranges and cards as view-backed attachments — from the package `CoxTranscriptText`; Textual was rejected.
 Check: the benchmark in DT§9 passes its budget on a 2 000-block fixture; snapshots per block kind; a UI test drags a selection across three blocks and the pasteboard holds all three in order; with the setting off the same drag selects one block.
 
 #### T37.24 Composer: mentions, commands, shell mode, attachments, queue
 
-Depends: T37.23 · Size: split at claim · Files: `…/Organisms/Composer.swift`, `…/Molecules/ComposerChip.swift`
+Depends: T37.23, T37.21.7 · Size: split at claim · Files: `…/Organisms/Composer.swift`, `…/Molecules/ComposerChip.swift`
 Goal: DT§5 composer with completion driven by `cox-app` (T37.10).
 Check: UI test types `@`, picks a file, sends; the intent reaches the fixture client.
 
@@ -1137,7 +1109,7 @@ Check: snapshots idle and streaming; VoiceOver label reads the three numbers; th
 
 #### T37.26 Appearance popover and live window material
 
-Depends: T37.13, T37.22 · Size: ~150 · Files: `…/Organisms/AppearancePopover.swift`, `…/Molecules/MaterialPicker.swift`
+Depends: T37.13, T37.22, T37.21.8 · Size: ~150 · Files: `…/Organisms/AppearancePopover.swift`, `…/Molecules/MaterialPicker.swift`
 Goal: material, transparency, blur/reflection, depth and tint change the window live and persist through `[desktop.appearance]` (mockups 28–29); Reduce Transparency disables the controls and says why.
 Check: snapshot per material; changing a slider writes the config through an intent; Reduce Transparency snapshot is Solid.
 
@@ -1149,19 +1121,19 @@ Check: a fixture with a pending approval shows the card, the notification and ba
 
 #### T37.28 Review pane and rewind timeline
 
-Depends: T37.23 · Size: split at claim · Files: `…/Organisms/ReviewPane.swift`, `…/Organisms/RewindTimeline.swift`
+Depends: T37.23, T37.21.9 · Size: split at claim · Files: `…/Organisms/ReviewPane.swift`, `…/Organisms/RewindTimeline.swift`
 Goal: DT§5 review of the session's changes and rewind to a checkpoint (code, conversation or both).
 Check: fixture rewind restores the expected files in a scratch worktree.
 
 #### T37.29 Inspector tabs: Changes, Plan, Context & Cost, Tasks, Info
 
-Depends: T37.23 · Size: split at claim · Files: `…/Organisms/Inspector.swift`, `…/Molecules/ChangedFileRow.swift`, `…/Molecules/CheckpointRow.swift`
+Depends: T37.23, T37.21.9 · Size: split at claim · Files: `…/Organisms/Inspector.swift`, `…/Molecules/ChangedFileRow.swift`, `…/Molecules/CheckpointRow.swift`
 Goal: DT§5 inspector built from DS§6 rows.
 Check: snapshot per tab.
 
 #### T37.30.1 Settings screen
 
-Depends: T37.21 · Size: ~150 · Files: `…/Screens/SettingsScreen.swift`
+Depends: T37.21.10 · Size: ~150 · Files: `…/Screens/SettingsScreen.swift`
 Goal: the Settings screen from `CoxUI` molecules over `SettingsStore`: sidebar groups, a layer badge per value, a read-only project field that names the project file, secure fields for keys through `SecretStore`.
 Check: snapshot of a setting overridden by the project layer (read-only, badge names the layer); editing a user value round-trips through the fixture client.
 
@@ -1334,6 +1306,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A70 §3 P37, T37.38 — T37.8 built the timeline fold without the DT§4.3 tool summaries, the `ToolGroup` row and the compaction summary, and no card claimed them. Why: they are part of the approved design (A67) and the Swift views must not parse tool output. Effect: one card T37.38 after T37.8; P37 now has 39 cards T37.0–T37.38.
 - A71 §3 P37, T37.39 — T37.14 put session ownership in `cox-ffi` (it depends on cox-session, core, config, store, render, tools; lib + session + host = 499 lines against D11's 300) because `deps.rs` banned `anyhow` from `cox-app`'s resolved tree, stricter than D1's "depend on". Why: D11 and DT§4.2 keep the FFI a thin forwarder so logic is tested in Rust once. Effect: T37.39 narrows the rule to direct dependencies and moves the ownership into `cox-app`.
 - A72 §3 P37, T37.40–T37.43, `docs/design/desktop.md` §5.2, §9, §11 — spike T37.37 rejected Textual 0.5.0 (per-block views keep a drag in one block, copy gives plain text and HTML, no clamp API, one-document mode 5.5 s to first frame) and passed our TextKit 2 view on all four criteria (`research.md` §9.5.13). Why: T37.37's card makes the TextKit 2 view its own package with its own cards when Textual fails. Effect: four cards for `CoxTranscriptText`; T37.23 depends on them instead of T37.37. No decision changes.
+- A73 §0 D11 — the `#[uniffi::remote]` type declarations in `crates/cox-ffi/src/types.rs` do not count toward D11's 300-LOC limit on `cox-ffi`, by the creator (2026-09-28). Why: they hold no logic — one declaration per type the Swift side names — and growing with the protocol is their job; the limit guards the forwarding code in `lib.rs`, `session.rs` and `host.rs` (299 lines after T37.39 and T37.30). Effect: `types.rs` may grow without splitting or generating it. No other decision changes.
 
 ## 7. Risk register
 

@@ -47,9 +47,7 @@ private struct FileFace: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       Image(systemName: "doc.text")
-        .textStyle(.body)
-        .fontWeight(.medium)
-        .symbolRenderingMode(.hierarchical)
+        .symbolStyle(.body)
         .foregroundStyle(Color(.textTertiary))
       Spacer(minLength: 0)
       Text(name)
