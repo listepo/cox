@@ -4846,3 +4846,19 @@ Check:
 - CoxModel 33, CoxUI 133 (`onlyAChangedRunSitsOnTheMark`), CoxTranscript 23 with `anOpenedEditCard` light/dark re-recorded, CoxTranscriptText 29.
 - After merging into `p37-desktop`: cox-render, cox-app and cox-ffi 114/114; CoxModel 39/39, CoxTranscript 27/27, CoxPlatform 13/13, CoxUI Diff/Code 6/6.
 Not done: CoxCore tests (the bindings were checked with `uniffi-bindgen` from a debug library instead; CI runs them).
+
+#### T37.27.5 Pinned approval bar above the composer
+
+Depends: — · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/…`, `desktop/macos/Packages/CoxTranscript/…/SessionComposer.swift`
+Goal: a pending approval or question is pinned above the composer (T37.24), with ⌘↩ Allow and ⌘⌫ Deny, while its card stays in the transcript.
+Check: a snapshot with a pending approval shows the bar; the shortcut sends `.approve`.
+Status: done 2026-09-28
+Result:
+- CoxUI `Organisms/DecisionBar.swift`: `DecisionBar(content, choose:)`, the mockup's pinned bar: a symbol, "Waiting for you: <command>" in semibold mono, then Allow / For session / Deny; a question reads "Question from cox: …" with its answers as buttons when they fit (`ViewThatFits`). ⌘⏎ (and keypad Enter) allows and ⌘⌫ denies through `WindowKeys`, an app-local key monitor (the focused composer editor takes both keys before a view shortcut); held-key repeats are swallowed.
+- CoxTranscript `SessionComposer` shows the bar above `Composer` while `store.session.waiting` is set, sends the choice through `store.session.send` and reports a failure with `store.report`. `DecisionCard.swift`: `SessionStore.waiting`, `Block.waiting` and `DecisionBar.Choice.intent(call:)`; a bash approval shows its command, any other tool "<tool> <summary>". The card stays in the transcript.
+- DESIGN.md §6.4 `DecisionBar` row; `docs/design/desktop.md` keyboard table tells the focused card's keys from the pinned bar's.
+Deviations: ⌘⏎/⌘⌫ as the card says rather than DT§5.2's ⏎/⎋, because plain ⏎ sends from the composer; the keyboard table now says which applies where.
+Check:
+- CoxTranscript 31 (`PinnedDecisionTests`: light/dark snapshot of the pending `approve-write` fixture with the bar; ⌘⏎ through `NSApp.sendEvent` sends `.approve(call:, decision: .allow)` and the bar clears when the decision lands; ⌘⌫ denies; block-to-bar mapping). CoxUI 139 (`DecisionBarSnapshotTests`, 3 states × 4 variants). swiftlint and swift-format clean.
+- After merging into `p37-desktop`: CoxTranscript 31/31, CoxUI DecisionBar 1/1.
+Not done: app wiring (T37.22.3); the composer's ⌘V monitor could reuse `WindowKeys` (T37.27.8).

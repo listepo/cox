@@ -29,8 +29,8 @@
 - T37.24.7. Composer status chips
 - T37.24.8. Queue from Rust
 - T37.24.9. Caret-aware completion and the failure notice
-- T37.27.5. Pinned approval bar above the composer
 - T37.27.6. Approval Edit… and the grant preview
+- T37.27.8. One app-local key monitor for the composer and the decision bar
 - T37.28. Review pane and rewind timeline
 - T37.29.2. Inspector Plan tab
 - T37.29.3. Inspector Context & Cost tab

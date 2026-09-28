@@ -35,8 +35,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.24.7 | todo | P2 | 3 | 0% | |
 | T37.24.8 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.24.9 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.27.5 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.27.6 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
+| T37.27.8 | todo | P3 | 1 | 0% | |
 | T37.28 | todo | P1 | 4 | 0% | |
 | T37.29.2 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.29.3 | todo | P2 | 4 | 0% | |
@@ -2804,17 +2804,17 @@ Depends: — · Size: ~80 · Files: `desktop/macos/Packages/CoxUI/…/Composer.s
 Goal: completion uses the token at the caret, not the end of the draft, and `ComposerStore.failure` shows as a `NoticeRow` above the composer.
 Check: a UI test completes mid-text; a snapshot with a failure.
 
-#### T37.27.5 Pinned approval bar above the composer
-
-Depends: — · Size: ~100 · Files: `desktop/macos/Packages/CoxUI/…`, `desktop/macos/Packages/CoxTranscript/…/SessionComposer.swift`
-Goal: a pending approval or question is pinned above the composer (T37.24), with ⌘↩ Allow and ⌘⌫ Deny, while its card stays in the transcript.
-Check: a snapshot with a pending approval shows the bar; the shortcut sends `.approve`.
-
 #### T37.27.6 Approval Edit… and the grant preview
 
 Depends: — · Size: ~150 · Files: `crates/cox-app/src/timeline.rs`, `desktop/macos/Packages/CoxUI/…/ApprovalCard.swift`, `desktop/macos/Packages/CoxTranscript/…/DecisionCard.swift`
 Goal: the approval block carries the call input and what "Allow for session" would grant (`grants_for`); the card shows the grant and Edit… edits the input into `Decision.edit`.
 Check: a cox-app test that the block carries both; a UI test that an edit sends the edited JSON; a snapshot showing the grant.
+
+#### T37.27.8 One app-local key monitor for the composer and the decision bar
+
+Depends: — · Size: ~40 · Files: `desktop/macos/Packages/CoxUI/…/Organisms/Composer.swift`, `desktop/macos/Packages/CoxUI/…/Organisms/DecisionBar.swift`
+Goal: T37.24.5's private `ComposerPaste.Monitor` and T37.27.5's `WindowKeys` both install an app-local `NSEvent` key monitor scoped to one window; keep one helper (`WindowKeys`, moved to its own file) and let the ⌘V paste use it.
+Check: `ComposerFlowTests` paste tests and `PinnedDecisionTests` pass unchanged.
 
 #### T37.28 Review pane and rewind timeline
 

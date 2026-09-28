@@ -514,7 +514,8 @@ current project and slash commands. The whole app is keyboard-drivable:
 | ⌘K | Palette |
 | ⌘L | Focus composer |
 | ⌘. | Interrupt |
-| ⏎ / ⌘⏎ / ⎋ | On a pending approval: allow / allow for session / deny |
+| ⏎ / ⌘⏎ / ⎋ | On a focused pending approval card: allow / allow for session / deny |
+| ⌘⏎ / ⌘⌫ | In the composer while the pinned approval bar shows: allow / deny (plain ⏎ still sends; T37.27.5) |
 | ⌘⇧R | Review |
 | ⌃⌘I / ⌃⌘S | Inspector / sidebar: the defaults of the system `InspectorCommands` and `SidebarCommands` (A89) |
 | ⌘⌥A | Appearance popover |
