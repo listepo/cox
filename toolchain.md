@@ -150,6 +150,8 @@ Programs the project uses and the direct packages from its manifests.
 | Package | Where | Source | Why here |
 | --- | --- | --- | --- |
 | style-dictionary | local | https://github.com/style-dictionary/style-dictionary | T37.17: generates CoxUI's `Tokens.swift` and `Colors.xcassets` and the mockups' `tokens.css` from the DTCG token files (DS§2) |
+| pixelmatch | local | https://github.com/mapbox/pixelmatch | T37.44.4: decides which pixels of a CoxUI snapshot differ from its Figma or mockup frame (`npm run diff`, DS§2) |
+| sharp | local | https://github.com/lovell/sharp | T37.44.4: decodes, crops and resamples the snapshot and frame to one size and writes the diff PNG (`npm run diff`, DS§2) |
 
 ## SwiftPM (`desktop/macos/Packages`)
 

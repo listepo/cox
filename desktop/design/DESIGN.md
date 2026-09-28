@@ -85,6 +85,19 @@ Re-sync:
 2. `mockups/render.sh <screen-id>…` re-renders the PNGs; upload each with the Figma MCP tool
    `upload_assets` as the fill of the frame with the same name.
 
+Pixel diff (A119). `npm run diff -- <snapshot.png> <frame.png> [--out diff.png]` compares a CoxUI
+snapshot with its frame (a Figma export or `mockups/screens/<id>.png`) and prints the share of
+differing pixels and the largest differing regions (`x,y width×height`, largest box first, in the
+snapshot's pixels), so spacing, colour and type drift shows up without comparing by eye. The frame is
+resampled to the snapshot's size (`--scale-to frame` goes the other way) and a warning names an
+aspect mismatch. Snapshots include a 20 pt margin of wallpaper and mockups a 40 px one at 2x, so cut
+the window out of both: for the main screen `--crop-snapshot 20,20,1440,900 --crop-frame
+80,80,2880,1800`. `--threshold` (pixelmatch, default 0.1) is the per-pixel colour tolerance; raise it
+to about 0.3 to see layout and type through a glass tint that differs everywhere. The diff image (red
+= differs) goes to `diff/out/`, which is not committed; `--json` prints the report as JSON. It uses
+`pixelmatch` 7.2.0 (released 2026-04-29) and `sharp` 0.35.5 (released 2026-09-27), both checked in
+the npm registry 2026-09-28.
+
 ## 3. Foundations
 
 ### 3.1 Colour — semantic roles
