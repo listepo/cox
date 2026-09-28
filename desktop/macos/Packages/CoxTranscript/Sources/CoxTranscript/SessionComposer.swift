@@ -63,6 +63,7 @@ public struct SessionComposer: View {
     switch intent {
     case .attach: isPicking = true
     case .drop(let urls): Task { await store.attach(urls) }
+    case .pasteImage(let png): store.attach(png, name: "Pasted image.png", type: .png)
     case .removeAttachment(let id): if let index = Int(id) { store.removeAttachment(at: index) }
     case .recall(let step): store.recall(step)
     default: draft(intent)
