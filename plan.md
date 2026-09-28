@@ -30,13 +30,12 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.29.3 | todo | P2 | 4 | 80% | |
 | T37.29.3.4 | todo | P3 | 2 | 0% | |
 | T37.32 | todo | P1 | 3 | 0% | |
-| T37.32.1 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.19.5 | in progress | P2 | 3 | 80% | Claude Code / Opus 5.5 |
 | T37.20.5 | todo | P2 | 2 | 0% | |
 | T37.21.11 | todo | P2 | 2 | 0% | |
-| T37.22.3 | todo | P1 | 2 | 0% | |
+| T37.22.3 | in progress | P1 | 2 | 0% | Claude Code / Opus 5.5 |
 | T39.3 | todo | P1 | 2 | 0% | |
 | T39.4 | todo | P2 | 1 | 0% | |
 | T39.5 | todo | P1 | 2 | 0% | |
@@ -2759,17 +2758,13 @@ Split into T37.32.1 and T37.32.2 (A106). Depends: T37.15 · Size: ~150 · Files:
 Goal: a Developer ID-signed, notarized app with Sparkle 2 updates and the `cox` CLI inside the bundle (DT§7). New dependency Sparkle (§1.1 row).
 Check: `spctl --assess` accepts the release build; the appcast validates.
 
-#### T37.32.1 App target and an unsigned dev build
-
-Depends: T37.15 · Size: ~150 · Files: `desktop/macos/Cox.xcodeproj/…`, `desktop/macos/App/…`, `justfile`
-Goal: A106 — the thin app target of DT§7 (`@main`, scenes, menus, entitlements, Info.plist, assets) over the local Swift packages, with the XCFramework from T37.15; `just desktop-app` builds an unsigned (ad-hoc signed) Debug `Cox.app` that launches and shows `MainScreen` on the fixture or live core. The `.xcodeproj` stays small and merge-friendly; if a generator (e.g. XcodeGen) is the best maintained fit, use it and add its row to `toolchain.md`. No Sparkle, no signing identity, no secrets.
-Check: `just desktop-app` builds on a clean checkout; the app launches and a screenshot shows the main window; the macOS CI job builds the target.
-
 #### T37.32.2 Developer ID signing, notarization, Sparkle, bundled CLI, Homebrew cask
 
 Depends: T37.32.1 · Size: ~150 · Files: `.github/workflows/release.yml`, `scripts/desktop/…`
 Goal: the rest of T37.32 (A106): a Developer ID-signed, notarized app with Sparkle 2 updates and the `cox` CLI inside the bundle (DT§7), and a Homebrew cask. New dependency Sparkle (§1.1 row). Waits for the creator's Developer ID certificate, App Store Connect API key, Sparkle EdDSA key, appcast host and tap repository as GitHub Actions secrets.
 Check: `spctl --assess` accepts the release build; the appcast validates.
+
+Confirm the bundle id `io.github.listepo.cox` (T37.32.1 derived it from the repo) before the first signed build.
 
 #### T37.33 Performance budget suite
 

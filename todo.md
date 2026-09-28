@@ -24,7 +24,6 @@
 - T37.29.3. Inspector Context & Cost tab
 - T37.29.3.4. Context tab: budget cap and how close it is
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
-- T37.32.1. App target and an unsigned dev build
 - T37.32.2. Developer ID signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
 - T37.19.5. Foundation tokens: on-accent text, dark highlight, disabled controls
