@@ -43,6 +43,16 @@ private let everyMaterial = [ColorScheme.light, .dark].flatMap { scheme in
     try check(GlassPaneSample().environment(\._colorSchemeContrast, .increased), variant)
   }
 
+  /// `dark_highlight = subtle` (A109) at each scope; dark only, since light ignores the setting.
+  @Test(arguments: HighlightScope.allCases, [GlassMaterial.solid, .frosted])
+  func elevationSubtleDarkHighlight(_ scope: HighlightScope, _ material: GlassMaterial) throws {
+    let variant = Variant(scheme: .dark, material: material)
+    let appearance = Appearance(material: material, darkHighlight: .subtle, highlightScope: scope)
+    try check(
+      ElevationSample().environment(\.coxAppearance, appearance), variant,
+      named: "\(scope)-\(variant.name)")
+  }
+
   @Test func reduceTransparencyRendersSolid() throws {
     for scheme in [ColorScheme.light, .dark] {
       let forced = try SnapshotHost(
@@ -54,8 +64,10 @@ private let everyMaterial = [ColorScheme.light, .dark].flatMap { scheme in
     }
   }
 
-  private func check(_ sample: some View, _ variant: Variant, test: String = #function) throws {
-    try assertCoxSnapshot(sample, variant, named: variant.name, testName: test)
+  private func check(
+    _ sample: some View, _ variant: Variant, named name: String? = nil, test: String = #function
+  ) throws {
+    try assertCoxSnapshot(sample, variant, named: name ?? variant.name, testName: test)
   }
 }
 
@@ -97,6 +109,29 @@ private let everyMaterial = [ColorScheme.light, .dark].flatMap { scheme in
     #expect(user.effective(reduceTransparency: false, increaseContrast: false) == user)
     #expect(user.specular == MaterialToken.glossySpecular)
     #expect(user.backgroundOpacity(.chrome) == MaterialToken.glossyWindowOpacity)
+  }
+
+  @Test func lightModeKeepsTheWholeHighlightWhateverTheSetting() {
+    let light = Appearance(darkHighlight: .none, highlightScope: .all)
+      .effective(reduceTransparency: false, colorScheme: .light)
+    #expect([ElevationToken.e1, .e2, .e3, .e4].allSatisfy { light.highlightStrength($0) == 1 })
+  }
+
+  @Test func darkModeDropsTheControlHighlightByDefault() {
+    let dark = Appearance().effective(reduceTransparency: false, colorScheme: .dark)
+    #expect(dark.highlightStrength(.e1) == MaterialToken.darkHighlightNone)
+    #expect(dark.highlightStrength(.e2) == 1)
+  }
+
+  @Test func theSubtleHighlightReachesEveryLiftedLevelOnlyAtScopeAll() {
+    func dark(_ scope: HighlightScope) -> Appearance {
+      Appearance(darkHighlight: .subtle, highlightScope: scope)
+        .effective(reduceTransparency: false, colorScheme: .dark)
+    }
+    #expect(dark(.controls).highlightStrength(.e1) == MaterialToken.darkHighlightSubtle)
+    #expect(dark(.controls).highlightStrength(.e2) == 1)
+    #expect(dark(.all).highlightStrength(.e2) == MaterialToken.darkHighlightSubtle)
+    #expect(dark(.all).highlightStrength(.e4) == MaterialToken.darkHighlightSubtle)
   }
 
   @Test func windowOpacityDefaultsToTheMaterialToken() {

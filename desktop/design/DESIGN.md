@@ -69,7 +69,7 @@ Name by role, never by hue. A view asks for `text.secondary`, not "grey".
 | --- | --- | --- |
 | surface | `window`, `sidebar`, `code`, `capsule`, `capsuleBorder`, `popover`, `terminal` | Backgrounds, by layer |
 | fill | `primary`, `secondary` | Quiet fills inside a surface |
-| text | `primary`, `secondary`, `tertiary`, `terminal`, `terminalOk` | Foregrounds |
+| text | `primary`, `secondary`, `tertiary`, `terminal`, `terminalOk`, `onAccent` | Foregrounds; `onAccent` is the label on an accent or status fill (primary button, Bypass segment), white, and High Contrast holds it to 7:1 on those fills |
 | line | `separator` | 0.5 pt hairlines |
 | quote | `bar` | A quote's bar in the transcript, one per depth, `size.quoteBar` (3 pt) wide: `text.tertiary`'s value, stronger than a hairline; High Contrast holds it to 3:1 (A97) |
 | intent | `accent`, `accent.soft`, `status.success/warning/danger/plan` (+ `Soft`) | Meaning: selection, done, needs you, error, plan mode |
@@ -120,7 +120,11 @@ tok/s, timers) are always tabular (`.monospacedDigit()`).
 ### 3.4 Elevation (depth)
 
 Six levels. Each is a stack of shadow layers tinted `shadow.tint` plus, from e1 up, a 1 pt inner
-highlight on the top edge — the highlight is what makes glass read as a solid object.
+highlight on the top edge — the highlight is what makes glass read as a solid object. In dark
+mode the highlight follows two `[desktop.appearance]` settings (A109): `dark_highlight` is `none`
+(the default, the dark mockup) or `subtle` (`material.darkHighlight.subtle` of the light
+strength), and `dark_highlight_scope` applies it to controls only (`e1`, the default) or to every
+lifted level (`e1`–`e4`, the user bubble too); the other levels keep the full highlight.
 
 | Level | What sits there |
 | --- | --- |
@@ -252,17 +256,17 @@ component.
 
 | Name | What it does | Tokens | CSS |
 | --- | --- | --- | --- |
-| `.elevation(_ level:, cornerRadius:)` | Shadow layers + top highlight, scaled by Depth | `elevation.e0–e5`, Depth | `--lift1…3` |
+| `.elevation(_ level:, cornerRadius:)` | Shadow layers + top highlight, scaled by Depth; in dark mode the highlight takes the `dark_highlight` share on the `dark_highlight_scope` levels (A109) | `elevation.e0–e5`, Depth, `material.darkHighlight.*` | `--lift1…3` |
 | `.glassPane(_ shape:, surface:, role:)` | Pane material: glass or solid per setting; `role: .readable` holds the readable floor | `material.*`, `surface.*` | `.glass .col`, `.sidebar`, `.insp` |
 | `.specular(_ strength:, in:)` | Diagonal highlight overlay (strong for Glossy, faint for Frosted, none for Solid or under Increase Contrast) | `material.*.specular` | `.window:after` |
-| `.hairline(_ edges:)`, `.hairline(in:)` | 0.5 pt `separator` line on edges or around a shape | `size.hairline`, `separator` | `border:.5px` |
+| `.hairline(_ edges:)`, `.hairline(in:, color:)` | 0.5 pt `separator` line on edges or around a shape; capsules pass `surface.capsuleBorder` | `size.hairline`, `separator`, `surface.capsuleBorder` | `border:.5px` |
 | `.insetWell(_ surface:, cornerRadius:)` | Pressed-in look for terminal and fields | `surface.terminal`, inner shadow | `.tail`, `.filter` |
 | `.textStyle(_ token:, tabularDigits:)` | Font at the text size, line height, tracking, tabular digits | `font.*` | font rules |
 | `.symbolStyle(_ token:)` | An SF Symbol at a font token's size, weight medium, rendered hierarchical (§3.7) | `font.*` | `svg` icons |
-| `CoxButtonStyle(.primary/.secondary/.danger/.plain, size: .regular/.small)` | All push buttons: e1 face with specular; hover tints, press sinks to e0; disabled keeps the readable floor and a `text.secondary` label | `size.button*`, `radius.m`, `font.control`, `fill.*` | `.pb`, `.pri`, `.dan` |
-| `CapsuleStyle(.plain/.active, isIcon:)` | Toolbar capsules and filter chips; `isIcon` makes a round capsule for a symbol alone (`.cap.icon`): readable glass face at e1 with a hairline; active takes `surface.window`, an `accent` label and an `accent.soft` halo; states as `CoxButtonStyle` | `size.capsuleHeight`, `radius.capsule`, `surface.capsule`, `font.control` | `.cap`, `.cap.hot` |
-| `CoxSegmented(_ label:, selection:, options:, look:, title:)` | Segmented control; the e1-lifted selection pill slides between segments, or cross-fades under Reduce Motion (`coxMatchedGeometry`). `look` marks the selected segment per option: `plain`, `tinted(colour)` label, or `filled(colour)` pill with a white label (the §3.1 mode colours). A view, not a `PickerStyle`: SwiftUI has no public hook to restyle segments on macOS | `e1`, `surface.capsule`, `font.control` | `.seg` |
-| `CoxToggleStyle`, `CoxSlider(_ label:, value:, in:)` | Toggles and sliders with the shared 3D `Knob` (white disc, hairline rim, e1) over an `insetWell` track filled with `accent`; the toggle's knob slides, or cross-fades under Reduce Motion. The slider is a view: macOS has no public `SliderStyle` | `e1`, `accent`, `fill.secondary` | `.tog`, `.slider` |
+| `CoxButtonStyle(.primary/.secondary/.danger/.plain, size: .regular/.small)` | All push buttons: e1 face with specular; hover tints, press sinks to e0; disabled keeps the readable floor and a `text.secondary` label; the primary label is `text.onAccent` | `size.button*`, `radius.m`, `font.control`, `fill.*`, `text.onAccent` | `.pb`, `.pri`, `.dan` |
+| `CapsuleStyle(.plain/.active, isIcon:)` | Toolbar capsules and filter chips; `isIcon` makes a round capsule for a symbol alone (`.cap.icon`): readable glass face at e1 with a `surface.capsuleBorder` hairline (the mockup's `--glass-b`); active takes `surface.window`, an `accent` label and an `accent.soft` halo; states as `CoxButtonStyle` | `size.capsuleHeight`, `radius.capsule`, `surface.capsule`, `font.control` | `.cap`, `.cap.hot` |
+| `CoxSegmented(_ label:, selection:, options:, look:, title:)` | Segmented control; the e1-lifted selection pill slides between segments, or cross-fades under Reduce Motion (`coxMatchedGeometry`). `look` marks the selected segment per option: `plain`, `tinted(colour)` label, or `filled(colour)` pill with a `text.onAccent` label (the §3.1 mode colours). A view, not a `PickerStyle`: SwiftUI has no public hook to restyle segments on macOS | `e1`, `surface.capsule`, `font.control` | `.seg` |
+| `CoxToggleStyle`, `CoxSlider(_ label:, value:, in:)` | Toggles and sliders with the shared 3D `Knob` (white disc, hairline rim, e1) over an `insetWell` track filled with `accent`; the toggle's knob slides, or cross-fades under Reduce Motion. Disabled, both lose the accent and the knob's lift, as a disabled button does: the toggle's track shows `fill.secondary` and its label `text.secondary`, the slider drops its fill. The slider is a view: macOS has no public `SliderStyle` | `e1`, `accent`, `fill.secondary` | `.tog`, `.slider` |
 
 ### 6.2 Atoms
 
@@ -272,7 +276,7 @@ component.
 | `IconTile(kind, symbol)` | neutral, edit, shell, search, write; the tool picks the DS§3.7 symbol. `IconTile(face:glyph:symbol:)` takes its caller's colours, as a Settings page's | `.tool .ic.c-*`, `.set-side .sq` |
 | `KeyCap` | — | `.kbd` |
 | `Badge` | neutral, user, project, env, default, warning, danger | `.badge .b-*` |
-| `CountBadge` | — | `.sect .cnt` |
+| `CountBadge` | `text.onAccent` digits on a `status.warning` pill at e1 | `.sect .cnt` |
 | `RiskChip(text, level)` | low, medium, high — drawn as a `Badge`: neutral, warning, danger | `.risk` |
 | `Spinner`, `ProgressRing(fraction)` | — | `.spin`, `.ring` |
 | `Sparkline(samples)` | tint | `svg` in `.meter` |

@@ -9,10 +9,10 @@ extension View {
     overlay { HairlineEdges(edges: edges).allowsHitTesting(false) }
   }
 
-  /// Draws a hairline border just inside `shape`.
-  func hairline(in shape: some InsettableShape) -> some View {
+  /// Draws a hairline border just inside `shape`; capsules pass `surface.capsuleBorder`.
+  func hairline(in shape: some InsettableShape, color: Color = Color(.separator)) -> some View {
     overlay {
-      shape.strokeBorder(Color(.separator), lineWidth: Size.hairline).allowsHitTesting(false)
+      shape.strokeBorder(color, lineWidth: Size.hairline).allowsHitTesting(false)
     }
   }
 }

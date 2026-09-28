@@ -43,11 +43,13 @@ public struct TranscriptView<Approval: View>: NSViewRepresentable {
   }
 
   /// What the text is styled from: the appearance it is drawn at, Reduce Transparency forcing
-  /// Solid as for any view, with the configured text size and line height.
+  /// Solid and the colour scheme picking the dark highlight as for any view (A109), with the
+  /// configured text size and line height.
   private func styling(_ environment: EnvironmentValues) -> TextStyling {
     TextStyling(
       appearance: environment.coxAppearance.effective(
-        reduceTransparency: environment.accessibilityReduceTransparency),
+        reduceTransparency: environment.accessibilityReduceTransparency,
+        colorScheme: environment.colorScheme),
       textSize: textSize, lineHeight: lineHeight)
   }
 

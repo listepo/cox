@@ -7,7 +7,7 @@ import SwiftUI
 
 /// How the selected segment is marked: the lifted window-surface pill with a primary label
 /// (`plain`), that pill with a coloured label (`tinted`), or a pill filled with the colour
-/// under a white label (`filled`) — the DS§3.1 mode colours.
+/// under a `text.onAccent` label (`filled`) — the DS§3.1 mode colours.
 enum SegmentLook: Equatable, Sendable {
   case plain
   case tinted(Color)
@@ -47,7 +47,7 @@ struct CoxSegmented<Option: Hashable>: View {
     .padding(Space.xxs)
     .frame(height: Size.capsuleHeight)
     .glassPane(Capsule(), surface: Color(.surfaceCapsule), role: .readable)
-    .overlay { Capsule().strokeBorder(Color(.surfaceCapsuleBorder), lineWidth: Size.hairline) }
+    .hairline(in: Capsule(), color: Color(.surfaceCapsuleBorder))
     .elevation(.e1, cornerRadius: Radius.capsule)
     .animation(.cox(Motion.durationBase), value: selection)
     .accessibilityRepresentation {
@@ -96,14 +96,11 @@ private struct SelectionPill: View {
 }
 
 extension SegmentLook {
-  /// The mockup's `.byp.on` label: white on the filled pill in both appearances.
-  private static let onFill = Color.white
-
   var label: Color {
     switch self {
     case .plain: Color(.textPrimary)
     case .tinted(let color): color
-    case .filled: Self.onFill
+    case .filled: Color(.textOnAccent)
     }
   }
 

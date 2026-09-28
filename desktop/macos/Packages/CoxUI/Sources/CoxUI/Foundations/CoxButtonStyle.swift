@@ -73,14 +73,11 @@ struct ButtonFace<Label: View>: View {
 }
 
 extension CoxButtonStyle.Role {
-  /// The mockup's `.pri` label: white on the accent in both appearances, as macOS draws it.
-  private static let onAccent = Color.white
-
   /// A disabled button keeps a readable label (DS§8) and drops only its colour.
   func foreground(_ state: ControlState) -> Color {
     switch (self, state) {
     case (_, .disabled): Color(.textSecondary)
-    case (.primary, _): Self.onAccent
+    case (.primary, _): Color(.textOnAccent)
     case (.danger, _): Color(.statusDanger)
     case (.secondary, _), (.plain, _): Color(.textPrimary)
     }

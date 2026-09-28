@@ -3,9 +3,11 @@
 
 import SwiftUI
 
-/// A white disc shaded top to bottom, rimmed with a hairline and lifted to e1.
+/// A white disc shaded top to bottom, rimmed with a hairline and lifted to e1; flat when
+/// disabled, as `ControlState` lowers any disabled face.
 struct Knob: View {
   let diameter: CGFloat
+  @Environment(\.isEnabled) private var isEnabled
 
   /// The mockup's `#fff → #eceff6`: white darkened a little towards the shadow tint.
   private static let shade = 0.07
@@ -19,6 +21,8 @@ struct Knob: View {
       )
       .hairline(in: Circle())
       .frame(width: diameter, height: diameter)
-      .elevation(.e1, cornerRadius: diameter / 2)
+      .elevation(
+        ControlState(isEnabled: isEnabled, isPressed: false, isHovered: false).elevation(.e1),
+        cornerRadius: diameter / 2)
   }
 }

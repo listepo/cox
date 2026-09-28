@@ -75,3 +75,22 @@ private func loaded() async -> Loaded {
   mistyped[2].value = "\"chrome\""
   #expect(DesktopAppearance(mistyped) == nil)
 }
+
+@MainActor
+@Test func theDarkHighlightKeysReadBackFromTheSettings() async {
+  let view = SettingsView(
+    settings: [
+      row("dark_highlight", "\"subtle\"", .choice(options: ["none", "subtle"])),
+      row("dark_highlight_scope", "\"all\"", .choice(options: ["controls", "all"])),
+    ],
+    userFile: "/home/.cox/config.toml")
+  let store = SettingsStore(
+    client: FixtureSettingsClient(view: view), secrets: MemorySecretStore(), cwd: "/project")
+  #expect(store.darkHighlight == .none)
+  #expect(store.darkHighlightScope == .controls)
+  await store.load()
+  #expect(store.darkHighlight == .subtle)
+  #expect(store.darkHighlightScope == .all)
+  await store.set("desktop.appearance.dark_highlight", to: .text("none"))
+  #expect(store.darkHighlight == .none)
+}

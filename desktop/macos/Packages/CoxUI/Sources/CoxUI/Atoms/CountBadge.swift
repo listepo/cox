@@ -4,15 +4,14 @@
 
 import SwiftUI
 
-/// White tabular digits on a `status.warning` pill at e1, at least as wide as it is tall.
+/// `text.onAccent` tabular digits on a `status.warning` pill at e1, at least as wide as it is
+/// tall.
 struct CountBadge: View {
   /// The count as Rust formats it ("3", "99+").
   let count: String
 
   /// The mockup's `line-height: 16px`: no size token is that small.
   private static let height: CGFloat = 16
-  /// The mockup's `color: #fff`: white on the warning colour in both appearances.
-  private static let onWarning = Color.white
 
   init(_ count: String) {
     self.count = count
@@ -21,7 +20,7 @@ struct CountBadge: View {
   var body: some View {
     Text(count)
       .textStyle(.micro, tabularDigits: true)
-      .foregroundStyle(Self.onWarning)
+      .foregroundStyle(Color(.textOnAccent))
       .padding(.horizontal, Space.s)
       .frame(minWidth: Self.height, minHeight: Self.height)
       .background(Color(.statusWarning), in: Capsule())

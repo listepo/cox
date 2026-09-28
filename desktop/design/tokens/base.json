@@ -1228,6 +1228,19 @@
         "$value": 0.25
       },
       "$description": "Increase Contrast (A89, A100): the share of its transparency glass keeps, opacity' = 1 - (1 - opacity) x glassKeep"
+    },
+    "darkHighlight": {
+      "none": {
+        "$type": "number",
+        "$value": 0,
+        "$description": "Dark mode, `dark_highlight = none`: no top-edge highlight, the dark mockup's look (A109)"
+      },
+      "subtle": {
+        "$type": "number",
+        "$value": 0.1,
+        "$description": "Dark mode, `dark_highlight = subtle`: the highlight at this share of the light one's strength (A109)"
+      },
+      "$description": "The share of an elevation level's inset highlight dark mode draws, on the levels `dark_highlight_scope` names"
     }
   }
 }

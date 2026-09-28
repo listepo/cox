@@ -316,7 +316,9 @@
           "opacity": 0.42,
           "blur": 34.0,
           "depth": 1.0,
-          "tint": true
+          "tint": true,
+          "dark_highlight": "none",
+          "dark_highlight_scope": "controls"
         },
         "transcript": {
           "cross_block_selection": true,
@@ -1828,7 +1830,9 @@
             "opacity": 0.42,
             "blur": 34.0,
             "depth": 1.0,
-            "tint": true
+            "tint": true,
+            "dark_highlight": "none",
+            "dark_highlight_scope": "controls"
           }
         },
         "transcript": {
@@ -1887,6 +1891,16 @@
           "description": "Tint the glass from the wallpaper.",
           "type": "boolean",
           "default": true
+        },
+        "dark_highlight": {
+          "description": "`none` | `subtle`: the top-edge highlight in dark mode (A109).",
+          "$ref": "#/$defs/DarkHighlight",
+          "default": "none"
+        },
+        "dark_highlight_scope": {
+          "description": "`controls` | `all`: the elevation levels `dark_highlight` applies to (A109).",
+          "$ref": "#/$defs/DarkHighlightScope",
+          "default": "controls"
         }
       },
       "additionalProperties": false
@@ -1908,6 +1922,36 @@
           "description": "Opaque `surface.window`; what Reduce Transparency forces.",
           "type": "string",
           "const": "solid"
+        }
+      ]
+    },
+    "DarkHighlight": {
+      "description": "The top-edge highlight lifted things draw in dark mode (A109, DS§3.4).",
+      "oneOf": [
+        {
+          "description": "No highlight: the dark mockup's look.",
+          "type": "string",
+          "const": "none"
+        },
+        {
+          "description": "White at a tenth of the light highlight's strength.",
+          "type": "string",
+          "const": "subtle"
+        }
+      ]
+    },
+    "DarkHighlightScope": {
+      "description": "Which elevation levels `dark_highlight` applies to (A109); the others\nkeep the light highlight.",
+      "oneOf": [
+        {
+          "description": "Controls only: e1 (chips, capsules, buttons, knobs).",
+          "type": "string",
+          "const": "controls"
+        },
+        {
+          "description": "Every level, e1 to e4, the transcript's user bubble included.",
+          "type": "string",
+          "const": "all"
         }
       ]
     },
