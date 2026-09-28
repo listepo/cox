@@ -14,17 +14,21 @@ struct CapsuleStyle: ButtonStyle {
   }
 
   let emphasis: Emphasis
+  /// The mockup's `.cap.icon`: a symbol alone in a circle as wide as the capsule is tall.
+  let isIcon: Bool
 
   /// The mockup's `.cap.hot` ring: `0 0 0 3px` of the focus-halo colour.
   fileprivate static let haloWidth: CGFloat = 3
 
-  init(_ emphasis: Emphasis = .plain) {
+  init(_ emphasis: Emphasis = .plain, isIcon: Bool = false) {
     self.emphasis = emphasis
+    self.isIcon = isIcon
   }
 
   func makeBody(configuration: Configuration) -> some View {
     ControlStateReader(isPressed: configuration.isPressed) { state in
-      CapsuleFace(label: configuration.label, emphasis: emphasis, state: state)
+      CapsuleFace(
+        label: configuration.label, emphasis: emphasis, state: state, isIcon: isIcon)
     }
   }
 }
@@ -34,6 +38,7 @@ struct CapsuleFace<Label: View>: View {
   let label: Label
   let emphasis: CapsuleStyle.Emphasis
   let state: ControlState
+  var isIcon = false
 
   var body: some View {
     // The same continuous shape `elevation` draws its highlight in, so the layers line up.
@@ -41,8 +46,8 @@ struct CapsuleFace<Label: View>: View {
     label
       .textStyle(.control)
       .foregroundStyle(emphasis.foreground(state))
-      .padding(.horizontal, Space.l)
-      .frame(height: Size.capsuleHeight)
+      .padding(.horizontal, isIcon ? 0 : Space.l)
+      .frame(width: isIcon ? Size.capsuleHeight : nil, height: Size.capsuleHeight)
       .background { shape.fill(state.tint) }
       .glassPane(shape, surface: emphasis.surface, role: .readable)
       .hairline(in: shape)

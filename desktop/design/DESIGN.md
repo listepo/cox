@@ -188,7 +188,13 @@ names map one-to-one:
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- `NavigationSplitView` with three columns; sidebar and inspector are collapsible (⌘0, ⌘⌥0).
+- `MainScreen` lays the panes out itself (`ShellPane`: window, sidebar, column, inspector) rather than
+  in a `NavigationSplitView`: the system's split view draws its own sidebar glass and toolbar, which
+  follow neither `[desktop.appearance]` (material, opacity, Depth) nor the tokens, and a window
+  toolbar cannot be rendered by the snapshot harness. Sidebar and inspector are collapsible; the
+  system window buttons sit over the sidebar's top row, and the toolbar leaves room for them while the
+  sidebar is hidden. The app window hides its title bar and puts the behind-window blur under the
+  window pane.
 - The reading column is `size.readingWidth` wide and centred; the composer shares its width.
 - Minimum window `size.windowMinWidth` × `size.windowMinHeight`. Below 1280 pt the inspector becomes
   an overlay instead of a column.
@@ -234,7 +240,7 @@ component.
 | `.textStyle(_ token:, tabularDigits:)` | Font at the text size, line height, tracking, tabular digits | `font.*` | font rules |
 | `.symbolStyle(_ token:)` | An SF Symbol at a font token's size, weight medium, rendered hierarchical (§3.7) | `font.*` | `svg` icons |
 | `CoxButtonStyle(.primary/.secondary/.danger/.plain, size: .regular/.small)` | All push buttons: e1 face with specular; hover tints, press sinks to e0; disabled keeps the readable floor and a `text.secondary` label | `size.button*`, `radius.m`, `font.control`, `fill.*` | `.pb`, `.pri`, `.dan` |
-| `CapsuleStyle(.plain/.active)` | Toolbar capsules and filter chips: readable glass face at e1 with a hairline; active takes `surface.window`, an `accent` label and an `accent.soft` halo; states as `CoxButtonStyle` | `size.capsuleHeight`, `radius.capsule`, `surface.capsule`, `font.control` | `.cap`, `.cap.hot` |
+| `CapsuleStyle(.plain/.active, isIcon:)` | Toolbar capsules and filter chips; `isIcon` makes a round capsule for a symbol alone (`.cap.icon`): readable glass face at e1 with a hairline; active takes `surface.window`, an `accent` label and an `accent.soft` halo; states as `CoxButtonStyle` | `size.capsuleHeight`, `radius.capsule`, `surface.capsule`, `font.control` | `.cap`, `.cap.hot` |
 | `CoxSegmented(_ label:, selection:, options:, look:, title:)` | Segmented control; the e1-lifted selection pill slides between segments, or cross-fades under Reduce Motion (`coxMatchedGeometry`). `look` marks the selected segment per option: `plain`, `tinted(colour)` label, or `filled(colour)` pill with a white label (the §3.1 mode colours). A view, not a `PickerStyle`: SwiftUI has no public hook to restyle segments on macOS | `e1`, `surface.capsule`, `font.control` | `.seg` |
 | `CoxToggleStyle`, `CoxSlider(_ label:, value:, in:)` | Toggles and sliders with the shared 3D `Knob` (white disc, hairline rim, e1) over an `insetWell` track filled with `accent`; the toggle's knob slides, or cross-fades under Reduce Motion. The slider is a view: macOS has no public `SliderStyle` | `e1`, `accent`, `fill.secondary` | `.tog`, `.slider` |
 
@@ -284,8 +290,9 @@ component.
 
 | Organism | Built from | CSS |
 | --- | --- | --- |
-| `Sidebar` | SessionFilter, SectionHeader, SessionRow, SidebarFooter | `.sidebar` |
-| `SessionToolbar` | Breadcrumb, ModelCapsule, ModeSegmented, CostCapsule, StopButton | `.toolbar` |
+| `ShellPane(.window/.sidebar/.column/.inspector)` | glassPane, hairline, elevation: e5 window, e2 side panes, flat column | `.window`, `.sidebar`, `.col`, `.insp` |
+| `Sidebar` | ShellPane, SessionFilter, SectionHeader + CountBadge, project disclosure, SessionRow, footer (New session, provider StatusDot) | `.sidebar` |
+| `SessionToolbar` | Breadcrumb, ModelCapsule, ModeSegmented, CostCapsule, StopButton, icon CapsuleStyle buttons (Appearance, inspector, sidebar while hidden) | `.toolbar` |
 | `ToolCard` | ToolHeader + one body: DiffHunkView, TerminalTail, CodeBlockView | `.tool`, `.tool.exp` |
 | `ApprovalCard` | header, command well, reasons, CoxButtonStyle row | `.appr` |
 | `AssistantMessage` | markdown runs, InlineCode, CodeBlockView | `.asst` |
@@ -294,12 +301,13 @@ component.
 | `Composer` | text field, ComposerChip, TokenMeter, send button | `.composer` |
 | `TokenPopover` | metric, Sparkline, KeyValueGrid, StackedBar, legend | `.tokpop` |
 | `AppearancePopover` | MaterialPicker, LabeledSlider ×3, LabeledToggle ×2 | `.appear` |
-| `Inspector` | tabs + ChangedFileRow, CheckpointRow, KeyValueGrid | `.insp` |
+| `Inspector` | ShellPane, title, tab strip; each tab's content (ChangedFileRow, CheckpointRow, KeyValueGrid) is a slot | `.insp` |
 
 ### 6.5 The glass main screen, decomposed
 
-`MainScreen` = `Sidebar` + `SessionToolbar` + `TranscriptView` + `Composer` + `Inspector`, with
-`AppearancePopover` or `TokenPopover` as popovers. It holds no styling of its own.
+`MainScreen` = `ShellPane(.window)` holding `Sidebar` + `SessionToolbar` + `ShellPane(.column)`
+(`TranscriptView` + `Composer`) + `Inspector`, with `AppearancePopover` or `TokenPopover` as popovers.
+It holds no styling of its own; it takes `MainScreenState` and reports `MainScreenIntent`.
 
 ## 7. Data shown in the token meter
 
