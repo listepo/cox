@@ -294,9 +294,9 @@ pub async fn connect_all(
             Ok(Ok(client)) => client.tools(deferred).await.map(|t| (client, t)),
             Ok(Err(e)) => Err(e),
             Err(_) => {
-                notices.push(format!(
-                    "mcp server `{name}` skipped: no handshake within {}s",
-                    timeout.as_secs()
+                notices.push(skipped(
+                    name,
+                    &format!("no handshake within {}s", timeout.as_secs()),
                 ));
                 continue;
             }
@@ -306,10 +306,25 @@ pub async fn connect_all(
                 tools.extend(list);
                 clients.push(client);
             }
-            Err(e) => notices.push(format!("mcp server `{name}` skipped: {e}")),
+            Err(e) => notices.push(skipped(name, &e.to_string())),
         }
     }
     (clients, tools, notices)
+}
+
+/// The notice [`connect_all`] leaves for a server it could not start;
+/// [`skipped_server`] reads it back.
+pub fn skipped(name: &str, reason: &str) -> String {
+    format!("mcp server `{name}` skipped: {reason}")
+}
+
+/// The server and the reason in a [`skipped`] notice, so a surface can say
+/// which server a session could not start (T37.45.4) without a second
+/// channel beside the session's warnings. `None` for any other notice.
+pub fn skipped_server(notice: &str) -> Option<(&str, &str)> {
+    notice
+        .strip_prefix("mcp server `")?
+        .split_once("` skipped: ")
 }
 
 /// One server tool as the core sees it.
@@ -607,5 +622,15 @@ mod tests {
             notices,
             ["mcp server `srv` skipped: token expired, run `cox mcp login srv`"]
         );
+    }
+
+    #[test]
+    fn a_skipped_notice_reads_back_its_server_and_reason() {
+        let notice = skipped("srv", "spawn nope: not found");
+        assert_eq!(
+            skipped_server(&notice),
+            Some(("srv", "spawn nope: not found"))
+        );
+        assert_eq!(skipped_server("mcp: .mcp.json skipped: bad json"), None);
     }
 }

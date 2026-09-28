@@ -22,6 +22,7 @@ use crate::app::{App, AppError};
 use crate::changes::{self, Changes};
 use crate::costs::{self, TurnCosts};
 use crate::info::{self, Info};
+use crate::mcp_status::McpRun;
 use crate::review;
 use crate::status::StatusFold;
 use crate::tasks::{self, TaskTarget};
@@ -63,6 +64,13 @@ impl LiveSession {
                 status.apply(&event);
             }
         }
+        let tried: Vec<String> = match config.mcp.enabled {
+            true => cox_session::mcp_servers(&config, &cwd)
+                .servers
+                .into_keys()
+                .collect(),
+            false => Vec::new(),
+        };
         let (login, keys) = (Arc::clone(&app.host), Arc::clone(&app.host));
         let spec = SessionSpec {
             config,
@@ -79,6 +87,15 @@ impl LiveSession {
         };
         let keys: cox_session::Keys = Arc::new(move |section: &str| keys.secret(section));
         let opened = cox_session::open_with_keys(spec, Some(keys)).await?;
+        let notices: Vec<String> = opened
+            .warnings
+            .iter()
+            .filter_map(|w| match w {
+                cox_session::Warning::Mcp(text) => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        app.record_mcp(&cwd, McpRun::new(tried, &notices));
         let session = opened.session;
         let events = session.events().ok_or(AppError::EventsTaken)?;
         let events = tee(Arc::clone(&app), session.id(), events);

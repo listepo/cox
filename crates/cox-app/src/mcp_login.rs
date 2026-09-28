@@ -15,6 +15,8 @@ use cox_protocol::Config;
 use rmcp::transport::auth::{AuthError, CredentialStore};
 use serde::Serialize;
 
+use crate::mcp_status::{self, McpRun, McpStatus};
+
 /// Whether cox can reach a server without asking the person to log in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "kebab-case")]
@@ -39,6 +41,10 @@ pub struct McpServer {
     /// Where it is configured: `config`, `.mcp.json`, `~/.claude.json`.
     pub source: String,
     pub login: McpLogin,
+    /// The badge (T37.45.4).
+    pub status: McpStatus,
+    /// Why it failed, sanitized and capped; empty when nothing went wrong.
+    pub log: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -99,8 +105,13 @@ impl Default for McpAuth {
 }
 
 /// The servers a session in `cwd` would connect, sorted by name, each with
-/// its login.
-pub async fn servers(config: &Config, cwd: &Path, secrets: &dyn Secrets) -> Vec<McpServer> {
+/// its login and, from `run` (the last session's), its status and log.
+pub async fn servers(
+    config: &Config,
+    cwd: &Path,
+    secrets: &dyn Secrets,
+    run: Option<&McpRun>,
+) -> Vec<McpServer> {
     let found = cox_session::mcp_servers(config, cwd);
     let mut names: Vec<&String> = found.servers.keys().collect();
     names.sort();
@@ -113,6 +124,8 @@ pub async fn servers(config: &Config, cwd: &Path, secrets: &dyn Secrets) -> Vec<
         out.push(McpServer {
             name: name.clone(),
             source: found.sources.get(name).cloned().unwrap_or_default(),
+            status: mcp_status::status_of(config.mcp.enabled, name, &login, run),
+            log: mcp_status::log_of(name, &login, run),
             login,
         });
     }

@@ -22,7 +22,21 @@ extension CoxClient.Dropped {
 
 extension CoxClient.McpServer {
   init(_ server: CoxFFIBindings.McpServer) {
-    self.init(name: server.name, source: server.source, login: .init(server.login))
+    self.init(
+      name: server.name, source: server.source, login: .init(server.login),
+      status: .init(server.status), log: server.log)
+  }
+}
+
+extension CoxClient.McpStatus {
+  init(_ status: CoxFFIBindings.McpStatus) {
+    switch status {
+    case .connected: self = .connected
+    case .needsLogin: self = .needsLogin
+    case .failed: self = .failed
+    case .disabled: self = .disabled
+    case .unknown: self = .unknown
+    }
   }
 }
 
