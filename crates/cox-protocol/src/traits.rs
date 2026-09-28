@@ -264,6 +264,14 @@ pub trait Tool: Send + Sync {
     /// Runs the tool. `text` in the returned `ToolOutput` is untruncated;
     /// the core archives it and truncates what the model sees.
     async fn call(&self, input: Value, cx: &ToolCx) -> Result<ToolOutput, ToolError>;
+    /// Releases what the tool holds across calls — a process such as a
+    /// language server (T41.5). Runs once, from `Session::end` of the
+    /// session that owns the tool list, never from a child that shares it.
+    /// Sync because `end` is: a tool that owns a process kills it here
+    /// rather than awaiting a polite exit. A tool must still work after
+    /// it, starting again on its next call, since a surface may reuse its
+    /// tool list for a new session. Default: nothing to release.
+    fn shutdown(&self) {}
 }
 
 /// The persistence layer: `~/.cox/cox.db` plus the JSONL rollouts

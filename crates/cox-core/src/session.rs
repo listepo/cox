@@ -671,8 +671,19 @@ impl Session {
     /// it ever handed out, so a `bash` detached in any turn is killed, not
     /// orphaned. For a surface leaving the session (quit, `/clear`, fork,
     /// handoff, headless exit); `interrupt` stays turn-scoped.
+    ///
+    /// The session the user talks to also calls `Tool::shutdown` on its
+    /// tools (T41.5), once however often `end` is called; a child
+    /// (`spawn_child`, the only constructor that sets `agent`) shares
+    /// tools with its parent and leaves them running.
     pub fn end(&self) {
+        let first = !self.ended.is_cancelled();
         self.ended.cancel();
+        if first && self.agent.is_none() {
+            for tool in &self.tools {
+                tool.shutdown();
+            }
+        }
     }
 
     /// A fresh turn token under `ended`: a previous `Esc` may have left
@@ -2344,5 +2355,90 @@ mod tests {
         assert_eq!(payload["title"], "Turn done");
         assert_eq!(payload["message"], "end_turn");
         assert_eq!(payload["hook_event_name"], "Notification");
+    }
+
+    /// Counts `Tool::shutdown` calls (T41.5).
+    #[derive(Default)]
+    struct Owner(std::sync::atomic::AtomicUsize);
+
+    #[async_trait::async_trait]
+    impl Tool for Owner {
+        fn spec(&self) -> cox_protocol::types::ToolSpec {
+            cox_protocol::types::ToolSpec {
+                name: "owner".into(),
+                description: String::new(),
+                input_schema: Value::Null,
+                deferred: false,
+                risk: cox_protocol::types::Risk::ReadOnly,
+                concurrency: cox_protocol::types::Concurrency::Parallel,
+            }
+        }
+        fn subject(&self, _input: &Value) -> String {
+            String::new()
+        }
+        async fn call(
+            &self,
+            _input: Value,
+            _cx: &cox_protocol::traits::ToolCx,
+        ) -> Result<cox_protocol::types::ToolOutput, ToolError> {
+            Err(ToolError::NotFound)
+        }
+        fn shutdown(&self) {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    fn with_tool(tool: Arc<Owner>) -> Session {
+        let store = Arc::new(MemoryStore::new());
+        let provider =
+            Arc::new(Scripted::from_toml("[[turn]]\ntext = \"ok\"\n", "").expect("scenario"));
+        Session::new(
+            cox_protocol::Config::default(),
+            provider,
+            vec![tool],
+            store.clone(),
+            store,
+            PathBuf::from("/tmp/cox-turn"),
+        )
+        .expect("session")
+    }
+
+    fn shutdowns(tool: &Owner) -> usize {
+        tool.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    #[tokio::test]
+    async fn end_shuts_down_tools_once() {
+        let tool = Arc::new(Owner::default());
+        let session = with_tool(tool.clone());
+        assert_eq!(shutdowns(&tool), 0);
+        session.end();
+        assert_eq!(shutdowns(&tool), 1);
+        // A second end, or one from a clone of the handle, is not a second shutdown.
+        session.end();
+        session.clone().end();
+        assert_eq!(shutdowns(&tool), 1);
+    }
+
+    #[tokio::test]
+    async fn child_end_does_not_shut_down_parent_tools() {
+        let tool = Arc::new(Owner::default());
+        let parent = with_tool(tool.clone());
+        let child = parent
+            .spawn_child(
+                parent.config.clone(),
+                parent.tools.clone(),
+                Job::Explore,
+                Tier::Code,
+                None,
+                None,
+                "explore-1".into(),
+                "explore".into(),
+            )
+            .expect("child");
+        child.end();
+        assert_eq!(shutdowns(&tool), 0);
+        parent.end();
+        assert_eq!(shutdowns(&tool), 1);
     }
 }
