@@ -34,7 +34,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.4 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.5 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.6 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
-| T37.7 | in progress | P1 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.8 | todo | P0 | 4 | 0% | |
 | T37.9 | todo | P0 | 3 | 0% | |
 | T37.10 | todo | P0 | 4 | 0% | |
@@ -1135,12 +1134,6 @@ Check: a scenario that changes mode and effort emits both events; `docs/protocol
 Depends: — · Size: ~180 · Files: `crates/cox-core/src/context.rs`, `crates/cox-provider-anthropic/src/…`, `crates/cox-provider-openai/src/…` (G2)
 Goal: an attached image or file reaches the model on every wire that supports it; an unsupported wire gets a clear notice.
 Check: request snapshots for Anthropic and OpenAI Responses contain the image block; a Chat-only local model gets the notice.
-
-#### T37.7 `cox-render`: a neutral `StyledDoc` for markdown and highlighting
-
-Depends: — · Size: ~200 · Files: `crates/cox-render/src/doc.rs`, `crates/cox-render/src/markdown.rs`, `crates/cox-render/Cargo.toml`
-Goal: markdown and syntax highlighting produce runs tagged with `StyleToken` roles that both ratatui and SwiftUI can draw; ratatui sits behind a feature.
-Check: the TUI transcript snapshots are unchanged; `StyledDoc` snapshots exist for a markdown fixture with code, lists and links.
 
 #### T37.8 `cox-app`: timeline fold with snapshots per scripted scenario
 

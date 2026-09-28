@@ -2958,3 +2958,15 @@ Check:
 - `python3 -c 'import json,glob; [json.load(open(f)) for f in glob.glob("desktop/design/tokens/*.json")]'` exits 0 (3 files).
 - All 61 mockup CSS classes named in DS§6 occur in `mockups.html` (the other 6 names the check picked up are SF Symbol names from DS§3.7).
 - `build_tokens.py` regenerates the token files with no diff.
+
+#### T37.7 `cox-render`: a neutral `StyledDoc` for markdown and highlighting
+
+Depends: — · Size: ~200 · Files: `crates/cox-render/src/doc.rs`, `crates/cox-render/src/markdown.rs`, `crates/cox-render/Cargo.toml`
+Goal: markdown and syntax highlighting produce runs tagged with `StyleToken` roles that both ratatui and SwiftUI can draw; ratatui sits behind a feature.
+Check: the TUI transcript snapshots are unchanged; `StyledDoc` snapshots exist for a markdown fixture with code, lists and links.
+Status: done 2026-09-28
+Result: `crates/cox-render/src/doc.rs` adds `StyledDoc` — blocks (`Text{Paragraph|Heading(n)|List|Quote}`, `Code{lang}`, `Table`, `Rule`) of lines of `StyledSpan{text, token: StyleToken, rgb, bold, italic, strike, underline, link}`. `markdown::parse` and `highlight_runs` build it with no terminal; the ratatui `render`/`highlight` are thin adapters over them. A default `ratatui` feature gates color, diff, link, svg, theme and `Look`, so a non-TUI consumer (cox-app) can depend on cox-render without ratatui.
+
+Deviations: `StyledSpan` also carries `rgb` (syntect's per-run colour, which a `StyleToken` cannot hold), `strike` and `underline`; 5 files instead of 3 (`lib.rs` gating, `AGENTS.md` row, `Cargo.lock` for insta dev-dep); `deps.rs` unchanged (no ratatui rule there).
+
+Check: `cargo nextest run -p cox-render -p cox-tui` 295/295, TUI snapshots unchanged; new snapshot `markdown_parses_into_tagged_blocks_without_a_terminal`; `cargo check`/`nextest -p cox-render --no-default-features` 6/6; clippy clean with and without default features; fmt clean. Commit a30e0f8.
