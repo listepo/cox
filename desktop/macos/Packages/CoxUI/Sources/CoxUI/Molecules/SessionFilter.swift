@@ -21,10 +21,11 @@ struct SessionFilter: View {
     HStack(spacing: Space.s) {
       Image(systemName: "magnifyingglass")
         .symbolStyle(.body)
-        .foregroundStyle(Color(.textTertiary))
+        .foregroundStyle(Color(.textPlaceholder))
         .accessibilityHidden(true)
-      // The prompt in `text.tertiary`, as the mockup draws it; the label names it for VoiceOver.
-      TextField(prompt, text: $text, prompt: Text(prompt).foregroundStyle(Color(.textTertiary)))
+      // The prompt and its magnifier in `text.placeholder`, not the mockup's tertiary, so the hint
+      // holds 4.5:1 on glass (DS§8, A112); the label names it for VoiceOver.
+      TextField(prompt, text: $text, prompt: Text(prompt).foregroundStyle(Color(.textPlaceholder)))
         .textFieldStyle(.plain)
         .textStyle(.body)
         .foregroundStyle(Color(.textPrimary))

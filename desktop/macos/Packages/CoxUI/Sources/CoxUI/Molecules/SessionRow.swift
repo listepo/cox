@@ -5,7 +5,7 @@
 import SwiftUI
 
 /// A `StatusDot` centred on the title line, the title over a subtitle, the cost at the far
-/// edge; the selected row sits on `accent.soft`, lifted to e1 (DS§3.4).
+/// edge; selected, it takes `InspectorRow`'s `rowSelection` (DS§3.4).
 public struct SessionRow: View {
   /// What the row shows, formatted by the core.
   public struct Item: Equatable, Sendable {
@@ -30,7 +30,6 @@ public struct SessionRow: View {
   }
 
   public var body: some View {
-    let shape = RoundedRectangle(cornerRadius: Radius.l, style: .continuous)
     HStack(alignment: .titleLine, spacing: Space.m) {
       StatusDot(item.status)
       VStack(alignment: .leading, spacing: 0) {
@@ -56,11 +55,7 @@ public struct SessionRow: View {
     .lineLimit(1)
     .padding(.horizontal, Space.ml)
     .padding(.vertical, Space.s)
-    .background { if isSelected { shape.fill(Color(.accentSoft)) } }
-    .elevation(isSelected ? .e1 : .e0, cornerRadius: Radius.l)
-    .contentShape(shape)
-    .accessibilityElement(children: .combine)
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .rowSelection(isSelected)
   }
 }
 

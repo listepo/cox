@@ -26,8 +26,8 @@ const STEP = 0.005;
 const GLASS = ['surface.sidebar', 'surface.capsule', 'surface.popover', 'surface.terminal'];
 const PAGE = ['surface.window', 'surface.code', ...GLASS.filter((s) => s !== 'surface.terminal')];
 const WORDS = [
-  'text.primary', 'text.secondary', 'text.tertiary', 'accent', 'status.success', 'status.warning',
-  'status.danger', 'status.plan', 'meter.sent', 'meter.received',
+  'text.primary', 'text.secondary', 'text.tertiary', 'text.placeholder', 'accent', 'status.success',
+  'status.warning', 'status.danger', 'status.plan', 'meter.sent', 'meter.received',
 ];
 const CODE = ['syntax.keyword', 'syntax.string', 'syntax.number', 'syntax.function', 'syntax.comment', 'syntax.type'];
 const onCode = (...fills) => ['surface.code', ...fills.map((f) => `${f}@surface.code`)];

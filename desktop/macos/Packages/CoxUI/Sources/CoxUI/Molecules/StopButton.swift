@@ -4,7 +4,7 @@
 
 import SwiftUI
 
-/// A stop glyph, "Stop" and a `KeyCap` on a `text.primary` capsule, lifted to e1 like the
+/// A stop glyph, "Stop" and an inverted `KeyCap` on a `text.primary` capsule, lifted to e1 like the
 /// capsules beside it. The shortcut it shows is the one it answers to.
 struct StopButton: View {
   let action: () -> Void
@@ -21,7 +21,7 @@ struct StopButton: View {
       HStack(spacing: Space.s) {
         Image(systemName: "stop.fill").symbolStyle(.caption)
         Text("Stop")
-        KeyCap("⌘.")
+        KeyCap("⌘.", inverted: true)
       }
     }
     .buttonStyle(StopStyle())

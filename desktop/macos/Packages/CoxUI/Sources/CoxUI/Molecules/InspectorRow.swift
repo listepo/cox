@@ -36,7 +36,6 @@ struct InspectorRow<Glyph: View, Content: View>: View {
   }
 
   var body: some View {
-    let shape = RoundedRectangle(cornerRadius: Radius.l, style: .continuous)
     HStack(spacing: Space.m) {
       glyph
       content
@@ -49,12 +48,8 @@ struct InspectorRow<Glyph: View, Content: View>: View {
     .lineLimit(1)
     .padding(.horizontal, Space.m)
     .padding(.vertical, Space.s)
-    .background { if isSelected { shape.fill(Color(.accentSoft)) } }
-    .elevation(isSelected ? .e1 : .e0, cornerRadius: Radius.l)
-    .contentShape(shape)
     .onHover { isHovered = $0 }
-    .accessibilityElement(children: .combine)
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .rowSelection(isSelected)
     .accessibilityActions {
       ForEach(actions) { action in Button(action.title, action: action.perform) }
     }
@@ -69,6 +64,29 @@ extension InspectorRow where Glyph == SymbolGlyph {
     self.init(
       glyph: SymbolGlyph(symbol: symbol), isSelected: isSelected, actions: actions,
       content: content)
+  }
+}
+
+extension View {
+  /// A list row's selection, shared by `InspectorRow` and `SessionRow`: selected, it sits on
+  /// `accent.soft` lifted to e1 in a `radius.l` shape; VoiceOver reads the row as one element
+  /// marked selected.
+  func rowSelection(_ isSelected: Bool) -> some View {
+    modifier(RowSelection(isSelected: isSelected))
+  }
+}
+
+private struct RowSelection: ViewModifier {
+  let isSelected: Bool
+
+  func body(content: Content) -> some View {
+    let shape = RoundedRectangle(cornerRadius: Radius.l, style: .continuous)
+    content
+      .background { if isSelected { shape.fill(Color(.accentSoft)) } }
+      .elevation(isSelected ? .e1 : .e0, cornerRadius: Radius.l)
+      .contentShape(shape)
+      .accessibilityElement(children: .combine)
+      .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }
 

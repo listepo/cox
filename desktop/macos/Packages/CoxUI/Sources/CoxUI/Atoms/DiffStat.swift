@@ -4,7 +4,8 @@
 
 import SwiftUI
 
-/// Tabular `+added` in `status.success` and `−removed` in `status.danger`.
+/// Tabular `+added` in `status.success` and `−removed` in `status.danger`; an add-only change
+/// (a new file) shows no "−0".
 struct DiffStat: View {
   let added: Int
   let removed: Int
@@ -12,7 +13,9 @@ struct DiffStat: View {
   var body: some View {
     HStack(spacing: Space.xs) {
       Text(verbatim: "+\(added)").foregroundStyle(Color(.statusSuccess))
-      Text(verbatim: "−\(removed)").foregroundStyle(Color(.statusDanger))
+      if showsRemoved {
+        Text(verbatim: "−\(removed)").foregroundStyle(Color(.statusDanger))
+      }
     }
     .textStyle(.footnote, tabularDigits: true)
     .fontWeight(.semibold)
@@ -20,7 +23,11 @@ struct DiffStat: View {
     .accessibilityLabel(label)
   }
 
-  var label: String { "\(added) lines added, \(removed) removed" }
+  var showsRemoved: Bool { removed > 0 }
+
+  var label: String {
+    showsRemoved ? "\(added) lines added, \(removed) removed" : "\(added) lines added"
+  }
 }
 
 #Preview { PreviewMatrix { DiffStat(added: PreviewState.added, removed: PreviewState.removed) } }
