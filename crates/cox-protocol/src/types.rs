@@ -950,7 +950,9 @@ pub enum Submission {
         text: String,
         /// Attached files/images.
         attachments: Vec<Attachment>,
-        /// Required to be `true` for the turn to route to `Tier::Think` (plan.md invariant #9).
+        /// `true` runs this one turn on `Tier::Think` (`/think`, the think
+        /// toggle, `--deep`), confirming its gate (plan.md invariant #9); the
+        /// next turn without it goes back to the session's tier (D5, A103).
         confirm_think: bool,
     },
     /// Answer a pending `ApprovalRequired`.
