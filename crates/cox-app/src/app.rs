@@ -89,6 +89,10 @@ pub enum AppError {
     /// agent's own.
     #[error("{intent} is not available in {agent} sessions (Agent Client Protocol)")]
     Unsupported { agent: String, intent: &'static str },
+    /// T52.6: a stored agent session reopened read-only; `why` says what
+    /// kept it from reattaching. A new session is the way on.
+    #[error("this {agent} session is read-only ({why}); start a new session to go on")]
+    ReadOnly { agent: String, why: String },
     /// T52.4: the agent could not start: its program or key is missing (the
     /// one warning, EA§7), or it failed `initialize` or `session/new`.
     #[error(transparent)]
@@ -236,6 +240,13 @@ impl App {
         resume: Option<SessionId>,
         theme: String,
     ) -> Result<Arc<LiveSession>, AppError> {
+        // T52.6: a session an external agent drove reopens through it.
+        if let Some(id) = resume
+            && let Some(stored) = self.workspace.store().session_agent(&id)?
+        {
+            let app = Arc::clone(self);
+            return LiveSession::open_agent(app, cwd, &stored.agent, theme, Some(id)).await;
+        }
         let resume = match resume {
             Some(id) => Some((id, cox_session::resume(&self.home, id)?)),
             None => None,
@@ -252,7 +263,7 @@ impl App {
         agent: &str,
         theme: String,
     ) -> Result<Arc<LiveSession>, AppError> {
-        LiveSession::open_agent(Arc::clone(self), cwd, agent, theme).await
+        LiveSession::open_agent(Arc::clone(self), cwd, agent, theme, None).await
     }
 
     /// The Settings screen for a session in `cwd` (DT§5.7), with each MCP

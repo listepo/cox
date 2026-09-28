@@ -14,6 +14,10 @@
 //! engine escalates becomes an `ApprovalRequired` in the same stream, with
 //! the agent as its source, so it lands in the inbox like any other ask
 //! (T52.5); the user's answer comes back through [`AcpSession::approve`].
+//!
+//! A stored session reopens with `session/load` when the agent advertises
+//! it (T52.6). What the agent replays then is dropped: cox's own rollout
+//! already holds the session as the user saw it.
 
 use std::collections::{HashMap, VecDeque};
 use std::ffi::OsStr;
@@ -23,8 +27,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use agent_client_protocol::schema::v1::{
-    CancelNotification, ContentBlock, NewSessionRequest, PromptRequest, PromptResponse,
-    SessionId as AcpId, SessionUpdate,
+    CancelNotification, ContentBlock, LoadSessionRequest, NewSessionRequest, PromptRequest,
+    PromptResponse, SessionId as AcpId, SessionUpdate,
 };
 use agent_client_protocol::{Agent, ByteStreams, Client, ConnectTo, ConnectionTo};
 use cox_acp::{Approver, ClientHost, UpdateFold};
@@ -64,6 +68,19 @@ pub enum AcpOpenError {
     /// The process started but `initialize` or `session/new` failed.
     #[error(transparent)]
     Agent(#[from] CoreError),
+    /// A stored session was asked for, and the agent does not advertise
+    /// `loadSession`: the session can only be read (T52.6).
+    #[error("{0} cannot reopen a session: it does not support session/load")]
+    NoLoad(String),
+}
+
+/// A stored session to reopen with `session/load` (T52.6).
+#[derive(Debug, Clone)]
+pub struct AcpResume {
+    /// The agent's ACP `sessionId`, as `sessions.agent_session` keeps it.
+    pub session: String,
+    /// The main turns the rollout already holds, so numbering goes on.
+    pub turns: u32,
 }
 
 enum Input {
@@ -84,6 +101,8 @@ pub struct AcpSession {
 pub struct OpenedAcp {
     pub session: AcpSession,
     pub events: mpsc::Receiver<Event>,
+    /// The agent's ACP `sessionId`, for `sessions.agent_session`.
+    pub agent_session: String,
 }
 
 impl AcpSession {
@@ -159,7 +178,9 @@ pub fn agents(
 /// Starts `agent` in `cwd` under its wrap and opens an ACP session with it.
 /// `path` is where a bare program name is looked up; `key` resolves the
 /// entry's `key_env` (a test passes its own, never the OS keychain). The
-/// engine's `Ask` verdicts go to the user as inbox items.
+/// engine's `Ask` verdicts go to the user as inbox items. `id` is cox's id
+/// for the session; `resume` reopens a stored one.
+#[allow(clippy::too_many_arguments)]
 pub async fn open(
     agent: ExternalAgentCommand,
     config: &Config,
@@ -167,6 +188,8 @@ pub async fn open(
     writable: &[PathBuf],
     path: Option<&OsStr>,
     key: impl Fn(&str, &str) -> Result<String, ProviderError>,
+    id: SessionId,
+    resume: Option<AcpResume>,
 ) -> Result<OpenedAcp, AcpOpenError> {
     let name = agent.name().to_string();
     let unavailable = |why: String| {
@@ -199,25 +222,27 @@ pub async fn open(
     let tail = tokio::spawn(stderr_tail(stderr));
     let client = move |asks, updates| host.client(asks, updates);
     let transport = ByteStreams::new(stdin.compat_write(), stdout.compat());
-    let mut opened = connect(name, transport, client, Some(tail)).await?;
+    let mut opened = connect(name, id, transport, client, Some(tail), resume).await?;
     opened.session.process = Mutex::new(Some((child, reap)));
     Ok(opened)
 }
 
-/// [`open`] over any transport: `initialize`, `session/new` in the host's
-/// cwd, then the session loop. A test passes one end of a duplex channel.
-/// `host` builds the client from the approver that turns the engine's asks
-/// into inbox items and the sender its `session/update`s go to.
+/// [`open`] over any transport: `initialize`, then `session/new` in the
+/// host's cwd, or `session/load` for `resume`, then the session loop. A
+/// test passes one end of a duplex channel. `host` builds the client from
+/// the approver that turns the engine's asks into inbox items and the
+/// sender its `session/update`s go to.
 pub async fn connect(
     agent: String,
+    id: SessionId,
     transport: impl ConnectTo<Client> + Send + 'static,
     host: impl FnOnce(Arc<dyn Approver>, mpsc::UnboundedSender<SessionUpdate>) -> ClientHost,
     tail: Option<JoinHandle<String>>,
-) -> Result<OpenedAcp, CoreError> {
-    let id = SessionId::new();
+    resume: Option<AcpResume>,
+) -> Result<OpenedAcp, AcpOpenError> {
     let (input_tx, input) = mpsc::unbounded_channel();
     let (events_tx, events) = mpsc::channel(EVENTS);
-    let (ready_tx, ready) = oneshot::channel::<Result<(), String>>();
+    let (ready_tx, ready) = oneshot::channel::<Result<AcpId, Setup>>();
     let (updates_tx, updates) = mpsc::unbounded_channel();
     let (notes_tx, notes) = mpsc::unbounded_channel();
     let asks = Arc::new(Asks::new(agent.clone(), id, notes_tx));
@@ -228,28 +253,46 @@ pub async fn connect(
         model: ModelId(format!("{agent} · ACP")),
         events: events_tx,
         tail,
-        seq: 0,
+        seq: resume.as_ref().map_or(0, |r| r.turns),
         busy: false,
         waiting: VecDeque::new(),
         started: Instant::now(),
     };
+    let mut updates = updates;
     let run = cox_acp::connect(transport, host, async move |cx| {
         let setup = async {
-            cx.send_request(cox_acp::initialize_request(sandboxed))
+            let init = cx
+                .send_request(cox_acp::initialize_request(sandboxed))
                 .block_task()
                 .await?;
-            cx.send_request(NewSessionRequest::new(cwd))
-                .block_task()
-                .await
+            match resume {
+                Some(stored) if init.agent_capabilities.load_session => {
+                    let session = AcpId::from(stored.session);
+                    let load = LoadSessionRequest::new(session.clone(), cwd);
+                    cx.send_request(load).block_task().await?;
+                    // The replay is what cox's rollout already holds.
+                    while updates.try_recv().is_ok() {}
+                    Ok(Some(session))
+                }
+                Some(_) => Ok(None),
+                None => {
+                    let new = cx.send_request(NewSessionRequest::new(cwd));
+                    Ok(Some(new.block_task().await?.session_id))
+                }
+            }
         };
         let session = match setup.await {
-            Ok(session) => session.session_id,
+            Ok(Some(session)) => session,
+            Ok(None) => {
+                let _ = ready_tx.send(Err(Setup::NoLoad));
+                return Ok(());
+            }
             Err(e) => {
-                let _ = ready_tx.send(Err(e.to_string()));
+                let _ = ready_tx.send(Err(Setup::Failed(e.to_string())));
                 return Err(e);
             }
         };
-        let _ = ready_tx.send(Ok(()));
+        let _ = ready_tx.send(Ok(session.clone()));
         driver.run(cx, session, input, updates, notes).await;
         Ok(())
     });
@@ -263,7 +306,7 @@ pub async fn connect(
         message: cox_sanitize::sanitize(&message),
     };
     match ready.await {
-        Ok(Ok(())) => Ok(OpenedAcp {
+        Ok(Ok(session)) => Ok(OpenedAcp {
             session: AcpSession {
                 id,
                 agent: agent.clone(),
@@ -272,10 +315,18 @@ pub async fn connect(
                 process: Mutex::new(None),
             },
             events,
+            agent_session: session.to_string(),
         }),
-        Ok(Err(e)) => Err(failed(e)),
-        Err(_) => Err(failed(String::from("closed before it answered"))),
+        Ok(Err(Setup::NoLoad)) => Err(AcpOpenError::NoLoad(agent.clone())),
+        Ok(Err(Setup::Failed(e))) => Err(failed(e).into()),
+        Err(_) => Err(failed(String::from("closed before it answered")).into()),
     }
+}
+
+/// Why `connect`'s setup did not reach the session loop.
+enum Setup {
+    Failed(String),
+    NoLoad,
 }
 
 /// The session loop: owns the fold, so every event leaves in the order the

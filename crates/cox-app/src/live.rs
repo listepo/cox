@@ -43,10 +43,15 @@ const EVENTS: usize = 256;
 const PLUGIN_QUEUE: usize = 64;
 
 /// What runs the session: cox's own core, or an external ACP agent's
-/// process (T52.4), whose events feed the same timeline.
+/// process (T52.4), whose events feed the same timeline. A stored agent
+/// session that could not be reattached keeps the reason instead (T52.6).
 enum Driver {
     Core(Session),
-    Agent { id: SessionId, acp: AcpSession },
+    Agent {
+        id: SessionId,
+        agent: String,
+        acp: Result<AcpSession, String>,
+    },
 }
 
 pub struct LiveSession {
@@ -157,28 +162,40 @@ impl LiveSession {
     /// A session driven by the external agent `agent` (T52.4): its events
     /// go through the same inbox tee, timeline and controller as a cox
     /// session's. No plugin UI, cox commands or terminal policy of its own:
-    /// the agent brings its own.
+    /// the agent brings its own. `resume` reopens a stored one (T52.6): its
+    /// rollout fills the timeline first, as for a cox session.
     pub(crate) async fn open_agent(
         app: Arc<App>,
         cwd: PathBuf,
         agent: &str,
         theme: String,
+        resume: Option<SessionId>,
     ) -> Result<Arc<Self>, AppError> {
         let config = app.config(&cwd)?;
-        let (opened, roots) = crate::external::open(&app, &config, &cwd, agent).await?;
-        // The session's asks already carry this id as their source (T52.5).
-        let id = opened.session.id();
+        let mut timeline = Timeline::new(&theme);
+        let mut status = StatusFold::open(&config);
+        let mut turns = 0;
+        if let Some(id) = &resume {
+            for event in cox_store::Store::open(&app.home)?.rollout_read(id)? {
+                if let Event::TurnStarted { seq, .. } = &event {
+                    turns = turns.max(*seq);
+                }
+                timeline.apply(&event);
+                status.apply(&event);
+            }
+        }
+        let resume = resume.map(|id| (id, turns));
+        let opened = crate::external::open(&app, &config, &cwd, agent, resume).await?;
+        // The session's asks carry this id as their source (T52.5).
+        let id = opened.id;
         let events = tee(Arc::clone(&app), id, opened.events);
         let (asks, _) = mpsc::channel(1);
         let owner = Arc::clone(&app);
+        let roots = opened.roots;
         let live = Arc::new(Self {
             completer: Completer::default(),
             plugins: Arc::new(PluginUi::new(asks)),
-            controller: Arc::new(Controller::open(
-                Timeline::new(&theme),
-                StatusFold::open(&config),
-                events,
-            )),
+            controller: Arc::new(Controller::open(timeline, status, events)),
             warnings: Vec::new(),
             turn: Mutex::new(None),
             sandbox: cox_session::agent_policy(&config),
@@ -186,7 +203,8 @@ impl LiveSession {
             app,
             driver: Driver::Agent {
                 id,
-                acp: opened.session,
+                agent: agent.to_string(),
+                acp: opened.acp,
             },
             cwd,
             theme,
@@ -206,7 +224,17 @@ impl LiveSession {
     pub fn agent(&self) -> Option<&str> {
         match &self.driver {
             Driver::Core(_) => None,
-            Driver::Agent { acp, .. } => Some(acp.agent()),
+            Driver::Agent { agent, .. } => Some(agent),
+        }
+    }
+
+    /// Why this stored agent session opened read-only (T52.6): the agent
+    /// cannot `session/load`, or could not start. `None` while it runs,
+    /// and for every cox session.
+    pub fn read_only(&self) -> Option<&str> {
+        match &self.driver {
+            Driver::Agent { acp: Err(why), .. } => Some(why),
+            _ => None,
         }
     }
 
@@ -215,8 +243,8 @@ impl LiveSession {
     fn core(&self, what: &'static str) -> Result<&Session, AppError> {
         match &self.driver {
             Driver::Core(session) => Ok(session),
-            Driver::Agent { acp, .. } => Err(AppError::Unsupported {
-                agent: acp.agent().to_string(),
+            Driver::Agent { agent, .. } => Err(AppError::Unsupported {
+                agent: agent.clone(),
                 intent: what,
             }),
         }
@@ -241,8 +269,9 @@ impl LiveSession {
     pub async fn send(&self, intent: Intent) -> Result<Option<Arc<Self>>, AppError> {
         let session = match &self.driver {
             Driver::Core(session) => session,
-            Driver::Agent { id, acp } => {
-                return crate::external::send(&self.app, *id, acp, intent).map(|()| None);
+            Driver::Agent { id, agent, acp } => {
+                let acp = acp.as_ref().map_err(String::as_str);
+                return crate::external::send(&self.app, *id, agent, acp, intent).map(|()| None);
             }
         };
         if let Intent::Command { line } = &intent {
@@ -566,7 +595,8 @@ impl LiveSession {
     pub fn end(&self) {
         match &self.driver {
             Driver::Core(session) => session.end(),
-            Driver::Agent { acp, .. } => acp.end(),
+            Driver::Agent { acp: Ok(acp), .. } => acp.end(),
+            Driver::Agent { acp: Err(_), .. } => {}
         }
         self.close();
     }

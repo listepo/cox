@@ -1,5 +1,5 @@
-//! A top-level session driven by an external ACP agent (T52.4, DT§3.3.1),
-//! end to end: `App::open_agent` starts `tests/fixtures/fake_acp.sh` from a
+//! A top-level session driven by an external ACP agent (T52.4-T52.6,
+//! DT§3.3.1), end to end: `App::open_agent` starts `tests/fixtures/fake_acp.sh` from a
 //! scratch user config's `[external_agents.fake]`, under the real sandbox
 //! wrap, and `LiveSession` drives it as the macOS app does. The key comes
 //! from the in-memory host, never the Keychain (A49); nextest runs each
@@ -37,13 +37,19 @@ fn fake_agent() -> PathBuf {
 /// and a project to run it in. `make deploy` always asks, so the fake's
 /// permission request reaches the user whatever the sandbox would allow.
 fn scratch(command: &str) -> tempfile::TempDir {
+    scratch_with(command, "[]")
+}
+
+/// [`scratch`] with the agent started with `args` (a TOML array).
+fn scratch_with(command: &str, args: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     let home = dir.path().join("user");
     std::fs::create_dir_all(home.join(".cox")).expect("home");
     std::fs::create_dir_all(dir.path().join("project")).expect("project");
     let config = format!(
         "[permissions]\nask = [\"Bash(make deploy:*)\"]\n\n\
-         [external_agents.fake]\ncommand = {command:?}\nkey_env = \"COX_FAKE_ACP_KEY\"\n"
+         [external_agents.fake]\ncommand = {command:?}\nargs = {args}\n\
+         key_env = \"COX_FAKE_ACP_KEY\"\n"
     );
     std::fs::write(home.join(".cox/config.toml"), config).expect("config");
     // SAFETY: first thing in this test's own process (nextest).
@@ -262,4 +268,68 @@ async fn external_answer_reaches_the_agent() {
         .any(|i| matches!(&i.need, Need::Approval { call: c, .. } if c.id == call));
     assert!(!open, "a decided ask leaves the inbox");
     live.end();
+}
+
+/// Runs one turn, "hi", in a new session and ends it; the session's id.
+async fn one_turn(app: &Arc<App>, dir: &Path) -> cox_protocol::SessionId {
+    let live = open_in(app, dir).await.expect("the agent starts");
+    live.send(send("hi")).await.expect("sent");
+    assert_eq!(turn_end(&live).await.1, StopReason::EndTurn);
+    let id = live.id();
+    live.end();
+    id
+}
+
+/// T52.6 Check: an agent without `loadSession` reopens its stored session
+/// read-only: the rollout fills the timeline, and a prompt is refused with
+/// the way on named.
+#[tokio::test]
+async fn external_session_reopens_read_only_without_load_session() {
+    let dir = scratch(&fake_agent().display().to_string());
+    if !wraps(dir.path()) {
+        return;
+    }
+    let app = app(dir.path());
+    let id = one_turn(&app, dir.path()).await;
+    let reopened = app
+        .open(dir.path().join("project"), Some(id), THEME.into())
+        .await
+        .expect("reopens");
+    assert_eq!(reopened.id(), id);
+    assert_eq!(reopened.agent(), Some("fake"));
+    let why = reopened.read_only().expect("read-only");
+    assert!(why.contains("session/load"), "{why}");
+    assert_eq!(
+        texts(&reopened),
+        ["hi", "hello from the fake agent with a key"]
+    );
+    let refused = reopened.send(send("again")).await.err();
+    assert!(
+        matches!(&refused, Some(AppError::ReadOnly { agent, .. }) if agent == "fake"),
+        "{refused:?}"
+    );
+}
+
+/// T52.6 Check: an agent with `loadSession` gets its own session id back
+/// (the fake fails any other), what it replays is not shown twice, and the
+/// session goes on where it stopped.
+#[tokio::test]
+async fn external_session_resumes_with_load_session() {
+    let dir = scratch_with(&fake_agent().display().to_string(), "[\"load\"]");
+    if !wraps(dir.path()) {
+        return;
+    }
+    let app = app(dir.path());
+    let id = one_turn(&app, dir.path()).await;
+    let reopened = app
+        .open(dir.path().join("project"), Some(id), THEME.into())
+        .await
+        .expect("reopens");
+    assert_eq!(reopened.id(), id);
+    assert_eq!(reopened.read_only(), None);
+    reopened.send(send("hi")).await.expect("sent");
+    assert_eq!(turn_end(&reopened).await.1, StopReason::EndTurn);
+    let greeting = "hello from the fake agent with a key";
+    assert_eq!(texts(&reopened), ["hi", greeting, "hi", greeting]);
+    reopened.end();
 }
