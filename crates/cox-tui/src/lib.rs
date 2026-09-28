@@ -16,6 +16,7 @@ pub mod state;
 pub mod status;
 pub mod tasks;
 pub mod term;
+pub mod theme_editor;
 pub mod view;
 pub mod vim;
 

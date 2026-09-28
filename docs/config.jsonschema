@@ -193,7 +193,12 @@
         "git": true,
         "notify": "auto",
         "motion": "full",
-        "caps": {}
+        "caps": {},
+        "status_line": {
+          "command": "",
+          "refresh_s": 0,
+          "timeout_ms": 2000
+        }
       }
     },
     "hooks": {
@@ -1430,6 +1435,43 @@
             "type": "boolean"
           },
           "default": {}
+        },
+        "status_line": {
+          "description": "`[tui.status_line]` (T46.1): a user command whose first output line\nis one row above the built-in status line.",
+          "$ref": "#/$defs/StatusLineConfig",
+          "default": {
+            "command": "",
+            "refresh_s": 0,
+            "timeout_ms": 2000
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "StatusLineConfig": {
+      "description": "`[tui.status_line]` (P46, A77): the user's status command. It runs under\nthe sandbox, read-only and without network, and its output passes\n`cox_sanitize::sanitize`. A project config cannot set `command` (the\nguard in `cox-config`'s `load.rs`): a cloned repository must not choose\na program cox runs on every TUI start.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "A `/bin/sh -c` command fed the status JSON on stdin; empty is off.",
+          "type": "string",
+          "default": ""
+        },
+        "refresh_s": {
+          "description": "Re-run the command every this many seconds even when nothing\nchanged; 0 is off.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "maximum": 3600,
+          "default": 0
+        },
+        "timeout_ms": {
+          "description": "How long one run may take, in milliseconds, before it is killed and\nthe row goes blank.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 100,
+          "maximum": 10000,
+          "default": 2000
         }
       },
       "additionalProperties": false

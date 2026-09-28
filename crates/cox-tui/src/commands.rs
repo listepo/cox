@@ -80,6 +80,8 @@ pub const KEYMAP: &[(&str, &str, Context)] = &[
     ("Esc", "close", Context::Modal),
     ("Up", "previous", Context::Modal),
     ("Down", "next", Context::Modal),
+    // T46.7: only over `/theme`; `view::hints` leaves it off other modals.
+    ("Ctrl+E", "theme.edit", Context::Modal),
     ("Esc", "close", Context::Overlay),
     ("?", "close", Context::Overlay),
     ("PageUp", "scroll.up", Context::Overlay),

@@ -57,6 +57,11 @@ fn hints(state: &State, width: u16) -> Line<'static> {
     let sep = format!(" {} ", state.glyphs.sep);
     let mut rows = state.keymap.rows(state.context());
     rows.dedup_by_key(|(_, action)| *action);
+    // T46.7: `Ctrl+E` edits a theme only over `/theme`, so no other modal
+    // advertises it.
+    let themes =
+        matches!(&state.modal, Some(Modal::Picker(p)) if p.kind == crate::picker::Kind::Themes);
+    rows.retain(|(_, action)| themes || *action != "theme.edit");
     let mut text = String::new();
     for (n, (key, action)) in rows.into_iter().take(5).enumerate() {
         let hint = format!("{key} {}", commands::label(action));
@@ -124,6 +129,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Some(Modal::Picker(p)) => p.height(),
         Some(Modal::PluginGrant(_)) => u16::try_from(grant.len()).unwrap_or(u16::MAX),
         Some(Modal::PluginRemove(_)) => u16::try_from(remove.len()).unwrap_or(u16::MAX),
+        Some(Modal::ThemeEditor(e)) => e.height(),
         // The diff view, the agents list, the rollout overlay and a
         // plugin's overlay (T33.24) all take the transcript's rows
         // (`Context::Overlay`), not a band of their own.
@@ -152,6 +158,10 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
     };
     let queue = queue_lines(state);
     let queue_rows = u16::try_from(queue.len()).unwrap_or(u16::MAX);
+    // T46.3: the status command's row, above the built-in one and only
+    // while it has something to say, so without it nothing moves.
+    let script = status::script_line(state, area.width);
+    let script_rows = u16::from(script.is_some());
     let [
         banner_area,
         transcript,
@@ -160,6 +170,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         modal_area,
         queue_area,
         composer,
+        script_area,
         status,
     ] = Layout::vertical([
         Constraint::Length(banner),
@@ -169,6 +180,7 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         Constraint::Length(modal),
         Constraint::Length(queue_rows),
         Constraint::Length(composer_rows),
+        Constraint::Length(script_rows),
         Constraint::Length(1),
     ])
     .areas(area);
@@ -297,6 +309,9 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         }
         Some(Modal::PluginGrant(_)) => Paragraph::new(grant).render(modal_area, buf),
         Some(Modal::PluginRemove(_)) => Paragraph::new(remove).render(modal_area, buf),
+        Some(Modal::ThemeEditor(e)) => {
+            Paragraph::new(e.lines(&state.glyphs, &state.theme)).render(modal_area, buf)
+        }
         // Drawn over the transcript above, like `Diff`/`Help`; no band
         // here. `Plugin`'s overlay is drawn there too, right after the
         // transcript `Paragraph` above.
@@ -325,6 +340,9 @@ pub fn view(state: &State, area: Rect, buf: &mut Buffer) -> Option<Position> {
         hints(state, text.width).render(text, buf);
     } else {
         state.composer.widget().render(text, buf);
+    }
+    if let Some(script) = script {
+        script.render(script_area, buf);
     }
     status::line_at(state, status.width).render(status, buf);
 

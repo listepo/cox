@@ -26,6 +26,7 @@ mod self_update;
 mod session;
 mod sessions;
 mod stats;
+mod status_line;
 mod telemetry;
 
 use clap::Parser;
