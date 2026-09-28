@@ -34,7 +34,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.29.3.5 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.17.2 | in progress | P3 | 1 | 0% | Claude Code / Opus 5.5 |
 | T37.19.5 | in progress | P2 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.20.5 | todo | P2 | 2 | 0% | |
 | T37.21.11 | todo | P2 | 2 | 0% | |
@@ -2784,12 +2783,6 @@ Check: `spctl --assess` accepts the release build; the appcast validates.
 Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
-
-#### T37.17.2 `letterSpacing` in em, mockups on `tokens.css`
-
-Depends: — · Size: ~40 · Files: `desktop/design/tokens/*.json`, `desktop/design/style-dictionary.config.*`, `desktop/design/mockups.html`
-Goal: `letterSpacing` tokens say em, which is what they mean; `mockups.html` reads the generated `tokens.css` instead of its inline variables, as its README promises.
-Check: generated `Tokens.swift` values are unchanged or the changed snapshots are re-recorded on purpose; the mockups render the same by eye.
 
 #### T37.19.5 Foundation tokens: on-accent text, dark highlight, disabled controls
 

@@ -5417,3 +5417,22 @@ Check:
 Not done:
 - App wiring of the draft into `ReviewPane.State` waits for T37.32.
 - Open question: "Send to agent" always sends; the composer queues a prompt while a turn runs. Should review comments queue too?
+
+#### T37.17.2 `letterSpacing` in em, mockups on `tokens.css`
+
+Depends: — · Size: ~40 · Files: `desktop/design/tokens/*.json`, `desktop/design/style-dictionary.config.*`, `desktop/design/mockups.html`
+Goal: `letterSpacing` tokens say em, which is what they mean; `mockups.html` reads the generated `tokens.css` instead of its inline variables, as its README promises.
+Check: generated `Tokens.swift` values are unchanged or the changed snapshots are re-recorded on purpose; the mockups render the same by eye.
+Status: done 2026-09-28
+Result:
+- All 15 typography `letterSpacing` values in `desktop/design/tokens/base.json` say `em` (commit 01b7fc3f). `style-dictionary.config.mjs` has an `em()` helper for the Swift tracking value that fails the build on any other unit; a missing value still gives 0.
+- `desktop/design/mockups/mockups.html` links `../tokens/tokens.css`, and its short colour names point at the `--c-*` tokens on both `:root` and `.dark`. Values with no token stay inline: wallpaper, window shadow, sidebar border, `--purple` and the glass materials. The mockups README says so.
+Deviations:
+- The mockups were compared with the project's `render.sh` and a byte comparison of the PNGs, not by eye.
+- In dark mode `--blue` now follows the dark `status.plan` token; no screen shows it in dark mode.
+Check:
+- `just desktop-tokens`: both high-contrast checks pass (189 pairs each); `Tokens.swift`, `Colors.xcassets` and `tokens.css` are byte-identical to before.
+- Negative check: a `rem` value fails the build naming the token.
+- All 30 mockup screens render byte-identical before and after.
+- No Swift tests: no generated Swift changed.
+Not done: none.

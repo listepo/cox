@@ -28,7 +28,6 @@
 - T37.29.3.5. Context tab: cache hit per turn or per session, Compact now waits for the turn
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
-- T37.17.2. `letterSpacing` in em, mockups on `tokens.css`
 - T37.19.5. Foundation tokens: on-accent text, dark highlight, disabled controls
 - T37.20.5. Atom tokens: project purple, RiskChip colours, named constants
 - T37.21.11. Molecule legibility and small fixes
