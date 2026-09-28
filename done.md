@@ -4407,3 +4407,34 @@ Check output:
 - Deviations: `default.toml` has no `servers = {}` line (TOML cannot extend an inline table with `[lsp.servers.<name>]` headers); the `source_of` leaf-key fix was not in the card but is needed for `cox config show --sources` to report the reverted servers truthfully.
 - Check output summary: `cargo nextest run -p cox-protocol -E 'test(lsp)'` 1 passed; `cargo nextest run -p cox-config -E 'test(lsp) | test(schema)'` 2 passed; `cargo nextest run -p cox-protocol -p cox-config` 106 passed; `cargo nextest run -p cox -E 'test(config)'` 12 passed; `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings` clean. Real binary, scratch `COX_HOME=/tmp/cox-t41.1` and a project `.cox/config.toml` setting `lsp.timeout_s = 10` and `lsp.servers.rust.command = "./evil"`: `cox config show --sources` warned `project config ignores lsp.servers = rust (guard); using go, python, rust, typescript`, showed `lsp.servers.rust.command = "rust-analyzer"  # default` and `lsp.timeout_s = 10  # project`; scratch removed.
 - Status: done 2026-09-28
+
+#### T37.23.4 User bubble and thinking inside the transcript text
+
+Depends: — · Size: ~150 · Files: `desktop/macos/Packages/CoxTranscript/…`, `desktop/macos/Packages/CoxTranscriptText/…`
+Goal: user prompts and thinking blocks render in `TranscriptView` with the `UserBubble` and `ThinkingDisclosure` look (T37.21.5), as styled TextKit fragments or card attachments, so their text stays selectable across blocks.
+Check: snapshots of a turn with a user prompt with an attachment and a folded and an open thinking block; a drag from the prompt into the reply copies both in order.
+Status: done 2026-09-28
+Result:
+- User prompts and thoughts are styled text inside `TranscriptView`'s one text (A87), not card attachments, so a selection can start partway through a prompt.
+- `CoxTranscriptText/TranscriptDecor.swift`:
+  - a `Decor` attribute and a layout-manager delegate give those paragraphs a `DecorFragment`, which draws the bubble slice or the thought's hairline rule;
+  - `TranscriptStyle` gains `bubble` and `thought`.
+- Attachment tiles and the thought's fold header are view-backed `CardAttachment`s, supplied through `TranscriptCards(thumbnail:thinking:)`.
+- Thoughts start folded:
+  - `setThought(_:open:)` edits only the text after the header, and no other block's range moves;
+  - Copy gives what is shown: a prompt without its tiles, and nothing for a folded thought.
+- CoxUI changes: `Thumbnail` is public, `ThinkingHeader` is split out of `ThinkingDisclosure`, and `SurfaceColour` is new.
+- DT§5.2 and DS§6.3 are updated.
+Deviations:
+- About 290 source lines in 10 files, against the card's ~150 lines and 3 files.
+- The header reads "Thinking", because the thinking block carries no duration (T37.23.10).
+- The bubble is a fill only, with no glass or e2 shadow (T37.23.9).
+- The `everyBlockKind` snapshots were re-recorded.
+Check:
+- CoxTranscriptText: 26/26, including `TranscriptDecorTests`.
+- CoxTranscript: 8/8, including `TranscriptTurnTests`: light and dark snapshots, and a real `NSEvent` drag from the prompt into the reply that copies prompt → reasoning → reply as Markdown.
+- CoxUI: 111/111.
+- `swift-format lint --strict` and `swiftlint --strict` are clean.
+Not done:
+- The thought duration: T37.23.10.
+- The bubble's glass and elevation, and the prompt's hover actions: T37.23.9.

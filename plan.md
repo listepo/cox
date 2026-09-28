@@ -28,11 +28,12 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.39.1 | in progress | P0 | 2 | 0% | Claude Code / Opus 5.5 |
-| T37.23.4 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.23.5 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
 | T37.23.6 | todo | P1 | 2 | 0% | |
 | T37.23.7 | todo | P1 | 2 | 0% | |
 | T37.23.8 | todo | P1 | 3 | 0% | |
+| T37.23.9 | todo | P2 | 2 | 0% | |
+| T37.23.10 | todo | P2 | 2 | 0% | |
 | T37.24 | in progress | P0 | 4 | 0% | Claude Code / Opus 5.5 |
 | T37.25 | todo | P1 | 3 | 0% | |
 | T37.27 | in progress | P0 | 3 | 0% | Claude Code / Opus 5.5 |
@@ -2758,12 +2759,6 @@ Depends: — · Size: ~80 · Files: `crates/cox-ffi/tests/forward_only.rs`, `AGE
 Goal: A90's rule as a test. Every `#[uniffi::export]` function and method in `lib.rs`, `session.rs` and `host.rs` has a body of one expression that calls into `cox-app`, or converts through `types.rs`. The AGENTS.md `cox-ffi` row states the rule instead of the line count.
 Check: the test passes on the current crate; a scratch copy of a method with an `if`, a `match` or a second statement makes it fail.
 
-#### T37.23.4 User bubble and thinking inside the transcript text
-
-Depends: — · Size: ~150 · Files: `desktop/macos/Packages/CoxTranscript/…`, `desktop/macos/Packages/CoxTranscriptText/…`
-Goal: user prompts and thinking blocks render in `TranscriptView` with the `UserBubble` and `ThinkingDisclosure` look (T37.21.5), as styled TextKit fragments or card attachments, so their text stays selectable across blocks.
-Check: snapshots of a turn with a user prompt with an attachment and a folded and an open thinking block; a drag from the prompt into the reply copies both in order.
-
 #### T37.23.5 Structured diff hunks from Rust for edit cards
 
 Depends: — · Size: ~150 · Files: `crates/cox-app/…`, `desktop/macos/Packages/CoxModel/…`, `desktop/macos/Packages/CoxTranscript/…`
@@ -2787,6 +2782,18 @@ Check: a test streams `docTail` patches and the view stays at the bottom; after 
 Depends: — · Size: ~120 · Files: `desktop/macos/Packages/CoxTranscriptText/…`
 Goal: `StyledDoc` headings, lists, quotes, rules and tables render with their structure (indents, markers, heading sizes from tokens) instead of flat paragraphs.
 Check: a snapshot of a reply with each block kind; Copy as Markdown of it round-trips the structure.
+
+#### T37.23.9 Prompt bubble glass, elevation and hover actions
+
+Depends: — · Size: ~100 · Files: `desktop/macos/Packages/CoxTranscriptText/…`, `desktop/macos/Packages/CoxTranscript/…`
+Goal: the user bubble drawn by `DecorFragment` gets DS§6.3's glass sweep and e2 elevation from tokens, with a gap between the prompt text and its tile row; hovering a prompt shows its Edit-and-resend and Copy actions, which reach the composer and the pasteboard.
+Check: light/dark snapshots of a prompt at rest and hovered; a test that Copy puts the prompt text on the pasteboard and Edit fills the composer.
+
+#### T37.23.10 Thought duration in the thinking header
+
+Depends: — · Size: ~80 · Files: `crates/cox-app/src/timeline.rs`, `desktop/macos/Packages/CoxTranscriptText/…`
+Goal: a thinking block carries how long the model thought (from its first to its last reasoning delta, as `cox-app` folds the events), and the fold header reads "Thought for 12 s" once it ends and "Thinking" while it streams (DS§6.3).
+Check: a `cox-app` test that a folded reasoning run records its duration and replay gives the same value; a snapshot of the header in both states.
 
 #### T37.24 Composer: mentions, commands, shell mode, attachments, queue
 

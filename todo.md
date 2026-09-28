@@ -22,11 +22,12 @@
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T37.39.1. `cox-ffi` forwards only: the check
-- T37.23.4. User bubble and thinking inside the transcript text
 - T37.23.5. Structured diff hunks from Rust for edit cards
 - T37.23.6. Restyle the transcript when the text size changes
 - T37.23.7. Follow the tail while a reply streams
 - T37.23.8. Headings, lists and quotes in replies
+- T37.23.9. Prompt bubble glass, elevation and hover actions
+- T37.23.10. Thought duration in the thinking header
 - T37.24. Composer: mentions, commands, shell mode, attachments, queue
 - T37.25. Token meter and token popover
 - T37.27. Approvals, questions, inbox, notifications with actions, Dock badge
