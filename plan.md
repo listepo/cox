@@ -29,7 +29,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.23.15 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.23.17 | in progress | P3 | 1 | 0% | Claude Code / Opus 5.5 |
-| T37.23.18 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.25.2 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.25.3 | in progress | P2 | 2 | 0% | Claude Code / Opus 5.5 |
 | T37.24.10 | in progress | P3 | 2 | 0% | Claude Code / Opus 5.5 |
@@ -2759,12 +2758,6 @@ Check: the token build's own check; a CoxTranscriptText snapshot of every headin
 Depends: — · Size: ~40 · Files: `desktop/design/tokens/*.json` (and the generated outputs), `desktop/design/DESIGN.md`, `desktop/macos/Packages/CoxTranscriptText/…/TranscriptStructure.swift`
 Goal (A97): a `quote.bar` token (width about 3 pt, a colour stronger than the hairline, with light, dark and high-contrast variants) in DESIGN.md's tables; T37.23.12's `QuoteFragment` draws its bars from it instead of the thought's hairline.
 Check: the token build's own check; CoxTranscriptText light and dark snapshots of a nested quote.
-
-#### T37.23.18 Edit and resend rewinds the conversation
-
-Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxModel/…` (`ComposerStore`, `SessionStore`), `desktop/macos/Packages/CoxTranscript/…`
-Goal (A102): a prompt's Edit and resend (T37.23.9) fills the composer with the prompt and sends `Intent.rewind(toTurn:code: false, conversation: true)` to the turn before that prompt, so the resent prompt does not see the old reply and no file changes; restoring code stays an explicit choice in the rewind timeline.
-Check: a CoxModel test over the fixture that Edit on the second prompt fills the composer and sends one conversation-only rewind to the turn before it.
 
 #### T37.25.2 Context split in the desktop token popover
 

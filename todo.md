@@ -23,7 +23,6 @@
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T37.23.15. Per-level transcript heading sizes
 - T37.23.17. A stronger quote bar from its own token
-- T37.23.18. Edit and resend rewinds the conversation
 - T37.25.2. Context split in the desktop token popover
 - T37.25.3. Context split in the TUI
 - T37.24.10. Think toggle in the composer

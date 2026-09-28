@@ -5240,3 +5240,18 @@ Check:
 - `cargo nextest run -p cox-ffi -p cox-app`: 80/80 including `review_diffs_each_file_against_its_checkpoint_and_after_a_code_rewind_nets_to_nothing`; clippy and fmt clean. CoxModel 50, CoxUI ReviewPane/ChangesTab/RewindTimeline 12, CoxCore 12.
 - After merging into `p37-desktop`: `just test --changed-since` 534 passed, 1 skipped; clippy and fmt clean; CoxCore 12, CoxModel 51, CoxUI ReviewPane/ChangesTab/RewindTimeline 12.
 Not done: app wiring (⌘⇧R, `ReviewState` → `ReviewPane.State`, T37.32); the side-by-side toggle; the file list's +/− counts are still the model's calls, only the diff pane shows the net change.
+
+#### T37.23.18 Edit and resend rewinds the conversation
+
+Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxModel/…` (`ComposerStore`, `SessionStore`), `desktop/macos/Packages/CoxTranscript/…`
+Goal (A102): a prompt's Edit and resend (T37.23.9) fills the composer with the prompt and sends `Intent.rewind(toTurn:code: false, conversation: true)` to the turn before that prompt, so the resent prompt does not see the old reply and no file changes; restoring code stays an explicit choice in the rewind timeline.
+Check: a CoxModel test over the fixture that Edit on the second prompt fills the composer and sends one conversation-only rewind to the turn before it.
+Status: done 2026-09-28
+Result:
+- CoxModel `ComposerStore.resend(_ prompt: Block)` in `Rewind.swift` (A102): fills the draft through `edit(text)`, then sends `.rewind(toTurn: prompt.turn, code: false, conversation: true)` — the core's `to_turn` is the first turn cut (`cut_history` drops from the first turn mark with `seq >= to_turn`; the timeline removes blocks with `turn >= to_turn`), so the prompt's own turn removes it and its reply; a send error goes to `report`; a non-prompt block sends nothing. CoxTranscript `PromptActing.swift`: `.edit` calls `composer?.resend(block)`. No Rust change.
+- New data-only scenario `crates/cox-ffi/fixtures/two-prompts.toml` and fixture `desktop/macos/Fixtures/two-prompts.json`, with its record command in the Fixtures README.
+Deviations: the new fixture (no recorded fixture had a second prompt); it joins the fixture loops in CoxModel and CoxTranscriptText.
+Check:
+- CoxModel 53 (the Check test replays `two-prompts.json`, takes the second user block from the replay, and finds the composer filled and exactly one conversation-only rewind to its turn), CoxTranscript 45, CoxTranscriptText 33 of 34 (the load-sensitive launch budget); swiftlint clean.
+- After merging into `p37-desktop`: CoxModel 53, CoxTranscript 45.
+Not done: app wiring (T37.32). With a turn running the core refuses the rewind ("interrupt it first") and the draft is still filled; the client does not interrupt.
