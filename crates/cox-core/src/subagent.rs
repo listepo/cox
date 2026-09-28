@@ -379,6 +379,11 @@ impl Tool for AgentTool {
         let Ok(resolved) = self.resolve(input) else {
             return Risk::Exec;
         };
+        // `git worktree add` changes the repository whatever the child's
+        // tools are, so it must ask even for a read-only preset (T44.1).
+        if input.get("isolation").and_then(Value::as_str) == Some("worktree") {
+            return Risk::Destructive;
+        }
         // Its own tools are invisible to cox, so it counts as running
         // anything (the same class `StreamJsonMapper` gives its calls).
         if resolved.external.is_some() {
@@ -1232,6 +1237,67 @@ mod tests {
             Ok(("shell".to_string(), false))
         );
         assert!(tool.resolve(&json!({"preset": "nope"})).is_err());
+    }
+
+    /// T44.1: what the Engine concludes for an `explore` child with worktree
+    /// isolation — the call the turn loop builds from `risk`/`subject`.
+    fn worktree_isolation_outcome(mode: PermissionMode, allow: &[&str]) -> crate::Outcome {
+        let tool = test_agent_tool(vec![]);
+        let input = json!({"task": "look around", "isolation": "worktree"});
+        let call = ToolCall {
+            id: cox_protocol::CallId::new(),
+            name: "agent".into(),
+            risk: tool.risk(&input),
+            subject: tool.subject(&input),
+            input,
+            segments: None,
+        };
+        let cfg = cox_protocol::config::PermissionsConfig {
+            allow: allow.iter().map(|r| (*r).to_string()).collect(),
+            ..Default::default()
+        };
+        let engine = crate::Engine::compile(&cfg, None, std::path::Path::new("/repo"))
+            .expect("rules compile");
+        engine.decide(
+            &call,
+            mode,
+            cox_protocol::types::ApprovalPolicy::OnRequest,
+            cox_protocol::types::SandboxMode::WorkspaceWrite,
+            &[],
+        )
+    }
+
+    #[test]
+    fn worktree_isolation_asks_in_default_mode() {
+        for mode in [PermissionMode::Default, PermissionMode::Auto] {
+            assert_eq!(
+                worktree_isolation_outcome(mode, &[]),
+                crate::Outcome::Ask(Why::Risk {
+                    risk: Risk::Destructive
+                }),
+                "{mode:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn worktree_isolation_is_denied_in_plan_mode() {
+        assert!(matches!(
+            worktree_isolation_outcome(PermissionMode::Plan, &[]),
+            crate::Outcome::Deny { .. }
+        ));
+        let plain = test_agent_tool(vec![]).risk(&json!({"task": "x", "isolation": "none"}));
+        assert_eq!(plain, Risk::ReadOnly, "no isolation keeps the tools' risk");
+    }
+
+    #[test]
+    fn worktree_isolation_respects_an_allow_rule() {
+        assert_eq!(
+            worktree_isolation_outcome(PermissionMode::Default, &["agent(explore)"]),
+            crate::Outcome::Allow {
+                by: DecidedBy::Rule
+            }
+        );
     }
 
     /// T34.1: an unrecognised name is denied, and the error names both the

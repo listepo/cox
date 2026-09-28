@@ -3276,3 +3276,49 @@ Deviations: four files, since the crate had no `thiserror` yet. Size: ~290 non-c
 Check output:
 - `cargo nextest run -p cox-tools -E 'test(lsp::client)'`: 10 passed — `framing_round_trips`, `split_headers_and_back_to_back_messages_are_framed`, `partial_message_is_closed`, `missing_or_bad_content_length_is_a_parse_error`, `oversized_message_is_rejected`, `server_request_is_answered`, `request_times_out`, `closed_pipe_fails_pending_requests`, `responses_match_ids_out_of_order`, `notifications_reach_the_stream`. Against stub bodies 9 failed first (the parse-error test passed only because the stub returned `Parse`).
 - Workspace: `cargo fmt --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo nextest run --workspace --no-fail-fast`: 1346 passed, 4 skipped. A first fail-fast run stopped on `cox::subagent_messaging headless_run_does_not_wait_for_a_background_shell` (also failed 3 runs alone at 10-20 s under machine load, then passed alone in 2.8 s and in the full run); it touches no LSP code.
+
+#### T44.1 `agent(isolation: "worktree")` asks before it adds a worktree
+
+Model: Claude Code / opus-5.5 · Status: done 2026-09-28 · Depends: - · Size: ~60 · Priority: P1 · Complexity: 2
+
+Goal: fix the gate violation — today an `explore` child with worktree isolation is `Risk::ReadOnly`, so it runs `git worktree add` unasked in every mode, even plan.
+
+Files:
+- `crates/cox-core/src/subagent.rs`
+- `docs/tools.md`
+
+Steps:
+1. `AgentTool::risk`: when `input.isolation == "worktree"`, return `Risk::Destructive` (asks in default/auto, denied in plan, allowed only in bypass or by an allow rule / session grant on `agent(<name>)`). The Engine stays the only decision point; the tool does not check permission itself.
+2. `docs/tools.md`: the `agent` row says worktree isolation asks.
+3. Tests: `worktree_isolation_asks_in_default_mode`, `worktree_isolation_is_denied_in_plan_mode`, `worktree_isolation_respects_an_allow_rule`.
+
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core worktree_isolation_
+mise exec -- cargo nextest run --workspace
+mise exec -- cargo clippy --workspace --all-targets -- -D warnings
+mise exec -- cargo fmt --check
+```
+
+Done when: the three tests pass (open question 3: `Destructive` vs `Exec`).
+
+Plan:
+1. Tests first in `subagent.rs` `mod tests`: build the `ToolCall` from `AgentTool::risk`/`subject` for `{"task":"x","isolation":"worktree"}` and feed it to `cox_permission::Engine::decide` — `Ask` in default and auto, `Deny` in plan, `Allow { by: Rule }` with an `agent(explore)` allow rule. Confirm the default/auto/plan ones fail on current code (explore is `ReadOnly`).
+2. `AgentTool::risk`: after resolve, `isolation == "worktree"` returns `Risk::Destructive` (above `Exec` for an external agent too); no permission check in the tool.
+3. `docs/tools.md`: the `agent` row says worktree isolation is `destructive` and asks.
+4. Verify: `cargo nextest run -p cox-core worktree_isolation_`, then fmt, clippy, the workspace suite.
+
+Out of scope: removing the isolation option.
+
+Result:
+- `AgentTool::risk` (`crates/cox-core/src/subagent.rs`) returns `Risk::Destructive` when `isolation` is `"worktree"`, checked after `resolve` and before the external-agent and max-of-tools branches, so it wins over `Exec` too. The Engine stays the only decision point.
+- `docs/tools.md`: the `agent` row says worktree isolation is Destructive and asks (denied in plan).
+- Tests (unit, `subagent.rs`, the `ToolCall` built from `risk`/`subject` fed to `Engine::decide`): `worktree_isolation_asks_in_default_mode` (default and auto → `Ask(Risk Destructive)`), `worktree_isolation_is_denied_in_plan_mode` (also pins `isolation: "none"` to `ReadOnly` for explore), `worktree_isolation_respects_an_allow_rule` (`agent(explore)` → `Allow { by: Rule }`). Before the fix the first two failed (`Allow { by: Policy }`); the allow-rule one passed on old code too, since a read-only call was allowed anyway.
+
+Deviations:
+- A third file: `crates/cox-core/tests/subagent.rs` — `subagent_worktree_isolation_runs_child_in_its_worktree` now needs approval, so it sets the allow rule `agent(shell)` for both of its sessions (the proof the rule path works end to end).
+
+Check:
+- `cargo nextest run -p cox-core worktree_isolation`: 4 passed (the three new tests plus the updated integration test).
+- `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`: clean. Workspace nextest (run before the creator's new "no full suite" rule arrived): 1352 passed, 4 skipped.
+- Real binary, scratch `COX_HOME`, scripted `subagent_worktree` scenario in a scratch git repo: `cox run -p` in default mode reports `risk: "destructive"` and denies (headless approval policy `never`); `--permission-mode plan` denies with the plan-mode reason; `git worktree list` shows no worktree was added.

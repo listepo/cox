@@ -55,7 +55,6 @@
 - T43.4. Build the map once at session start; resume replays it
 - T43.5. `/repomap refresh` and the compaction rebuild
 - T43.6. Bench the map on and off
-- T44.1. `agent(isolation: "worktree")` asks before it adds a worktree
 - T44.2. One live session per worktree
 - T44.3. Worktrees in `/agents` and `cox sessions`
 - T44.4. Resume a worktree session in its worktree

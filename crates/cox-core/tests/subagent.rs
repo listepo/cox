@@ -54,12 +54,12 @@ impl Worktrees for Fake {
 /// T27.3: `isolation: "worktree"` asks the provider for a worktree named
 /// after the task id and owned by the parent session, and the answer ends
 /// with its path and branch. Without a provider the call is refused.
+/// Worktree isolation is `Destructive` (T44.1), so an allow rule lets it run.
 #[tokio::test]
 async fn subagent_worktree_isolation_runs_child_in_its_worktree() {
-    let (session, _store, mut rx) = open(
-        &scenario("subagent_worktree"),
-        cox_protocol::Config::default(),
-    );
+    let mut config = cox_protocol::Config::default();
+    config.permissions.allow = vec!["agent(shell)".into()];
+    let (session, _store, mut rx) = open(&scenario("subagent_worktree"), config.clone());
     let fake = Arc::new(Fake(Mutex::new(Vec::new())));
     session.set_worktrees(fake.clone());
     let running = spawn_turn(&session, "subagent_worktree");
@@ -87,10 +87,7 @@ async fn subagent_worktree_isolation_runs_child_in_its_worktree() {
         )]
     );
 
-    let (session, _store, mut rx) = open(
-        &scenario("subagent_worktree"),
-        cox_protocol::Config::default(),
-    );
+    let (session, _store, mut rx) = open(&scenario("subagent_worktree"), config);
     let running = spawn_turn(&session, "no provider");
     let events = drain(&mut rx).await;
     running.await.expect("join").expect("turn");

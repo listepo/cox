@@ -61,7 +61,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T43.4 | todo | P2 | 4 | 0% | |
 | T43.5 | todo | P2 | 3 | 0% | |
 | T43.6 | todo | P3 | 3 | 0% | |
-| T44.1 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T44.2 | todo | P2 | 2 | 0% | |
 | T44.3 | todo | P3 | 2 | 0% | |
 | T44.4 | todo | P2 | 3 | 0% | |
@@ -2109,39 +2108,6 @@ Out of scope: ranking changes.
 Rationale in §6 A75.
 
 Already shipped by T27.3: `cox --worktree <name>`, `Presence.worktree` and `PresenceHook::with_worktree`, the `⧉` status segment, `offer_worktree_removal`. P44 closes the remaining gate items.
-
-### T44.1. `agent(isolation: "worktree")` asks before it adds a worktree
-
-Model: Claude Code / opus-5.5 · Status: in progress · Depends: - · Size: ~60 · Priority: P1 · Complexity: 2
-
-Goal: fix the gate violation — today an `explore` child with worktree isolation is `Risk::ReadOnly`, so it runs `git worktree add` unasked in every mode, even plan.
-
-Files:
-- `crates/cox-core/src/subagent.rs`
-- `docs/tools.md`
-
-Steps:
-1. `AgentTool::risk`: when `input.isolation == "worktree"`, return `Risk::Destructive` (asks in default/auto, denied in plan, allowed only in bypass or by an allow rule / session grant on `agent(<name>)`). The Engine stays the only decision point; the tool does not check permission itself.
-2. `docs/tools.md`: the `agent` row says worktree isolation asks.
-3. Tests: `worktree_isolation_asks_in_default_mode`, `worktree_isolation_is_denied_in_plan_mode`, `worktree_isolation_respects_an_allow_rule`.
-
-Check:
-```bash
-mise exec -- cargo nextest run -p cox-core worktree_isolation_
-mise exec -- cargo nextest run --workspace
-mise exec -- cargo clippy --workspace --all-targets -- -D warnings
-mise exec -- cargo fmt --check
-```
-
-Done when: the three tests pass (open question 3: `Destructive` vs `Exec`).
-
-Plan:
-1. Tests first in `subagent.rs` `mod tests`: build the `ToolCall` from `AgentTool::risk`/`subject` for `{"task":"x","isolation":"worktree"}` and feed it to `cox_permission::Engine::decide` — `Ask` in default and auto, `Deny` in plan, `Allow { by: Rule }` with an `agent(explore)` allow rule. Confirm the default/auto/plan ones fail on current code (explore is `ReadOnly`).
-2. `AgentTool::risk`: after resolve, `isolation == "worktree"` returns `Risk::Destructive` (above `Exec` for an external agent too); no permission check in the tool.
-3. `docs/tools.md`: the `agent` row says worktree isolation is `destructive` and asks.
-4. Verify: `cargo nextest run -p cox-core worktree_isolation_`, then fmt, clippy, the workspace suite.
-
-Out of scope: removing the isolation option.
 
 ### T44.2. One live session per worktree
 
