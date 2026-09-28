@@ -81,6 +81,13 @@ impl Drop for Recorder {
     }
 }
 
+/// The default input device's name, `None` without one; opens no stream,
+/// so it records nothing and raises no permission prompt (`cox doctor`).
+pub fn input_device() -> Option<String> {
+    let device = cpal::default_host().default_input_device()?;
+    device.description().ok().map(|d| d.name().to_string())
+}
+
 fn lock(buffer: &Mutex<Capped>) -> MutexGuard<'_, Capped> {
     buffer.lock().unwrap_or_else(PoisonError::into_inner)
 }

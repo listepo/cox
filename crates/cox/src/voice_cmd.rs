@@ -40,6 +40,14 @@ pub(crate) fn models_dir(home: &Path) -> PathBuf {
     home.join("models").join("whisper")
 }
 
+/// Where the pinned model `name` lives once downloaded; `None` for a name
+/// the table does not list (T54.7: the TUI and `cox doctor`).
+pub(crate) fn model_path(home: &Path, name: &str) -> Option<PathBuf> {
+    let models = table().ok()?;
+    let row = models.into_iter().find(|m| m.name == name)?;
+    Some(models_dir(home).join(row.file))
+}
+
 pub fn run(home: &Path, action: &VoiceAction) -> anyhow::Result<()> {
     let VoiceAction::Model(action) = action;
     let models = table()?;
