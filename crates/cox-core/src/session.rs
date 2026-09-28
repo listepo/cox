@@ -120,6 +120,15 @@ pub(crate) struct Inner {
     startup_context: String,
 }
 
+/// The mode and effort as they stand after a change, for every surface to
+/// read instead of echoing its own request (DT G5).
+fn state_changed(inner: &Inner) -> Event {
+    Event::StateChanged {
+        mode: inner.permission_mode,
+        effort: inner.overrides.effort,
+    }
+}
+
 /// One conversation: a provider, tools, a store, and an event stream.
 #[derive(Clone)]
 pub struct Session {
@@ -759,24 +768,20 @@ impl Session {
                 }
             }
             Submission::SetEffort { effort } => {
-                self.inner.lock().await.overrides.effort = effort;
-                let text = match effort {
-                    Some(e) => format!("effort: {}", e.name()),
-                    None => "effort: tier default".to_string(),
+                let changed = {
+                    let mut inner = self.inner.lock().await;
+                    inner.overrides.effort = effort;
+                    state_changed(&inner)
                 };
-                self.emit(Event::Notice {
-                    level: Level::Info,
-                    text,
-                })
-                .await
+                self.emit(changed).await
             }
             Submission::SetPermissionMode { mode } => {
-                self.inner.lock().await.permission_mode = mode;
-                self.emit(Event::Notice {
-                    level: Level::Info,
-                    text: format!("permission mode: {mode:?}"),
-                })
-                .await
+                let changed = {
+                    let mut inner = self.inner.lock().await;
+                    inner.permission_mode = mode;
+                    state_changed(&inner)
+                };
+                self.emit(changed).await
             }
             Submission::Compact { focus } => self
                 .compact(compact::Trigger::Manual, focus)

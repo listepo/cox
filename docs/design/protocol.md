@@ -3,10 +3,10 @@
 ## Problem
 
 D11 commits to four surfaces (`cox`, `cox run -p`, `cox acp`, `cox mcp`) over one event
-stream, each capped at ≤ 300 LOC. `cox-protocol`'s `Event` enum has **19 variants** and
-`Submission` has **9** (verified against `crates/cox-protocol/src/types.rs`) — that is
+stream, each capped at ≤ 300 LOC. `cox-protocol`'s `Event` enum has **25 variants** and
+`Submission` has **15** (verified against `crates/cox-protocol/src/types.rs`) — that is
 what every surface adapter must translate without touching the network, filesystem or a
-process directly (D2). The measurable question: can 4 surfaces × ~28 variants stay inside
+process directly (D2). The measurable question: can 4 surfaces × ~40 variants stay inside
 four 300-LOC adapters, or does the enum outgrow what JSON-RPC/stream-json/ACP can carry?
 
 ## The field

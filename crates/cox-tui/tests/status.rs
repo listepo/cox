@@ -384,3 +384,18 @@ fn status_line_names_the_worktree_after_the_branch() {
         cox_tui::status::line(&state)
     );
 }
+
+#[test]
+fn state_changed_from_the_core_sets_mode_and_effort() {
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    state.status.effort = Some(Effort::High);
+    update(
+        &mut state,
+        Msg::Event(Event::StateChanged {
+            mode: PermissionMode::Plan,
+            effort: None,
+        }),
+    );
+    assert_eq!(state.mode, PermissionMode::Plan);
+    assert_eq!(state.status.effort, None);
+}

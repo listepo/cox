@@ -1155,6 +1155,22 @@ pub enum Event {
         /// The new model.
         to: ModelId,
     },
+    /// The session's permission mode or effort override changed
+    /// (`SetPermissionMode`, `SetEffort`); carries both, as they now stand,
+    /// so a surface sets its state from the event instead of echoing its
+    /// own request (DT G5).
+    StateChanged {
+        /// The permission mode now in force.
+        mode: PermissionMode,
+        /// The effort override; `None` means each tier's default.
+        effort: Option<Effort>,
+    },
+    /// The session got a title (DT G6), for the sessions list and a window
+    /// or tab title.
+    TitleSet {
+        /// The title, one line.
+        title: String,
+    },
     /// A decision plugin answered a decision point (PL§4, T33.20). Recorded
     /// for every answer, used or not, so replay and `cox stats` see which
     /// advice changed the core's pick; it never feeds model history.
@@ -1523,6 +1539,8 @@ mod tests {
     #[case::task_created(Event::TaskCreated { task: TaskId::new(), label: "explore".into(), tier: Tier::Cheap })]
     #[case::task_completed(Event::TaskCompleted { task: TaskId::new(), result_item: ItemId::new(), cost_usd: 0.002, exit_code: Some(0), archive: Some(ArchiveId::new()) })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Code, from: ModelId("claude-sonnet-5".into()), to: ModelId("claude-opus-5".into()) })]
+    #[case::state_changed(Event::StateChanged { mode: PermissionMode::Plan, effort: Some(Effort::Low) })]
+    #[case::title_set(Event::TitleSet { title: "Fix the ledger".into() })]
     #[case::advised(Event::Advised { point: crate::plugin::DecidePoint::Route, plugin: "jev".into(), advice: crate::plugin::Advice { answer: crate::plugin::Answer::Choice { order: vec![0] }, confidence: Some(0.9), note: None }, applied: true })]
     #[case::notice(Event::Notice { level: Level::Warn, text: "hook skipped".into() })]
     #[case::turn_done(Event::TurnDone { turn: TurnId::new(), stop: StopReason::EndTurn })]
@@ -1603,6 +1621,8 @@ mod tests {
     #[case::rewound(Event::Rewound { to_turn: 2, code: true, conversation: false, restored: vec![PathBuf::from("a.rs")], skipped: vec![] })]
     #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "ok".into(), archive: None, bytes: 0, duration_ms: 0, diff: None, structured: None } })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Cheap, from: ModelId("a".into()), to: ModelId("b".into()) })]
+    #[case::state_changed(Event::StateChanged { mode: PermissionMode::Default, effort: None })]
+    #[case::title_set(Event::TitleSet { title: "t".into() })]
     fn event_tags_are_snake_case(#[case] event: Event) {
         let json = serde_json::to_value(&event).expect("serialize");
         let tag = json

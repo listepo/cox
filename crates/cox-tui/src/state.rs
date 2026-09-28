@@ -2271,6 +2271,14 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 state.status.model = to.to_string();
             }
         }
+        // The core's word on mode and effort replaces what a key or a
+        // slash command set ahead of it (DT G5).
+        Event::StateChanged { mode, effort } => {
+            state.mode = mode;
+            state.status.effort = effort;
+        }
+        // No title row in the TUI yet; the sessions picker reads the store.
+        Event::TitleSet { .. } => {}
         // T33.20: the `TurnStarted` that follows already carries the
         // advised tier and model, so the status line needs nothing more.
         Event::Advised { .. } => {}

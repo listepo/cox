@@ -6,7 +6,9 @@ mod common;
 use common::{drain, open, spawn_turn};
 use cox_core::Session;
 use cox_core::router::{Overrides, RouteError, Router};
-use cox_protocol::types::{Effort, Event, Job, ModelId, StopReason, Submission, Tier};
+use cox_protocol::types::{
+    Effort, Event, Job, ModelId, PermissionMode, StopReason, Submission, Tier,
+};
 use cox_protocol::{Config, ProviderId};
 
 fn table() -> Vec<(Job, Tier)> {
@@ -211,9 +213,50 @@ async fn router_set_effort_changes_the_next_request_and_is_clamped() {
         assert!(
             events
                 .iter()
-                .any(|e| matches!(e, Event::Notice { text, .. } if text.starts_with("effort:")))
+                .any(|e| matches!(e, Event::StateChanged { effort, .. } if *effort == set))
         );
         let rows = store.usage_rows();
         assert_eq!(rows.last().expect("a usage row").effort, Some(want));
     }
+}
+
+#[tokio::test]
+async fn set_mode_and_effort_each_emit_state_changed_with_both_values() {
+    let (session, _store, mut rx) = open("[[turn]]\ntext = \"a\"\n", Config::default());
+    session
+        .submit(Submission::SetPermissionMode {
+            mode: PermissionMode::Plan,
+        })
+        .await
+        .expect("set mode");
+    session
+        .submit(Submission::SetEffort {
+            effort: Some(Effort::Low),
+        })
+        .await
+        .expect("set effort");
+    let running = spawn_turn(&session, "go");
+    let events = drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+    let changed: Vec<&Event> = events
+        .iter()
+        .filter(|e| matches!(e, Event::StateChanged { .. }))
+        .collect();
+    assert_eq!(
+        changed,
+        [
+            &Event::StateChanged {
+                mode: PermissionMode::Plan,
+                effort: None,
+            },
+            &Event::StateChanged {
+                mode: PermissionMode::Plan,
+                effort: Some(Effort::Low),
+            },
+        ]
+    );
+    assert!(
+        !events.iter().any(|e| matches!(e, Event::Notice { .. })),
+        "the change is not echoed as a notice"
+    );
 }

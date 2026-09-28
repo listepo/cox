@@ -541,6 +541,53 @@
         ]
       },
       {
+        "description": "The session's permission mode or effort override changed\n(`SetPermissionMode`, `SetEffort`); carries both, as they now stand,\nso a surface sets its state from the event instead of echoing its\nown request (DT G5).",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "description": "The permission mode now in force.",
+            "$ref": "#/$defs/PermissionMode"
+          },
+          "effort": {
+            "description": "The effort override; `None` means each tier's default.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Effort"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "type": "string",
+            "const": "state_changed"
+          }
+        },
+        "required": [
+          "type",
+          "mode"
+        ]
+      },
+      {
+        "description": "The session got a title (DT G6), for the sessions list and a window\nor tab title.",
+        "type": "object",
+        "properties": {
+          "title": {
+            "description": "The title, one line.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "title_set"
+          }
+        },
+        "required": [
+          "type",
+          "title"
+        ]
+      },
+      {
         "description": "A decision plugin answered a decision point (PL§4, T33.20). Recorded\nfor every answer, used or not, so replay and `cox stats` see which\nadvice changed the core's pick; it never feeds model history.",
         "type": "object",
         "properties": {
@@ -1537,6 +1584,56 @@
         "description": "TaskId: a 26-character Crockford-base32 ULID.",
         "type": "string",
         "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+      },
+      "PermissionMode": {
+        "description": "`permissions.mode` (plan.md §1.6/§1.8).",
+        "oneOf": [
+          {
+            "description": "Rules and risk decide as usual.",
+            "type": "string",
+            "const": "default"
+          },
+          {
+            "description": "Only `Risk::ReadOnly` is allowed; everything else denies without asking.",
+            "type": "string",
+            "const": "plan"
+          },
+          {
+            "description": "`Write` is allowed automatically; `Exec`/`Destructive` still ask unless a safe-command match.",
+            "type": "string",
+            "const": "auto"
+          },
+          {
+            "description": "Everything is allowed; flag-only, banner shown.",
+            "type": "string",
+            "const": "bypass"
+          }
+        ]
+      },
+      "Effort": {
+        "description": "Reasoning effort passed to the provider.\n\nOrdered `Low < Medium < High < Xhigh` so the router can clamp a tier's\neffort to the greatest level a model supports (`docs/design/providers.md`).\nThe four levels are models.dev's own, so a catalog row maps without loss\n(T30.26).",
+        "oneOf": [
+          {
+            "description": "Cheapest, fastest; used for `cheap`-tier jobs.",
+            "type": "string",
+            "const": "low"
+          },
+          {
+            "description": "Between `Low` and `High`: models.dev's and the wires' `medium`.",
+            "type": "string",
+            "const": "medium"
+          },
+          {
+            "description": "Default for `code`/`think` tiers.",
+            "type": "string",
+            "const": "high"
+          },
+          {
+            "description": "User-selected for a flagged large refactor.",
+            "type": "string",
+            "const": "xhigh"
+          }
+        ]
       },
       "DecidePoint": {
         "description": "A decision point (PL§4 \"Decision points\").",
