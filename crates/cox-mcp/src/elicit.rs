@@ -484,17 +484,15 @@ fn is_date_time(text: &str) -> bool {
     clock_ok && zone_ok
 }
 
-/// The spec's "review and modify before sending": what would be sent, and
-/// the three ways on.
+/// The spec's "review and modify before sending": which fields would be
+/// sent, and the three ways on. It names the fields, not the answers: a
+/// question is recorded in the rollout like any event (T47.3), and an
+/// answer must reach the server only (A78).
 pub fn review(message: &str, answers: &Map<String, Value>) -> (String, Vec<String>) {
     let summary = if answers.is_empty() {
         "nothing".to_string()
     } else {
-        answers
-            .iter()
-            .map(|(k, v)| format!("{k} = {}", plain(v)))
-            .collect::<Vec<_>>()
-            .join("; ")
+        answers.keys().cloned().collect::<Vec<_>>().join(", ")
     };
     (
         format!("{message} — send {summary}?"),
@@ -549,13 +547,40 @@ enum Step {
     Decline,
 }
 
-async fn ask_field(asker: &Asker, server: &str, message: &str, field: &Field) -> Step {
-    let (base, options) = prompt(message, field);
+/// `last` is the person's own answer from before an `edit`: Enter keeps
+/// it, and the question does not repeat it (see [`review`]).
+async fn ask_field(
+    asker: &Asker,
+    server: &str,
+    message: &str,
+    field: &Field,
+    last: Option<&Value>,
+) -> Step {
+    let (base, options) = match last {
+        None => prompt(message, field),
+        Some(_) => {
+            let bare = Field {
+                default: None,
+                required: true,
+                ..field.clone()
+            };
+            let (question, options) = prompt(message, &bare);
+            (
+                format!("{question} (Enter keeps your last answer)"),
+                options,
+            )
+        }
+    };
     let mut question = base.clone();
     for _ in 0..TRIES {
         let Some(text) = ask(asker, server, (question, options.clone())).await else {
             return Step::Cancel;
         };
+        if let Some(last) = last
+            && text.trim().is_empty()
+        {
+            return Step::Value(Some(last.clone()));
+        }
         match parse(field, &text) {
             Ok(value) => return Step::Value(value),
             Err(why) => question = format!("{base} — not accepted: {why}"),
@@ -574,13 +599,14 @@ pub async fn run_form(
     message: &str,
     schema: &ElicitationSchema,
 ) -> ElicitResult {
-    let Ok(mut fields) = fields(schema) else {
+    let Ok(fields) = fields(schema) else {
         return with(ElicitationAction::Decline);
     };
+    let mut last = Map::new();
     for _ in 0..TRIES {
         let mut content = Map::new();
         for field in &fields {
-            match ask_field(asker, server, message, field).await {
+            match ask_field(asker, server, message, field, last.get(&field.key)).await {
                 Step::Value(Some(value)) => {
                     content.insert(field.key.clone(), value);
                 }
@@ -594,13 +620,7 @@ pub async fn run_form(
                 return with(ElicitationAction::Accept).with_content(Value::Object(content));
             }
             Some(Choice::Decline) => return with(ElicitationAction::Decline),
-            Some(Choice::Edit) => {
-                for field in &mut fields {
-                    if let Some(value) = content.get(&field.key) {
-                        field.default = Some(value.clone());
-                    }
-                }
-            }
+            Some(Choice::Edit) => last = content,
             None => return with(ElicitationAction::Cancel),
         }
     }
@@ -807,7 +827,8 @@ mod tests {
         answers.insert("name".into(), json!("Ada"));
         answers.insert("tags".into(), json!(["a", "b"]));
         let (question, options) = review("Sign up", &answers);
-        assert_eq!(question, "Sign up — send name = Ada; tags = a, b?");
+        assert_eq!(question, "Sign up — send name, tags?");
+        assert!(!question.contains("Ada"));
         assert_eq!(options, ["send", "edit", "decline"]);
     }
 }

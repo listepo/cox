@@ -36,6 +36,9 @@ enum Ask {
         call_id: CallId,
         text: String,
         options: Vec<String>,
+        /// Who asks when it is not the model (T47.3): a subagent's name or
+        /// `mcp:<server>` for an MCP elicitation.
+        from: Option<String>,
     },
 }
 
@@ -290,11 +293,12 @@ impl Plain {
                 call_id,
                 question,
                 options,
-                ..
+                source,
             } => self.push_ask(Ask::Question {
                 call_id,
                 text: question,
                 options,
+                from: source.and_then(|s| s.agent),
             })?,
             Event::Usage { usage, .. } => {
                 self.turn_usd += usage.cost_usd;
@@ -355,8 +359,16 @@ impl Plain {
         let lines = match self.asks.front() {
             None => return Ok(()),
             Some(Ask::Approval(_)) => return self.show_prompt(APPROVE),
-            Some(Ask::Question { text, options, .. }) => {
-                let mut lines = vec![format!("question: {}", sanitize(text))];
+            Some(Ask::Question {
+                text,
+                options,
+                from,
+            }) => {
+                let label = match from {
+                    Some(from) => format!("question from {}", sanitize(from)),
+                    None => "question".to_string(),
+                };
+                let mut lines = vec![format!("{label}: {}", sanitize(text))];
                 for (i, option) in options.iter().enumerate() {
                     lines.push(format!("  [{}] {}", i + 1, sanitize(option)));
                 }

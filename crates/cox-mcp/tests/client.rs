@@ -372,7 +372,8 @@ async fn form_elicitation_round_trips_through_the_asker() {
     let seen = seen.await.expect("person");
     assert_eq!(seen.len(), 3);
     assert!(seen[0].starts_with("Sign up — name"), "{seen:?}");
-    assert_eq!(seen[2], "Sign up — send name = Ada; age = 36?");
+    // The review names the fields, never the answers (A78).
+    assert_eq!(seen[2], "Sign up — send name, age?");
 }
 
 #[tokio::test]

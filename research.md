@@ -1010,7 +1010,7 @@ Codex TUI structure worth copying (R§1.6 confirmed by two independent code read
 | Custom slash commands from files | part (`cox ext list` only) | yes | yes | yes | ? | yes | yes | yes | no |
 | MCP client | yes | yes | yes | yes | yes | yes | yes | no | part |
 | MCP OAuth | **yes** | yes | yes | ? | yes | yes | ? | no | no |
-| MCP elicitation | no | yes (CLI) | ? | ? | ? | ? | ? | no | no |
+| MCP elicitation | **yes** (TUI, plain; T47.3) | yes (CLI) | ? | ? | ? | ? | ? | no | no |
 | ACP server | **yes** | ? | ? | yes | ? | ? | ? | ? | ? |
 | `cox mcp` (tools as an MCP server) | **yes** | no | yes | no | no | no | no | no | no |
 | Headless `stream-json` | yes | yes | yes | yes | yes | yes | yes | yes (RPC) | no |

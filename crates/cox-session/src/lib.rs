@@ -301,6 +301,9 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
     );
     warnings.extend(dropped.into_iter().map(Warning::Instruction));
     let mut all = tools(answer, &store, mdir);
+    // T47.3: made before MCP connects, so each server's handshake already
+    // declares (or not) the elicitation capability.
+    let (asker, asks) = mcp::question_channel(questions).unzip();
     if questions {
         all = tools::with_question_surface(all);
     }
@@ -318,7 +321,8 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
     // D14); `with_tool_search_index` below makes it discoverable.
     all.push(Arc::new(cox_ext::skills::SkillTool::new(found.skills)));
     if config.mcp.enabled {
-        let (mcp, notices) = mcp::mcp_tools(&config, cwd, mcp_login, plugins.mcp, &writable).await;
+        let (mcp, notices) =
+            mcp::mcp_tools(&config, cwd, mcp_login, asker, plugins.mcp, &writable).await;
         all.extend(mcp);
         warnings.extend(notices.into_iter().map(Warning::Mcp));
     }
@@ -358,6 +362,9 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
     };
     if worktree_main.is_some() {
         session.set_writable_roots(vec![cwd.to_path_buf()]);
+    }
+    if let Some(asks) = asks {
+        mcp::bridge_questions(&session, asks);
     }
     session.set_agent_defs(agents_found.agents);
     session.set_instructions(instructions, skills_index);

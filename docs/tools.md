@@ -29,6 +29,30 @@ Core tools are always in context; deferred tools join through `tool_search`
 | `memory_search` | ReadOnly | yes | query | FTS first, then files; top 5 capped |
 | `mcp__<server>__<tool>` | from server annotations (default Write) | yes | namespaced name | fail-open servers |
 
+## MCP elicitation
+
+An MCP server may ask the person for input during a tool call
+(`elicitation/create`, or a 2026-07-28 `input_required` round). cox answers
+only where a person can:
+
+- TUI and `--plain`: the client declares `elicitation.form`. Each field of
+  the requested form is one question in the question modal, labelled
+  `mcp:<server> asks:` (in `--plain`, `question from mcp:<server>:`), with
+  enum labels, `yes`/`no` or free text; a bad answer is asked again with
+  the reason. A review step names the fields to send and offers `send`,
+  `edit` (ask again; Enter keeps the last answer) or `decline`. Questions
+  are events and land in the rollout, so neither the review nor an `edit`
+  round repeats what was typed. Esc (in `--plain`, an empty line)
+  cancels the whole request. While a question is open the call's
+  `mcp.timeout_s` does not count.
+- `cox run -p` declares no elicitation capability and never asks; a
+  server that elicits anyway gets `decline`. `--answer` does not apply.
+- `cox acp` connects no MCP servers today, so there is nothing to answer.
+
+Answers go to the server only: never into the transcript, the rollout or
+the model's context. The server's text is shown sanitized, like any tool
+output.
+
 Edits are diff-shaped (`edit`, `apply_patch`); `write` is for new files.
 Every path from the model passes `path::confine`; every shell command runs
 under the platform sandbox unless the session chose `danger-full-access`.
