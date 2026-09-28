@@ -94,6 +94,8 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T49.4 | todo | P3 | 2 | 0% | |
 | T49.5 | todo | P3 | 3 | 0% | |
 | T50.1 | in progress | P0 | 3 | 0% | Claude Code / opus-5.5 |
+| T50.2 | in progress | P0 | 3 | 0% | Claude Code / opus-5.5 |
+| T50.3 | todo | P2 | 1 | 0% | |
 
 ## Reference
 
@@ -2884,6 +2886,30 @@ Done when: the Check passes and the three AGENTS.md commands are clean.
 
 Out of scope: re-reading instruction files mid-session; the repo map (P43).
 
+### T50.2. Permission-mode changes are recorded, so resume and a woken child keep the live mode
+
+Model: mid-tier · Status: open · Depends: — · Size: ~150 · Files: `crates/cox-core/src/rollout.rs`, `crates/cox-core/src/session.rs`, `crates/cox-core/src/subagent.rs`
+
+Goal: a mode change (`Submission::SetPermissionMode`, Shift+Tab) is written to the rollout, and `History::from_events` rebuilds the last recorded mode instead of always returning `PermissionMode::Default` (`rollout.rs` ~236). Then a resumed session comes back in the mode it had, and a finished child woken by `TaskMessage` (`subagent.rs` `restart`) is never wider than its parent: it takes the parent's live mode (T45.1), or its own recorded mode if that is narrower. Found by T45.1.
+
+Check: a test switches a parent to Plan, runs a child to completion, wakes it with `TaskMessage` and asserts the child's write raises `ApprovalRequired`/is denied as in Plan; a resume test asserts the rebuilt `History.permission_mode` equals the last recorded mode. Both fail on current `main`. Older rollouts with no mode record still load (as `Default`).
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: the model's view of the mode (T50.3).
+
+### T50.3. The volatile block shows the live permission mode
+
+Model: mid-tier · Status: open · Depends: — · Size: ~60 · Files: `crates/cox-core/src/context.rs`, `crates/cox-core/src/session.rs`
+
+Goal: `context.rs` (~151) renders `config.permissions.mode` into the volatile block, so after Shift+Tab the model is still told the configured mode. Render the session's live mode instead. The block stays after the last cache breakpoint, so the cache-stable prefix is unchanged. Found by T45.1; the engine already enforces the live mode, so this fixes only what the model is told.
+
+Check: a test switches the mode with `SetPermissionMode` and finds the new mode in the next request's volatile block, with the cached prefix byte-identical (`prefix_bytes_identical_between_turns` stays green); it fails on current `main`.
+
+Done when: the Check passes and the three AGENTS.md commands are clean.
+
+Out of scope: recording the mode in the rollout (T50.2).
+
 ### P31 — Beta readiness (goal: the v0.1 definition of done in §4 holds for everything cox can prove without a paid key)
 
 Rationale in §6 A50. T31.1–T31.5 are in `done.md`; T31.2 landed as a no-op (see A50 and its done.md card — T30.23 had already made Jev construction fallible). Still open against §4, all outside the code: the paid eval run and the cache-read ratio (T30.3, a funded `ANTHROPIC_API_KEY`), and a signed macOS release (the `MACOS_CERTIFICATE` / `MACOS_CERTIFICATE_PWD` repository secrets).
@@ -3028,6 +3054,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A79 §3 (new P48: T48.1–T48.2), §1.1, the 2026-09-17 testing note, by the creator on 2026-09-28 from `ideas.md`. Why: the creator approved `trycmd` fixtures for `cox run -p` (text, json, stream-json, denied, bad format); the divan benchmark on the same line stays out (benchmarks excluded). Effect: new dev-dependency `trycmd` 1.2.1 (crates.io, published 2026-07-21, MIT OR Apache-2.0, MSRV 1.85; already used by rtok and ketch and listed in `rust.md`), added to the testing note's "Already covered" list; the `run_cli.rs` asserts a fixture fully covers are removed; the `ideas.md` line keeps only the divan half. No §0 decision changes.
 - A80 §3 (new P49: T49.1–T49.5), by the creator on 2026-09-28 from `ideas.md`. Why: the remaining later gates of the 2026 field survey (`research.md` §8.1) and the Cursor Cloud Agents API idea (`research.md` §4.3.8) were approved as scope gates. Effect: one `docs/design/v0.3-<name>.md` per item in the P19 shape (Problem / The field / cox / Falsifiers / Review, primary sources with URL and date); no runtime code, no dependency; a "build" verdict comes back as its own amendment. The "later gates" and Cursor Cloud Agents lines leave `ideas.md`. No §0 decision changes (D7's Windows line and the "voice" entry in the §0 v0.2+ list stay until a gate's verdict is approved).
 - A81 §3 (new P50: T50.1; T45.1 raised to P0), by the creator on 2026-09-28, and the answers to the P39–P49 planning questions. Why: planning P42–P45 found that instruction files and the skills index never reach the model (system[2] is still the pre-T7.1 stub) and that a subagent copies the configured permission mode instead of its parent's live one, so after Shift+Tab to plan a child still runs auto (T45.1). Answers: new dependencies approved — `base64` (T40.1, also replaces the hand-rolled encoder in `cox-tui/src/term.rs`), `url` (T41.3), `trycmd` as a dev-dependency (P48) and rmcp's `elicitation` feature as a dev-dependency of `cox-mcp` (T47.2), each with its §1 row in the implementing commit; Gemini stays a type-2 preset with the signature passthrough (P39); the scripted status line is plain text, `cox_sanitize::sanitize` is unchanged (P46); the Windows gate (T49.2) stays and decides the order of a Windows build and sandbox. Every other open question from planning takes the option the cards propose. No decision in §0 changes.
+- A82 §3 P50 (new T50.2, T50.3), by the creator on 2026-09-28 ("create everything there is"). Why: T45.1 found that mode changes are never written to the rollout, so a resumed session and a child woken by `TaskMessage` come back in `Default` (a child can be wider than a Plan-mode parent), and that the volatile block shows the configured mode, not the live one. Effect: two cards; `cox_permission::Engine` stays the single guard. No decision changes.
 
 ## 7. Risk register
 
