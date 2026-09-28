@@ -51,6 +51,9 @@ public protocol SessionClient: AnyObject, Sendable {
   /// What a Tasks-tab click opens (`cox_app::live::LiveSession::open_task`, T37.29.6); `nil`
   /// while there is nothing to open.
   func openTask(_ task: String) throws -> TaskTarget?
+  /// A finished shell's output by its archive id, as `cox expand` prints it
+  /// (`cox_app::live::LiveSession::output`, T37.22.6).
+  func output(archive: String) throws -> String
   /// What the inspector's Info tab lists (`cox_app::live::LiveSession::info`, T37.29.5).
   func info() async throws -> Info
   /// The Context tab's cost history (`cox_app::live::LiveSession::turn_costs`, T37.29.3.2).
@@ -152,6 +155,8 @@ public final class FixtureSession: SessionClient {
   private let reviews: [String: DiffModel]
   private let fixedPlan: [TodoItem]
   private let tasks: [String: TaskTarget]
+  /// Shell outputs by archive id.
+  private let outputs: [String: String]
   private let fixedInfo: Info
   private let fixedCosts: TurnCosts
   private let inbox: FixtureInbox
@@ -171,25 +176,27 @@ public final class FixtureSession: SessionClient {
     fixture: Fixture, completions: [Completion] = [], host: (any PlatformHost)? = nil,
     waitsForYou: Bool = false, prompts: [String] = [], changes: Changes = Changes(),
     plan: [TodoItem] = [], tasks: [String: TaskTarget] = [:], info: Info = Info(),
-    reviews: [String: DiffModel] = [:], costs: TurnCosts = TurnCosts()
+    reviews: [String: DiffModel] = [:], costs: TurnCosts = TurnCosts(),
+    outputs: [String: String] = [:]
   ) {
     self.init(
       fixture: fixture, completions: completions, host: host, waitsForYou: waitsForYou,
       prompts: prompts, changes: changes, plan: plan, tasks: tasks, info: info,
-      reviews: reviews, costs: costs, inbox: FixtureInbox())
+      reviews: reviews, costs: costs, outputs: outputs, inbox: FixtureInbox())
   }
 
   init(
     fixture: Fixture, completions: [Completion], host: (any PlatformHost)?, waitsForYou: Bool,
     prompts: [String] = [], changes: Changes = Changes(), plan: [TodoItem] = [],
     tasks: [String: TaskTarget] = [:], info: Info = Info(),
-    reviews: [String: DiffModel] = [:], costs: TurnCosts = TurnCosts(), inbox: FixtureInbox
+    reviews: [String: DiffModel] = [:], costs: TurnCosts = TurnCosts(),
+    outputs: [String: String] = [:], inbox: FixtureInbox
   ) {
     (self.fixture, self.completions, self.host, self.waitsForYou) =
       (fixture, completions, host, waitsForYou)
     (self.prompts, fixedChanges, fixedPlan, self.tasks, fixedInfo, self.inbox) =
       (prompts, changes, plan, tasks, info, inbox)
-    (self.reviews, fixedCosts) = (reviews, costs)
+    (self.reviews, fixedCosts, self.outputs) = (reviews, costs, outputs)
   }
 
   public var sent: [Intent] { state.withLock { $0.sent } }
@@ -256,6 +263,11 @@ public final class FixtureSession: SessionClient {
 
   public func openTask(_ task: String) -> TaskTarget? { tasks[task] }
 
+  public func output(archive: String) throws -> String {
+    guard let text = outputs[archive] else { throw FixtureMissing(archive: archive) }
+    return text
+  }
+
   public func info() async throws -> Info { fixedInfo }
 
   public func turnCosts() async throws -> TurnCosts { fixedCosts }
@@ -278,6 +290,11 @@ public final class FixtureSession: SessionClient {
       if ready { parked.resume() }
     }
   }
+}
+
+/// A fixture session has no output under this archive id.
+public struct FixtureMissing: Error, Equatable {
+  public let archive: String
 }
 
 extension [TimelinePatch] {

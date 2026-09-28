@@ -3,7 +3,8 @@
 // first-run checklist comes first on a first launch (DT§5.8), after the login shell's
 // environment is read (DT§4.8). Wiring only — the stores decide and the packages draw. The
 // sidebar lists the workspace's sessions and opens one here, the toolbar shows the open one's
-// title, model, mode and cost and stops its turn, the inspector's tabs read the open session,
+// title, model, mode and cost and stops its turn, its model popover switches the session's model
+// as `/model` does, the inspector's tabs read the open session,
 // Review replaces the transcript column, the shell's panes fold and the Appearance popover writes
 // `[desktop.appearance]`.
 
@@ -28,6 +29,8 @@ struct SessionWindow: View {
   @State private var isEnvLoaded = false
   /// The checklist's provider-key row, for the sidebar's footer dot.
   @State private var providerCheck: CheckRow?
+  /// The providers a turn could run on now, for the footer's count (A110); nil until probed.
+  @State private var usable: [String]?
   /// Review shows in the column instead of the transcript, at this file or the first changed one.
   @State private var reviewing: Reviewing?
   /// Why the first session did not open.
@@ -81,9 +84,10 @@ struct SessionWindow: View {
   private var shown: MainScreenState {
     var state = screen
     state.toolbar = ShellState.toolbar(showing, sidebar: model.sidebar, popover: screen.popover)
+    state.model = ShellState.models(showing?.menu)
     state.sidebar = ShellState.sidebar(
       model.sidebar, selection: current,
-      providers: ProviderHealth(providers: model.settings?.providers ?? [], check: providerCheck))
+      providers: ProviderHealth(usable: usable, check: providerCheck))
     return state
   }
 
@@ -141,6 +145,9 @@ struct SessionWindow: View {
     case .toolbar(let intent): handle(intent)
     case .dismissPopover: screen.popover = nil
     case .inspectorTab(let tab): screen.inspectorTab = tab
+    case .model(let row):
+      screen.popover = nil
+      if let intent = showing?.menu.pick(row) { send(intent) }
     case .appearance(let change):
       screen.appearance.apply(change)
       screen.appearance.fillTexts()
@@ -160,9 +167,7 @@ struct SessionWindow: View {
     case .open(.cost):
       // DT§5.1: the cost pill opens Context & Cost.
       (screen.inspectorTab, screen.isInspectorVisible) = (.context, true)
-    case .open(.model):
-      // The model menu needs the catalog from the core, which no call returns yet.
-      break
+    case .open(.model): screen.popover = screen.popover == .model ? nil : .model
     }
   }
 
@@ -183,19 +188,16 @@ struct SessionWindow: View {
     }
   }
 
-  /// Keeps the session list current while the window is open: this and other processes add
-  /// sessions, and the inbox changes as turns run.
+  /// Reads the footer's provider health, then keeps the session list current while the window
+  /// is open: this and other processes add sessions, and the inbox changes as turns run.
   private func watch() async {
-    providerCheck = try? await model.launch.live.get().checklist(cwd: LaunchCore.project())
-      .first { $0.id == .providerKey }
-    while !Task.isCancelled {
-      model.sidebar.refresh()
-      try? await Task.sleep(for: Self.listInterval)
+    if let live = try? model.launch.live.get() {
+      let cwd = LaunchCore.project()
+      providerCheck = try? await live.checklist(cwd: cwd).first { $0.id == .providerKey }
+      usable = try? await live.usableProviders(cwd: cwd)
     }
+    await model.sidebar.watch()
   }
-
-  /// How often the session list is read again.
-  private static let listInterval = Duration.seconds(2)
 
   private func readSettings() async {
     appearanceWrites.onIdle = { readAppearance() }
@@ -223,6 +225,7 @@ struct SessionWindow: View {
       opened[client.id] = OpenedSession(
         store: store, composer: ComposerStore(session: store), pull: Task { await store.run() })
       (current, failure, reviewing) = (client.id, nil, nil)
+      opened[client.id]?.models = (try? model.launch.live.get().models(cwd: cwd)) ?? []
       model.sidebar.refresh()
       // After it shows: Info asks git about the cwd, which can take a while.
       if let info = try? await client.info() {

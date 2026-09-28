@@ -40,7 +40,7 @@ import Testing
   #expect(figures.branch == "wt/retry")
 
   let fresh = ToolbarState(usage: nil, entry: nil, info: Info(session: "s", cwd: "/src/acme-web"))
-  #expect(fresh.title == "New session")
+  #expect(fresh.title == "Untitled session")
   #expect(fresh.project == "acme-web")
   #expect(fresh.branch == nil)
 }

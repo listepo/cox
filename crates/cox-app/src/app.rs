@@ -23,6 +23,11 @@ use crate::{Workspace, WorkspaceError};
 /// DT§4.8: how long the login shell may take before its env is skipped.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How often [`App::workspace_changed`] asks `cox.db` whether another
+/// connection committed: one `PRAGMA data_version`, so cheap enough to ask
+/// often, and quick enough that a TUI's new session shows at once.
+const WATCH_INTERVAL: Duration = Duration::from_millis(250);
+
 /// What the app asks the platform for (DT§4.4's `Host`). Plain Rust, so a
 /// test implements it in memory; `cox-ffi` adapts the Swift one.
 pub trait Host: Send + Sync {
@@ -95,6 +100,8 @@ pub struct App {
     inbox: Mutex<Inbox>,
     workspace: Workspace,
     mcp: McpAuth,
+    /// Woken when a session here changes what the session list shows.
+    listed: tokio::sync::Notify,
 }
 
 impl App {
@@ -118,6 +125,7 @@ impl App {
             inbox: Mutex::default(),
             workspace,
             mcp,
+            listed: tokio::sync::Notify::new(),
         }))
     }
 
@@ -141,6 +149,28 @@ impl App {
 
     pub fn dismiss(&self, session: SessionId, seq: u64) {
         self.lock_inbox().dismiss(session, seq);
+    }
+
+    /// Returns once the session list may read differently: another
+    /// connection — a session here, a TUI, `cox run` — committed to
+    /// `cox.db`, or a session here started, stopped or began to wait. The
+    /// sidebar reads the list again after each return, instead of on a
+    /// timer. A change between two calls that commits nothing is missed.
+    pub async fn workspace_changed(&self) -> Result<(), AppError> {
+        let store = self.workspace.store();
+        let mut token = store.change_token()?;
+        let listed = self.listed.notified();
+        tokio::pin!(listed);
+        loop {
+            tokio::select! {
+                () = &mut listed => return Ok(()),
+                () = tokio::time::sleep(WATCH_INTERVAL) => {
+                    if store.changes(&mut token)? {
+                        return Ok(());
+                    }
+                }
+            }
+        }
     }
 
     /// A new session in `cwd`, or `resume`'s with its blocks; `theme` is the
@@ -210,10 +240,11 @@ impl App {
     /// or the lower badge once one is answered, outside the lock so the host
     /// may read the inbox back.
     pub(crate) fn apply(&self, session: SessionId, event: &Event) {
-        let (fresh, badge, fell) = {
+        let (fresh, badge, fell, moved) = {
             let mut inbox = self.lock_inbox();
             let last = inbox.items().iter().map(|i| i.seq).max();
             let before = inbox.badge();
+            let was = inbox.activity(session);
             inbox.apply(session, event);
             let fresh: Vec<InboxItem> = inbox
                 .items()
@@ -221,8 +252,12 @@ impl App {
                 .filter(|i| last.is_none_or(|last| i.seq > last))
                 .cloned()
                 .collect();
-            (fresh, count(inbox.badge()), inbox.badge() < before)
+            let moved = inbox.activity(session) != was;
+            (fresh, count(inbox.badge()), inbox.badge() < before, moved)
         };
+        if moved || fell || !fresh.is_empty() {
+            self.listed.notify_waiters();
+        }
         for item in fresh {
             self.host.notify(item, badge);
         }
@@ -238,6 +273,7 @@ impl App {
             inbox.expire(session);
             (count(inbox.badge()), inbox.badge() < before)
         };
+        self.listed.notify_waiters();
         if fell {
             self.host.badge(badge);
         }

@@ -7,8 +7,8 @@ import CoxClient
 import Foundation
 
 public struct ToolbarState: Equatable, Sendable {
-  /// The session's title; `New session` until the core titles it.
-  public var title = "New session"
+  /// The session's name as the sidebar shows it; `Untitled session` before `cox.db` lists it.
+  public var title = SessionEntry.untitled
   /// The project's name and the linked worktree's branch, if any.
   public var project = ""
   public var branch: String?
@@ -23,7 +23,7 @@ public struct ToolbarState: Equatable, Sendable {
 
   /// `entry` is the session's row once `cox.db` has one; `info` what the session reported.
   public init(usage: UsageView?, entry: (session: SessionEntry, project: Project)?, info: Info?) {
-    if let title = entry?.session.title { self.title = title }
+    if let entry { title = entry.session.name }
     let cwd = info?.cwd ?? entry?.session.cwd ?? ""
     project = entry?.project.name ?? (cwd.isEmpty ? "" : URL(filePath: cwd).lastPathComponent)
     branch = info?.worktree?.branch

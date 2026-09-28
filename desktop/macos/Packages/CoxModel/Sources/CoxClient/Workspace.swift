@@ -47,6 +47,9 @@ public protocol WorkspaceClient: Sendable {
   func sessions(project: String, limit: UInt32) throws -> [SessionEntry]
   /// `.idle` for a session this process has not driven.
   func activity(session: String) -> Activity
+  /// Returns once the list may read differently: a commit to `cox.db` from another connection,
+  /// or a session here that started, stopped or began to wait.
+  func changed() async throws
 }
 
 /// Fixed projects, sessions and activity: enough to drive the sidebar in a test or preview.
@@ -70,4 +73,7 @@ public struct FixtureWorkspace: WorkspaceClient {
   }
 
   public func activity(session: String) -> Activity { fixedActivity[session] ?? .idle }
+
+  /// A fixed workspace never changes: waits until cancelled.
+  public func changed() async throws { try await Task.sleep(for: .seconds(86_400)) }
 }

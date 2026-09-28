@@ -1,5 +1,6 @@
-// The sidebar's workspace over cox-ffi (DT§5.1, DT§4.3): `App.projects`, `sessions` and
-// `activity` as CoxClient's values, and the launch's login-shell environment (DT§4.8). Separate
+// The sidebar's workspace over cox-ffi (DT§5.1, DT§4.3): `App.projects`, `sessions`,
+// `activity` and the change wait as CoxClient's values, the toolbar's model catalog and the
+// footer's usable providers (T37.22.6, A110), and the launch's login-shell environment (DT§4.8). Separate
 // from `LiveCoreClient.swift` like the other conversions, so that file stays the list of calls
 // into Rust for one session.
 
@@ -30,9 +31,25 @@ extension LiveCoreClient: WorkspaceClient {
     }
   }
 
+  public func changed() async throws { try await app.workspaceChanged() }
+
   /// Reads the login shell's environment into this process; call once at launch, before a
   /// session opens. Returns why it kept the inherited environment, if it did.
   public static func loadLoginEnv() async throws -> String? {
     try await CoxFFIBindings.loadLoginEnv()
+  }
+}
+
+extension LiveCoreClient: ModelsClient {
+  public func models(cwd: String) throws -> [CoxClient.ModelChoice] {
+    try app.models(cwd: cwd).map {
+      CoxClient.ModelChoice(
+        tier: CoxClient.Tier($0.tier), provider: $0.provider, id: $0.id,
+        efforts: $0.efforts.map { CoxClient.Effort($0) }, contextWindow: $0.contextWindow)
+    }
+  }
+
+  public func usableProviders(cwd: String) async throws -> [String] {
+    try await app.usableProviders(cwd: cwd)
   }
 }

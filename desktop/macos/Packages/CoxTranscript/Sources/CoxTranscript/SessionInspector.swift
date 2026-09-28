@@ -1,8 +1,9 @@
 // The inspector's tabs for one session (DT§5.1, T37.29, T37.22.5): Changes, Plan, Context, Tasks
 // and Info read from `SessionStore`, copied into CoxUI's tab states field for field. Here, where
 // CoxUI and CoxModel meet, so the app only places the view: CoxModel decided every text; the
-// intents that stay in the session (revert, rewind, compact) go to the store, and the ones that
-// change the window (Review, another session) go to the app.
+// intents that stay in the session (revert, rewind, compact) go to the store, a shell task's output
+// opens in a sheet here (T37.22.6), and the ones that change the window (Review, another session)
+// go to the app.
 
 import CoxClient
 import CoxModel
@@ -30,6 +31,8 @@ public struct SessionInspector: View {
   @State private var costs = CostHistoryState()
   @State private var info = InfoTabState()
   @State private var plan: [TodoItem] = []
+  /// The shell task whose archived output the sheet shows.
+  @State private var output: Output?
 
   public init(
     store: SessionStore, tab: InspectorTab, cacheHit: CacheHitScope,
@@ -42,6 +45,16 @@ public struct SessionInspector: View {
     content.task(id: Reload(tab: tab, blocks: store.blocks.count, running: store.isTurnRunning)) {
       await read()
     }
+    .sheet(item: $output) { shown in
+      TaskOutputSheet(title: shown.title, output: shown.text) { output = nil }
+    }
+  }
+
+  /// A shell's output as the sheet shows it.
+  private struct Output: Identifiable {
+    let id: String
+    let title: String
+    let text: String
   }
 
   @ViewBuilder private var content: some View {
@@ -92,8 +105,11 @@ public struct SessionInspector: View {
     do {
       switch try store.open(task: task) {
       case .transcript(let session): request(.open(session: session))
-      // A shell's output has no viewer in the window yet; `cox expand` reads it.
-      case .output, nil: break
+      case .output(let archive):
+        let label = store.tasks.first { $0.id == task }?.label ?? task
+        output = Output(
+          id: archive, title: label, text: try store.session.output(archive: archive))
+      case nil: break
       }
     } catch {
       request(.refused(String(describing: error)))

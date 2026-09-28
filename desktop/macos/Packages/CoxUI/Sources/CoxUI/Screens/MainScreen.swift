@@ -16,6 +16,8 @@ public struct MainScreenState: Equatable, Sendable {
   public var inspectorTab = InspectorTab.changes
   /// Shown while the toolbar's `popover` is `.appearance`.
   public var appearance = AppearancePopover.State()
+  /// Shown while the toolbar's `popover` is `.model`.
+  public var model = ModelPopover.State()
 
   public init() {}
 
@@ -42,6 +44,8 @@ public enum MainScreenIntent: Equatable, Sendable {
   case toolbar(SessionToolbar.Intent)
   case inspectorTab(InspectorTab)
   case appearance(AppearancePopover.Intent)
+  /// A model popover row's id.
+  case model(String)
   /// A click outside the open popover, or Esc.
   case dismissPopover
 }
@@ -92,6 +96,18 @@ public struct MainScreen<Transcript: View, InspectorContent: View>: View {
         AppearancePopover(state: state.appearance) { send(.appearance($0)) }
           .padding(.top, Size.toolbarHeight)
           .padding(.trailing, Space.l + Size.capsuleHeight)
+      }
+    }
+    .overlayPreferenceValue(ModelCapsuleAnchor.self) { anchor in
+      if state.toolbar.popover == .model, let anchor {
+        GeometryReader { window in
+          // Under the capsule, its leading edges aligned, kept inside the window.
+          let capsule = window[anchor]
+          ModelPopover(state: state.model) { send(.model($0)) }
+            .offset(
+              x: min(capsule.minX, window.size.width - Size.popoverWidth - Space.l),
+              y: capsule.maxY + Space.xs)
+        }
       }
     }
     .frame(minWidth: Size.windowMinWidth, minHeight: Size.windowMinHeight)

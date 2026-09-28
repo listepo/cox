@@ -657,6 +657,63 @@ async fn open_task_finds_the_subagents_session_and_the_shells_output() {
     };
     let output = store.get(&archive).await.expect("archived output");
     assert!(String::from_utf8_lossy(&output).contains("built"));
+    let shown = session.output(&archive).expect("the viewer's text");
+    assert!(shown.contains("built"), "{shown:?}");
+}
+
+/// T37.22.6: the session list is read again when it may read differently,
+/// not on a timer — quiet while nothing commits, woken by another
+/// process's session.
+#[tokio::test]
+async fn workspace_changed_waits_for_another_connections_commit() {
+    let dir = scratch(Some(READ_AND_REPLY));
+    let sidebar = app(dir.path(), Arc::default());
+    let quiet = tokio::time::timeout(
+        std::time::Duration::from_millis(800),
+        sidebar.workspace_changed(),
+    );
+    assert!(quiet.await.is_err(), "nothing committed yet");
+
+    let watching = tokio::spawn({
+        let sidebar = Arc::clone(&sidebar);
+        async move { sidebar.workspace_changed().await }
+    });
+    // Let it take its position in the feed before anything commits.
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    // Another `App` stands in for a TUI: its store is another connection.
+    let other = app(dir.path(), Arc::default());
+    let theme = "base16-ocean.dark".to_string();
+    let session = other.open(dir.path().join("project"), None, theme).await;
+    let session = session.expect("open");
+    session.send(send("read the notes")).await.expect("send");
+    let woke = tokio::time::timeout(std::time::Duration::from_secs(20), watching).await;
+    assert!(matches!(woke, Ok(Ok(Ok(())))), "{woke:?}");
+}
+
+#[test]
+fn the_model_popover_lists_the_code_tiers_model_first() {
+    let dir = scratch(None);
+    let models = app(dir.path(), Arc::default())
+        .models(&dir.path().join("project"))
+        .expect("models");
+    let first = models.first().expect("a model");
+    assert_eq!(first.tier, cox_protocol::types::Tier::Code);
+    assert_eq!(first.id, "claude-sonnet-5");
+}
+
+#[tokio::test]
+async fn usable_providers_count_a_stored_key_and_not_a_missing_one() {
+    let dir = scratch(None);
+    let mut keyed = MemoryHost::default();
+    keyed.secrets.insert("anthropic".into(), "sk-test".into());
+    // SAFETY: this test's own process (nextest).
+    unsafe { std::env::remove_var("OPENAI_API_KEY") };
+    let usable = app(dir.path(), Arc::new(keyed))
+        .usable_providers(&dir.path().join("project"))
+        .await
+        .expect("providers");
+    assert!(usable.contains(&"anthropic".to_string()), "{usable:?}");
+    assert!(!usable.contains(&"openai".to_string()), "{usable:?}");
 }
 
 #[tokio::test]

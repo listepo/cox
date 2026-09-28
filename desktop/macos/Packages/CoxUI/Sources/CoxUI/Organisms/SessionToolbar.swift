@@ -84,6 +84,7 @@ public struct SessionToolbar: View {
       Breadcrumb(state.title, project: state.project, branch: state.branch)
       Spacer(minLength: Space.ml)
       ModelCapsule(state.model, isOpen: state.popover == .model) { send(.open(.model)) }
+        .anchorPreference(key: ModelCapsuleAnchor.self, value: .bounds) { $0 }
       ModeSegmented(selection: Binding(get: { state.mode }, set: { send(.mode($0)) }))
       CostCapsule(
         cost: state.cost, context: state.context, fraction: state.contextFraction,

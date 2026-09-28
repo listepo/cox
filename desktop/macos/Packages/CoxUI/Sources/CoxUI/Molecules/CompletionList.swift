@@ -68,8 +68,9 @@ public struct CompletionList: View {
   }
 }
 
-/// The row's title in `font.body`, its detail in `font.footnote` at the trailing edge.
-private struct CompletionRow: View {
+/// The row's title in `font.body`, its detail in `font.footnote` at the trailing edge; the model
+/// popover's rows too.
+struct CompletionRow: View {
   let row: CompletionList.Row
   let isSelected: Bool
   let action: () -> Void

@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use cox_core::{History, Session};
 use cox_protocol::Checkpointer as _;
-use cox_protocol::ids::{SessionId, TaskId};
+use cox_protocol::ids::{ArchiveId, SessionId, TaskId};
 use cox_protocol::traits::Store as _;
 use cox_protocol::types::{Event, Submission, TodoItem};
 use cox_render::diffmodel::DiffModel;
@@ -214,6 +214,14 @@ impl LiveSession {
                 .ok()
                 .and_then(|e| tasks::first_prompt(&e))
         }))
+    }
+
+    /// A finished shell's output, as `cox expand <id>` prints it
+    /// (T37.22.6): the archived bytes as text, with the escape sequences and
+    /// bidi overrides a command could write stripped before the app shows it.
+    pub fn output(&self, archive: &ArchiveId) -> Result<String, AppError> {
+        let bytes = self.app.workspace().store().archive_get(archive)?;
+        Ok(cox_sanitize::sanitize(&String::from_utf8_lossy(&bytes)))
     }
 
     /// The Context tab's cost history (T37.29.3.2): this session's ledger

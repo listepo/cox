@@ -1,6 +1,7 @@
 // The Tasks tab's check (T37.29.4, DT§5.1, DS§6.4): the inspector on its Tasks tab per
 // light/dark × Solid/Frosted cell (a subagent and a shell row, T37.29.8), and empty; the open
-// intent a row click sends and its label per kind; its header.
+// intent a row click sends and its label per kind; its header; and a shell's output sheet
+// (T37.22.6) with output and empty.
 
 import Testing
 
@@ -16,6 +17,17 @@ import Testing
   @Test func emptyTasksTab() throws {
     try assertCoxSnapshot(
       TasksInspectorSample(state: .init()), Variant.all[0], named: Variant.all[0].name)
+  }
+
+  @Test(arguments: Variant.all) func taskOutputSheet(_ variant: Variant) throws {
+    try assertCoxSnapshot(
+      TaskOutputSheet(title: "cargo build", output: PreviewState.taskOutput) {}, variant,
+      named: variant.name)
+  }
+
+  @Test func emptyTaskOutputSheet() throws {
+    try assertCoxSnapshot(
+      TaskOutputSheet(title: "true", output: "") {}, Variant.all[0], named: Variant.all[0].name)
   }
 }
 

@@ -40,6 +40,9 @@ cox-tools = { path = "../cox-tools", version = "0.1.2" }
 # Both were already in the app's tree through cox-session.
 cox-mcp = { path = "../cox-mcp", version = "0.1.2" }
 rmcp = { workspace = true }
+# T37.22.6: a shell's archived output is shown whole, so it passes the
+# terminal-text guard first; already in the tree through cox-render.
+cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
 
 [dev-dependencies]
 # The scenario tests run a real session over the Scripted provider and

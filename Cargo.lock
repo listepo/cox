@@ -1063,6 +1063,7 @@ dependencies = [
  "cox-protocol",
  "cox-provider",
  "cox-render",
+ "cox-sanitize",
  "cox-search",
  "cox-session",
  "cox-store",

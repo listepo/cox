@@ -19,7 +19,7 @@ use cox_app::review::LineComment;
 use cox_app::{
     Activity, ChangedFile, Changes, Checkpoint, Completion, ConfigSource, ContextPart, CostRow,
     Dropped, FileChange, Icon, InboxItem, Info, Intent, Layer, Linked, McpLogin, McpServer,
-    MeterRow, MeterText, Need, Project, SearchHit, SessionEntry, Setting, SettingKind,
+    MeterRow, MeterText, ModelChoice, Need, Project, SearchHit, SessionEntry, Setting, SettingKind,
     SettingsView, Tally, TaskKind, TaskTarget, TurnCosts, TurnUsage, UsageView,
 };
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
@@ -95,6 +95,15 @@ uniffi::custom_type!(StyledSpan, Span, {
         link: s.link,
     }),
 });
+
+#[uniffi::remote(Record)]
+pub struct ModelChoice {
+    pub tier: Tier,
+    pub provider: String,
+    pub id: String,
+    pub efforts: Vec<Effort>,
+    pub context_window: Option<u32>,
+}
 
 #[uniffi::remote(Record)]
 pub struct Project {

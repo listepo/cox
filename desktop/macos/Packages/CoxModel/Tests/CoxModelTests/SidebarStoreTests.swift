@@ -1,7 +1,8 @@
 // The sidebar's session list (T37.22.5): the inbox first, running sessions next, then each project
 // with its other sessions, each row with its status, age and cost; a filter narrows every section
-// and opens a folded project; the toolbar's title and project come from a session's entry; and the
-// providers' footer counts the configured providers with the checklist's key health as its dot.
+// and opens a folded project; the toolbar's title and project come from a session's entry; the list
+// re-reads when the workspace changed; and the providers' footer counts the usable providers
+// (A110) with the checklist's key health as its dot.
 
 import CoxClient
 import Foundation
@@ -112,13 +113,44 @@ private func listed() -> SidebarStore {
   #expect(store.entry("nope") == nil)
 }
 
-@Test func theFooterCountsProvidersAndShowsTheKeyCheck() {
+@Test func theFooterCountsUsableProvidersAndShowsTheKeyCheck() {
   let passed = CheckRow(id: .providerKey, status: .passed, detail: "anthropic key found")
-  let health = ProviderHealth(providers: ["anthropic", "deepseek", "openai"], check: passed)
+  let health = ProviderHealth(usable: ["anthropic", "local", "openai"], check: passed)
   #expect(health.text == "3 providers")
   #expect(health.status == .running)
-  #expect(ProviderHealth(providers: ["anthropic"], check: nil).text == "1 provider")
+  #expect(ProviderHealth(usable: ["anthropic"], check: nil).text == "1 provider")
   let failed = CheckRow(id: .providerKey, status: .failed, detail: "")
-  #expect(ProviderHealth(providers: [], check: failed).status == .error)
-  #expect(ProviderHealth(providers: [], check: failed).text.isEmpty)
+  #expect(ProviderHealth(usable: [], check: failed).status == .error)
+  #expect(ProviderHealth(usable: [], check: failed).text == "0 providers")
+  #expect(ProviderHealth(usable: nil, check: failed).text.isEmpty)
+}
+
+/// A workspace whose sessions grow by one each time it reports a change.
+private final class Growing: WorkspaceClient, @unchecked Sendable {
+  private let lock = NSLock()
+  private var count = 0
+  private let project = Project(root: "/src/cox", name: "cox")
+
+  func projects(limit: UInt32) -> [Project] { [project] }
+  func sessions(project: String, limit: UInt32) -> [SessionEntry] {
+    lock.withLock { (0..<count).map { SessionEntry(id: "s\($0)") } }
+  }
+  func activity(session: String) -> Activity { .idle }
+  func changed() async throws {
+    try await Task.sleep(for: .milliseconds(10))
+    lock.withLock { count += 1 }
+  }
+}
+
+@MainActor
+@Test func theListReadsAgainEachTimeTheWorkspaceChanged() async {
+  let store = SidebarStore(workspace: Growing(), inbox: nil)
+  let watching = Task { await store.watch() }
+  defer { watching.cancel() }
+  let deadline = Date(timeIntervalSinceNow: 10)
+  while (store.sections.first?.rows.count ?? 0) < 2, Date() < deadline {
+    try? await Task.sleep(for: .milliseconds(5))
+  }
+  #expect((store.sections.first?.rows.count ?? 0) >= 2)
+  #expect(store.sections.first?.rows.first?.title == "Untitled session")
 }

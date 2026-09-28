@@ -17,6 +17,13 @@ extension PreviewState {
 
   /// The mockup's Tasks tab.
   static let tasks = TasksTab.State(items: taskItems)
+
+  /// A finished shell's archived output, as its sheet shows it (T37.22.6).
+  static let taskOutput = """
+       Compiling cox-app v0.1.2
+       Compiling cox-ffi v0.1.2
+        Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.84s
+    """
 }
 
 /// The inspector on its Tasks tab, as tall as the smallest window.

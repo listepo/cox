@@ -4,6 +4,7 @@
 // can see the desktop behind it.
 
 import AppKit
+import CoxUI
 import SwiftUI
 
 /// The desktop behind the window, blurred by `NSVisualEffectView`. Its strength is `blur`, 0…1,
@@ -45,17 +46,28 @@ extension View {
 }
 
 /// Clears the window's own background once the view is in it; the title bar is hidden by the
-/// scene's `.hiddenTitleBar` style. An empty unified toolbar makes the title bar the height of
-/// the sidebar's top row, so the system centres the window buttons inside the sidebar pane, off
-/// the window's edge, as the mockup's `.traffic` row sits.
+/// scene's `.hiddenTitleBar` style. An empty unified toolbar puts the window buttons inside the
+/// sidebar pane, off the window's edge, as the mockup's `.traffic` row sits; the system centres
+/// them in its 52 pt bar, so they are moved down onto the centre of the sidebar's top row, which
+/// starts a pane gap down, and moved again after each resize, when AppKit lays them out anew.
 private struct SeeThroughWindow: NSViewRepresentable {
   func makeNSView(context: Context) -> Probe { Probe() }
   func updateNSView(_ view: Probe, context: Context) {}
 
   final class Probe: NSView {
+    private var resized: (any NSObjectProtocol)?
+
+    /// The sidebar's top row's centre, from the window's top edge: `Sidebar` sits a pane gap
+    /// down and its row is `toolbarHeight - paneGap` tall.
+    private static var buttonsCentre: CGFloat { (Size.toolbarHeight + Size.paneGap) / 2 }
+
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
+      if let resized { NotificationCenter.default.removeObserver(resized) }
       guard let window else { return }
+      resized = NotificationCenter.default.addObserver(
+        forName: NSWindow.didResizeNotification, object: window, queue: .main
+      ) { [weak self] _ in MainActor.assumeIsolated { self?.placeButtons() } }
       window.isOpaque = false
       window.backgroundColor = .clear
       window.titlebarAppearsTransparent = true
@@ -63,6 +75,19 @@ private struct SeeThroughWindow: NSViewRepresentable {
       window.titlebarSeparatorStyle = .none
       if window.toolbar == nil { window.toolbar = NSToolbar(identifier: "CoxWindowButtons") }
       window.toolbarStyle = .unified
+      placeButtons()
+    }
+
+    private func placeButtons() {
+      guard let window else { return }
+      let centre = window.frame.height - Self.buttonsCentre
+      for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+        guard let button = window.standardWindowButton(kind), let bar = button.superview else {
+          continue
+        }
+        let y = bar.convert(NSPoint(x: 0, y: centre), from: nil).y - button.frame.height / 2
+        button.setFrameOrigin(NSPoint(x: button.frame.minX, y: y))
+      }
     }
   }
 }

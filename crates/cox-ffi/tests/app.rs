@@ -121,3 +121,58 @@ async fn an_approval_is_noted_with_badge_one_and_allowing_it_resumes_the_turn() 
         Some("hello\n".into())
     );
 }
+
+/// The `App` over `dir`'s scratch home, as Swift makes it.
+fn ffi_app(dir: &Path, host: Arc<MemoryHost>) -> Arc<cox_ffi::App> {
+    let home = dir.join("user/.cox").to_string_lossy().into_owned();
+    cox_ffi::App::new(Some(home), host).expect("app")
+}
+
+#[test]
+fn models_reach_swift_with_the_code_tiers_model_first() {
+    let dir = scratch(None);
+    let cwd = dir.path().to_string_lossy().into_owned();
+    let models = ffi_app(dir.path(), Arc::default())
+        .models(cwd)
+        .expect("models");
+    let first = models.first().expect("a model");
+    assert_eq!(first.tier, cox_protocol::types::Tier::Code);
+    assert_eq!(first.id, "claude-sonnet-5");
+}
+
+#[tokio::test]
+async fn usable_providers_ask_the_host_keychain() {
+    let dir = scratch(None);
+    let mut keyed = MemoryHost::default();
+    keyed.secrets.insert("anthropic".into(), "sk-test".into());
+    let cwd = dir.path().to_string_lossy().into_owned();
+    let usable = ffi_app(dir.path(), Arc::new(keyed))
+        .usable_providers(cwd)
+        .await
+        .expect("providers");
+    assert!(usable.contains(&"anthropic".to_string()), "{usable:?}");
+}
+
+#[tokio::test]
+async fn workspace_changed_returns_once_a_session_commits() {
+    let dir = scratch(Some(&scenario("read-and-reply")));
+    let watching = tokio::spawn(ffi_app(dir.path(), Arc::default()).workspace_changed());
+    // Let it take its position in the feed before anything commits.
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let host = Arc::new(MemoryHost::default());
+    let session = open(dir.path(), Arc::clone(&host)).await.expect("open");
+    let prompts = ["read the notes".to_string()];
+    record::record(&session, &host, &prompts)
+        .await
+        .expect("record");
+    let woke = tokio::time::timeout(std::time::Duration::from_secs(20), watching).await;
+    assert!(matches!(woke, Ok(Ok(Ok(())))), "{woke:?}");
+}
+
+#[tokio::test]
+async fn output_of_an_unknown_archive_is_a_session_error() {
+    let dir = scratch(Some(&scenario("read-and-reply")));
+    let session = open(dir.path(), Arc::default()).await.expect("open");
+    let err = session.output(cox_protocol::ids::ArchiveId::new()).err();
+    assert!(matches!(err, Some(AppError::Session { .. })), "{err:?}");
+}

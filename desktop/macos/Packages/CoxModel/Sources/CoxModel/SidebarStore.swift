@@ -2,7 +2,7 @@
 // from each session's activity, then every project with its other sessions, each row with its
 // status, what it did last and its cost; and the providers' footer. Here, not in CoxUI, because
 // these decide what the list shows (DS§1); the app copies each section into CoxUI's
-// `Sidebar.Group` field for field and re-reads the workspace while the window is open.
+// `Sidebar.Group` field for field; `watch` re-reads the workspace each time it changed.
 
 import CoxClient
 import Foundation
@@ -79,6 +79,30 @@ public final class SidebarStore {
       (readAt, failure) = (now, nil)
     } catch {
       failure = String(describing: error)
+    }
+  }
+
+  /// Re-reads the list now and each time the workspace may read differently, until cancelled:
+  /// a commit to `cox.db` from a session or another process, or a session here that started,
+  /// stopped or began to wait (T37.22.6). A failed wait re-reads after `retry` instead.
+  public func watch(retry: Duration = .seconds(2)) async {
+    refresh()
+    guard let workspace else {
+      // A recording's inbox still changes as it replays; there is nothing to wait on.
+      while !Task.isCancelled {
+        try? await Task.sleep(for: retry)
+        refresh()
+      }
+      return
+    }
+    while !Task.isCancelled {
+      do {
+        try await workspace.changed()
+      } catch {
+        try? await Task.sleep(for: retry)
+      }
+      guard !Task.isCancelled else { return }
+      refresh()
     }
   }
 
@@ -160,7 +184,7 @@ public final class SidebarStore {
       case .idle: (.idle, [ago, entry.turns > 0 ? "done" : nil])
       }
     return SidebarRow(
-      id: entry.id, session: entry.id, status: status, title: entry.title ?? "Untitled session",
+      id: entry.id, session: entry.id, status: status, title: entry.name,
       subtitle: subtitle.compactMap { $0 }.joined(separator: " · "),
       cost: entry.costUsd > 0 ? usd(entry.costUsd) : nil, isReadOnly: false)
   }
@@ -173,19 +197,21 @@ public final class SidebarStore {
   }
 }
 
-/// The footer's providers (DT§5.1): how many the config names, and the health of the one the code
-/// tier runs on as the first-run checklist's `provider_key` row found it.
+/// The footer's providers (DT§5.1): how many a turn could run on now (A110: a key found or a local
+/// server listening, not every configured section), and the health of the one the code tier runs
+/// on as the first-run checklist's `provider_key` row found it.
 public struct ProviderHealth: Equatable, Sendable {
-  /// `3 providers`; empty before the settings loaded.
+  /// `3 providers`; empty before the core counted them.
   public var text = ""
   /// The dot, as a row's: `running` glows green.
   public var status = SidebarRow.Status.idle
 
   public init() {}
 
-  public init(providers: [String], check: CheckRow?) {
-    if !providers.isEmpty {
-      text = "\(providers.count) \(providers.count == 1 ? "provider" : "providers")"
+  /// `usable` is nil until the core has probed the providers.
+  public init(usable: [String]?, check: CheckRow?) {
+    if let usable {
+      text = "\(usable.count) \(usable.count == 1 ? "provider" : "providers")"
     }
     status =
       switch check?.status {
@@ -195,4 +221,10 @@ public struct ProviderHealth: Equatable, Sendable {
       case nil: .idle
       }
   }
+}
+
+extension SessionEntry {
+  /// What the toolbar and the sidebar call it: its title, or `Untitled session` until it has one.
+  public var name: String { title ?? Self.untitled }
+  public static let untitled = "Untitled session"
 }

@@ -1,6 +1,7 @@
-// The window shell's values from the live stores (DT§5.1, T37.22.5): the toolbar from the open
-// session's store, composer and Info, the sidebar from `SidebarStore` and the providers' health,
-// copied into CoxUI's `SessionToolbar.State` and `Sidebar.State` field for field. Wiring only:
+// The window shell's values from the live stores (DT§5.1, T37.22.5): the toolbar and its model
+// popover from the open session's store, Info and model catalog (T37.22.6), the sidebar from
+// `SidebarStore` and the providers' health, copied into CoxUI's `SessionToolbar.State`,
+// `ModelPopover.State` and `Sidebar.State` field for field. Wiring only:
 // CoxModel decided every text and status; separate from the window so its body stays the layout.
 
 import CoxClient
@@ -17,6 +18,11 @@ struct OpenedSession {
   let pull: Task<Void, Never>
   /// What it reported after it showed; nil until then.
   var info: Info?
+  /// The models its cwd's config offers; empty until read.
+  var models: [ModelChoice] = []
+
+  /// The toolbar's model menu for what the session runs on now.
+  var menu: ModelMenu { ModelMenu(choices: models, status: store.status) }
 
   /// Stops the pull; the session keeps running in the core.
   func close() {
@@ -38,6 +44,18 @@ enum ShellState {
       model: open.composer.model ?? "", mode: open.store.status.mode.map(SessionMode.init) ?? .ask,
       cost: figures.cost, context: figures.context, contextFraction: figures.contextFraction,
       isRunning: open.store.isTurnRunning, popover: popover)
+  }
+
+  static func models(_ menu: ModelMenu?) -> ModelPopover.State {
+    ModelPopover.State(
+      sections: (menu?.sections ?? []).map { section in
+        ModelPopover.Section(
+          title: section.title,
+          rows: section.rows.map {
+            CompletionList.Row(id: $0.id, title: $0.model, detail: $0.detail)
+          },
+          selected: section.rows.first(where: \.isSelected)?.id)
+      })
   }
 
   static func sidebar(

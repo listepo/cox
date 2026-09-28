@@ -8,10 +8,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
+use cox_app::SettingsView;
 use cox_app::WorkspaceError;
 use cox_app::app::{App as Owner, AppError as OwnerError};
 use cox_app::onboarding::CheckRow;
-use cox_app::{Activity, Holder, InboxItem, Project, SearchHit, SessionEntry, SettingsView};
+use cox_app::{Activity, Holder, InboxItem, ModelChoice, Project, SearchHit, SessionEntry};
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::WorktreeInfo;
 use tokio::runtime::Runtime;
@@ -198,6 +199,23 @@ impl App {
             on_runtime(async move { self.owner.mcp_login(Path::new(&cwd), &name, login).await })
                 .await??,
         )
+    }
+
+    /// The toolbar's model popover for a session in `cwd` (T37.22.6).
+    pub fn models(&self, cwd: String) -> Result<Vec<ModelChoice>, AppError> {
+        Ok(self.owner.models(Path::new(&cwd))?)
+    }
+
+    /// The providers a turn in `cwd` could run on now (A110); it probes
+    /// local servers, so it runs off the caller's thread.
+    pub async fn usable_providers(self: Arc<Self>, cwd: String) -> Result<Vec<String>, AppError> {
+        Ok(on_runtime(async move { self.owner.usable_providers(Path::new(&cwd)).await }).await??)
+    }
+
+    /// Returns once the session list may read differently (T37.22.6): the
+    /// sidebar reads it again then, not on a timer.
+    pub async fn workspace_changed(self: Arc<Self>) -> Result<(), AppError> {
+        Ok(on_runtime(async move { self.owner.workspace_changed().await }).await??)
     }
 
     /// The first-run checklist for a session in `cwd` (DT§5.8, T37.31); it

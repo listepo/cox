@@ -8,7 +8,7 @@ use std::sync::Arc;
 use cox_app::diffmodel::DiffModel;
 use cox_app::live::LiveSession;
 use cox_app::{Block, Changes, Completion, Info, Intent, TaskTarget, TimelinePatch, TurnCosts};
-use cox_protocol::ids::{SessionId, TaskId};
+use cox_protocol::ids::{ArchiveId, SessionId, TaskId};
 use cox_protocol::types::TodoItem;
 
 use crate::{AppError, on_runtime};
@@ -78,6 +78,11 @@ impl SessionHandle {
     /// finished shell's output; `None` while there is nothing to open.
     pub fn open_task(&self, task: TaskId) -> Result<Option<TaskTarget>, AppError> {
         Ok(self.live.open_task(task)?)
+    }
+
+    /// A finished shell's output, which `open_task` names (T37.22.6).
+    pub fn output(&self, archive: ArchiveId) -> Result<String, AppError> {
+        Ok(self.live.output(&archive)?)
     }
 
     /// What the inspector's Info tab lists (T37.29.5).
