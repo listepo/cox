@@ -33,6 +33,7 @@ use cox_app::{
 use cox_app::{KeyError, PermissionRule, RuleKind, SessionGrant, SettingsGroup};
 use cox_app::{KeyValueRow, PluginKey, PluginSlot, SpanView, WidgetView};
 use cox_app::{MenuModel, ModelSection};
+use cox_app::{RowStatus, SectionKind, SidebarRow, SidebarSection, SubtitlePart};
 use cox_app::{SettingControl, SettingInput, SettingOption};
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::Slot;
@@ -667,9 +668,49 @@ pub enum Activity {
 #[uniffi::remote(Record)]
 pub struct SessionEntry {
     pub info: SessionInfo,
+    pub name: String,
     pub held_by: Option<Holder>,
     pub agent: Option<String>,
     pub best_of: Option<String>,
+}
+
+#[uniffi::remote(Record)]
+pub struct SidebarSection {
+    pub id: String,
+    pub title: String,
+    pub kind: SectionKind,
+    pub rows: Vec<SidebarRow>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum SectionKind {
+    Section { count: Option<u32> },
+    Project { expanded: bool },
+}
+
+#[uniffi::remote(Record)]
+pub struct SidebarRow {
+    pub id: String,
+    pub session: String,
+    pub status: RowStatus,
+    pub title: String,
+    pub subtitle: Vec<SubtitlePart>,
+    pub cost: Option<String>,
+    pub read_only: bool,
+}
+
+#[uniffi::remote(Enum)]
+pub enum RowStatus {
+    Running,
+    Waiting,
+    Idle,
+    Error,
+}
+
+#[uniffi::remote(Enum)]
+pub enum SubtitlePart {
+    Text { text: String },
+    Age { updated_at: String },
 }
 
 #[uniffi::remote(Record)]

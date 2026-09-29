@@ -69,6 +69,7 @@ pub use tasks::{TaskKind, TaskTarget};
 pub use terminal::{TerminalError, TerminalHandle};
 pub use timeline::Timeline;
 pub use usage::{Meter, Tally, TurnUsage, UsageView};
+pub use workspace::sidebar::{RowStatus, SectionKind, SidebarRow, SidebarSection, SubtitlePart};
 pub use workspace::{Project, SearchHit, SessionEntry, Workspace, WorkspaceError};
 
 // What the exported types carry, named here so `cox-ffi` depends on no

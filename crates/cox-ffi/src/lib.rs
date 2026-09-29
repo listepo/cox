@@ -17,7 +17,7 @@ use cox_app::remote::RemoteError;
 use cox_app::terminal::TerminalError;
 use cox_app::{
     Activity, AgentChoice, DaySummary, Holder, InboxItem, ModelChoice, PaletteHit, PaletteItem,
-    Project, SearchHit, SessionEntry,
+    Project, SearchHit, SessionEntry, SidebarSection,
 };
 use cox_app::{RuleKind, SessionGrant, SettingsView};
 use cox_protocol::ids::SessionId;
@@ -186,6 +186,15 @@ impl App {
             .owner
             .workspace()
             .sessions(Path::new(&project), i64::from(limit))?)
+    }
+
+    /// The sidebar's sections (T58.4.4): `folded` holds project roots.
+    pub fn sidebar(
+        &self,
+        filter: String,
+        folded: Vec<String>,
+    ) -> Result<Vec<SidebarSection>, AppError> {
+        Ok(self.owner.sidebar(&filter, &folded)?)
     }
 
     /// The menu bar's "Today" footer (T51.12).

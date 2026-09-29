@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::best_of::{BestOf, BestOfError, BestOfId, Groups};
 
+pub mod sidebar;
+
 /// How many prompts, across every session, [`Workspace::prompts`] reads:
 /// as many as the TUI's `Ctrl+R` search.
 const PROMPT_SCAN: i64 = 5000;
@@ -49,6 +51,10 @@ pub struct Project {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionEntry {
     pub info: SessionInfo,
+    /// What the toolbar and the sidebar call it: its title, or `Untitled
+    /// session` until the core titled it (T58.4.4).
+    #[serde(default)]
+    pub name: String,
     /// Another process drives it (T37.34): open it read-only or fork it.
     pub held_by: Option<Holder>,
     /// The external ACP agent that drove it (T52.6); `None` for cox.
@@ -58,6 +64,13 @@ pub struct SessionEntry {
     /// shows as one group; `None` for every other session.
     #[serde(default)]
     pub best_of: Option<String>,
+}
+
+impl SessionEntry {
+    /// The name of a session titled `title`.
+    pub fn name_of(title: Option<&str>) -> String {
+        title.unwrap_or("Untitled session").to_owned()
+    }
 }
 
 /// One full-text hit, with the session it belongs to.
@@ -144,6 +157,7 @@ impl Workspace {
                 .and_then(|id| self.groups.group_of(&id))
                 .map(|g| g.0);
             out.push(SessionEntry {
+                name: SessionEntry::name_of(info.title.as_deref()),
                 info,
                 held_by,
                 agent,
