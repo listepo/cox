@@ -159,11 +159,11 @@ source_url = "https://models.dev"
 
 [[model]]
 id = "deepseek/deepseek-v4-pro"
-input = 0.591252
-output = 1.182504
+input = 0.783
+output = 1.566
 cache_write = 0.0
-cache_read = 0.049271
-verified_on = "2026-09-25"
+cache_read = 0.06525
+verified_on = "2026-09-28"
 source_url = "https://models.dev"
 
 [[model]]
@@ -182,6 +182,33 @@ output = 2.5
 cache_write = 0.0
 cache_read = 0.20
 verified_on = "2026-09-04"
+source_url = "https://models.dev"
+
+[[model]]
+id = "gemini-3.8-flash"
+input = 0.75
+output = 3.75
+cache_write = 0.0
+cache_read = 0.075
+verified_on = "2026-09-29"
+source_url = "https://models.dev"
+
+[[model]]
+id = "gemini-3.1-pro-preview"
+input = 2.0
+output = 12.0
+cache_write = 0.0
+cache_read = 0.2
+verified_on = "2026-09-29"
+source_url = "https://models.dev"
+
+[[model]]
+id = "gemini-3.5-flash-lite"
+input = 0.3
+output = 2.5
+cache_write = 0.0
+cache_read = 0.03
+verified_on = "2026-09-29"
 source_url = "https://models.dev"
 
 [[model]]

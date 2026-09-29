@@ -8,7 +8,7 @@
 //! The example ships no `plugin.wasm` by design (Dart cannot emit one
 //! extism can load, research.md §4.3.5 P44); its `plugin.toml` has no
 //! `wasm` line at all, which `PluginManifest::validate` (PL§13/§14) and
-//! `crates/cox/src/session.rs`'s `load_plugins` both accept because its
+//! `crates/cox-session/src/plugins.rs`'s `load_plugins` both accept because its
 //! one capability is `[[mcp]]` — `load_plugins` never tries to read a wasm
 //! this package does not have, and registers the `count` server exactly
 //! like a wasm plugin's.
@@ -118,7 +118,7 @@ fn plugin_example_dart() {
     let session = out["session"].as_str().unwrap();
 
     // The `[[mcp]]` server runs wrapped by `sandboxed_argv`
-    // (`crates/cox/src/session.rs`'s `plugin_mcp`) unconditionally — the
+    // (`crates/cox-session/src/plugins.rs`'s `plugin_mcp`) unconditionally — the
     // same guard every plugin-shipped `[[mcp]]` server gets — so a
     // successful call here already proves it ran under the sandbox.
     assert_eq!(

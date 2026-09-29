@@ -1,19 +1,26 @@
-//! Markdown → ratatui lines (T5.3): pulldown-cmark events become styled
-//! `Span`s, fenced code goes through syntect, tables become aligned text.
-//! Separate from the cells so an assistant reply and a compaction summary
-//! render through one path and a test can check the mapping on a string.
+//! Markdown → `StyledDoc` (T5.3, T37.7): pulldown-cmark events become runs
+//! tagged with `StyleToken` roles, fenced code goes through syntect. The
+//! ratatui lines (`render`, `highlight`, aligned tables) are a thin layout
+//! over that doc behind the `ratatui` feature. Separate from the cells so an
+//! assistant reply and a compaction summary render through one path and a
+//! test can check the mapping on a string.
 
 use std::path::Path;
 use std::sync::{LazyLock, OnceLock};
 
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+#[cfg(feature = "ratatui")]
 use ratatui::style::{Color, Modifier, Style};
+#[cfg(feature = "ratatui")]
 use ratatui::text::{Line, Span};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
+#[cfg(feature = "ratatui")]
 use unicode_width::UnicodeWidthStr;
 
+#[cfg(feature = "ratatui")]
 use crate::Look;
+use crate::doc::{Block, StyleToken, StyledDoc, StyledLine, StyledSpan, TextKind, TextLine};
 use crate::glyph::Glyphs;
 
 static SYNTAXES: LazyLock<syntect::parsing::SyntaxSet> =
@@ -39,8 +46,7 @@ pub fn load_user_themes(dir: &Path) {
 /// of syntect's bundled or user (T24.2) themes, otherwise the `tui.theme`
 /// default (`auto` reads as dark because most terminals are).
 pub fn theme_name(dark: bool, chosen: &'static str) -> &'static str {
-    let known = |set: &ThemeSet| set.themes.contains_key(chosen);
-    if THEMES.themes.contains_key(chosen) || USER_THEMES.get().is_some_and(known) {
+    if known(chosen) {
         return chosen;
     }
     if dark {
@@ -48,6 +54,35 @@ pub fn theme_name(dark: bool, chosen: &'static str) -> &'static str {
     } else {
         "base16-ocean.light"
     }
+}
+
+/// Whether `name` is a bundled or user (T24.2) theme.
+fn known(name: &str) -> bool {
+    let has = |set: &ThemeSet| set.themes.contains_key(name);
+    has(&THEMES) || USER_THEMES.get().is_some_and(has)
+}
+
+/// `chosen`'s dark and light variants, for a surface that follows the
+/// system appearance instead of one terminal background (A95): a theme named
+/// `….dark`/`….light` or `… (dark)`/`… (light)` pairs with its sibling when
+/// that is known too, any other known theme serves both, and an unknown one
+/// falls back to `theme_name`'s defaults.
+pub fn theme_variants(chosen: &str) -> [String; 2] {
+    if !known(chosen) {
+        return [theme_name(true, ""), theme_name(false, "")].map(str::to_owned);
+    }
+    let sibling = |from: &str, to: &str| {
+        [(".", ""), (" (", ")")]
+            .into_iter()
+            .find_map(|(open, close)| {
+                let stem = chosen.strip_suffix(&format!("{open}{from}{close}"))?;
+                Some(format!("{stem}{open}{to}{close}")).filter(|name| known(name))
+            })
+    };
+    [
+        sibling("light", "dark").unwrap_or_else(|| chosen.to_owned()),
+        sibling("dark", "light").unwrap_or_else(|| chosen.to_owned()),
+    ]
 }
 
 /// The bundled plus user (T24.2) theme names, for `cox`'s startup warning
@@ -61,13 +96,12 @@ pub fn themes() -> Vec<String> {
     names
 }
 
-/// Renders `text` as lines, unwrapped; trailing blank lines are dropped so a
-/// streaming reply never shows a gap under its last paragraph.
-pub fn render(text: &str, look: &Look) -> Vec<Line<'static>> {
+/// Parses `text` into a `StyledDoc`: code blocks highlight with the syntect
+/// `theme`, list bullets come from `glyphs`.
+pub fn parse(text: &str, theme: &str, glyphs: &Glyphs) -> StyledDoc {
     let mut r = Renderer {
-        theme: look.theme,
-        glyphs: look.glyphs,
-        width: usize::from(look.width),
+        theme,
+        glyphs: *glyphs,
         ..Renderer::default()
     };
     let opts = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
@@ -75,21 +109,56 @@ pub fn render(text: &str, look: &Look) -> Vec<Line<'static>> {
         r.event(ev);
     }
     r.flush();
-    while r.lines.last().is_some_and(|l| l.spans.is_empty()) {
-        r.lines.pop();
+    StyledDoc { blocks: r.blocks }
+}
+
+/// Renders `text` as lines, unwrapped; trailing blank lines are dropped so a
+/// streaming reply never shows a gap under its last paragraph.
+#[cfg(feature = "ratatui")]
+pub fn render(text: &str, look: &Look) -> Vec<Line<'static>> {
+    let mut out = Vec::new();
+    for block in parse(text, look.theme, &look.glyphs).blocks {
+        match block {
+            Block::Text { kind, lines } => {
+                for (i, line) in lines.iter().enumerate() {
+                    let kind = if i == 0 { kind } else { TextKind::Paragraph };
+                    out.push(to_line(&prefixed(line, kind, &look.glyphs)));
+                }
+            }
+            Block::Code { lines, .. } => out.extend(lines.iter().map(to_line)),
+            Block::Table { rows } => {
+                out.extend(table_lines(&rows, &look.glyphs, usize::from(look.width)));
+            }
+            Block::Rule => out.push(Line::styled(
+                look.glyphs.rule.repeat(3),
+                Style::default().add_modifier(Modifier::DIM),
+            )),
+        }
+        out.push(Line::default());
     }
-    r.lines
+    while out.last().is_some_and(|l| l.spans.is_empty()) {
+        out.pop();
+    }
+    out
 }
 
 #[derive(Default)]
-struct Renderer {
-    theme: &'static str,
+struct Renderer<'a> {
+    theme: &'a str,
     glyphs: Glyphs,
-    /// The viewport; a table wider than it becomes records (T24.7).
-    width: usize,
-    lines: Vec<Line<'static>>,
-    cur: Vec<Span<'static>>,
-    styles: Vec<Style>,
+    blocks: Vec<Block>,
+    /// Whether the last block is a `Block::Text` still taking lines.
+    open: bool,
+    /// What the next `Block::Text` opens as; `None` reads as a paragraph.
+    kind: Option<TextKind>,
+    cur: StyledLine,
+    /// The next line is flushed even with no runs: a heading's or an item's
+    /// first line, which a terminal still prints for its `#` run or marker.
+    due: bool,
+    /// The open item's depth and marker, until its first line is flushed.
+    item: Option<(u8, String)>,
+    /// Inherited run style, innermost last; its `text` is unused.
+    pens: Vec<StyledSpan>,
     /// Next number per open ordered list (`None` for bullets), innermost last.
     lists: Vec<Option<u64>>,
     /// Open fenced block: language and body so far.
@@ -101,13 +170,18 @@ struct Renderer {
     link: Option<(String, usize)>,
 }
 
-impl Renderer {
-    fn style(&self) -> Style {
-        self.styles.last().copied().unwrap_or_default()
+impl Renderer<'_> {
+    fn run(&self, text: impl Into<String>) -> StyledSpan {
+        StyledSpan {
+            text: text.into(),
+            ..self.pens.last().cloned().unwrap_or_default()
+        }
     }
 
-    fn push(&mut self, m: Modifier) {
-        self.styles.push(self.style().add_modifier(m));
+    fn push(&mut self, set: fn(&mut StyledSpan)) {
+        let mut pen = self.run("");
+        set(&mut pen);
+        self.pens.push(pen);
     }
 
     fn text(&mut self, s: &str) {
@@ -116,7 +190,7 @@ impl Renderer {
         } else if let Some((_, cell)) = &mut self.table {
             cell.push_str(s);
         } else {
-            self.cur.push(Span::styled(s.to_string(), self.style()));
+            self.cur.push(self.run(s));
         }
     }
 
@@ -132,43 +206,57 @@ impl Renderer {
             .get(at..)
             .unwrap_or_default()
             .iter()
-            .map(|s| s.content.as_ref())
+            .map(|s| s.text.as_str())
             .collect();
         if text == url {
             for span in self.cur.iter_mut().skip(at) {
-                *span = crate::link::mark(std::mem::take(span));
+                span.link = Some(url.clone());
             }
             return;
         }
-        let style = self.style();
-        self.cur.push(Span::styled(" (", style));
-        self.cur.push(crate::link::mark(Span::styled(url, style)));
-        self.cur.push(Span::styled(")", style));
+        let mut target = self.run(url.clone());
+        target.link = Some(url);
+        self.cur.push(self.run(" ("));
+        self.cur.push(target);
+        self.cur.push(self.run(")"));
     }
 
     fn flush(&mut self) {
-        if self.cur.is_empty() {
+        if self.cur.is_empty() && !self.due {
             return;
         }
-        let mut spans = std::mem::take(&mut self.cur);
-        if self.quote > 0 {
-            spans.insert(
-                0,
-                Span::styled(
-                    format!("{} ", self.glyphs.quote).repeat(self.quote),
-                    Style::default().add_modifier(Modifier::DIM),
-                ),
-            );
+        self.due = false;
+        let depth = small(self.lists.len().saturating_sub(1));
+        let (depth, marker) = self.item.take().unwrap_or((depth, String::new()));
+        let line = TextLine {
+            quote: small(self.quote),
+            depth,
+            marker,
+            spans: std::mem::take(&mut self.cur),
+        };
+        if !self.open {
+            let kind = self.kind.unwrap_or(TextKind::Paragraph);
+            self.blocks.push(Block::Text {
+                kind,
+                lines: Vec::new(),
+            });
+            self.open = true;
         }
-        self.lines.push(Line::from(spans));
+        if let Some(Block::Text { lines, .. }) = self.blocks.last_mut() {
+            lines.push(line);
+        }
     }
 
-    /// Ends the open line and separates it from the next block.
+    /// Ends the open line and the block it belongs to.
     fn blank(&mut self) {
         self.flush();
-        if self.lines.last().is_some_and(|l| !l.spans.is_empty()) {
-            self.lines.push(Line::default());
-        }
+        self.open = false;
+    }
+
+    /// A block laid out whole; its start already ended the one before it.
+    fn close_with(&mut self, block: Block) {
+        self.blocks.push(block);
+        self.open = false;
     }
 
     fn event(&mut self, ev: Event<'_>) {
@@ -177,18 +265,18 @@ impl Renderer {
             Event::End(tag) => self.end(tag),
             Event::Text(t) | Event::Html(t) | Event::InlineHtml(t) => self.text(&t),
             Event::Code(c) if self.table.is_some() => self.text(&c),
-            Event::Code(c) => self
-                .cur
-                .push(Span::styled(c.into_string(), self.style().fg(Color::Cyan))),
+            Event::Code(c) => {
+                let token = StyleToken::Accent;
+                self.cur.push(StyledSpan {
+                    token,
+                    ..self.run(c.into_string())
+                });
+            }
             Event::SoftBreak => self.text(" "),
             Event::HardBreak => self.flush(),
             Event::Rule => {
                 self.blank();
-                self.lines.push(Line::styled(
-                    self.glyphs.rule.repeat(3),
-                    Style::default().add_modifier(Modifier::DIM),
-                ));
-                self.lines.push(Line::default());
+                self.close_with(Block::Rule);
             }
             Event::TaskListMarker(done) => self.text(if done { "[x] " } else { "[ ] " }),
             _ => {}
@@ -199,14 +287,19 @@ impl Renderer {
         match tag {
             Tag::Heading { level, .. } => {
                 self.blank();
-                self.push(Modifier::BOLD);
-                let hashes = "#".repeat(level as usize);
-                self.cur
-                    .push(Span::styled(format!("{hashes} "), self.style()));
+                self.kind = Some(TextKind::Heading(level as u8));
+                self.push(|p| p.bold = true);
+                self.due = true;
+            }
+            Tag::Paragraph if self.lists.is_empty() && self.quote == 0 => {
+                self.kind = Some(TextKind::Paragraph);
             }
             Tag::BlockQuote(..) => {
                 self.blank();
                 self.quote += 1;
+                if self.quote == 1 {
+                    self.kind = Some(TextKind::Quote);
+                }
             }
             Tag::CodeBlock(kind) => {
                 self.blank();
@@ -219,6 +312,7 @@ impl Renderer {
             Tag::List(start) => {
                 if self.lists.is_empty() {
                     self.blank();
+                    self.kind = Some(TextKind::List);
                 }
                 self.lists.push(start);
             }
@@ -227,20 +321,20 @@ impl Renderer {
                 let depth = self.lists.len().saturating_sub(1);
                 let marker = match self.lists.last_mut() {
                     Some(Some(n)) => {
-                        let m = format!("{n}. ");
+                        let m = format!("{n}.");
                         *n += 1;
                         m
                     }
-                    _ => format!("{} ", self.glyphs.bullet),
+                    _ => self.glyphs.bullet.to_string(),
                 };
-                self.cur
-                    .push(Span::raw(format!("{}{marker}", "  ".repeat(depth))));
+                self.item = Some((small(depth), marker));
+                self.due = true;
             }
-            Tag::Emphasis => self.push(Modifier::ITALIC),
-            Tag::Strong => self.push(Modifier::BOLD),
-            Tag::Strikethrough => self.push(Modifier::CROSSED_OUT),
+            Tag::Emphasis => self.push(|p| p.italic = true),
+            Tag::Strong => self.push(|p| p.bold = true),
+            Tag::Strikethrough => self.push(|p| p.strike = true),
             Tag::Link { dest_url, .. } => {
-                self.push(Modifier::UNDERLINED);
+                self.push(|p| p.underline = true);
                 if dest_url.starts_with("https://") || dest_url.starts_with("http://") {
                     self.link = Some((dest_url.into_string(), self.cur.len()));
                 }
@@ -261,8 +355,10 @@ impl Renderer {
     fn end(&mut self, tag: TagEnd) {
         match tag {
             TagEnd::Heading(_) => {
-                self.styles.pop();
+                self.pens.pop();
                 self.blank();
+                // What follows is not the heading: only its first line takes the `#` run.
+                self.kind = None;
             }
             // Inside a list or quote a paragraph break is just a line break.
             TagEnd::Paragraph if self.lists.is_empty() && self.quote == 0 => self.blank(),
@@ -275,8 +371,8 @@ impl Renderer {
             TagEnd::CodeBlock => {
                 if let Some((lang, body)) = self.code.take() {
                     let rows: Vec<&str> = body.lines().collect();
-                    self.lines.extend(highlight(&lang, &rows, self.theme));
-                    self.lines.push(Line::default());
+                    let lines = highlight_runs(&lang, &rows, self.theme);
+                    self.close_with(Block::Code { lang, lines });
                 }
             }
             TagEnd::List(_) => {
@@ -284,13 +380,15 @@ impl Renderer {
                 self.lists.pop();
                 if self.lists.is_empty() {
                     self.blank();
+                    // A quote the list sat in goes on as a quote.
+                    self.kind = (self.quote > 0).then_some(TextKind::Quote);
                 }
             }
             TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough => {
-                self.styles.pop();
+                self.pens.pop();
             }
             TagEnd::Link => {
-                self.styles.pop();
+                self.pens.pop();
                 self.end_link();
             }
             TagEnd::TableCell => {
@@ -303,9 +401,7 @@ impl Renderer {
             }
             TagEnd::Table => {
                 if let Some((rows, _)) = self.table.take() {
-                    self.lines
-                        .extend(table_lines(&rows, &self.glyphs, self.width));
-                    self.lines.push(Line::default());
+                    self.close_with(Block::Table { rows });
                 }
             }
             _ => {}
@@ -313,18 +409,54 @@ impl Renderer {
     }
 }
 
+/// A depth or count as a `TextLine` field; nesting past 255 saturates.
+fn small(n: usize) -> u8 {
+    u8::try_from(n).unwrap_or(u8::MAX)
+}
+
+/// `line` as a terminal prints it (T5.3): its quote bars, then its item's
+/// indent and marker or, on a heading's first line, its `#` run, then its
+/// runs. A GUI draws these itself (A92).
+#[cfg(feature = "ratatui")]
+fn prefixed(line: &TextLine, kind: TextKind, glyphs: &Glyphs) -> StyledLine {
+    let mut out = Vec::with_capacity(line.spans.len() + 2);
+    if line.quote > 0 {
+        let bars = format!("{} ", glyphs.quote).repeat(usize::from(line.quote));
+        let token = StyleToken::Dim;
+        out.push(StyledSpan {
+            token,
+            ..StyledSpan::plain(bars)
+        });
+    }
+    if !line.marker.is_empty() {
+        let indent = "  ".repeat(usize::from(line.depth));
+        out.push(StyledSpan::plain(format!("{indent}{} ", line.marker)));
+    }
+    if let TextKind::Heading(level) = kind {
+        let hashes = "#".repeat(usize::from(level));
+        out.push(StyledSpan {
+            bold: true,
+            ..StyledSpan::plain(format!("{hashes} "))
+        });
+    }
+    out.extend(line.spans.iter().cloned());
+    out
+}
+
 /// `rows` through syntect, as one run so a multi-line string or comment
 /// keeps its state. `token` is a language name or a file extension; an
 /// unknown one, or a theme missing from the bundle, falls back to plain text
 /// rather than failing. Shared by fenced blocks, file-shaped tool output and
 /// diff hunks, so all three highlight identically.
-pub fn highlight(token: &str, rows: &[&str], theme: &str) -> Vec<Line<'static>> {
+pub fn highlight_runs(token: &str, rows: &[&str], theme: &str) -> Vec<StyledLine> {
     let syntax = SYNTAXES
         .find_syntax_by_token(token)
         .unwrap_or_else(|| SYNTAXES.find_syntax_plain_text());
+    // Split like a ratatui `Line::raw`, so the TUI draws the fallback as before.
+    let plain = |l: &str| -> StyledLine { l.lines().map(StyledSpan::plain).collect() };
     let user = USER_THEMES.get().and_then(|set| set.themes.get(theme));
     let Some(theme) = user.or_else(|| THEMES.themes.get(theme)) else {
-        return rows.iter().map(|l| Line::raw((*l).to_string())).collect();
+        return rows.iter().map(|l| plain(l)).collect();
     };
     let mut h = HighlightLines::new(syntax, theme);
     rows.iter()
@@ -332,27 +464,71 @@ pub fn highlight(token: &str, rows: &[&str], theme: &str) -> Vec<Line<'static>> 
             // The newline-aware syntaxes want the terminator to close scopes.
             let with_nl = format!("{l}\n");
             match h.highlight_line(&with_nl, &SYNTAXES) {
-                Ok(regions) => Line::from(
-                    regions
-                        .into_iter()
-                        .map(|(st, s)| {
-                            let fg = st.foreground;
-                            Span::styled(
-                                s.trim_end_matches('\n').to_string(),
-                                Style::default().fg(Color::Rgb(fg.r, fg.g, fg.b)),
-                            )
-                        })
-                        .collect::<Vec<_>>(),
-                ),
-                Err(_) => Line::raw(l.to_string()),
+                Ok(regions) => regions
+                    .into_iter()
+                    .map(|(st, s)| {
+                        let fg = st.foreground;
+                        let rgb = Some([fg.r, fg.g, fg.b]);
+                        StyledSpan {
+                            rgb,
+                            ..StyledSpan::plain(s.trim_end_matches('\n'))
+                        }
+                    })
+                    .collect(),
+                Err(_) => plain(l),
             }
         })
         .collect()
 }
 
+/// `highlight_runs` as ratatui lines.
+#[cfg(feature = "ratatui")]
+pub fn highlight(token: &str, rows: &[&str], theme: &str) -> Vec<Line<'static>> {
+    highlight_runs(token, rows, theme)
+        .iter()
+        .map(to_line)
+        .collect()
+}
+
+/// Markdown uses three roles; each keeps the terminal look it had before
+/// `StyledDoc` existed, so no transcript snapshot moves.
+#[cfg(feature = "ratatui")]
+fn to_span(s: &StyledSpan) -> Span<'static> {
+    let mut st = match s.token {
+        StyleToken::Dim => Style::default().add_modifier(Modifier::DIM),
+        StyleToken::Accent => Style::default().fg(Color::Cyan),
+        _ => Style::default(),
+    };
+    if let Some([r, g, b]) = s.rgb {
+        st = st.fg(Color::Rgb(r, g, b));
+    }
+    for (on, m) in [
+        (s.bold, Modifier::BOLD),
+        (s.italic, Modifier::ITALIC),
+        (s.strike, Modifier::CROSSED_OUT),
+        (s.underline, Modifier::UNDERLINED),
+    ] {
+        if on {
+            st = st.add_modifier(m);
+        }
+    }
+    let span = Span::styled(s.text.clone(), st);
+    if s.link.is_some() {
+        crate::link::mark(span)
+    } else {
+        span
+    }
+}
+
+#[cfg(feature = "ratatui")]
+fn to_line(line: &StyledLine) -> Line<'static> {
+    Line::from(line.iter().map(to_span).collect::<Vec<_>>())
+}
+
 /// Columns padded to their widest cell, header bold over a rule; wider
 /// than `width`, `Header: value` records instead, since a wrapped table row
 /// no longer lines up with anything.
+#[cfg(feature = "ratatui")]
 fn table_lines(rows: &[Vec<String>], g: &Glyphs, width: usize) -> Vec<Line<'static>> {
     let cols = rows.iter().map(Vec::len).max().unwrap_or(0);
     let widths: Vec<usize> = (0..cols)
@@ -408,6 +584,7 @@ fn table_lines(rows: &[Vec<String>], g: &Glyphs, width: usize) -> Vec<Line<'stat
 
 /// Each row as one `Header: value` line per column, a blank line between
 /// rows (Codex's narrow-table fallback).
+#[cfg(feature = "ratatui")]
 fn record_lines(head: &[String], body: &[Vec<String>]) -> Vec<Line<'static>> {
     let bold = Style::default().add_modifier(Modifier::BOLD);
     let mut out = Vec::new();
@@ -426,7 +603,7 @@ fn record_lines(head: &[String], body: &[Vec<String>]) -> Vec<Line<'static>> {
     out
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ratatui"))]
 mod tests {
     use super::*;
 

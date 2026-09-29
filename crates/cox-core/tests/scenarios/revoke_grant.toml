@@ -1,0 +1,19 @@
+# T37.45.3: an `AllowForSession` grant covers the second write, then is
+# revoked between turns, so the third write to the same subject asks again.
+[[turn]]
+text = "first write"
+tool_calls = [{ name = "touch", input = { path = "a" } }]
+
+[[turn]]
+text = "second write to the same subject"
+tool_calls = [{ name = "touch", input = { path = "a" } }]
+
+[[turn]]
+text = "done"
+
+[[turn]]
+text = "third write after the revoke"
+tool_calls = [{ name = "touch", input = { path = "a" } }]
+
+[[turn]]
+text = "done again"

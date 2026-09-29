@@ -1,38 +1,23 @@
 //! `ask_user`: the model asks the person a question and the turn blocks
 //! until they answer (plan.md T3.8, §1.11). Separate from the other tools
-//! because it is the only one whose "I/O" is a surface: the TUI answers
-//! over a channel, a headless run answers with `--answer` or fails.
+//! because it is the only one whose "I/O" is a surface: an interactive
+//! surface answers `Event::QuestionAsked` with `Submission::Answer` through
+//! `cx.relay` (DT G4), a headless run answers with `--answer` or fails.
 
 use async_trait::async_trait;
 use cox_protocol::types::Source;
-use cox_protocol::{CallId, Concurrency, Risk, Tool, ToolCx, ToolError, ToolOutput, ToolSpec};
+use cox_protocol::{Concurrency, Risk, Tool, ToolCx, ToolError, ToolOutput, ToolSpec};
 use serde_json::{Value, json};
-use tokio::sync::{mpsc, oneshot};
 
 use crate::write::str_field;
-
-/// One question on its way to the surface; drop `reply` to dismiss it.
-pub struct Question {
-    /// The tool call asking.
-    pub call: CallId,
-    /// The question text.
-    pub question: String,
-    /// Suggested answers, possibly empty.
-    pub options: Vec<String>,
-    /// Where the answer goes.
-    pub reply: oneshot::Sender<String>,
-    /// The subagent asking (T34.3), built from `cx.agent`/`cx.preset` the
-    /// same way `relay_approval` builds an `ApprovalRequired`'s `Source`;
-    /// `None` for the top-level session the user is talking to.
-    pub source: Option<Source>,
-}
 
 /// Where answers come from.
 pub enum Answers {
     /// Headless: `--answer` text, or nothing (every question fails).
     Fixed(Option<String>),
-    /// Interactive: the surface receives each `Question` and replies.
-    Surface(mpsc::Sender<Question>),
+    /// Interactive: the session raises `QuestionAsked` and waits for the
+    /// surface's `Submission::Answer`.
+    Surface,
 }
 
 pub struct AskUserTool {
@@ -100,34 +85,27 @@ impl Tool for AskUserTool {
                         .into(),
                 });
             }
-            Answers::Surface(tx) => {
-                let (reply, answered) = oneshot::channel();
+            Answers::Surface => {
+                let relay = cx.relay.as_ref().ok_or_else(|| ToolError::Denied {
+                    why: "no surface is listening for questions".into(),
+                })?;
+                // T34.3: built from `cx.agent`/`cx.preset` the same way
+                // `relay_approval` builds an `ApprovalRequired`'s `Source`;
+                // `None` for the top-level session the user is talking to.
                 let source = cx.agent.clone().map(|agent| Source {
                     session: cx.session,
                     agent: Some(agent),
                     preset: cx.preset.clone(),
                 });
-                let sent = tx
-                    .send(Question {
-                        call: cx.call,
-                        question: question.clone(),
-                        options: options.clone(),
-                        reply,
-                        source,
-                    })
-                    .await;
-                if sent.is_err() {
-                    return Err(ToolError::Denied {
-                        why: "no surface is listening for questions".into(),
-                    });
-                }
                 tokio::select! {
                     // Cancel wins over a reply that lands in the same tick.
                     biased;
                     _ = cx.cancel.cancelled() => return Err(ToolError::Cancelled),
-                    answer = answered => answer.map_err(|_| ToolError::Denied {
-                        why: "the question was dismissed without an answer".into(),
-                    })?,
+                    answer = relay.ask(cx.call, &question, &options, source) => {
+                        answer?.ok_or_else(|| ToolError::Denied {
+                            why: "the question was dismissed without an answer".into(),
+                        })?
+                    }
                 }
             }
         };
@@ -149,9 +127,13 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
+    use std::sync::Mutex;
+
     use cox_protocol::{
-        Archive, ArchiveId, ArchivePut, SandboxMode, SandboxPolicy, SessionId, StoreError,
+        Archive, ArchiveId, ArchivePut, CallId, Relay, SandboxMode, SandboxPolicy, SessionId,
+        StoreError,
     };
+    use tokio::sync::mpsc;
     use tokio_util::sync::CancellationToken;
 
     use super::*;
@@ -203,83 +185,125 @@ mod tests {
         assert!(matches!(err, ToolError::Denied { .. }));
     }
 
+    /// Answers every question with `answer` (or never, for `None`) and
+    /// keeps what it was asked.
+    struct FakeRelay {
+        answer: Option<Option<String>>,
+        asked: Mutex<Vec<(CallId, String, Option<Source>)>>,
+    }
+
+    impl FakeRelay {
+        fn answering(answer: Option<Option<String>>) -> Arc<Self> {
+            Arc::new(Self {
+                answer,
+                asked: Mutex::new(Vec::new()),
+            })
+        }
+    }
+
+    #[async_trait]
+    impl Relay for FakeRelay {
+        async fn send_message(&self, _to: &str, _text: &str) -> Result<(), ToolError> {
+            Ok(())
+        }
+        async fn ask(
+            &self,
+            call_id: CallId,
+            question: &str,
+            _options: &[String],
+            source: Option<Source>,
+        ) -> Result<Option<String>, ToolError> {
+            self.asked.lock().unwrap_or_else(|e| e.into_inner()).push((
+                call_id,
+                question.to_string(),
+                source,
+            ));
+            match &self.answer {
+                Some(answer) => Ok(answer.clone()),
+                None => std::future::pending().await,
+            }
+        }
+    }
+
+    fn with_relay(cx: ToolCx, relay: Arc<FakeRelay>) -> ToolCx {
+        ToolCx {
+            relay: Some(relay),
+            ..cx
+        }
+    }
+
     #[tokio::test]
-    async fn ask_user_surface_reply_is_the_result_and_cancel_unblocks() {
-        let (tx, mut rx) = mpsc::channel(1);
-        let tool = AskUserTool::new(Answers::Surface(tx));
-        let surface = tokio::spawn(async move {
-            let q = rx.recv().await.expect("question");
-            assert_eq!(q.question, "name?");
-            let _ = q.reply.send("cox".into());
-        });
-        let out = tool
-            .call(json!({"question": "name?"}), &cx(CancellationToken::new()))
+    async fn ask_user_surface_answer_is_the_result_dismiss_fails_and_cancel_unblocks() {
+        let relay = FakeRelay::answering(Some(Some("cox".into())));
+        let asking = with_relay(cx_fresh(), relay.clone());
+        let out = AskUserTool::new(Answers::Surface)
+            .call(json!({"question": "name?"}), &asking)
             .await
             .expect("answered");
         assert_eq!(out.text, "cox");
-        surface.await.expect("surface");
+        let (call, question, _) = relay.asked.lock().unwrap_or_else(|e| e.into_inner())[0].clone();
+        assert_eq!(call, asking.call);
+        assert_eq!(question, "name?");
 
-        let (tx, mut rx) = mpsc::channel(1);
-        let tool = AskUserTool::new(Answers::Surface(tx));
+        let asking = with_relay(cx_fresh(), FakeRelay::answering(Some(None)));
+        let err = AskUserTool::new(Answers::Surface)
+            .call(json!({"question": "skip?"}), &asking)
+            .await
+            .expect_err("dismissed");
+        assert!(matches!(err, ToolError::Denied { .. }));
+
         let cancel = CancellationToken::new();
-        let trigger = cancel.clone();
-        tokio::spawn(async move {
-            let _q = rx.recv().await;
-            trigger.cancel();
-        });
-        let err = tool
-            .call(json!({"question": "wait?"}), &cx(cancel))
+        let asking = with_relay(cx(cancel.clone()), FakeRelay::answering(None));
+        cancel.cancel();
+        let err = AskUserTool::new(Answers::Surface)
+            .call(json!({"question": "wait?"}), &asking)
             .await
             .expect_err("cancelled");
         assert!(matches!(err, ToolError::Cancelled));
     }
 
+    fn cx_fresh() -> ToolCx {
+        cx(CancellationToken::new())
+    }
+
     /// T34.3: a `ToolCx` labelled by `spawn_child` (`agent`/`preset` set)
-    /// makes `ask_user`'s `Question::source` carry the same `Source` shape
+    /// makes the question's `source` carry the same `Source` shape
     /// `relay_approval` already builds for a relayed approval; the
     /// top-level session's own `cx` (this file's `cx` helper) keeps
     /// `source: None`.
     #[tokio::test]
     async fn ask_user_from_subagent_carries_its_source() {
         let session = SessionId::new();
+        let relay = FakeRelay::answering(Some(Some("staging".into())));
         let child_cx = ToolCx {
             session,
             agent: Some("explore-2".into()),
             preset: Some("explore".into()),
-            ..cx(CancellationToken::new())
+            ..with_relay(cx_fresh(), relay.clone())
         };
-        let (tx, mut rx) = mpsc::channel(1);
-        let tool = AskUserTool::new(Answers::Surface(tx));
-        let surface = tokio::spawn(async move {
-            let q = rx.recv().await.expect("question");
-            assert_eq!(
-                q.source,
-                Some(cox_protocol::types::Source {
-                    session,
-                    agent: Some("explore-2".into()),
-                    preset: Some("explore".into()),
-                })
-            );
-            let _ = q.reply.send("staging".into());
-        });
-        let out = tool
+        let out = AskUserTool::new(Answers::Surface)
             .call(json!({"question": "which env?"}), &child_cx)
             .await
             .expect("answered");
         assert_eq!(out.text, "staging");
-        surface.await.expect("surface");
-
+        tool_asked_top_level(relay.clone()).await;
+        let asked = relay.asked.lock().unwrap_or_else(|e| e.into_inner());
+        assert_eq!(
+            asked[0].2,
+            Some(Source {
+                session,
+                agent: Some("explore-2".into()),
+                preset: Some("explore".into()),
+            })
+        );
         // The top-level session's own call carries no source at all.
-        let (tx, mut rx) = mpsc::channel(1);
-        let tool = AskUserTool::new(Answers::Surface(tx));
-        let surface = tokio::spawn(async move {
-            let q = rx.recv().await.expect("question");
-            assert_eq!(q.source, None);
-            let _ = q.reply.send("ok".into());
-        });
-        tool.call(json!({"question": "ok?"}), &cx(CancellationToken::new()))
+        assert_eq!(asked[1].2, None);
+    }
+
+    async fn tool_asked_top_level(relay: Arc<FakeRelay>) {
+        AskUserTool::new(Answers::Surface)
+            .call(json!({"question": "ok?"}), &with_relay(cx_fresh(), relay))
             .await
             .expect("answered");
-        surface.await.expect("surface");
     }
 }

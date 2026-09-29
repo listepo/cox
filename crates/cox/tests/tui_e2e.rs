@@ -217,6 +217,41 @@ fn tui_fork_and_handoff_start_child_sessions() {
     assert_eq!(depths, [0, 1, 2], "parent, fork, handoff");
 }
 
+/// T37.34: a second TUI that resumes the session the first one drives
+/// gets the busy notice naming the holder and its options, and exits
+/// instead of opening a second writer on the same rollout.
+#[test]
+fn tui_resume_of_a_driven_session_prints_busy_notice() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let scenario = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../cox-core/tests/scenarios/text_only.toml"
+    ));
+    let driver = Tui::spawn(home.path(), work.path(), scenario, &[]);
+    driver.wait_until("status line", |t| t.contains("$0.00"));
+    driver.turn("hello", "hello from scripted");
+    let store = cox_store::Store::open(home.path()).unwrap();
+    let id = store.sessions_tree(10).unwrap()[0].info.id.clone();
+
+    let mut second = Tui::spawn(home.path(), work.path(), scenario, &["--resume", &id]);
+    let notice = format!("session {id} is open in cox tui (pid");
+    second.wait_until("busy notice", |t| {
+        let t = t.replace('\n', "");
+        t.contains(&notice) && t.contains("fork it into a new session")
+    });
+    let start = Instant::now();
+    let status = loop {
+        if let Some(status) = second.child.try_wait().unwrap() {
+            break status;
+        }
+        assert!(start.elapsed() < Duration::from_secs(5), "cox did not exit");
+        thread::sleep(Duration::from_millis(50));
+    };
+    assert!(!status.success(), "a busy session is an error exit");
+    driver.quit();
+}
+
 /// T27.1: `Ctrl+B` on a running `sleep` moves it to the background; the
 /// turn ends and the composer takes input while the task still runs.
 #[test]

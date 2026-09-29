@@ -1,6 +1,5 @@
 ---
 source: crates/cox-tui/tests/screenshots.rs
-assertion_line: 369
 expression: "shot(\"slash_palette\", &mut state)"
 ---
 
@@ -12,9 +11,9 @@ expression: "shot(\"slash_palette\", &mut state)"
 
 
 
-
  /mo
- ▸ model
+ ▸ mode
+   model
    permissions
 > /
 - · ctx ▱▱▱▱▱ 0% · $0.00/5 · workspace-write · ⎇ main +12 −3 · [default]

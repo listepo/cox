@@ -5,21 +5,35 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+# T37.7: everything that draws with ratatui (the `markdown::render` layout,
+# themes, colour mapping, diffs, SVG, OSC 8 links). Off, only the neutral
+# `StyledDoc` and syntax highlighting remain, for the desktop app.
+[features]
+default = ["ratatui"]
+ratatui = ["dep:ratatui", "dep:terminal-colorsaurus", "dep:toml_edit"]
+
 [dependencies]
 cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
 # `glyph` width-checks and truncates through the terminal-text guard.
 cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
-ratatui = { workspace = true }
+ratatui = { workspace = true, optional = true }
 pulldown-cmark = { workspace = true }
+# T37.8: `StyledDoc` crosses to the desktop app inside serde patches (DT§8);
+# serde is already in the graph through cox-protocol.
+serde = { workspace = true }
 syntect = { workspace = true }
 two-face = { version = "0.5", features = ["syntect-fancy"] }
+# T37.23.11: the word diff of a replaced pair lives in `diffmodel`, which
+# both the TUI and the desktop app read, so it is not behind `ratatui`.
 similar = { workspace = true }
 unicode-width = { workspace = true }
-terminal-colorsaurus = { workspace = true }
+terminal-colorsaurus = { workspace = true, optional = true }
 # T24.2: `~/.cox/themes/<name>.toml` parses with the same crate `cox config
 # set` uses, so a theme file's own comments survive an edit.
-toml_edit = { workspace = true }
+toml_edit = { workspace = true, optional = true }
+# T51.18: `diffmodel::HunkError`, which the desktop build needs too.
 thiserror = { workspace = true }
 
 [dev-dependencies]
+insta = { workspace = true }
 tempfile = { workspace = true }

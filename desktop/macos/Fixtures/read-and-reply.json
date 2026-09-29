@@ -1,0 +1,887 @@
+{
+  "batches": [
+    [
+      {
+        "op": "status",
+        "status": {
+          "queued": 0,
+          "mode": "default",
+          "next_mode": "plan",
+          "model": "claude-sonnet-5",
+          "model_name": "Claude Sonnet 5",
+          "effort": "high"
+        }
+      }
+    ],
+    [
+      {
+        "op": "upsert",
+        "block": {
+          "id": "turn:01M3MJ2WVFDP1Z16PADENZYSBM",
+          "turn": 1,
+          "kind": {
+            "type": "turn_meta",
+            "model": "claude-sonnet-5",
+            "tier": "code",
+            "usage": {
+              "input_tokens": 3709,
+              "output_tokens": 10,
+              "cache_read_tokens": 0,
+              "cache_write_tokens": 0,
+              "estimated": true,
+              "cost_usd": 0.0,
+              "latency_ms": 0
+            },
+            "stop": null
+          }
+        },
+        "after": null
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3MJ2WVF6JJT8EXQECQY28TA",
+          "turn": 1,
+          "kind": {
+            "type": "user",
+            "text": "Read the notes",
+            "attachments": []
+          }
+        },
+        "after": "turn:01M3MJ2WVFDP1Z16PADENZYSBM"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3MJ2WVKKSJG060JKAWYFCQF",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "Reading the notes.",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    {
+                      "spans": [
+                        {
+                          "text": "Reading the notes."
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "item:01M3MJ2WVF6JJT8EXQECQY28TA"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "call:01M3MJ2WVKJ8WMYQVFMW3WXQ2P",
+          "turn": 1,
+          "kind": {
+            "type": "tool",
+            "tool": "read",
+            "summary": "Read `notes.md` · 1 line",
+            "icon": "read",
+            "risk": "read_only",
+            "state": "done",
+            "tail": "1\thello\n\n[1 lines total]",
+            "archive": {
+              "id": "01M3MJ2WVNRCRPERSZN7QDNCWE",
+              "bytes": 24
+            },
+            "diff": null,
+            "duration_ms": 1
+          }
+        },
+        "after": "item:01M3MJ2WVKKSJG060JKAWYFCQF"
+      },
+      {
+        "op": "usage",
+        "usage": {
+          "session": {
+            "sent": 3709,
+            "received": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "uncached": 3709,
+            "cost_usd": 0.0,
+            "calls": 1,
+            "estimated": true
+          },
+          "turn": {
+            "turn": "01M3MJ2WVFDP1Z16PADENZYSBM",
+            "tally": {
+              "sent": 3709,
+              "received": 10,
+              "cache_read": 0,
+              "cache_write": 0,
+              "uncached": 3709,
+              "cost_usd": 0.0,
+              "calls": 1,
+              "estimated": true
+            },
+            "thinking_tokens": 0,
+            "ttft_ms": 0,
+            "tok_per_s": null,
+            "exact": false,
+            "sparkline": [],
+            "done": false
+          },
+          "context_tokens": 3709,
+          "text": {
+            "sent": "3.7k",
+            "received": "10",
+            "rate": "",
+            "spoken": "3.7 thousand tokens sent, 10 received",
+            "heading": "This turn · 1 request",
+            "phase": "streaming",
+            "rate_unit": "tok/s now",
+            "rate_detail": "first token 0 ms",
+            "rows": [
+              {
+                "label": "↑ Sent",
+                "turn": "3.7k",
+                "session": "3.7k",
+                "detail": false
+              },
+              {
+                "label": "cache read",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "cache write",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "uncached",
+                "turn": "3.7k",
+                "session": "3.7k",
+                "detail": true
+              },
+              {
+                "label": "↓ Received",
+                "turn": "10",
+                "session": "10",
+                "detail": false
+              },
+              {
+                "label": "of it thinking",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "Cost",
+                "turn": "$0.00",
+                "session": "$0.00",
+                "detail": false
+              }
+            ],
+            "context": "Context · 3.7k",
+            "context_share": "0.4% of 1M",
+            "context_parts": [
+              {
+                "kind": "system",
+                "label": "System",
+                "tokens": "110",
+                "share": 0.00010964747095010253
+              },
+              {
+                "kind": "tools",
+                "label": "Tools",
+                "tokens": "3.5k",
+                "share": 0.00348716985645933
+              },
+              {
+                "kind": "instructions",
+                "label": "Instructions",
+                "tokens": "16",
+                "share": 0.00001647881066302119
+              },
+              {
+                "kind": "history",
+                "label": "History",
+                "tokens": "96",
+                "share": 0.00009570386192754614
+              }
+            ],
+            "context_free": "996.3k",
+            "cache_hit": "0% this turn",
+            "cache_hit_session": "0% this session",
+            "footnote": "Cache hit 0% this turn · some counts are cox's estimate",
+            "context_percent": "0.4%",
+            "context_fill": 0.003709,
+            "cost": "$0.00"
+          }
+        }
+      }
+    ],
+    [
+      {
+        "op": "upsert",
+        "block": {
+          "id": "item:01M3MJ2WVQ1CZD35011YMREVYX",
+          "turn": 1,
+          "kind": {
+            "type": "assistant",
+            "text": "## Notes\n\nThe file says **hello**. Run it with:\n\n```rust\nfn main() {\n    println!(\"hello\");\n}\n```\n",
+            "doc": {
+              "blocks": [
+                {
+                  "type": "text",
+                  "kind": {
+                    "heading": 2
+                  },
+                  "lines": [
+                    {
+                      "spans": [
+                        {
+                          "text": "Notes",
+                          "bold": true
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "kind": "paragraph",
+                  "lines": [
+                    {
+                      "spans": [
+                        {
+                          "text": "The file says "
+                        },
+                        {
+                          "text": "hello",
+                          "bold": true
+                        },
+                        {
+                          "text": ". Run it with:"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "code",
+                  "lang": "rust",
+                  "lines": [
+                    [
+                      {
+                        "text": "fn",
+                        "rgb": [
+                          180,
+                          142,
+                          173
+                        ]
+                      },
+                      {
+                        "text": " ",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "main",
+                        "rgb": [
+                          143,
+                          161,
+                          179
+                        ]
+                      },
+                      {
+                        "text": "(",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": ")",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": " ",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "{",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      }
+                    ],
+                    [
+                      {
+                        "text": "    ",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "println!",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "(",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "\"",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "hello",
+                        "rgb": [
+                          163,
+                          190,
+                          140
+                        ]
+                      },
+                      {
+                        "text": "\"",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": ")",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": ";",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      }
+                    ],
+                    [
+                      {
+                        "text": "}",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      },
+                      {
+                        "text": "",
+                        "rgb": [
+                          192,
+                          197,
+                          206
+                        ]
+                      }
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "after": "call:01M3MJ2WVKJ8WMYQVFMW3WXQ2P"
+      },
+      {
+        "op": "upsert",
+        "block": {
+          "id": "turn:01M3MJ2WVFDP1Z16PADENZYSBM",
+          "turn": 1,
+          "kind": {
+            "type": "turn_meta",
+            "model": "claude-sonnet-5",
+            "tier": "code",
+            "usage": {
+              "input_tokens": 7437,
+              "output_tokens": 35,
+              "cache_read_tokens": 0,
+              "cache_write_tokens": 0,
+              "estimated": true,
+              "cost_usd": 0.0,
+              "latency_ms": 0
+            },
+            "stop": {
+              "type": "end_turn"
+            }
+          }
+        },
+        "after": null
+      },
+      {
+        "op": "usage",
+        "usage": {
+          "session": {
+            "sent": 7437,
+            "received": 35,
+            "cache_read": 0,
+            "cache_write": 0,
+            "uncached": 7437,
+            "cost_usd": 0.0,
+            "calls": 2,
+            "estimated": true
+          },
+          "turn": {
+            "turn": "01M3MJ2WVFDP1Z16PADENZYSBM",
+            "tally": {
+              "sent": 7437,
+              "received": 35,
+              "cache_read": 0,
+              "cache_write": 0,
+              "uncached": 7437,
+              "cost_usd": 0.0,
+              "calls": 2,
+              "estimated": true
+            },
+            "thinking_tokens": 0,
+            "ttft_ms": 0,
+            "tok_per_s": null,
+            "exact": false,
+            "sparkline": [],
+            "done": true
+          },
+          "context_tokens": 3728,
+          "text": {
+            "sent": "7.4k",
+            "received": "35",
+            "rate": "",
+            "spoken": "7.4 thousand tokens sent, 35 received",
+            "heading": "Last turn · 2 requests",
+            "phase": "done",
+            "rate_unit": "tok/s now",
+            "rate_detail": "first token 0 ms",
+            "rows": [
+              {
+                "label": "↑ Sent",
+                "turn": "7.4k",
+                "session": "7.4k",
+                "detail": false
+              },
+              {
+                "label": "cache read",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "cache write",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "uncached",
+                "turn": "7.4k",
+                "session": "7.4k",
+                "detail": true
+              },
+              {
+                "label": "↓ Received",
+                "turn": "35",
+                "session": "35",
+                "detail": false
+              },
+              {
+                "label": "of it thinking",
+                "turn": "0",
+                "session": "0",
+                "detail": true
+              },
+              {
+                "label": "Cost",
+                "turn": "$0.00",
+                "session": "$0.00",
+                "detail": false
+              }
+            ],
+            "context": "Context · 3.7k",
+            "context_share": "0.4% of 1M",
+            "context_parts": [
+              {
+                "kind": "system",
+                "label": "System",
+                "tokens": "110",
+                "share": 0.00011020915926179085
+              },
+              {
+                "kind": "tools",
+                "label": "Tools",
+                "tokens": "3.5k",
+                "share": 0.0035050334928229667
+              },
+              {
+                "kind": "instructions",
+                "label": "Instructions",
+                "tokens": "17",
+                "share": 0.000016563226247436774
+              },
+              {
+                "kind": "history",
+                "label": "History",
+                "tokens": "96",
+                "share": 0.00009619412166780588
+              }
+            ],
+            "context_free": "996.3k",
+            "cache_hit": "0% this turn",
+            "cache_hit_session": "0% this session",
+            "footnote": "Cache hit 0% this turn · some counts are cox's estimate",
+            "context_percent": "0.4%",
+            "context_fill": 0.003728,
+            "cost": "$0.00"
+          }
+        }
+      }
+    ]
+  ],
+  "notes": [],
+  "snapshot": [
+    {
+      "id": "turn:01M3MJ2WVFDP1Z16PADENZYSBM",
+      "turn": 1,
+      "kind": {
+        "type": "turn_meta",
+        "model": "claude-sonnet-5",
+        "tier": "code",
+        "usage": {
+          "input_tokens": 7437,
+          "output_tokens": 35,
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "estimated": true,
+          "cost_usd": 0.0,
+          "latency_ms": 0
+        },
+        "stop": {
+          "type": "end_turn"
+        }
+      }
+    },
+    {
+      "id": "item:01M3MJ2WVF6JJT8EXQECQY28TA",
+      "turn": 1,
+      "kind": {
+        "type": "user",
+        "text": "Read the notes",
+        "attachments": []
+      }
+    },
+    {
+      "id": "item:01M3MJ2WVKKSJG060JKAWYFCQF",
+      "turn": 1,
+      "kind": {
+        "type": "assistant",
+        "text": "Reading the notes.",
+        "doc": {
+          "blocks": [
+            {
+              "type": "text",
+              "kind": "paragraph",
+              "lines": [
+                {
+                  "spans": [
+                    {
+                      "text": "Reading the notes."
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "call:01M3MJ2WVKJ8WMYQVFMW3WXQ2P",
+      "turn": 1,
+      "kind": {
+        "type": "tool",
+        "tool": "read",
+        "summary": "Read `notes.md` · 1 line",
+        "icon": "read",
+        "risk": "read_only",
+        "state": "done",
+        "tail": "1\thello\n\n[1 lines total]",
+        "archive": {
+          "id": "01M3MJ2WVNRCRPERSZN7QDNCWE",
+          "bytes": 24
+        },
+        "diff": null,
+        "duration_ms": 1
+      }
+    },
+    {
+      "id": "item:01M3MJ2WVQ1CZD35011YMREVYX",
+      "turn": 1,
+      "kind": {
+        "type": "assistant",
+        "text": "## Notes\n\nThe file says **hello**. Run it with:\n\n```rust\nfn main() {\n    println!(\"hello\");\n}\n```\n",
+        "doc": {
+          "blocks": [
+            {
+              "type": "text",
+              "kind": {
+                "heading": 2
+              },
+              "lines": [
+                {
+                  "spans": [
+                    {
+                      "text": "Notes",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "kind": "paragraph",
+              "lines": [
+                {
+                  "spans": [
+                    {
+                      "text": "The file says "
+                    },
+                    {
+                      "text": "hello",
+                      "bold": true
+                    },
+                    {
+                      "text": ". Run it with:"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "code",
+              "lang": "rust",
+              "lines": [
+                [
+                  {
+                    "text": "fn",
+                    "rgb": [
+                      180,
+                      142,
+                      173
+                    ]
+                  },
+                  {
+                    "text": " ",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "main",
+                    "rgb": [
+                      143,
+                      161,
+                      179
+                    ]
+                  },
+                  {
+                    "text": "(",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": ")",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": " ",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "{",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "text": "    ",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "println!",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "(",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "\"",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "hello",
+                    "rgb": [
+                      163,
+                      190,
+                      140
+                    ]
+                  },
+                  {
+                    "text": "\"",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": ")",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": ";",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  }
+                ],
+                [
+                  {
+                    "text": "}",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  },
+                  {
+                    "text": "",
+                    "rgb": [
+                      192,
+                      197,
+                      206
+                    ]
+                  }
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

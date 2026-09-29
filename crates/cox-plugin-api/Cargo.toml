@@ -3,7 +3,9 @@ name = "cox-plugin-api"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+# The plugin contract stays permissive like the guest SDK built on it (`plugins/`), so a
+# third party can ship a closed-source plugin without taking cox's own licence (A68).
+license = "MIT OR Apache-2.0"
 
 # Pure and wasm32-clean (plan.md §1.1, A52): the guest SDK builds on it for
 # `wasm32-unknown-unknown`, so no workspace crate and nothing that does I/O.

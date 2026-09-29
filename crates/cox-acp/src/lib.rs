@@ -5,11 +5,13 @@
 //! (`client`, T35.3), since both sides share one protocol dependency.
 
 pub mod client;
+pub mod client_events;
 pub mod client_tools;
 pub mod map;
 pub mod server;
 mod terminal;
 
 pub use client::{Approver, ClientHost, connect, initialize_request};
+pub use client_events::{AgentInfo, UpdateFold};
 pub use client_tools::ClientLink;
 pub use server::{FactoryRequest, ServerState, SessionFactory, serve_channel, serve_stdio};

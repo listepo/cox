@@ -2,18 +2,21 @@
 //! tier and job, plus top tools by archived bytes. Raw SQL lives here —
 //! `cox-store` is the only crate that contains SQL (D9); callers group
 //! nothing themselves. Also the session tree `/sessions` and `cox sessions`
-//! nest forks and handoffs by (T26.3), over Diesel's typed DSL.
+//! nest forks and handoffs by (T26.3), one session's children
+//! (T37.29.6) and a project's spend since a time (T37.29.3.3), over
+//! Diesel's typed DSL.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use diesel::prelude::*;
 use diesel::sql_types::{BigInt, Double, Nullable, Text};
 
-use cox_protocol::{SessionId, StoreError};
+use cox_protocol::{SessionId, StoreError, UsageRow};
 
 use super::Store;
 use crate::fts::SessionInfo;
-use crate::schema::sessions;
+use crate::schema::{sessions, usage};
 
 /// One project's ledger totals: the single `GROUP BY` row
 /// [`Store::project_totals`] returns. `tokens` is the `context_tokens`
@@ -48,6 +51,14 @@ struct ProjectTotalsRow {
     /// Summed `context_tokens`.
     #[diesel(sql_type = Nullable<BigInt>)]
     tokens: Option<i64>,
+}
+
+/// One `usage` row as [`Store::usage_ledger`] returns it: the call and
+/// when it was written (RFC 3339 UTC, `2026-09-02T10:11:12.345Z`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LedgerRow {
+    pub usage: UsageRow,
+    pub created_at: String,
 }
 
 /// One [`Store::sessions_tree`] row: a session and how deep it nests.
@@ -295,6 +306,74 @@ impl Store {
         }
         Ok(out)
     }
+
+    /// What the sessions under `root` spent since `since` (RFC 3339 UTC,
+    /// as `usage.created_at` is written): the Context tab's project
+    /// footnote (T37.29.3.3). A session belongs to the project its cwd is
+    /// in, as `/sessions` lists them; the join is grouped by cwd, so the
+    /// folder test runs once per folder, on the cwd as stored or
+    /// canonicalized.
+    pub fn project_spend(&self, root: &Path, since: &str) -> Result<f64, StoreError> {
+        let rows: Vec<(String, Option<f64>)> = {
+            let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+            usage::table
+                .inner_join(sessions::table.on(sessions::id.eq(usage::session_id)))
+                .filter(usage::created_at.ge(since))
+                .group_by(sessions::cwd)
+                .select((sessions::cwd, diesel::dsl::sum(usage::cost_usd)))
+                .load(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?
+        };
+        let under = |cwd: &Path| {
+            cwd.starts_with(root) || cwd.canonicalize().is_ok_and(|c| c.starts_with(root))
+        };
+        Ok(rows
+            .into_iter()
+            .filter(|(cwd, _)| under(Path::new(cwd)))
+            .filter_map(|(_, cost)| cost)
+            .sum())
+    }
+
+    /// What the whole ledger spent since `since` (RFC 3339 UTC, as
+    /// `usage.created_at` is written) and how many sessions were written
+    /// since then: the menu bar's "Today" footer (T51.12). A session counts
+    /// once however many rows it wrote, subagents included, as the sidebar
+    /// lists them.
+    pub fn activity_since(&self, since: &str) -> Result<(f64, i64), StoreError> {
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        let cost: Option<f64> = usage::table
+            .filter(usage::created_at.ge(since))
+            .select(diesel::dsl::sum(usage::cost_usd))
+            .get_result(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+        let active: i64 = sessions::table
+            .filter(sessions::updated_at.ge(since))
+            .count()
+            .get_result(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+        Ok((cost.unwrap_or(0.0), active))
+    }
+
+    /// Every session whose parent is `parent`, oldest first: its forks,
+    /// handoffs and subagents (T37.29.6).
+    pub fn children(&self, parent: &SessionId) -> Result<Vec<SessionId>, StoreError> {
+        let ids: Vec<String> = {
+            let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+            sessions::table
+                .filter(sessions::parent_id.eq(parent.to_string()))
+                .select(sessions::id)
+                .order_by((sessions::created_at.asc(), sessions::id.asc()))
+                .load(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?
+        };
+        ids.iter()
+            .map(|id| {
+                id.parse().map_err(|_| StoreError::Corrupt {
+                    path: self.home.join("cox.db"),
+                })
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -377,6 +456,20 @@ mod tests {
         );
     }
 
+    /// T37.29.6: a session's direct children only, oldest first.
+    #[test]
+    fn children_lists_direct_children_oldest_first() {
+        let home = tempfile::tempdir().expect("home");
+        let store = Store::open(home.path()).expect("store");
+        let root = create(&store, None);
+        let first = create(&store, Some(root));
+        create(&store, Some(first));
+        create(&store, None);
+        let second = create(&store, Some(root));
+
+        assert_eq!(store.children(&root).expect("children"), [first, second]);
+    }
+
     /// T28.2: the project aggregate is one `GROUP BY` row whose totals equal
     /// the sum of the sessions' rows; an unknown slug totals zero.
     #[test]
@@ -416,6 +509,46 @@ mod tests {
                 cost_usd: 0.0,
                 tokens: 0,
             }
+        );
+    }
+
+    #[test]
+    fn project_spend_sums_the_sessions_under_the_folder_since_the_cutoff() {
+        let home = tempfile::tempdir().expect("home");
+        let store = Store::open(home.path()).expect("store");
+        let at = |cwd: &str, cost: f64| {
+            let id = SessionId::new();
+            let row = SessionRow {
+                id,
+                created_at: String::new(),
+                cwd: cwd.into(),
+                project_slug: String::new(),
+                title: None,
+                parent_id: None,
+                rollout_path: std::path::PathBuf::new(),
+            };
+            store.session_create(&row).expect("session_create");
+            store
+                .usage_insert(&usage_row(id, 1, 10, cost))
+                .expect("usage_insert");
+        };
+        at("/work/cox", 1.25);
+        at("/work/cox/crates/app", 0.5);
+        at("/work/cox-other", 7.0);
+        at("/elsewhere", 9.0);
+
+        let root = Path::new("/work/cox");
+        let spent = store.project_spend(root, "2000-01-01T00:00:00.000Z");
+        assert_eq!(
+            spent.expect("spend"),
+            1.75,
+            "a sibling folder is not the project"
+        );
+        let later = store.project_spend(root, "2999-01-01T00:00:00.000Z");
+        assert_eq!(
+            later.expect("spend"),
+            0.0,
+            "rows before the cutoff are left out"
         );
     }
 }

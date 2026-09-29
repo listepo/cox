@@ -49,6 +49,11 @@ jobs:
       - uses: ./.github/actions/rust
         if: env.SONAR_TOKEN != ''
 
+      # cox-voice (T54.2), a workspace member, builds whisper.cpp and binds it.
+      - name: cox-voice build packages
+        if: env.SONAR_TOKEN != ''
+        run: bash .github/actions/voice/install.sh
+
       - name: llvm-tools-preview
         if: env.SONAR_TOKEN != ''
         run: rustup component add llvm-tools-preview
