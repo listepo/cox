@@ -3,8 +3,9 @@
 // token at the caret, and the earlier prompt ↑ brought back; beside it, the session's mode and
 // model as the core reports them, ⇧⇥'s ask for the next mode, and the think toggle (A103).
 // Separate from `SessionStore`, which holds what the core sent back; this holds what the
-// person is about to send. It asks the core for rows (`cox_app::Completer`) and sends one
-// `Intent`; the command table, the ranking and the files all stay in Rust.
+// person is about to send. It asks the core for rows (`cox_app::Completer`), for the token that
+// asks for them, how a pick lands and what the draft becomes (T58.4.19), and sends one `Intent`;
+// the command table, the ranking, the files and those rules all stay in Rust.
 
 import CoxClient
 import Foundation
@@ -50,14 +51,13 @@ public final class ComposerStore {
   }
 
   /// Something to send.
-  public var canSend: Bool {
-    !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      || (!isShell && !attachments.isEmpty)
-  }
+  public var canSend: Bool { draft(.queue).canSend }
 
   /// The draft as typed. A `!` typed into an empty draft enters shell mode instead.
   public func edit(_ new: String) {
-    if !isShell, text.isEmpty, new == "!" {
+    let asked = client.draftIntent(
+      new, shell: isShell, attachments: 0, running: false, when: .queue)
+    if text.isEmpty, asked.entersShell {
       isShell = true
       text = ""
       (completions, selectedRange) = ([], nil)
@@ -66,7 +66,7 @@ public final class ComposerStore {
     if new != text { recalled = nil }
     text = new
     if let range = selectedRange, range.upperBound > text.utf16.count { selectedRange = nil }
-    mentions.removeAll { !text.contains($0) }
+    mentions = client.mentions(text, picked: mentions)
     complete()
   }
 
@@ -88,9 +88,11 @@ public final class ComposerStore {
   /// Adds `insert`, a command palette's `/command` or `@file` (T37.44.13), at the end of the
   /// draft and then one space, as a picked row would stand.
   public func append(_ insert: String) {
-    let head = text.isEmpty || text.hasSuffix(" ") ? text : text + " "
-    edit(head + insert + " ")
-    if insert.hasPrefix("@"), !mentions.contains(insert) { mentions.append(insert) }
+    let end = text.utf16.count
+    let token = TypedToken(start: end, end: end, text: "")
+    guard let splice = client.pick(text, token: token, insert: insert) else { return }
+    edit(splice.text)
+    mentions = client.mentions(text, picked: mentions + [insert])
     completions = []
   }
 
@@ -99,12 +101,10 @@ public final class ComposerStore {
   public func pick(_ index: Int) {
     guard completions.indices.contains(index), let token = typedToken else { return }
     let insert = completions[index].insert
-    let rest = text[token.upperBound...]
-    let head = String(text[..<token.lowerBound]) + insert + " "
-    text = head + (rest.first == " " ? rest.dropFirst() : rest)
-    let caret = head.utf16.count
-    selectedRange = caret == text.utf16.count ? nil : caret..<caret
-    if insert.hasPrefix("@"), !mentions.contains(insert) { mentions.append(insert) }
+    guard let splice = client.pick(text, token: token, insert: insert) else { return }
+    text = splice.text
+    selectedRange = splice.caret == text.utf16.count ? nil : splice.caret..<splice.caret
+    mentions = client.mentions(text, picked: mentions + [insert])
     completions = []
   }
 
@@ -222,11 +222,7 @@ public final class ComposerStore {
   /// clears once the core took it; attachments stay for a shell or command line, which cannot
   /// carry them.
   public func submit() async {
-    guard canSend else { return }
-    let turn = !isShell && !text.hasPrefix("/")
-    await send(
-      turn && isRunning
-        ? .queue(text: text, attachments: attachments, confirmThink: think) : draftIntent)
+    await send(draft(.queue))
   }
 
   /// ⌘⏎: interrupts the running turn, then sends the draft as a turn of its own.
@@ -238,22 +234,28 @@ public final class ComposerStore {
     } catch {
       return report(error)
     }
-    await send(draftIntent)
+    await send(draft(.now))
   }
 
-  private var draftIntent: Intent {
-    if isShell { return .shell(command: text, share: shareOutput) }
-    if text.hasPrefix("/") { return .command(line: text) }
-    return .send(text: text, attachments: attachments, confirmThink: think)
+  /// What the core makes of the draft as it stands.
+  private func draft(_ when: SendWhen) -> DraftIntent {
+    client.draftIntent(
+      text, shell: isShell, attachments: attachments.count, running: isRunning, when: when)
   }
 
-  private func send(_ intent: Intent) async {
+  private func send(_ draft: DraftIntent) async {
+    guard draft.canSend else { return }
+    let intent: Intent =
+      switch draft.kind {
+      case .shell: .shell(command: text, share: shareOutput)
+      case .command: .command(line: text)
+      case .turn where draft.queued:
+        .queue(text: text, attachments: attachments, confirmThink: think)
+      case .turn: .send(text: text, attachments: attachments, confirmThink: think)
+      }
     do {
       _ = try await session.send(intent)
-      switch intent {
-      case .send, .queue: (attachments, think) = ([], false)
-      default: break
-      }
+      if !draft.keepsAttachments { (attachments, think) = ([], false) }
       (text, mentions, completions, isShell, failure) = ("", [], [], false, nil)
       (recalled, selectedRange) = (nil, nil)
     } catch {
@@ -261,29 +263,18 @@ public final class ComposerStore {
     }
   }
 
-  /// The word the caret ends, when it asks for rows: an `@` file anywhere, a `/` command only as
-  /// the draft's first word. None inside a word or while text is selected.
-  private var typedToken: Range<String.Index>? {
-    guard !isShell, let caret, caret == text.endIndex || text[caret].isWhitespace,
-      let last = text[..<caret].last, !last.isWhitespace
-    else { return nil }
-    let start = text[..<caret].lastIndex(where: \.isWhitespace).map { text.index(after: $0) }
-    let token = text[(start ?? text.startIndex)..<caret]
-    guard token.hasPrefix("@") || (token.hasPrefix("/") && start == nil) else { return nil }
-    return token.startIndex..<caret
+  /// The word the caret ends, when the core says it asks for rows.
+  private var typedToken: TypedToken? {
+    let end = text.utf16.count
+    let range = selectedRange ?? end..<end
+    return client.typedToken(
+      text, caret: range.upperBound, selection: !range.isEmpty, shell: isShell)
   }
 
-  /// The caret in `text`; `nil` while a range is selected or the offset splits a character.
-  private var caret: String.Index? {
-    guard let range = selectedRange else { return text.endIndex }
-    guard range.isEmpty, range.upperBound <= text.utf16.count else { return nil }
-    let offset = text.utf16.index(text.utf16.startIndex, offsetBy: range.upperBound)
-    return String.Index(offset, within: text)
-  }
+  private var client: any SessionClient { session.session }
 
   private func complete() {
-    completions =
-      typedToken.map { session.session.complete(String(text[$0]), limit: Self.rowLimit) } ?? []
+    completions = typedToken.map { client.complete($0.text, limit: Self.rowLimit) } ?? []
     selection = 0
   }
 }
