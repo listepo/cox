@@ -1,6 +1,7 @@
 // The inbox through the fixture client (T37.27): a recorded approval reaches the host as its
 // `HostNote` with badge 1 when its batch is pulled, the turn waits on the person, and the
-// approve intent resumes it to the recorded end. Plus each `Need` as its note.
+// approve intent resumes it to the recorded end. Plus each `Need` as its note's kind, with the
+// core's title as its text (T58.4.2).
 
 import CoxClient
 import Foundation
@@ -59,25 +60,25 @@ func pendingApproval(_ store: SessionStore) -> String? {
   #expect(host.notes.withLock { $0.count } == 1)
 }
 
-@Test func eachNeedBecomesItsNote() {
+@Test func eachNeedBecomesItsNoteKindWithTheCoresTitle() {
   let why = Why.risk(risk: .exec)
   func note(_ need: Need) -> HostNote {
-    HostNote(InboxItem(session: "s", source: nil, need: need, expired: false, seq: 1), badge: 2)
+    HostNote(
+      InboxItem(
+        session: "s", source: nil, need: need, expired: false, seq: 1, title: "core title",
+        subtitle: "", status: .waiting), badge: 2)
   }
-  func expected(_ kind: HostNote.Kind, _ text: String, _ call: String? = nil) -> HostNote {
-    HostNote(session: "s", kind: kind, text: text, badge: 2, call: call)
+  func expected(_ kind: HostNote.Kind, _ call: String? = nil) -> HostNote {
+    HostNote(session: "s", kind: kind, text: "core title", badge: 2, call: call)
   }
   #expect(
     note(.approval(call: "c1", tool: "bash", subject: "git push", why: why))
-      == expected(.approval, "bash git push", "c1"))
-  #expect(
-    note(.approval(call: "c2", tool: "mcp", subject: "", why: why))
-      == expected(.approval, "mcp", "c2"))
+      == expected(.approval, "c1"))
   #expect(
     note(.question(call: "c3", question: "Which branch?", options: []))
-      == expected(.question, "Which branch?", "c3"))
-  #expect(note(.failed(text: "boom")) == expected(.failed, "boom"))
+      == expected(.question, "c3"))
+  #expect(note(.failed(text: "boom")) == expected(.failed))
   #expect(
     note(.taskDone(task: "t", label: "tests", succeeded: false))
-      == expected(.taskDone(succeeded: false), "tests"))
+      == expected(.taskDone(succeeded: false)))
 }

@@ -32,11 +32,13 @@ final class RecordingHost: PlatformHost {
   let question = CoxFFIBindings.Need.question(callId: "c1", question: "Which branch?", options: [])
   bridge.notify(
     item: CoxFFIBindings.InboxItem(
-      session: "s1", source: nil, need: question, expired: false, seq: 1), badge: 2)
+      session: "s1", source: nil, need: question, expired: false, seq: 1, title: "Which branch?",
+      subtitle: "question waiting", status: .waiting), badge: 2)
   let done = CoxFFIBindings.Need.taskDone(task: "t1", label: "tests", ok: false)
   bridge.notify(
-    item: CoxFFIBindings.InboxItem(session: "s2", source: nil, need: done, expired: false, seq: 2),
-    badge: 0)
+    item: CoxFFIBindings.InboxItem(
+      session: "s2", source: nil, need: done, expired: false, seq: 2, title: "tests",
+      subtitle: "task failed", status: .error), badge: 0)
   bridge.openUrl(url: "https://example.com")
   bridge.badge(badge: 0)
   #expect(

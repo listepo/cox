@@ -1,6 +1,7 @@
 // The "Needs you" inbox as Swift values (DT§4.3 Inbox): `InboxItem` and `Need`, cox-ffi's
 // records cut to what the app shows, and the one place an item becomes the `HostNote` a
-// notification and the Dock badge show. Here, not in CoxCore, so the fixture client hands its
+// notification and the Dock badge show. The words come from `cox_app` (T58.4.1); this only
+// copies them. Here, not in CoxCore, so the fixture client hands its
 // recorded items to a `PlatformHost` exactly as `HostBridge` hands the live ones (T37.27), and
 // the `InboxClient` the sidebar's "Needs you" store reads it through (T37.27.7).
 
@@ -17,13 +18,25 @@ public struct InboxItem: Equatable, Sendable, Decodable {
   public var expired: Bool
   /// Arrival order across all sessions.
   public var seq: UInt64
+  /// The tool and its subject, the question, the error or the task label.
+  public var title: String
+  /// What it waits for, after the subagent that asked; `expired` once expired.
+  public var subtitle: String
+  public var status: InboxStatus
 
-  public init(session: String, source: Source?, need: Need, expired: Bool, seq: UInt64) {
+  public init(
+    session: String, source: Source?, need: Need, expired: Bool, seq: UInt64, title: String,
+    subtitle: String, status: InboxStatus
+  ) {
     (self.session, self.source, self.need, self.expired, self.seq) = (
       session, source, need, expired, seq
     )
+    (self.title, self.subtitle, self.status) = (title, subtitle, status)
   }
 }
+
+/// An inbox row's status glyph, named as CoxUI's `StatusDot.Status`; `cox_app::InboxStatus`.
+public enum InboxStatus: String, Equatable, Sendable, Decodable { case waiting, idle, error }
 
 /// What an inbox item asks of the person; `cox_app::Need`.
 public enum Need: Equatable, Sendable {
@@ -52,17 +65,15 @@ public protocol InboxClient: Sendable {
 extension HostNote {
   /// An inbox item as its notification; `badge` is the count that blocks a turn.
   public init(_ item: InboxItem, badge: Int) {
-    func note(_ kind: Kind, _ text: String, call: String? = nil) -> HostNote {
-      HostNote(session: item.session, kind: kind, text: text, badge: badge, call: call)
-    }
-    self =
+    let kind: Kind =
       switch item.need {
-      case .approval(let call, let tool, let subject, _):
-        note(.approval, subject.isEmpty ? tool : "\(tool) \(subject)", call: call)
-      case .question(let call, let question, _): note(.question, question, call: call)
-      case .failed(let text): note(.failed, text)
-      case .taskDone(_, let label, let succeeded): note(.taskDone(succeeded: succeeded), label)
+      case .approval: .approval
+      case .question: .question
+      case .failed: .failed
+      case .taskDone(_, _, let succeeded): .taskDone(succeeded: succeeded)
       }
+    self.init(
+      session: item.session, kind: kind, text: item.title, badge: badge, call: item.need.call)
   }
 }
 
