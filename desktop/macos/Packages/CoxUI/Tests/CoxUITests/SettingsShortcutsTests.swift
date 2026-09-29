@@ -11,9 +11,9 @@ import Testing
 @Suite struct SettingsShortcutsSnapshotTests {
   @Test(arguments: Variant.all) func theGeneralPageShowsBothRecorders(_ variant: Variant) throws {
     try assertCoxWindowSnapshot(
-      SettingsScreen(state: PreviewState.settingsGeneral, recorder: PreviewState.shortcutRecorder) {
-        _ in
-      },
+      SettingsScreen(
+        state: PreviewState.settingsGeneral, recorder: PreviewState.shortcutRecorder,
+        send: { _ in }),
       variant, size: CGSize(width: Size.windowMinWidth, height: Size.windowMinHeight))
   }
 }

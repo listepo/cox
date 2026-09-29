@@ -1,5 +1,6 @@
 // SessionStore's plugin slots (T52.17's Check): a slot patch replaces only its own slot, and a
-// reset of the timeline leaves the slots alone, as `cox_app::coalesce` keeps them beside it.
+// reset of the timeline leaves the slots alone, as `cox_app::coalesce` keeps them beside it; the
+// column's area reaches the session, which renders a shown panel again for it.
 
 import CoxClient
 import Testing
@@ -44,6 +45,18 @@ private func slot(
   store.apply([.reset(blocks: [])])
 
   #expect(store.pluginViews(.statusRight).map(\.plugin) == ["git"])
+}
+
+@MainActor
+@Test func theColumnsAreaReachesTheSessionInCells() {
+  let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []))
+  let store = SessionStore(session: session)
+
+  let (columns, rows): (UInt16, UInt16) = (120, 40)
+
+  store.pluginArea(width: columns, height: rows)
+
+  #expect(session.pluginAreas == [[columns, rows]])
 }
 
 @MainActor

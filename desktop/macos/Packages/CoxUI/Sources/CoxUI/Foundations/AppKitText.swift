@@ -40,13 +40,13 @@ public enum SurfaceColour: CaseIterable, Sendable {
 /// The terminal pane's colours (T51.6): `surface.terminal`, `text.terminal` and
 /// `text.terminalOk`, for SwiftTerm's view, which AppKit draws.
 public enum TerminalColour: CaseIterable, Sendable {
-  case surface, text, ok
+  case surface, text, success
 
   public var nsColor: NSColor {
     switch self {
     case .surface: NSColor(resource: .surfaceTerminal)
     case .text: NSColor(resource: .textTerminal)
-    case .ok: NSColor(resource: .textTerminalOk)
+    case .success: NSColor(resource: .textTerminalOk)
     }
   }
 }

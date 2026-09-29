@@ -78,7 +78,7 @@ private func mounted(_ client: FakeTerminal) -> (TerminalView, TerminalBridge) {
   var text = ""
   for _ in 0..<200 where !text.contains("hello from the shell") {
     try await Task.sleep(for: .milliseconds(10))
-    text = String(decoding: view.getTerminal().getBufferAsData(), as: UTF8.self)
+    text = String(bytes: view.getTerminal().getBufferAsData(), encoding: .utf8) ?? ""
   }
   #expect(text.contains("hello from the shell"))
   bridge.detach()
@@ -112,7 +112,7 @@ private final class Links {
   var text = ""
   for _ in 0..<200 where !text.contains("printed while hidden") {
     try await Task.sleep(for: .milliseconds(10))
-    text = String(decoding: surface.view.getTerminal().getBufferAsData(), as: UTF8.self)
+    text = String(bytes: surface.view.getTerminal().getBufferAsData(), encoding: .utf8) ?? ""
   }
   #expect(text.contains("printed while hidden"))
   surface.end()

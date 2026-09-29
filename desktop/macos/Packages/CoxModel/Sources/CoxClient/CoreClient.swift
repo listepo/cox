@@ -69,11 +69,16 @@ public protocol SessionClient: AnyObject, Sendable {
   /// Hides the plugin overlay shown, as Esc does
   /// (`cox_app::live::LiveSession::close_plugin_overlay`, T52.17).
   func closePluginOverlay()
+  /// The window's area in cells of the plugin text's font, so a shown panel or overlay renders
+  /// again for it (`cox_app::live::LiveSession::plugin_area`, PL§8 "resized", T52.17).
+  func pluginArea(width: UInt16, height: UInt16)
 }
 
 extension SessionClient {
   /// A client with no plugins has no overlay to hide.
   public func closePluginOverlay() {}
+  /// Nor an area to lay a plugin out in.
+  public func pluginArea(width: UInt16, height: UInt16) {}
 }
 
 /// What opening a task shows (`cox_app::TaskTarget`).
@@ -180,6 +185,7 @@ public final class FixtureSession: SessionClient {
     var next = 0
     var closed = false
     var sent: [Intent] = []
+    var areas: [[UInt16]] = []
     /// The calls the last batch left waiting on the person.
     var waiting: Set<String> = []
     /// The pull parked until they are answered.
@@ -214,6 +220,12 @@ public final class FixtureSession: SessionClient {
   }
 
   public var sent: [Intent] { state.withLock { $0.sent } }
+  /// Each area `pluginArea` reported, `[width, height]`, in order.
+  public var pluginAreas: [[UInt16]] { state.withLock { $0.areas } }
+
+  public func pluginArea(width: UInt16, height: UInt16) {
+    state.withLock { $0.areas.append([width, height]) }
+  }
 
   /// A fixture starts from a fresh session: no blocks.
   public func snapshot() -> [Block] { [] }

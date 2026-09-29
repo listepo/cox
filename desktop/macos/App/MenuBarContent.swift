@@ -36,7 +36,7 @@ struct MenuBarContent: View {
     let menu = menu
     return MenuBarPanel.State(
       needs: menu.needs.map { need in
-        let kind: MenuBarPanel.Need.Kind =
+        let kind: MenuBarPanel.NeedKind =
           switch need.kind {
           case .approval(let command): .approval(command: command)
           case .question(let question): .question(question)
