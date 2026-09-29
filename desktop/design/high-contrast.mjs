@@ -23,8 +23,10 @@ const STEP = 0.005;
 
 // Glass: translucent surfaces. Each sits over the opaque window fill of its palette, as the palette
 // describes them; what shows through the window itself is the material's opacity, not a colour.
-const GLASS = ['surface.sidebar', 'surface.capsule', 'surface.popover', 'surface.terminal', 'glass.fill'];
-const PAGE = ['surface.window', 'surface.code', ...GLASS.filter((s) => s !== 'surface.terminal')];
+// `surface.terminal` is opaque (A129 (8)), so it is no glass and keeps its value; text is still
+// checked on it below. It is no page either: only terminal text sits on it.
+const GLASS = ['surface.sidebar', 'surface.capsule', 'surface.popover', 'glass.fill'];
+const PAGE = ['surface.window', 'surface.code', ...GLASS];
 const WORDS = [
   'text.primary', 'text.secondary', 'text.tertiary', 'text.placeholder', 'accent', 'status.success',
   'status.warning', 'status.danger', 'status.plan', 'meter.sent', 'meter.received',

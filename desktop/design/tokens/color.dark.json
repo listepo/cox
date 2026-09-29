@@ -88,14 +88,13 @@
         "$value": {
           "colorSpace": "srgb",
           "components": [
-            0.0627,
-            0.0706,
-            0.0941
+            0.0824,
+            0.0863,
+            0.102
           ],
-          "hex": "#101218",
-          "alpha": 0.92
+          "hex": "#15161a"
         },
-        "$description": "Inset terminal tail"
+        "$description": "Terminal well: the terminal pane and the inset terminal tail; opaque dark in both appearances, as mockup 24 draws it (A129)"
       }
     },
     "glass": {
