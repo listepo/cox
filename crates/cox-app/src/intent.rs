@@ -2,7 +2,9 @@
 //! core: a `Submission`, a turn to spawn or hold, or a lineage call. Pure,
 //! so a test checks an intent without a session, and separate from the
 //! controller that executes the `Dispatch` (it owns the session and the
-//! runtime).
+//! runtime). What a composer draft becomes — shell line, `/` command line
+//! or turn, now or queued — is decided here too (T58.4.17), so every client
+//! sends a draft alike.
 
 use cox_protocol::CallId;
 use cox_protocol::types::{
@@ -249,6 +251,71 @@ pub fn agent_dispatch(intent: Intent) -> Result<AgentDispatch, IntentError> {
     })
 }
 
+/// When a turn goes while another runs (`[desktop.review] send`, A108).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SendWhen {
+    /// Behind the running turn, as the composer queues a prompt.
+    #[default]
+    Queue,
+    /// At once, even while a turn runs.
+    Now,
+}
+
+/// Which intent a draft is sent as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DraftKind {
+    /// [`Intent::Shell`].
+    Shell,
+    /// [`Intent::Command`], for the core's command table.
+    Command,
+    /// [`Intent::Send`], or [`Intent::Queue`] when `queued`.
+    Turn,
+}
+
+/// What a composer draft becomes (T58.4.17, DT§5.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DraftIntent {
+    pub kind: DraftKind,
+    /// A turn held behind the running one ([`Intent::Queue`]).
+    pub queued: bool,
+    /// There is something to send.
+    pub can_send: bool,
+    /// The attachments and the think toggle stay after the send: a shell or
+    /// command line cannot carry them.
+    pub keeps_attachments: bool,
+    /// The draft is a lone `!`: shell mode instead of text.
+    pub enters_shell: bool,
+}
+
+/// What the draft `text` becomes: in `shell` mode a shell line, else a `/`
+/// line for the command table, else a turn with its `attachments` — queued
+/// while a turn is `running` unless `when` is [`SendWhen::Now`].
+pub fn draft_intent(
+    text: &str,
+    shell: bool,
+    attachments: u32,
+    running: bool,
+    when: SendWhen,
+) -> DraftIntent {
+    let kind = if shell {
+        DraftKind::Shell
+    } else if text.starts_with('/') {
+        DraftKind::Command
+    } else {
+        DraftKind::Turn
+    };
+    let turn = kind == DraftKind::Turn;
+    DraftIntent {
+        kind,
+        queued: turn && running && when == SendWhen::Queue,
+        can_send: !text.trim().is_empty() || (!shell && attachments > 0),
+        keeps_attachments: !turn,
+        enters_shell: !shell && text == "!",
+    }
+}
+
 /// A turn needs text or an attachment.
 fn turn(
     text: String,
@@ -366,5 +433,50 @@ mod tests {
             agent_dispatch(Intent::Fork { turn: None }),
             Ok(AgentDispatch::Refused("Fork"))
         );
+    }
+
+    fn draft(text: &str, shell: bool, attachments: u32, running: bool) -> DraftIntent {
+        draft_intent(text, shell, attachments, running, SendWhen::Queue)
+    }
+
+    #[test]
+    fn a_draft_is_queued_while_a_turn_runs() {
+        let idle = draft("fix it", false, 0, false);
+        assert_eq!((idle.kind, idle.queued), (DraftKind::Turn, false));
+        let busy = draft("fix it", false, 0, true);
+        assert_eq!((busy.kind, busy.queued), (DraftKind::Turn, true));
+        let line = draft("/compact", false, 0, true);
+        assert_eq!((line.kind, line.queued), (DraftKind::Command, false));
+        let shell = draft("ls", true, 0, true);
+        assert_eq!((shell.kind, shell.queued), (DraftKind::Shell, false));
+    }
+
+    #[test]
+    fn a_bang_enters_shell_mode() {
+        assert!(draft("!", false, 0, false).enters_shell);
+        assert!(!draft("!", true, 0, false).enters_shell, "already in it");
+        assert!(!draft("!ls", false, 0, false).enters_shell);
+    }
+
+    #[test]
+    fn attachments_clear_only_after_a_send_or_queue() {
+        assert!(!draft("fix", false, 1, false).keeps_attachments);
+        assert!(!draft("fix", false, 1, true).keeps_attachments);
+        assert!(draft("/compact", false, 1, false).keeps_attachments);
+        assert!(draft("ls", true, 1, false).keeps_attachments);
+        assert!(draft("  ", false, 1, false).can_send, "attachments alone");
+        assert!(
+            !draft("  ", true, 1, false).can_send,
+            "not for a shell line"
+        );
+        assert!(!draft("\n", false, 0, false).can_send);
+    }
+
+    #[test]
+    fn review_send_now_skips_the_queue() {
+        let now = draft_intent("Review comments", false, 0, true, SendWhen::Now);
+        assert_eq!((now.kind, now.queued), (DraftKind::Turn, false));
+        let queue = draft_intent("Review comments", false, 0, true, SendWhen::Queue);
+        assert!(queue.queued);
     }
 }

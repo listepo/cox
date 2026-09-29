@@ -20,6 +20,7 @@ use cox_app::best_of::{
 use cox_app::complete::{Splice, TypedToken};
 use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange};
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind, TextLine};
+use cox_app::intent::{DraftIntent, DraftKind, SendWhen};
 use cox_app::onboarding::{CheckId, CheckRow, CheckStatus};
 use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 use cox_app::review::LineComment;
@@ -979,6 +980,28 @@ pub struct TypedToken {
 pub struct Splice {
     pub text: String,
     pub caret: u32,
+}
+
+#[uniffi::remote(Enum)]
+pub enum SendWhen {
+    Queue,
+    Now,
+}
+
+#[uniffi::remote(Enum)]
+pub enum DraftKind {
+    Shell,
+    Command,
+    Turn,
+}
+
+#[uniffi::remote(Record)]
+pub struct DraftIntent {
+    pub kind: DraftKind,
+    pub queued: bool,
+    pub can_send: bool,
+    pub keeps_attachments: bool,
+    pub enters_shell: bool,
 }
 
 #[uniffi::remote(Enum)]

@@ -162,6 +162,19 @@ pub fn mentions(text: String, picked: Vec<String>) -> Vec<String> {
     cox_app::complete::mentions(&text, picked)
 }
 
+/// What a composer draft becomes: shell line, `/` line or turn, queued
+/// behind a `running` one unless `when` is `Now` (T58.4.17).
+#[uniffi::export]
+pub fn draft_intent(
+    text: String,
+    shell: bool,
+    attachments: u32,
+    running: bool,
+    when: cox_app::intent::SendWhen,
+) -> cox_app::intent::DraftIntent {
+    cox_app::intent::draft_intent(&text, shell, attachments, running, when)
+}
+
 /// The command palette's rows for a session without a completer of its own
 /// (a remote one): `items` ranked for `query`, at most `limit` of each kind
 /// (T37.44.13).
