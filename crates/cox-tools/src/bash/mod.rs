@@ -7,27 +7,42 @@
 mod classify;
 mod shell;
 
+#[cfg(unix)]
 use std::fs::File;
+#[cfg(unix)]
 use std::io::{self, Read};
+#[cfg(unix)]
 use std::os::fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd};
+#[cfg(unix)]
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{Arc, OnceLock};
-use std::time::{Duration, Instant};
+use std::process::Command;
+#[cfg(unix)]
+use std::process::Stdio;
+use std::sync::OnceLock;
+#[cfg(unix)]
+use std::sync::{
+    Arc,
+    atomic::{AtomicU8, Ordering},
+};
+use std::time::Duration;
+#[cfg(unix)]
+use std::time::Instant;
 
 use async_trait::async_trait;
 use cox_protocol::{
     ArchivePut, Concurrency, Risk, SandboxMode, SandboxPolicy, Segments, TaskId, Tool, ToolCx,
     ToolError, ToolOutput, ToolSpec,
 };
-use nix::libc;
-use nix::poll::{PollFd, PollFlags, poll};
-use nix::pty::{Winsize, openpty};
-use nix::sys::signal::{Signal, killpg};
-use nix::sys::termios::Termios;
-use nix::unistd::{Pid, setsid};
+#[cfg(unix)]
+use nix::{
+    libc,
+    poll::{PollFd, PollFlags, poll},
+    pty::{Winsize, openpty},
+    sys::signal::{Signal, killpg},
+    sys::termios::Termios,
+    unistd::{Pid, setsid},
+};
 use schemars::{JsonSchema, schema_for};
 use serde::Deserialize;
 use serde_json::Value;
@@ -39,16 +54,22 @@ pub use shell::default_shell;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long a process gets between SIGTERM and SIGKILL.
+#[cfg(unix)]
 const TERM_GRACE: Duration = Duration::from_secs(2);
 /// How long to wait for the PTY to drain after the shell exited before
 /// giving up on grandchildren that still hold it open.
+#[cfg(unix)]
 const REAP_GRACE: Duration = Duration::from_millis(500);
 /// How long one `poll` on the master waits before re-checking the phase.
+#[cfg(unix)]
 const POLL_SLICE_MS: u8 = 50;
 /// Reader phases: read while the child runs, read what is left once it
 /// exited, stop even if a grandchild keeps writing.
+#[cfg(unix)]
 const RUNNING: u8 = 0;
+#[cfg(unix)]
 const DRAINING: u8 = 1;
+#[cfg(unix)]
 const STOP: u8 = 2;
 use cox_protocol::config::CHILD_ENV_ALLOWLIST as ENV_ALLOWLIST;
 
@@ -142,6 +163,10 @@ pub fn login_shell(env_shell: Option<&str>) -> Option<PathBuf> {
 
 /// A command line and the shell that runs it, kept together so every hop
 /// down to the sandbox carries both.
+#[cfg_attr(
+    windows,
+    expect(dead_code, reason = "T57.8's Windows spawn path uses it")
+)]
 #[derive(Clone)]
 struct Cmd {
     line: String,
@@ -201,6 +226,10 @@ impl Tool for BashTool {
         let input: BashInput = serde_json::from_value(input).map_err(|e| ToolError::Denied {
             why: format!("invalid bash input: {e}"),
         })?;
+        // Before `background`, which would otherwise report a started task.
+        if cfg!(windows) {
+            return Err(unavailable());
+        }
         let timeout = input
             .timeout_s
             .filter(|s| *s > 0)
@@ -245,6 +274,14 @@ impl Tool for BashTool {
             diff: None,
             structured: Some(structured),
         })
+    }
+}
+
+/// Windows has no spawn path for `bash` yet: T57.8 adds ConPTY inside a job
+/// object. A `Denied` so the model sees the reason and tries another tool.
+fn unavailable() -> ToolError {
+    ToolError::Denied {
+        why: "`bash` is not available on Windows yet".to_string(),
     }
 }
 
@@ -349,6 +386,10 @@ impl Run {
 /// Builds the child: the sandbox decides the program (`sandbox-exec`,
 /// `bwrap` or the bare shell) and any pre-exec hook, this only adds cwd and
 /// the environment.
+#[cfg_attr(
+    windows,
+    expect(dead_code, reason = "T57.8's Windows spawn path uses it")
+)]
 fn command_for(
     cmd: &Cmd,
     cwd: &Path,
@@ -373,6 +414,7 @@ fn command_for(
 }
 
 /// Makes the PTY slave the child's stdio and controlling terminal.
+#[cfg(unix)]
 fn attach_pty(cmd: &mut Command, slave: &OwnedFd) -> Result<(), ToolError> {
     let stdio = |fd: &OwnedFd| fd.try_clone().map(Stdio::from).map_err(|_| ToolError::Io);
     cmd.stdin(stdio(slave)?)
@@ -392,6 +434,7 @@ fn attach_pty(cmd: &mut Command, slave: &OwnedFd) -> Result<(), ToolError> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn signal(pid: u32, sig: Signal) {
     // The child is its own session leader (`attach_pty` calls setsid), so
     // its pid is the process group of everything it started.
@@ -401,7 +444,9 @@ fn signal(pid: u32, sig: Signal) {
 /// SIGKILLs the process group led by `pid`, the kill a cancelled `bash`
 /// call ends with. `pub` so another host-spawned process that leads its own
 /// group (an external agent's CLI, T35.13) is reaped the same way, not by a
-/// second implementation.
+/// second implementation. Unix-only: Windows kills a tree through a job
+/// object (T57.5, T57.6).
+#[cfg(unix)]
 pub fn kill_group(pid: u32) {
     signal(pid, Signal::SIGKILL);
 }
@@ -430,6 +475,9 @@ pub async fn run_line(
     output: &mpsc::Sender<String>,
     timeout: Duration,
 ) -> Result<Exit, ToolError> {
+    if cfg!(windows) {
+        return Err(unavailable());
+    }
     let cmd = Cmd {
         line: line.to_owned(),
         shell: Shell::Sh.path()?,
@@ -445,6 +493,22 @@ pub async fn run_line(
     })
 }
 
+/// No spawn path on Windows until T57.8; `call` and `run_line` already
+/// refuse, this only keeps the shared callers compiling.
+#[cfg(windows)]
+async fn run(
+    _cmd: &Cmd,
+    _cwd: &Path,
+    _workspace: Workspace<'_>,
+    _sandbox: &SandboxPolicy,
+    _cancel: &CancellationToken,
+    _output: &mpsc::Sender<String>,
+    _timeout: Duration,
+) -> Result<Run, ToolError> {
+    Err(unavailable())
+}
+
+#[cfg(unix)]
 async fn run(
     cmd: &Cmd,
     cwd: &Path,
@@ -587,11 +651,13 @@ async fn run(
 
 /// What `run` undoes if it is dropped before it finishes: the PTY reader
 /// goes to `STOP` and the process group, while `Some`, is SIGKILLed.
+#[cfg(unix)]
 struct Abandoned {
     phase: Arc<AtomicU8>,
     group: Option<u32>,
 }
 
+#[cfg(unix)]
 impl Drop for Abandoned {
     fn drop(&mut self) {
         self.phase.store(STOP, Ordering::Relaxed);
@@ -601,6 +667,10 @@ impl Drop for Abandoned {
     }
 }
 
+#[cfg_attr(
+    windows,
+    expect(dead_code, reason = "T57.8's Windows spawn path uses it")
+)]
 #[derive(Clone, Copy)]
 struct Workspace<'a> {
     read: &'a [PathBuf],
@@ -610,6 +680,7 @@ struct Workspace<'a> {
 /// Whether the master has bytes to read within `timeout`, so the reader
 /// can notice `DRAINING`/`STOP` instead of blocking forever on a PTY that
 /// a grandchild still holds open.
+#[cfg(unix)]
 fn readable(fd: RawFd, timeout_ms: u8) -> bool {
     // SAFETY: `fd` is the master's descriptor and the master is owned by the
     // reader thread that calls this, so it stays open for the whole call.
@@ -704,6 +775,7 @@ mod tests {
     /// Regression: a run dropped mid-way left its PTY reader polling forever
     /// and its command running, so the runtime that ran it never finished
     /// shutting down (the ACP `terminal/release` test hung on Linux this way).
+    #[cfg(unix)]
     #[test]
     fn dropped_run_lets_the_runtime_shut_down() {
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -734,6 +806,35 @@ mod tests {
             ended.recv_timeout(Duration::from_secs(10)).is_ok(),
             "the reader or the command outlived its dropped run"
         );
+    }
+
+    /// Until T57.8, a Windows `bash` is refused with a reason, never spawned.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn bash_is_not_available_on_windows_yet() {
+        let policy = SandboxPolicy {
+            mode: SandboxMode::DangerFullAccess,
+            network: true,
+            writable: vec![],
+            readonly_in_workspace: vec![],
+            linux_backend: Default::default(),
+        };
+        let (tx, _rx) = mpsc::channel(1);
+        let cancel = CancellationToken::new();
+        let got = run_line(
+            "echo",
+            Path::new("."),
+            &[],
+            &policy,
+            &cancel,
+            &tx,
+            DEFAULT_TIMEOUT,
+        );
+        let why = match got.await {
+            Err(ToolError::Denied { why }) => why,
+            other => panic!("expected Denied, got {other:?}"),
+        };
+        assert!(why.contains("not available on Windows"), "{why}");
     }
 
     #[test]

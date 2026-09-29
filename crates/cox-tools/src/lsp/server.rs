@@ -49,8 +49,6 @@ pub struct Pipes {
 /// env allowlist (D14) that `bash` and MCP servers get, stdio piped and
 /// stderr kept as a bounded tail.
 pub fn spawn(argv: &[String], cwd: &Path) -> Result<Pipes, LspError> {
-    use std::os::unix::process::CommandExt as _;
-
     let Some((program, args)) = argv.split_first() else {
         return Err(LspError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -66,8 +64,11 @@ pub fn spawn(argv: &[String], cwd: &Path) -> Result<Pipes, LspError> {
     }
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .process_group(0);
+        .stderr(Stdio::piped());
+    // Windows gets a job object instead (T57.6); until then only the
+    // leader dies there.
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
     let mut cmd = tokio::process::Command::from(cmd);
     // The backstop for an exit path that never calls `stop`.
     cmd.kill_on_drop(true);
@@ -107,6 +108,10 @@ async fn keep_tail(mut stderr: impl AsyncRead + Unpin, tail: Arc<Mutex<VecDeque<
 }
 
 struct Child {
+    #[cfg_attr(
+        windows,
+        expect(dead_code, reason = "T57.6 kills the tree through a job object")
+    )]
     pid: Option<u32>,
     child: Mutex<tokio::process::Child>,
     tail: Arc<Mutex<VecDeque<u8>>>,
@@ -130,6 +135,7 @@ impl Process for Child {
         }
         // The group, not just the leader: a sandbox wrapper or a server
         // that forks (rust-analyzer's `cargo check`) leaves children.
+        #[cfg(unix)]
         if let Some(pid) = self.pid {
             crate::bash::kill_group(pid);
         }
