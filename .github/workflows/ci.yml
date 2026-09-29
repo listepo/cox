@@ -31,8 +31,8 @@ jobs:
   rust:
     uses: listepo/infra/.github/workflows/ci-rust.yml@189816ac5a375e18e0235044970efcbc40e3cabd
     with:
-      # The shared matrix minus Windows: cox is Unix-only (a pty through nix,
-      # std::os::unix in cox-tools; no Windows release target).
+      # The shared matrix minus Windows: the workspace does not build there
+      # yet (P57); the `windows` job below checks the crates that do.
       matrix: >-
         [
         {"os": "ubuntu-latest", "target": "x86_64-unknown-linux-gnu"},
@@ -77,6 +77,27 @@ jobs:
 
       - name: sandbox tests without bwrap
         run: cargo nextest run -p cox-tools sandbox_ bash_
+
+  # P57 (T57.1): `cargo check` and clippy for x64 and ARM64 Windows over the
+  # crates that build there, listed once in the justfile (`windows_crates`);
+  # each P57 card adds its crates. Not in revert-on-failure's `needs`: it is
+  # required for a merge only once T57.11 builds the whole workspace.
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/rust
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@just
+
+      - name: windows check
+        run: just windows-check
 
   # The guest workspace (plugins/, PL§9, T33.40.2): its own `cargo test`
   # target (a separate workspace, so the root `rust` job above never builds
