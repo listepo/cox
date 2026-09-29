@@ -1,0 +1,13 @@
+[package]
+name = "ratatui-ci-dashboard"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+# Ratatui draws the UI; it re-exports crossterm (ratatui::crossterm) for terminal input.
+ratatui = "0.29"
+
+# A workspace of its own, outside the root `members = ["crates/*"]` (like
+# fuzz/ and plugins/), so the root build, lint and Cargo.lock never see it.
+[workspace]
