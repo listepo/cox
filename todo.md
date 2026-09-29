@@ -61,6 +61,34 @@
 - T58.2. Design doc for the Windows client
 - T58.3. Solution layout under `desktop/windows/`
 - T58.4. Move the decisions still in CoxModel into `cox-app`
+- T58.4.1. Inbox and MCP login words in `cox-app`
+- T58.4.2. Inbox rows and notifications read the core's words
+- T58.4.3. MCP login rows read the core's words
+- T58.4.4. Sidebar sections and rows in `cox-app`
+- T58.4.5. SidebarStore shows the core's sections
+- T58.4.6. Short model names and the toolbar's figures
+- T58.4.7. The model menu in `cox-app`
+- T58.4.8. Settings page fields in `cox-app`
+- T58.4.9. Settings controls and typed edits in `cox-app`
+- T58.4.10. Settings values carry the core's layout and controls
+- T58.4.11. SettingsStore pages from the core's fields
+- T58.4.12. Model menu sections reach Swift
+- T58.4.13. The model popover shows the core's sections
+- T58.4.14. Short model names from the core
+- T58.4.15. Toolbar figures from the meter
+- T58.4.16. Completion token and pick in `cox-app`
+- T58.4.17. A draft becomes its intent in `cox-app`
+- T58.4.18. Composer rules reach the session clients
+- T58.4.19. ComposerStore and Review send through the core's rules
+- T58.4.20. Inspector facts and Review's turns in `cox-app`
+- T58.4.21. Info tab from the core's facts
+- T58.4.22. Changes tab facts from the core
+- T58.4.23. A task block carries its state
+- T58.4.24. Task state reaches the Swift timeline
+- T58.4.25. Tasks tab, Review and the task card read the core's state and turns
+- T58.4.26. A reply's doc as Markdown in Rust
+- T58.4.27. The Markdown seam uses the core's writer
+- T58.4.28. Copy as Markdown through the core's writer
 - T58.5. C# client contract, fixture client and the session store
 - T58.6. The other stores
 - T58.7. Live client: `LiveCoreClient`, dispatcher and host bridge
