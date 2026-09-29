@@ -90,6 +90,10 @@ impl Provider for Priced {
         self.inner.capabilities()
     }
 
+    fn accepts_images(&self, model: &str) -> bool {
+        self.inner.accepts_images(model)
+    }
+
     async fn stream(
         &self,
         req: Request,

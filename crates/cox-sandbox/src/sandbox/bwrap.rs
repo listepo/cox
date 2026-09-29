@@ -350,7 +350,7 @@ mod tests {
             &[],
             &["/bin/sh".into(), "-c".into(), r#"exec "$0" "$@""#.into()],
         );
-        expose_under_private_tmp(&mut built, &[program.clone()]);
+        expose_under_private_tmp(&mut built, std::slice::from_ref(&program));
         built.push(program.display().to_string());
         built.push(sibling.display().to_string());
         let out = std::process::Command::new(&built[0])

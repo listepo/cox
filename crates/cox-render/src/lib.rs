@@ -5,19 +5,33 @@
 //! terminal-colorsaurus, so an edit to the TUI's state machine does not
 //! recompile them. No state, no event loop: text and settings in, ratatui
 //! spans and buffers out. `cox-tui` re-exports every module at its old path.
+//! Markdown and highlighting first produce a UI-neutral `doc::StyledDoc`
+//! (T37.7); everything that speaks ratatui sits behind the default `ratatui`
+//! feature, so the desktop app can depend on this crate without it.
 
+#[cfg(feature = "ratatui")]
 pub mod color;
+#[cfg(feature = "ratatui")]
 pub mod diff;
+pub mod diffmodel;
+pub mod diffstat;
+pub mod doc;
 pub mod glyph;
+#[cfg(feature = "ratatui")]
 pub mod link;
 pub mod markdown;
+#[cfg(feature = "ratatui")]
 pub mod svg;
+#[cfg(feature = "ratatui")]
 pub mod theme;
 
+#[cfg(feature = "ratatui")]
 use glyph::Glyphs;
+#[cfg(feature = "ratatui")]
 use theme::Theme;
 
 /// What rendering needs from the state besides the cell itself.
+#[cfg(feature = "ratatui")]
 #[derive(Debug, Clone, Copy)]
 pub struct Look {
     pub width: u16,

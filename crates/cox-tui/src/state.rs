@@ -11,8 +11,9 @@ use cox_protocol::GrantScope;
 use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId};
 use cox_protocol::plugin::{CommandDecl, CommandOut, KeyDecl, NoticeLevel, RenderIn, Slot, Widget};
 use cox_protocol::types::{
-    Content, Effort, Event, ItemKind, Level, PermissionMode, Presence, Role, SandboxMode,
-    SlashCommand, StopReason, Submission, Tier, ToolCall, ToolResult,
+    Content, ContextBreakdown, Effort, Event, ItemKind, Level, Mode as SessionMode, PermissionMode,
+    Presence, Role, SandboxMode, SlashCommand, StopReason, Submission, Tier, TodoItem, ToolCall,
+    ToolResult,
 };
 use crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
@@ -29,10 +30,10 @@ use crate::keymap::{self, Keymap};
 use crate::markdown;
 use crate::modal::{Approval, PluginGrantDialog, Question, QuestionAnswer, RemoveConfirm};
 use crate::picker::{self, Kind, Pick, Picker};
-use crate::status::parse_todo;
 use crate::tasks;
 use crate::term::{Caps, Progress};
 use crate::theme::{Theme, ThemeFile};
+use crate::theme_editor::{EditorOutcome, ThemeEditor};
 use crate::vim::Mode;
 
 /// One transcript entry. A finished cell leaves the viewport for the
@@ -118,8 +119,11 @@ pub struct Status {
     pub model: String,
     pub tier: Option<Tier>,
     pub context_tokens: u32,
-    /// What `ctx N%` is a share of; the binary sets it from the provider.
+    /// What `ctx N%` is a share of: the model's window from the last
+    /// `Event::ContextBreakdown` (A98), a 200k guess until one names it.
     pub context_window: u32,
+    /// The last request's split (A98), which `/context` draws.
+    pub context: Option<ContextBreakdown>,
     pub cost_usd: f64,
     pub sandbox: SandboxMode,
     pub busy: bool,
@@ -134,6 +138,18 @@ pub struct Status {
     /// `/effort` override for the session (T28.1); `SetEffort` keeps it here
     /// next to the mode the composer already shows, and the line badges it.
     pub effort: Option<Effort>,
+}
+
+impl Status {
+    /// The context `ctx N%` and `/context` count (A98): the last call's
+    /// reported context, else the core's estimate for the request about to
+    /// go out — the same rule as the desktop meter's share.
+    pub fn context_used(&self) -> u32 {
+        match (self.context_tokens, self.context) {
+            (0, Some(b)) => b.total,
+            (n, _) => n,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -158,6 +174,9 @@ pub enum Modal {
     /// `?` on an empty composer (T24.6): `KEYMAP` grouped by context, drawn
     /// over the transcript like the diff view.
     Help,
+    /// `/context` (A98): the last request's window and split, drawn over
+    /// the transcript like `Help`.
+    Context,
     /// `/agents` (T27.5): a navigable list of `agents_rows`, replacing the
     /// static T27.2 `Notice`. `Up`/`Down` move `selected`; `Enter` on a
     /// sibling-session row (`ids[selected].is_some()`) asks the runtime for
@@ -183,6 +202,9 @@ pub enum Modal {
     Plugin {
         id: String,
     },
+    /// The theme editor (T46.6): a band like `Picker`, drawn from
+    /// `ThemeEditor::lines`; `/theme` opens it and saves it (T46.7).
+    ThemeEditor(ThemeEditor),
 }
 
 /// Lines a `PageUp`/`PageDown` moves the diff view (the inline viewport is
@@ -225,6 +247,9 @@ pub struct State {
     pub banner: Option<Banner>,
     /// Workspace-relative paths the `@` picker offers; the runtime walks them.
     pub files: Vec<String>,
+    /// Names `@name task` dispatches (T45.6), from `Session::agent_names`
+    /// at start, like `files`; the `@` picker lists them first.
+    pub agent_names: Vec<String>,
     /// Local branch names for `git checkout <Tab>` (T15.4); the runtime
     /// lists them at start, like `files`.
     pub git_branches: Vec<String>,
@@ -268,8 +293,8 @@ pub struct State {
     /// can hit-test a click — interior mutability, so `view` keeps its
     /// `&State` every render call site and test already assumes.
     pub cell_rows: RefCell<Vec<(Range<u16>, usize)>>,
-    /// The `todo` tool's latest list as `(mark, text)`; `/todo` shows it.
-    pub todo: Vec<(String, String)>,
+    /// The `todo` tool's latest list; `/todo` shows it.
+    pub todo: Vec<TodoItem>,
     pub show_todo: bool,
     /// `-v`: show a glyph where `text::sanitize` removed something.
     pub marks: bool,
@@ -291,6 +316,9 @@ pub struct State {
     /// The `--worktree` name (T27.3); the status line shows it after the
     /// branch, and only then.
     pub worktree: Option<String>,
+    /// The session's title (A113): generated after the first turn or set
+    /// with `/rename`; the runtime seeds a resumed session's from the store.
+    pub title: Option<String>,
     /// The `/rewind` timeline (T26.2): one row per user turn, oldest first.
     pub turns: Vec<TurnRow>,
     /// The `seq` of the turn in flight, from `TurnStarted`.
@@ -371,6 +399,22 @@ pub struct State {
     /// choice (T33.30), the same two-step shape `rewind_to` above uses for
     /// `/rewind`'s turn-then-what picks.
     pub pending_plugin_new: Option<(String, Vec<String>)>,
+    /// The session's mode (P42) as the core last reported it; `mode`
+    /// above stays the permission mode.
+    pub session_mode: SessionMode,
+    /// The user accepted the think price for this architect stretch, so
+    /// every turn carries `confirm_think` until the mode leaves architect.
+    pub think_confirmed: bool,
+    /// The open think-price question's id: its answer stays in the TUI
+    /// instead of reaching the core as an `ask_user` reply.
+    think_consent: Option<CallId>,
+    /// `[tui.status_line]` (T46.3): the user's status command, its last
+    /// input and answer; the runtime sets it at startup when a command is
+    /// configured. `None` leaves the screen exactly as without the key.
+    pub status_script: Option<crate::status::StatusScript>,
+    /// Push-to-talk (T54.6): whether a `Dictation` exists, `[voice]
+    /// auto_submit`, and the recording in progress.
+    pub voice: crate::voice::Voice,
 }
 
 /// `/loop`'s running state (T27.4). `interval_ticks`/`next_at` are
@@ -442,17 +486,6 @@ pub enum Msg {
     Git(Option<GitStatus>),
     /// The runtime's answer to `Ask::GitDiff` (T15.3); `None` outside a repo.
     Diff(Option<String>),
-    /// A model's `ask_user` call, surfaced by the runtime (T22.1). The
-    /// reply's `oneshot` sender stays in `app.rs`, not here: `State` and
-    /// `Modal` must stay `Clone`/`PartialEq` for tests and snapshots, and a
-    /// `oneshot::Sender` is neither.
-    Question {
-        call: CallId,
-        question: String,
-        options: Vec<String>,
-        /// The subagent asking (T34.3); `None` for the session itself.
-        agent: Option<String>,
-    },
     /// The terminal gained (`true`) or lost focus (T23.5).
     Focus(bool),
     /// A wheel tick or click (T22.4); `app.rs` only forwards these once
@@ -470,6 +503,14 @@ pub enum Msg {
     /// new`/`update`/`remove`/`list` would have printed, joined; `Err`
     /// names why. Shown as a notice, the same as `Event::Notice`.
     PluginMgmt(Result<String, String>),
+    /// The status command's first line (T46.3), `None` when it failed,
+    /// timed out or printed nothing; answers `Ask::StatusLine`.
+    StatusLine(Option<String>),
+    /// The theme editor's file was written (T46.7): its stem and what it
+    /// parses to, so `/theme` lists and applies it without a restart.
+    ThemeSaved(String, ThemeFile),
+    /// The `Dictation`'s answer to a `Cmd::Voice` (T54.6).
+    Voice(crate::voice::VoiceMsg),
 }
 
 /// The runtime's side of the plugin redraw model (PL§8): `cox-tui` never
@@ -549,13 +590,28 @@ pub enum PluginRequest {
 
 /// What the TUI asks the runtime to fetch off-screen; the answer comes back
 /// on the feed channel. Kept apart from `Submission`: the core never sees it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ask {
     GitDiff,
     /// `/agents` (T27.5): a sibling session's rollout, the same read
     /// `crates/cox/src/resume.rs` does for `--resume` (`Store::rollout_read`);
     /// `crates/cox/src/session.rs` answers it for real.
     Rollout(SessionId),
+    /// `[tui.status_line]` (T46.3): the status command's stdin JSON and
+    /// the terminal width, sent only when either changed; the runtime
+    /// debounces and answers `Msg::StatusLine`.
+    StatusLine {
+        input: serde_json::Value,
+        columns: u16,
+    },
+    /// The theme editor's `Enter` (T46.7): write `<themes>/<stem>.toml`
+    /// with each `(token, colour)` set for the `dark` or light half; the
+    /// runtime checks `stem` and answers `Msg::ThemeSaved` or a notice.
+    SaveTheme {
+        stem: String,
+        dark: bool,
+        tokens: Vec<(String, String)>,
+    },
 }
 
 /// `Modal::PluginGrant`'s `y` (T33.8, PL§3): the full requested capability
@@ -630,11 +686,6 @@ pub enum Cmd {
     Handoff(String),
     Copy(String),
     Ask(Ask),
-    /// `ask_user`'s answer for `call`; `None` is `Esc` (dismissed). The
-    /// runtime looks up the matching reply sender itself — it drops it
-    /// rather than sending empty text, so the tool call fails instead of
-    /// succeeding silently.
-    Answer(CallId, Option<String>),
     /// `/theme` (T24.2): a picker choice writes `key` in the user config
     /// with `cox config set` semantics. `cox-tui` has no `toml_edit`-editing
     /// path of its own (only `crates/cox` owns the config file); the
@@ -663,6 +714,9 @@ pub enum Cmd {
     /// functions `cox plugin ...` calls and answers on the feed as
     /// `Msg::PluginMgmt`.
     PluginMgmt(PluginMgmtRequest),
+    /// Push-to-talk (T54.6): `app.rs` hands this to the `Dictation` it
+    /// holds; the answer arrives as `Msg::Voice`.
+    Voice(crate::voice::VoiceCmd),
 }
 
 impl State {
@@ -675,6 +729,7 @@ impl State {
                 tier: None,
                 context_tokens: 0,
                 context_window: 200_000,
+                context: None,
                 cost_usd: 0.0,
                 sandbox,
                 busy: false,
@@ -690,6 +745,7 @@ impl State {
             scroll: 0,
             banner: None,
             files: Vec::new(),
+            agent_names: Vec::new(),
             git_branches: Vec::new(),
             commands: COMMANDS
                 .iter()
@@ -722,6 +778,7 @@ impl State {
             past_prompts: Vec::new(),
             git: None,
             worktree: None,
+            title: None,
             theme_rows: Vec::new(),
             theme_catalog: Vec::new(),
             syntax_names: Vec::new(),
@@ -743,6 +800,11 @@ impl State {
             term: (80, 24),
             plugin_renderers: Vec::new(),
             pending_plugin_new: None,
+            session_mode: SessionMode::Editor,
+            think_confirmed: false,
+            think_consent: None,
+            status_script: None,
+            voice: crate::voice::Voice::default(),
         }
     }
 
@@ -831,6 +893,7 @@ impl State {
             Some(
                 Modal::Diff { .. }
                 | Modal::Help
+                | Modal::Context
                 | Modal::Agents { .. }
                 | Modal::Transcript { .. }
                 | Modal::Plugin { .. },
@@ -879,6 +942,7 @@ impl State {
 pub fn update(state: &mut State, msg: Msg) -> Vec<Cmd> {
     let mut cmds = step(state, msg);
     cmds.extend(progress(state));
+    cmds.extend(crate::status::script_ask(state));
     cmds
 }
 
@@ -966,18 +1030,6 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
             state.modal = Some(Modal::Diff { text, scroll: 0 });
             Vec::new()
         }
-        Msg::Question {
-            call,
-            question,
-            options,
-            agent,
-        } => {
-            let cmds = notify(state, format!("question: {question}"));
-            state.modal = Some(Modal::Question(
-                Question::new(call, question, options).from_agent(agent),
-            ));
-            cmds
-        }
         Msg::Focus(focused) => {
             state.focused = focused;
             Vec::new()
@@ -998,6 +1050,30 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
             notice(state, level, text);
             Vec::new()
         }
+        // Only the script's own row: the built-in segments never change.
+        Msg::StatusLine(line) => {
+            if let Some(script) = &mut state.status_script {
+                script.line = line;
+            }
+            Vec::new()
+        }
+        Msg::ThemeSaved(stem, file) => {
+            match state.theme_catalog.iter_mut().find(|(n, _)| *n == stem) {
+                Some(entry) => entry.1 = file,
+                None => {
+                    // After the last colour theme, before the `syntax: ` rows.
+                    let at = state
+                        .theme_rows
+                        .iter()
+                        .position(|r| r.starts_with("syntax: "))
+                        .unwrap_or(state.theme_rows.len());
+                    state.theme_rows.insert(at, stem.clone());
+                    state.theme_catalog.push((stem.clone(), file));
+                }
+            }
+            apply_theme_choice(state, &stem)
+        }
+        Msg::Voice(msg) => crate::voice::on_msg(state, msg),
     }
 }
 
@@ -1061,9 +1137,11 @@ fn on_mouse(state: &mut State, ev: MouseEvent) -> Vec<Cmd> {
             | Modal::PluginGrant(_)
             | Modal::PluginRemove(_)
             | Modal::Help
+            | Modal::Context
             | Modal::Agents { .. }
             | Modal::Transcript { .. }
-            | Modal::Plugin { .. },
+            | Modal::Plugin { .. }
+            | Modal::ThemeEditor(_),
         ) => {}
         None => {
             state.scroll = if up {
@@ -1093,9 +1171,14 @@ fn notify(state: &State, body: String) -> Vec<Cmd> {
 }
 
 fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
+    // T54.6: a recording owns `Esc` and the voice key's release and repeats
+    // before anything else sees them.
+    if let Some(cmds) = crate::voice::on_key(state, key) {
+        return cmds;
+    }
     // A held `Enter`/`Esc` must not repeat-submit or repeat-dismiss under the
-    // Kitty keyboard protocol (T23.1); `Release` is already filtered in
-    // `app.rs`'s select loop, before a `Msg::Key` ever reaches here.
+    // Kitty keyboard protocol (T23.1); `app.rs` forwards a `Release` only
+    // while push-to-talk records, and `voice::on_key` takes it above.
     if key.kind == KeyEventKind::Repeat && matches!(key.code, KeyCode::Enter | KeyCode::Esc) {
         return Vec::new();
     }
@@ -1138,7 +1221,10 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
         // picker typing the sigil would have opened, its query pre-filled.
         if let Some((sigil, query)) = state.composer.take_token() {
             let picker = match sigil {
-                '@' => Picker::open(Kind::Files, state.files.clone()),
+                '@' => Picker::open(
+                    Kind::Files,
+                    picker::at_candidates(&state.agent_names, &state.files),
+                ),
                 _ => Picker::open(
                     Kind::Commands,
                     state.commands.iter().map(|(n, ..)| n.clone()).collect(),
@@ -1147,6 +1233,15 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             state.modal = Some(Modal::Picker(picker.with_query(&query)));
             return Vec::new();
         }
+    }
+    // T46.7: `Ctrl+E` is `expand` everywhere else, a global the keymap
+    // below would run over the picker; on `/theme` it opens the editor.
+    if key.code == KeyCode::Char('e')
+        && key.modifiers == KeyModifiers::CONTROL
+        && matches!(&state.modal, Some(Modal::Picker(p)) if p.kind == Kind::Themes)
+    {
+        open_theme_editor(state);
+        return Vec::new();
     }
     // T25.5: every other key the TUI owns goes through the keymap; a key it
     // does not claim falls through to the modal or the composer.
@@ -1172,8 +1267,18 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             }
         },
         Some(Modal::Question(mut question)) => match question.key(key) {
-            Some(QuestionAnswer::Text(text)) => vec![Cmd::Answer(question.call, Some(text))],
-            Some(QuestionAnswer::Dismissed) => vec![Cmd::Answer(question.call, None)],
+            Some(answer) if state.think_consent == Some(question.call) => {
+                think_consent_answered(state, answer)
+            }
+            // `None` (Esc) dismisses, so the tool call fails instead of
+            // succeeding with empty text.
+            Some(answer) => vec![Cmd::Submit(Submission::Answer {
+                call_id: question.call,
+                text: match answer {
+                    QuestionAnswer::Text(text) => Some(text),
+                    QuestionAnswer::Dismissed => None,
+                },
+            })],
             None => {
                 state.modal = Some(Modal::Question(question));
                 Vec::new()
@@ -1237,15 +1342,40 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
         // immediately, not only `Enter` — the same live-apply the picker's
         // other kinds do not need, since none of them redraws the screen
         // they came from.
+        // T46.7: every accepted keystroke is drawn at once; `Esc` puts
+        // back what was drawn before `/theme` opened, like the picker's.
+        Some(Modal::ThemeEditor(mut editor)) => match editor.key(key) {
+            None => {
+                state.theme = editor.theme();
+                state.modal = Some(Modal::ThemeEditor(editor));
+                Vec::new()
+            }
+            Some(EditorOutcome::Revert) => {
+                restore_theme(state);
+                Vec::new()
+            }
+            Some(EditorOutcome::Save) => {
+                state.theme_prev = None;
+                let stem = if editor.builtin {
+                    format!("{}-custom", editor.name)
+                } else {
+                    editor.name
+                };
+                let tokens = editor
+                    .edits
+                    .iter()
+                    .map(|(t, c)| ((*t).to_string(), crate::theme::format_color(*c)))
+                    .collect();
+                vec![Cmd::Ask(Ask::SaveTheme {
+                    stem,
+                    dark: editor.dark,
+                    tokens,
+                })]
+            }
+        },
         Some(Modal::Picker(mut picker)) if picker.kind == Kind::Themes => {
             match picker.key(key) {
-                Pick::Closed => {
-                    if let Some((dark, theme, syntax_theme)) = state.theme_prev.take() {
-                        state.dark = dark;
-                        state.theme = theme;
-                        state.syntax_theme = syntax_theme;
-                    }
-                }
+                Pick::Closed => restore_theme(state),
                 Pick::Chosen(row) => {
                     state.theme_prev = None;
                     return apply_theme_choice(state, &row);
@@ -1302,7 +1432,10 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                     }
                 }
                 Pick::Chosen(choice) => match picker.kind {
-                    Kind::Files | Kind::Commands => state.composer.insert(&format!("{choice} ")),
+                    Kind::Files | Kind::Commands => {
+                        let choice = picker::untag(&choice);
+                        state.composer.insert(&format!("{choice} "));
+                    }
                     // Resuming in place needs `app::run` to return a request;
                     // until then the command is the answer (T16.5).
                     Kind::Sessions => {
@@ -1352,9 +1485,9 @@ fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
             state.modal = Some(Modal::Diff { text, scroll });
             Vec::new()
         }
-        Some(Modal::Help) => {
+        Some(modal @ (Modal::Help | Modal::Context)) => {
             if !matches!(key.code, KeyCode::Esc | KeyCode::Char('?')) {
-                state.modal = Some(Modal::Help);
+                state.modal = Some(modal);
             }
             Vec::new()
         }
@@ -1526,6 +1659,7 @@ fn run(state: &mut State, action: keymap::Action, key: KeyEvent) -> Option<Vec<C
         }
         // The composer decides what an `Enter` does; these hand it the one
         // each action means, whatever key was bound.
+        A::Voice => crate::voice::toggle(state),
         A::Send => compose(state, enter(KeyModifiers::NONE)),
         A::Newline => compose(state, enter(KeyModifiers::SHIFT)),
         A::SendNow => compose(state, enter(KeyModifiers::ALT)),
@@ -1592,9 +1726,12 @@ fn toggle_fold(state: &mut State, i: usize) -> Vec<Cmd> {
 }
 
 /// A key for the composer, and what its `Edit` means for the session.
-fn compose(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
+pub(crate) fn compose(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
     match state.composer.key(key, state.status.busy) {
         Edit::Submit(text) => {
+            if let Some((name, task)) = agent_line(&state.agent_names, &text) {
+                return user_agent(state, name, task);
+            }
             let tier = state.status.tier.unwrap_or(Tier::Code);
             // T22.2: a file command's name reaches the core as
             // `Submission::Command`; the T5.5 parser owns the
@@ -1613,18 +1750,14 @@ fn compose(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
                     state.queue.push_back(text);
                     Vec::new()
                 }
-                None => vec![Cmd::Submit(Submission::UserTurn {
-                    text,
-                    attachments: Vec::new(),
-                    confirm_think: false,
-                })],
+                None => vec![Cmd::Submit(user_turn(state, text))],
             }
         }
         Edit::SendNow(text) => send_now(state, text),
         Edit::OpenFiles => {
             state.modal = Some(Modal::Picker(Picker::open(
                 Kind::Files,
-                state.files.clone(),
+                picker::at_candidates(&state.agent_names, &state.files),
             )));
             Vec::new()
         }
@@ -1656,6 +1789,26 @@ fn set_mode(state: &mut State, mode: PermissionMode) -> Vec<Cmd> {
 /// interrupt this triggers, once `TurnDone{Interrupted}` acknowledges it,
 /// flushes everything typed so far as one turn instead of leaving it queued
 /// for the next natural finish.
+/// `@name task` at line start with a dispatchable `name` and a task
+/// (T45.6); anything else — an `@file` mention included — is a normal turn.
+fn agent_line(names: &[String], text: &str) -> Option<(String, String)> {
+    let (name, task) = text.strip_prefix('@')?.split_once(' ')?;
+    let task = task.trim();
+    (names.iter().any(|n| n == name) && !task.is_empty())
+        .then(|| (name.to_string(), task.to_string()))
+}
+
+/// Submits `@name task`; mid-turn it is refused here, as `!` is, since the
+/// core would refuse it anyway.
+fn user_agent(state: &mut State, name: String, task: String) -> Vec<Cmd> {
+    if state.status.busy {
+        let text = format!("a turn is running; `@{name}` waits until it ends");
+        notice(state, Level::Warn, text);
+        return Vec::new();
+    }
+    vec![Cmd::Submit(Submission::UserAgent { name, task })]
+}
+
 fn send_now(state: &mut State, text: String) -> Vec<Cmd> {
     if !text.trim().is_empty() {
         state.queue.push_back(text);
@@ -1681,6 +1834,41 @@ fn apply_row(state: &mut State, row: &str) {
         state.dark = dark;
         state.theme = file.theme(dark);
     }
+}
+
+/// `Esc` in the `/theme` picker or the theme editor: whatever was drawn
+/// before `/theme` opened.
+fn restore_theme(state: &mut State) {
+    if let Some((dark, theme, syntax_theme)) = state.theme_prev.take() {
+        state.dark = dark;
+        state.theme = theme;
+        state.syntax_theme = syntax_theme;
+    }
+}
+
+/// `Ctrl+E` on a `/theme` colour row (T46.7) swaps the picker for the
+/// editor on that theme; a `syntax: ` row has no tokens, so it stays put.
+/// `theme_prev` was saved when the picker opened and is kept, so the
+/// editor's `Esc` restores the same state the picker's would.
+fn open_theme_editor(state: &mut State) {
+    let Some(Modal::Picker(picker)) = &state.modal else {
+        return;
+    };
+    let Some(row) = picker.matches.get(picker.selected) else {
+        return;
+    };
+    let Some((name, file)) = state.theme_catalog.iter().find(|(n, _)| n == row).cloned() else {
+        return;
+    };
+    let builtin = crate::theme::builtin_source(&name).is_some();
+    let dark = file.variant.unwrap_or(state.dark);
+    let editor = ThemeEditor::open(name, builtin, dark, file);
+    if state.theme_prev.is_none() {
+        state.theme_prev = Some((state.dark, state.theme, state.syntax_theme));
+    }
+    state.dark = dark;
+    state.theme = editor.theme();
+    state.modal = Some(Modal::ThemeEditor(editor));
 }
 
 /// Every key that moves the `/theme` picker's selection previews that row.
@@ -1751,16 +1939,23 @@ fn agents_rows(
     agents: &[Presence],
     tasks: &[(TaskId, String, Tier, u64, Option<String>)],
     tick: u64,
+    worktree_glyph: &str,
 ) -> Vec<(String, Option<SessionId>)> {
     let mut rows: Vec<(String, Option<SessionId>)> = agents
         .iter()
         .map(|a| {
-            let text = crate::text::sanitize(&format!(
+            let mut text = format!(
                 "{} · preset - · tier - · cost - · elapsed - · {}",
                 a.session,
                 a.status.name()
-            ));
-            (text, Some(a.session))
+            );
+            // T44.3: which worktree the session holds, by its directory name
+            // (the full path is the project's `_worktrees/` prefix again),
+            // behind the status line's worktree glyph.
+            if let Some(name) = a.worktree.as_deref().and_then(std::path::Path::file_name) {
+                text.push_str(&format!(" · {worktree_glyph} {}", name.to_string_lossy()));
+            }
+            (crate::text::sanitize(&text), Some(a.session))
         })
         .collect();
     rows.extend(tasks.iter().map(|(_, label, tier, started, last)| {
@@ -1849,11 +2044,9 @@ fn declare_plugin_commands(state: &mut State, plugin: &str, commands: &[CommandD
 /// fails open like a missed render: nothing happens, nothing is shown.
 fn plugin_command_out(state: &mut State, plugin: &str, out: Option<CommandOut>) -> Vec<Cmd> {
     match out {
-        Some(CommandOut::Prompt { text }) => vec![Cmd::Submit(Submission::UserTurn {
-            text: crate::text::sanitize(&text),
-            attachments: Vec::new(),
-            confirm_think: false,
-        })],
+        Some(CommandOut::Prompt { text }) => {
+            vec![Cmd::Submit(user_turn(state, crate::text::sanitize(&text)))]
+        }
         Some(CommandOut::Compact { focus }) => vec![Cmd::Submit(Submission::Compact {
             focus: focus.map(|f| crate::text::sanitize(&f)),
         })],
@@ -1910,6 +2103,7 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
             let text = commands::help(&state.keymap);
             notice(state, Level::Info, text);
         }
+        Action::Context => state.modal = Some(Modal::Context),
         Action::Cost => {
             let s = &state.status;
             let text = format!(
@@ -1938,7 +2132,12 @@ fn act(state: &mut State, action: Action) -> Vec<Cmd> {
         // T27.5: an empty list stays the T27.2 `Notice` (nothing to
         // navigate); otherwise `/agents` opens the navigable overlay.
         Action::Agents => {
-            let entries = agents_rows(&state.agents, &state.tasks, state.tick);
+            let entries = agents_rows(
+                &state.agents,
+                &state.tasks,
+                state.tick,
+                state.glyphs.worktree,
+            );
             if entries.is_empty() {
                 notice(state, Level::Info, "no live agents".to_string());
             } else {
@@ -2162,8 +2361,9 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 done: false,
                 render: ItemRender::Builtin,
             }),
-            // A signed empty block is Gemini's replay token, not something the
-            // model said; an unsigned empty one is a live stream awaiting deltas.
+            // T39.2 keeps a tool call's signature as an empty signed item
+            // for the provider's history: a replay token, not something the
+            // model said. A streamed thought also starts empty, but unsigned.
             ItemKind::Thinking {
                 text,
                 signature: Some(_),
@@ -2186,6 +2386,9 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 t.push_str(&text);
             }
         }
+        // The desktop's fold header shows the duration (A91); the TUI's
+        // thinking cell has no header to put it in.
+        Event::ThinkingDone { .. } => {}
         Event::ItemDone { item } => {
             if let Some(Cell::Assistant { done, .. } | Cell::Thinking { done, .. }) =
                 state.item_mut(item)
@@ -2221,7 +2424,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
             }) = state.tool_mut(call_id)
             {
                 if call.name == "todo" && result.ok {
-                    todo = Some(parse_todo(&result.visible));
+                    todo = result.todo_list();
                 }
                 *r = Some(result);
             }
@@ -2235,11 +2438,7 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 state.shell_call = None;
                 state.status.busy = false;
                 if let Some(text) = state.queue.pop_front() {
-                    cmds.push(Cmd::Submit(Submission::UserTurn {
-                        text,
-                        attachments: Vec::new(),
-                        confirm_think: false,
-                    }));
+                    cmds.push(Cmd::Submit(user_turn(state, text)));
                 }
             }
         }
@@ -2278,17 +2477,36 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 state.status.model = to.to_string();
             }
         }
+        // T22.1, DT G4: `ask_user` (or a subagent's, T34.3) waits in a modal.
+        Event::QuestionAsked {
+            call_id,
+            question,
+            options,
+            source,
+        } => {
+            cmds = notify(state, format!("question: {question}"));
+            state.modal = Some(Modal::Question(
+                Question::new(call_id, question, options).from_agent(source.and_then(|s| s.agent)),
+            ));
+        }
+        // The core's word on mode and effort replaces what a key or a
+        // slash command set ahead of it (DT G5).
+        Event::StateChanged { mode, effort } => {
+            state.mode = mode;
+            state.status.effort = effort;
+        }
+        // A113: the status line shows it; the sessions picker reads the store.
+        Event::TitleSet { title, .. } => state.title = Some(title),
+        // A98: the status line's share and the `/context` overlay.
+        Event::ContextBreakdown { breakdown, .. } => {
+            if let Some(window) = breakdown.window.filter(|w| *w > 0) {
+                state.status.context_window = window;
+            }
+            state.status.context = Some(breakdown);
+        }
         // T33.20: the `TurnStarted` that follows already carries the
         // advised tier and model, so the status line needs nothing more.
         Event::Advised { .. } => {}
-        // T50.2: the rollout's record of a mode change; `set_mode` already
-        // updated the status line when the TUI sent it.
-        Event::PermissionModeChanged { .. } => {}
-        // Resume replays this without a local `set_mode`. The permission
-        // mode is the gate the status line shows.
-        Event::ModeChanged { permission_mode, .. } => {
-            state.mode = permission_mode;
-        }
         Event::TaskCreated { task, label, tier } => {
             state.tasks.push((task, label, tier, state.tick, None));
         }
@@ -2355,7 +2573,14 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 state.turns.truncate(at);
             }
         }
-        Event::SessionStarted { .. } | Event::Compacted { .. } => {}
+        Event::ModeChanged {
+            mode,
+            permission_mode,
+        } => mode_changed(state, mode, permission_mode),
+        Event::SessionStarted { .. }
+        | Event::Compacted { .. }
+        | Event::GrantRevoked { .. }
+        | Event::RepoMapBuilt { .. } => {}
     }
     cmds
 }
@@ -2377,11 +2602,7 @@ fn turn_done_cmds(state: &mut State, stop: StopReason) -> Vec<Cmd> {
         _ => state.queue.pop_front(),
     };
     match text {
-        Some(text) => vec![Cmd::Submit(Submission::UserTurn {
-            text,
-            attachments: Vec::new(),
-            confirm_think: false,
-        })],
+        Some(text) => vec![Cmd::Submit(user_turn(state, text))],
         None => Vec::new(),
     }
 }
@@ -2409,10 +2630,73 @@ fn loop_tick(state: &mut State) -> Vec<Cmd> {
         lp.next_at = state.tick + interval_ticks;
         lp.iterations += 1;
     }
-    vec![Cmd::Submit(Submission::UserTurn {
-        text: prompt,
+    vec![Cmd::Submit(user_turn(state, prompt))]
+}
+
+/// A user turn from any TUI source. In architect it carries the think
+/// consent the user gave once for the stretch (P42, invariant 9); anywhere
+/// else `confirm_think` would move the turn to think, so it stays off.
+fn user_turn(state: &State, text: String) -> Submission {
+    Submission::UserTurn {
+        text,
         attachments: Vec::new(),
-        confirm_think: false,
+        confirm_think: state.session_mode == SessionMode::Architect && state.think_confirmed,
+    }
+}
+
+/// `Event::ModeChanged` (P42): the core's word on the mode. Entering
+/// architect asks the think price once per stretch, reusing the `ask_user`
+/// modal; leaving it forgets the answer, so the next stretch asks again.
+fn mode_changed(state: &mut State, mode: SessionMode, permission_mode: PermissionMode) {
+    state.mode = permission_mode;
+    state.session_mode = mode;
+    if mode != SessionMode::Architect {
+        state.think_confirmed = false;
+        return;
+    }
+    let asking = matches!((&state.modal, state.think_consent),
+        (Some(Modal::Question(q)), Some(id)) if q.call == id);
+    if state.think_confirmed || asking {
+        return;
+    }
+    let question = format!(
+        "architect mode runs main turns on the think tier ({}); use it?",
+        cox_core::router::THINK_PRICE
+    );
+    if state.modal.is_none() {
+        let id = CallId::new();
+        state.think_consent = Some(id);
+        state.modal = Some(Modal::Question(Question::new(
+            id,
+            question,
+            vec!["yes".into(), "no".into()],
+        )));
+    } else {
+        // The one modal slot is taken: the first turn's refusal names the
+        // price instead, and `/mode architect` asks again.
+        notice(
+            state,
+            Level::Warn,
+            "architect: think price not confirmed yet; run /mode architect again".into(),
+        );
+    }
+}
+
+/// The think-price question's answer (P42). Yes confirms think for the
+/// rest of this architect stretch; anything else leaves architect.
+fn think_consent_answered(state: &mut State, answer: QuestionAnswer) -> Vec<Cmd> {
+    state.think_consent = None;
+    let yes = matches!(&answer, QuestionAnswer::Text(t)
+        if matches!(t.trim().to_ascii_lowercase().as_str(), "y" | "yes"));
+    if yes {
+        state.think_confirmed = true;
+        return Vec::new();
+    }
+    vec![Cmd::Submit(Submission::Command {
+        command: SlashCommand {
+            name: "mode".into(),
+            args: vec!["editor".into()],
+        },
     })]
 }
 
@@ -2422,7 +2706,7 @@ mod tests {
     use crate::theme;
     use cox_core::{History, HistoryTurn};
     use cox_protocol::ids::TurnId;
-    use cox_protocol::types::{Content, Message, Mode, PermissionMode, Role, SandboxMode};
+    use cox_protocol::types::{Content, Message, PermissionMode, Role, SandboxMode};
     use crossterm::event::{KeyCode, KeyEvent};
 
     /// Types `text` into the composer and submits it with a plain `Enter`,
@@ -2439,8 +2723,14 @@ mod tests {
     /// composer, so — as `clear_command_emits_cmd_clear` established — `Esc`
     /// closes the palette without losing it, then the rest types normally.
     fn type_command(state: &mut State, line: &str) -> Vec<Cmd> {
-        let rest = line.strip_prefix('/').unwrap_or(line);
-        update(state, Msg::Key(KeyEvent::from(KeyCode::Char('/'))));
+        type_after_sigil(state, '/', line)
+    }
+
+    /// `line` after the picker its leading `sigil` opens was closed with
+    /// `Esc`, which keeps the sigil in the composer; then `Enter`.
+    fn type_after_sigil(state: &mut State, sigil: char, line: &str) -> Vec<Cmd> {
+        let rest = line.strip_prefix(sigil).unwrap_or(line);
+        update(state, Msg::Key(KeyEvent::from(KeyCode::Char(sigil))));
         update(state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
         for c in rest.chars() {
             update(state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
@@ -2448,49 +2738,40 @@ mod tests {
         update(state, Msg::Key(KeyEvent::from(KeyCode::Enter)))
     }
 
+    /// T45.6: `@<agent> task` at line start runs that agent directly.
     #[test]
-    fn a_mode_change_event_sets_the_permission_mode_it_resolved_to() {
+    fn at_agent_name_submits_user_agent() {
         let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
-        update(
-            &mut state,
-            Msg::Event(Event::ModeChanged {
-                mode: Mode::Architect,
-                permission_mode: PermissionMode::Plan,
-            }),
+        state.agent_names = vec!["explore".into(), "reviewer".into()];
+        let cmds = type_after_sigil(&mut state, '@', "@explore find the router");
+        assert_eq!(
+            cmds,
+            vec![Cmd::Submit(Submission::UserAgent {
+                name: "explore".into(),
+                task: "find the router".into(),
+            })]
         );
-        assert_eq!(state.mode, PermissionMode::Plan);
     }
 
+    /// T45.6: an `@file` mention, an unknown name and a bare agent name
+    /// with no task all stay ordinary user turns.
     #[test]
-    fn empty_signed_thinking_draws_no_cell() {
-        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
-        let signed = ItemId::new();
-        update(
-            &mut state,
-            Msg::Event(Event::ItemStarted {
-                item: signed,
-                kind: ItemKind::Thinking {
-                    text: String::new(),
-                    signature: Some("sig".into()),
-                },
-            }),
-        );
-        update(&mut state, Msg::Event(Event::ItemDone { item: signed }));
-        assert!(state.transcript.is_empty());
-
-        // An unsigned block starts empty too and fills from deltas.
-        let live = ItemId::new();
-        update(
-            &mut state,
-            Msg::Event(Event::ItemStarted {
-                item: live,
-                kind: ItemKind::Thinking {
-                    text: String::new(),
-                    signature: None,
-                },
-            }),
-        );
-        assert_eq!(state.transcript.len(), 1);
+    fn at_file_path_stays_a_user_turn() {
+        for line in ["@src/main.rs explain it", "@nope do it", "@explore"] {
+            let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+            state.agent_names = vec!["explore".into()];
+            state.files = vec!["src/main.rs".into()];
+            let cmds = type_after_sigil(&mut state, '@', line);
+            assert_eq!(
+                cmds,
+                vec![Cmd::Submit(Submission::UserTurn {
+                    text: line.into(),
+                    attachments: Vec::new(),
+                    confirm_think: false,
+                })],
+                "{line}"
+            );
+        }
     }
 
     #[test]
@@ -2515,6 +2796,7 @@ mod tests {
             permission_mode: None,
             grants: Vec::new(),
             truncated: false,
+            repomap: None,
             turns: 4,
             turn_marks: vec![HistoryTurn {
                 item: ItemId::new(),
@@ -2620,6 +2902,121 @@ mod tests {
             "Esc restores the theme active before the picker opened"
         );
         assert!(state.modal.is_none());
+    }
+
+    /// `/theme` open over the two plain built-ins and one syntax row.
+    fn theme_picker_open() -> State {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        state.theme_rows = vec![
+            "cox-dark".into(),
+            "cox-light".into(),
+            "syntax: base16".into(),
+        ];
+        state.theme_catalog = theme::BUILT_IN_THEMES[..2]
+            .iter()
+            .map(|(name, src)| ((*name).to_string(), theme::parse_theme_file(src).unwrap()))
+            .collect();
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char('/'))));
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
+        for c in "theme".chars() {
+            update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
+        }
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
+        state
+    }
+
+    fn ctrl_e() -> Msg {
+        Msg::Key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL))
+    }
+
+    /// T46.7: `Ctrl+E` is `expand` elsewhere; over `/theme` it opens the
+    /// editor on the highlighted row, and the editor's `Esc` restores what
+    /// was drawn before `/theme` opened.
+    #[test]
+    fn ctrl_e_opens_the_editor_on_the_highlighted_theme() {
+        let mut state = theme_picker_open();
+        let drawn = state.theme_prev.expect("/theme saved what was drawn");
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Down)));
+        update(&mut state, ctrl_e());
+        match &state.modal {
+            Some(Modal::ThemeEditor(e)) => {
+                assert_eq!(e.name, "cox-light");
+                assert!(e.builtin);
+            }
+            other => panic!("expected the theme editor, got {other:?}"),
+        }
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
+        assert_eq!(state.modal, None);
+        assert_eq!((state.dark, state.theme, state.syntax_theme), drawn);
+    }
+
+    /// T46.7: a built-in is never written in place; its edits go to
+    /// `<name>-custom`, each token as the text a theme file holds.
+    #[test]
+    fn editor_save_emits_save_theme_with_custom_stem_for_builtin() {
+        let mut state = theme_picker_open();
+        update(&mut state, ctrl_e());
+        let dark = match &state.modal {
+            Some(Modal::ThemeEditor(e)) => e.dark,
+            other => panic!("expected the theme editor, got {other:?}"),
+        };
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Down)));
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Down)));
+        for _ in 0..16 {
+            update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Backspace)));
+        }
+        for c in "#ff0000".chars() {
+            update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
+        }
+        assert_eq!(
+            state.theme.accent,
+            ratatui::style::Color::Rgb(255, 0, 0),
+            "the preview follows the edit"
+        );
+        let cmds = update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
+        assert_eq!(
+            cmds,
+            vec![Cmd::Ask(Ask::SaveTheme {
+                stem: "cox-dark-custom".into(),
+                dark,
+                tokens: vec![("accent".into(), "#ff0000".into())],
+            })]
+        );
+        assert_eq!(state.modal, None);
+    }
+
+    /// T46.7: the runtime's answer lists the new file among the colour
+    /// themes (before the `syntax: ` rows), applies it and persists it.
+    #[test]
+    fn saved_theme_is_selectable_without_restart() {
+        let mut state = theme_picker_open();
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
+        let src = theme::builtin_source("cox-dark").unwrap();
+        let src =
+            theme::set_token(src, "accent", true, ratatui::style::Color::Rgb(1, 2, 3)).unwrap();
+        let file = theme::parse_theme_file(&src).unwrap();
+        let cmds = update(
+            &mut state,
+            Msg::ThemeSaved("cox-dark-custom".into(), file.clone()),
+        );
+        assert_eq!(
+            state.theme_rows,
+            vec!["cox-dark", "cox-light", "cox-dark-custom", "syntax: base16"]
+        );
+        assert!(
+            state
+                .theme_catalog
+                .iter()
+                .any(|(n, f)| n == "cox-dark-custom" && *f == file)
+        );
+        assert_eq!(state.theme, file.theme(state.dark));
+        assert_eq!(
+            cmds,
+            vec![Cmd::PersistConfig {
+                key: "tui.theme".into(),
+                value: "cox-dark-custom".into(),
+            }]
+        );
     }
 
     /// T33.30's Done-when: `/plugin new <name>` with no `--lang` opens the
@@ -3070,12 +3467,12 @@ mod tests {
         assert!(
             matches!(&cmds[..], [Cmd::Notify { body, .. }] if body == "approval: bash cargo test")
         );
-        let question = Msg::Question {
-            call: CallId::new(),
+        let question = Msg::Event(Event::QuestionAsked {
+            call_id: CallId::new(),
             question: "which?".into(),
             options: Vec::new(),
-            agent: None,
-        };
+            source: None,
+        });
         assert!(rings(&update(&mut state, question)));
 
         update(&mut state, Msg::Focus(true));
@@ -3263,6 +3660,7 @@ mod tests {
                     bytes: 0,
                     duration_ms: 8,
                     diff: None,
+                    structured: None,
                 },
             }),
         );
@@ -3356,5 +3754,127 @@ mod tests {
         empty.caps.osc52 = true;
         let shift_y = Msg::Key(KeyEvent::new(KeyCode::Char('Y'), KeyModifiers::SHIFT));
         assert_eq!(update(&mut empty, shift_y), Vec::new());
+    }
+
+    /// A98: `Event::ContextBreakdown` sets the window `ctx N%` divides by
+    /// and keeps the split; one with no window leaves the last known one,
+    /// and `/context` opens the overlay without asking the core.
+    #[test]
+    fn context_breakdown_sets_the_window_and_the_split() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        let event = |window| {
+            Msg::Event(Event::ContextBreakdown {
+                turn: TurnId::new(),
+                breakdown: ContextBreakdown {
+                    window,
+                    total: 50_000,
+                    system: 5_000,
+                    tools: 20_000,
+                    instructions: 1_000,
+                    history: 24_000,
+                    cached: 0,
+                },
+            })
+        };
+        update(&mut state, event(Some(1_000_000)));
+        assert_eq!(state.status.context_window, 1_000_000);
+        assert_eq!(state.status.context_used(), 50_000, "estimate before usage");
+        update(&mut state, event(None));
+        assert_eq!(state.status.context_window, 1_000_000);
+        assert_eq!(state.status.context.and_then(|b| b.window), None);
+        assert_eq!(type_command(&mut state, "/context"), Vec::new());
+        assert_eq!(state.modal, Some(Modal::Context));
+        update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Esc)));
+        assert_eq!(state.modal, None);
+    }
+
+    #[test]
+    fn empty_signed_thinking_draws_no_cell() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        let before = state.transcript.len();
+        let signed = ItemId::new();
+        let kind = ItemKind::Thinking {
+            text: String::new(),
+            signature: Some("sig".into()),
+        };
+        update(
+            &mut state,
+            Msg::Event(Event::ItemStarted { item: signed, kind }),
+        );
+        update(&mut state, Msg::Event(Event::ItemDone { item: signed }));
+        assert_eq!(state.transcript.len(), before);
+
+        // A streamed thought starts empty too, but unsigned: it keeps its cell.
+        let streamed = ItemId::new();
+        let kind = ItemKind::Thinking {
+            text: String::new(),
+            signature: None,
+        };
+        update(
+            &mut state,
+            Msg::Event(Event::ItemStarted {
+                item: streamed,
+                kind,
+            }),
+        );
+        assert!(matches!(
+            state.transcript.last(),
+            Some(Cell::Thinking { item, .. }) if *item == streamed
+        ));
+    }
+
+    /// P42: entering architect asks the think price once; a yes rides on
+    /// every architect turn, a repeat `/mode architect` does not ask again,
+    /// leaving forgets it, and a no sends `/mode editor`.
+    #[test]
+    fn architect_confirmation_is_asked_once() {
+        let key = |c| Msg::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        let architect = Event::ModeChanged {
+            mode: SessionMode::Architect,
+            permission_mode: PermissionMode::Plan,
+        };
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        update(&mut state, Msg::Event(architect.clone()));
+        assert!(matches!(state.modal, Some(Modal::Question(_))));
+        assert_eq!(state.mode, PermissionMode::Plan);
+        // `1` picks "yes"; the answer never reaches the core.
+        assert_eq!(update(&mut state, key('1')), Vec::new());
+        assert!(state.modal.is_none());
+        let confirmed = |state: &State| {
+            matches!(
+                user_turn(state, "go".into()),
+                Submission::UserTurn {
+                    confirm_think: true,
+                    ..
+                }
+            )
+        };
+        assert!(confirmed(&state));
+
+        update(&mut state, Msg::Event(architect.clone()));
+        assert!(state.modal.is_none(), "asked once per stretch");
+
+        update(
+            &mut state,
+            Msg::Event(Event::ModeChanged {
+                mode: SessionMode::Editor,
+                permission_mode: PermissionMode::Default,
+            }),
+        );
+        assert!(!confirmed(&state), "editor turns never confirm think");
+
+        update(&mut state, Msg::Event(architect));
+        assert!(matches!(state.modal, Some(Modal::Question(_))));
+        // `2` picks "no": leave architect.
+        assert_eq!(
+            update(&mut state, key('2')),
+            vec![Cmd::Submit(Submission::Command {
+                command: SlashCommand {
+                    name: "mode".into(),
+                    args: vec!["editor".into()],
+                },
+            })]
+        );
+        assert!(!confirmed(&state));
     }
 }

@@ -6,10 +6,14 @@
 //! asserts no other crate depends on `diesel`.
 
 pub mod fts;
+pub mod lock;
 mod models;
 pub mod queries;
 mod rollout;
 pub mod schema;
+mod watch;
+
+pub use watch::ChangeToken;
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -33,8 +37,10 @@ use cox_protocol::{
 use cox_protocol::traits::{KV_PLUGIN_LIMIT, KV_VALUE_LIMIT};
 
 use models::{
-    CheckpointDbRow, NewArchive, NewMemory, NewSession, PluginGrantDbRow, PluginKvDbRow, UsageDbRow,
+    CheckpointDbRow, NewArchive, NewMemory, NewSession, PluginGrantDbRow, PluginKvDbRow,
+    SessionAgentDb, UsageDbRow,
 };
+use queries::LedgerRow;
 use rollout::RolloutWriter;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations");
@@ -54,6 +60,9 @@ pub struct Store {
     home: PathBuf,
     conn: Mutex<SqliteConnection>,
     rollouts: Mutex<HashMap<SessionId, RolloutWriter>>,
+    /// The sessions this store drives (T37.34), held while it lives: the
+    /// session that writes through it keeps it alive.
+    locks: Mutex<Vec<lock::SessionLock>>,
 }
 
 impl Store {
@@ -66,8 +75,37 @@ impl Store {
             .unwrap_or_else(|| PathBuf::from(".cox"))
     }
 
+    /// T37.34: makes this store the one writer of session `id`'s rollout
+    /// for as long as it lives, or names the process that already is.
+    /// `None` means claimed.
+    pub fn claim_session(
+        &self,
+        id: &SessionId,
+        surface: &str,
+    ) -> Result<Option<lock::Holder>, StoreError> {
+        match lock::claim(&self.sessions_dir(), id, surface)? {
+            Ok(held) => {
+                self.locks.lock().map_err(|_| StoreError::Io)?.push(held);
+                Ok(None)
+            }
+            Err(holder) => Ok(Some(holder)),
+        }
+    }
+
+    /// T37.10: the process driving session `id`, when it is another one;
+    /// probes without claiming (`lock::holder`).
+    pub fn session_holder(&self, id: &SessionId) -> Result<Option<lock::Holder>, StoreError> {
+        lock::holder(&self.sessions_dir(), id)
+    }
+
     fn sessions_dir(&self) -> PathBuf {
         self.home.join("sessions")
+    }
+
+    /// Where session `id`'s JSONL rollout lives, whether or not it exists
+    /// yet; the desktop inspector shows it (T37.29.5).
+    pub fn rollout_path(&self, id: &SessionId) -> PathBuf {
+        self.sessions_dir().join(format!("{id}.jsonl"))
     }
 
     fn archive_dir(&self) -> PathBuf {
@@ -121,8 +159,10 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 /// Serializes a fieldless/transparent `cox_protocol` type (`Job`, `Tier`,
 /// `ProviderId`) to the bare snake_case string its `serde` derive already
 /// produces, so the ledger's text columns stay in lock-step with the wire
-/// format instead of a hand-maintained second mapping.
-fn to_tag<T: serde::Serialize>(value: &T) -> String {
+/// format instead of a hand-maintained second mapping. `pub` so the
+/// desktop's cost history (T37.29.3.2) names a tier or job as the ledger
+/// stores it.
+pub fn to_tag<T: serde::Serialize>(value: &T) -> String {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(s)) => s,
         _ => String::new(),
@@ -156,6 +196,83 @@ fn scope_from_text(s: &str) -> Option<GrantScope> {
     }
 }
 
+/// The error a write transaction's closure hands back to Diesel's
+/// transaction manager. `immediate_transaction` needs
+/// `E: From<diesel::result::Error>` (for a failing `BEGIN`/`COMMIT`), which
+/// `StoreError` cannot implement: `cox-protocol` has no Diesel dependency.
+struct TxError(StoreError);
+
+impl From<diesel::result::Error> for TxError {
+    fn from(_: diesel::result::Error) -> Self {
+        Self(StoreError::Sqlite)
+    }
+}
+
+/// Runs a write that reads first, or spans several statements, under
+/// `BEGIN IMMEDIATE` (T37.35). The write lock is taken before the first
+/// read, so a commit by another process (the app beside the TUI) makes
+/// `BEGIN` wait up to `busy_timeout` instead of the read going stale or a
+/// deferred transaction's upgrade failing with `SQLITE_BUSY_SNAPSHOT`; and
+/// the statements commit together or not at all. A single `INSERT`,
+/// `UPDATE` or `DELETE` is atomic on its own and stays in autocommit.
+fn write_tx<T>(
+    conn: &mut SqliteConnection,
+    body: impl FnOnce(&mut SqliteConnection) -> Result<T, StoreError>,
+) -> Result<T, StoreError> {
+    conn.immediate_transaction(|c| body(c).map_err(TxError))
+        .map_err(|TxError(e)| e)
+}
+
+/// Fails with `SchemaNewer` if `cox.db` records a migration this binary
+/// does not embed (T37.36): a newer `cox` migrated it, and running this
+/// one's queries or pending migrations against that schema could corrupt
+/// it. Runs before any migration, inside the same write transaction.
+fn refuse_newer_schema(conn: &mut SqliteConnection) -> Result<(), StoreError> {
+    let applied = conn
+        .applied_migrations()
+        .map_err(|_| StoreError::Migrate { from: 0, to: 1 })?;
+    let embedded: Vec<String> =
+        diesel::migration::MigrationSource::<diesel::sqlite::Sqlite>::migrations(&MIGRATIONS)
+            .map_err(|_| StoreError::Migrate { from: 0, to: 1 })?
+            .iter()
+            .map(|m| m.name().version().to_string())
+            .collect();
+    let unknown = applied
+        .iter()
+        .map(ToString::to_string)
+        .filter(|v| !embedded.contains(v))
+        .max();
+    match unknown {
+        Some(db) => Err(StoreError::SchemaNewer {
+            db,
+            binary: embedded.into_iter().max().unwrap_or_default(),
+        }),
+        None => Ok(()),
+    }
+}
+
+/// Switches `cox.db` to WAL. The switch needs an exclusive lock, and SQLite
+/// skips the busy handler when two connections both hold a shared lock and
+/// wait to upgrade (it would deadlock), so a second process opening a fresh
+/// file at the same moment gets "database is locked" at once despite
+/// `busy_timeout`. Retry within the same 5 s budget; WAL persists in the
+/// file, so only the very first opens can contend here.
+fn enable_wal(conn: &mut SqliteConnection) -> Result<(), StoreError> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        match conn.batch_execute("PRAGMA journal_mode = WAL;") {
+            Ok(()) => return Ok(()),
+            Err(diesel::result::Error::DatabaseError(_, info))
+                if info.message() == "database is locked"
+                    && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Err(_) => return Err(StoreError::Open),
+        }
+    }
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
@@ -186,18 +303,26 @@ impl StoreTrait for Store {
         let mut conn = SqliteConnection::establish(&db_path.to_string_lossy())
             .map_err(|_| StoreError::Open)?;
 
-        conn.batch_execute(
-            "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;",
-        )
-        .map_err(|_| StoreError::Open)?;
+        conn.batch_execute("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;")
+            .map_err(|_| StoreError::Open)?;
+        enable_wal(&mut conn)?;
 
-        conn.run_pending_migrations(MIGRATIONS)
-            .map_err(|_| StoreError::Migrate { from: 0, to: 1 })?;
+        // Reading the applied versions and then migrating is a read-then-write:
+        // two processes opening an older `cox.db` at once would both find the
+        // same migration pending. Diesel nests each migration's own
+        // transaction as a savepoint inside this one.
+        write_tx(&mut conn, |c| {
+            refuse_newer_schema(c)?;
+            c.run_pending_migrations(MIGRATIONS)
+                .map(|_| ())
+                .map_err(|_| StoreError::Migrate { from: 0, to: 1 })
+        })?;
 
         Ok(Self {
             home: home.to_path_buf(),
             conn: Mutex::new(conn),
             rollouts: Mutex::new(HashMap::new()),
+            locks: Mutex::new(Vec::new()),
         })
     }
 
@@ -229,7 +354,7 @@ impl StoreTrait for Store {
         let writer = match writers.entry(*id) {
             Entry::Occupied(o) => o.into_mut(),
             Entry::Vacant(v) => {
-                let path = self.sessions_dir().join(format!("{id}.jsonl"));
+                let path = self.rollout_path(id);
                 let w = RolloutWriter::open(&path).map_err(|_| StoreError::Io)?;
                 v.insert(w)
             }
@@ -238,8 +363,18 @@ impl StoreTrait for Store {
             .append(now_rfc3339(), ev)
             .map_err(|_| StoreError::Io)?;
         drop(writers);
-        if matches!(ev, Event::TurnDone { .. }) {
-            self.finish_session_turn(id)?;
+        match ev {
+            Event::TurnDone { .. } => self.finish_session_turn(id)?,
+            // A113: the core's generated title, or a rename (T37.22.9).
+            Event::TitleSet { title, by_user } => {
+                let source = if *by_user {
+                    TitleSource::User
+                } else {
+                    TitleSource::Auto
+                };
+                self.session_title_set(id, title, source)?;
+            }
+            _ => {}
         }
         Ok(seq)
     }
@@ -394,57 +529,59 @@ impl StoreTrait for Store {
         // The FTS row carries the memory row's rowid explicitly, so the
         // `memory_search` join lines up on re-saves as well as first saves.
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
-        let existing: Option<i32> = schema::memory::table
-            .filter(schema::memory::project_slug.eq(project))
-            .filter(schema::memory::name.eq(name))
-            .select(schema::memory::id)
-            .first(&mut *conn)
-            .optional()
-            .map_err(|_| StoreError::Sqlite)?;
-        let rowid = match existing {
-            Some(id) => {
-                diesel::update(schema::memory::table.filter(schema::memory::id.eq(id)))
-                    .set((
-                        schema::memory::path.eq(path),
-                        schema::memory::kind.eq(kind),
-                        schema::memory::updated_at.eq(now_rfc3339()),
+        write_tx(&mut conn, |conn| {
+            let existing: Option<i32> = schema::memory::table
+                .filter(schema::memory::project_slug.eq(project))
+                .filter(schema::memory::name.eq(name))
+                .select(schema::memory::id)
+                .first(&mut *conn)
+                .optional()
+                .map_err(|_| StoreError::Sqlite)?;
+            let rowid = match existing {
+                Some(id) => {
+                    diesel::update(schema::memory::table.filter(schema::memory::id.eq(id)))
+                        .set((
+                            schema::memory::path.eq(path),
+                            schema::memory::kind.eq(kind),
+                            schema::memory::updated_at.eq(now_rfc3339()),
+                        ))
+                        .execute(&mut *conn)
+                        .map_err(|_| StoreError::Sqlite)?;
+                    diesel::sql_query("DELETE FROM memory_fts WHERE rowid = ?")
+                        .bind::<diesel::sql_types::BigInt, _>(i64::from(id))
+                        .execute(&mut *conn)
+                        .map_err(|_| StoreError::Sqlite)?;
+                    i64::from(id)
+                }
+                None => {
+                    diesel::insert_into(schema::memory::table)
+                        .values(&NewMemory {
+                            project_slug: project.to_string(),
+                            name: name.to_string(),
+                            path: path.to_string(),
+                            kind: kind.to_string(),
+                            updated_at: now_rfc3339(),
+                        })
+                        .execute(&mut *conn)
+                        .map_err(|_| StoreError::Sqlite)?;
+                    diesel::select(diesel::dsl::sql::<diesel::sql_types::BigInt>(
+                        "last_insert_rowid()",
                     ))
-                    .execute(&mut *conn)
-                    .map_err(|_| StoreError::Sqlite)?;
-                diesel::sql_query("DELETE FROM memory_fts WHERE rowid = ?")
-                    .bind::<diesel::sql_types::BigInt, _>(i64::from(id))
-                    .execute(&mut *conn)
-                    .map_err(|_| StoreError::Sqlite)?;
-                i64::from(id)
-            }
-            None => {
-                diesel::insert_into(schema::memory::table)
-                    .values(&NewMemory {
-                        project_slug: project.to_string(),
-                        name: name.to_string(),
-                        path: path.to_string(),
-                        kind: kind.to_string(),
-                        updated_at: now_rfc3339(),
-                    })
-                    .execute(&mut *conn)
-                    .map_err(|_| StoreError::Sqlite)?;
-                diesel::select(diesel::dsl::sql::<diesel::sql_types::BigInt>(
-                    "last_insert_rowid()",
-                ))
-                .get_result(&mut *conn)
-                .map_err(|_| StoreError::Sqlite)?
-            }
-        };
-        diesel::sql_query(
-            "INSERT INTO memory_fts(rowid, name, body, project_slug) VALUES(?,?,?,?)",
-        )
-        .bind::<diesel::sql_types::BigInt, _>(rowid)
-        .bind::<diesel::sql_types::Text, _>(name)
-        .bind::<diesel::sql_types::Text, _>(body)
-        .bind::<diesel::sql_types::Text, _>(project)
-        .execute(&mut *conn)
-        .map_err(|_| StoreError::Sqlite)?;
-        Ok(())
+                    .get_result(&mut *conn)
+                    .map_err(|_| StoreError::Sqlite)?
+                }
+            };
+            diesel::sql_query(
+                "INSERT INTO memory_fts(rowid, name, body, project_slug) VALUES(?,?,?,?)",
+            )
+            .bind::<diesel::sql_types::BigInt, _>(rowid)
+            .bind::<diesel::sql_types::Text, _>(name)
+            .bind::<diesel::sql_types::Text, _>(body)
+            .bind::<diesel::sql_types::Text, _>(project)
+            .execute(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+            Ok(())
+        })
     }
 
     fn rollout_index(&self, session: &SessionId, turn: u32, text: &str) -> Result<(), StoreError> {
@@ -470,40 +607,11 @@ impl StoreTrait for Store {
     }
 
     fn checkpoint_list(&self, session: &SessionId) -> Result<Vec<CheckpointRow>, StoreError> {
-        let rows: Vec<CheckpointDbRow> = {
-            let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
-            schema::checkpoints::table
-                .filter(schema::checkpoints::session_id.eq(session.to_string()))
-                .order(schema::checkpoints::id.asc())
-                .select(CheckpointDbRow::as_select())
-                .load(&mut *conn)
-                .map_err(|_| StoreError::Sqlite)?
-        };
-        // A tag or id that no longer parses is a corrupt row, not a
-        // defaultable one — same stance as `usage_for_session`.
-        let corrupt = || StoreError::Corrupt {
-            path: self.home.join("cox.db"),
-        };
-        rows.into_iter()
-            .map(|r| {
-                Ok(CheckpointRow {
-                    session: *session,
-                    turn: r.turn as u32,
-                    call: r
-                        .call_id
-                        .as_deref()
-                        .map(|c| c.parse().map_err(|_| corrupt()))
-                        .transpose()?,
-                    path: PathBuf::from(r.path),
-                    kind: from_tag(&r.kind).ok_or_else(corrupt)?,
-                    archive: r
-                        .archive_id
-                        .as_deref()
-                        .map(|a| a.parse().map_err(|_| corrupt()))
-                        .transpose()?,
-                })
-            })
-            .collect()
+        Ok(self
+            .checkpoint_rows(session)?
+            .into_iter()
+            .map(|(row, _)| row)
+            .collect())
     }
 }
 
@@ -573,27 +681,30 @@ impl PluginStoreTrait for Store {
             decided_at: grant.decided_at.clone(),
         };
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
-        let updated = diesel::update(
-            schema::plugin_grants::table
-                .filter(schema::plugin_grants::plugin_id.eq(&row.plugin_id))
-                .filter(schema::plugin_grants::scope.eq(&row.scope))
-                .filter(schema::plugin_grants::digest.eq(&row.digest)),
-        )
-        .set((
-            schema::plugin_grants::capabilities.eq(&row.capabilities),
-            schema::plugin_grants::enabled.eq(row.enabled),
-            schema::plugin_grants::source.eq(&row.source),
-            schema::plugin_grants::decided_at.eq(&row.decided_at),
-        ))
-        .execute(&mut *conn)
-        .map_err(|_| StoreError::Sqlite)?;
-        if updated == 0 {
-            diesel::insert_into(schema::plugin_grants::table)
-                .values(&row)
-                .execute(&mut *conn)
-                .map_err(|_| StoreError::Sqlite)?;
-        }
-        Ok(())
+        // Update-else-insert: two writers must not both see "no row".
+        write_tx(&mut conn, |conn| {
+            let updated = diesel::update(
+                schema::plugin_grants::table
+                    .filter(schema::plugin_grants::plugin_id.eq(&row.plugin_id))
+                    .filter(schema::plugin_grants::scope.eq(&row.scope))
+                    .filter(schema::plugin_grants::digest.eq(&row.digest)),
+            )
+            .set((
+                schema::plugin_grants::capabilities.eq(&row.capabilities),
+                schema::plugin_grants::enabled.eq(row.enabled),
+                schema::plugin_grants::source.eq(&row.source),
+                schema::plugin_grants::decided_at.eq(&row.decided_at),
+            ))
+            .execute(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+            if updated == 0 {
+                diesel::insert_into(schema::plugin_grants::table)
+                    .values(&row)
+                    .execute(&mut *conn)
+                    .map_err(|_| StoreError::Sqlite)?;
+            }
+            Ok(())
+        })
     }
 
     fn grant_set_enabled(
@@ -646,44 +757,48 @@ impl PluginStoreTrait for Store {
             return Err(StoreError::QuotaExceeded);
         }
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
-        // Sum every other key's bytes for this plugin so a re-saved key
-        // does not double-count its own previous value against the quota.
-        let other_bytes: usize = schema::plugin_kv::table
-            .filter(schema::plugin_kv::plugin_id.eq(plugin_id))
-            .filter(schema::plugin_kv::key.ne(key))
-            .select(schema::plugin_kv::value)
-            .load::<Vec<u8>>(&mut *conn)
-            .map_err(|_| StoreError::Sqlite)?
-            .iter()
-            .map(Vec::len)
-            .sum();
-        if other_bytes + value.len() > KV_PLUGIN_LIMIT {
-            return Err(StoreError::QuotaExceeded);
-        }
-        let row = PluginKvDbRow {
-            plugin_id: plugin_id.to_string(),
-            key: key.to_string(),
-            value: value.to_vec(),
-            updated_at: now_rfc3339(),
-        };
-        let updated = diesel::update(
-            schema::plugin_kv::table
+        // The quota read and the write must see one snapshot, or two writers
+        // each pass the check and together go over.
+        write_tx(&mut conn, |conn| {
+            // Sum every other key's bytes for this plugin so a re-saved key
+            // does not double-count its own previous value against the quota.
+            let other_bytes: usize = schema::plugin_kv::table
                 .filter(schema::plugin_kv::plugin_id.eq(plugin_id))
-                .filter(schema::plugin_kv::key.eq(key)),
-        )
-        .set((
-            schema::plugin_kv::value.eq(&row.value),
-            schema::plugin_kv::updated_at.eq(&row.updated_at),
-        ))
-        .execute(&mut *conn)
-        .map_err(|_| StoreError::Sqlite)?;
-        if updated == 0 {
-            diesel::insert_into(schema::plugin_kv::table)
-                .values(&row)
-                .execute(&mut *conn)
-                .map_err(|_| StoreError::Sqlite)?;
-        }
-        Ok(())
+                .filter(schema::plugin_kv::key.ne(key))
+                .select(schema::plugin_kv::value)
+                .load::<Vec<u8>>(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?
+                .iter()
+                .map(Vec::len)
+                .sum();
+            if other_bytes + value.len() > KV_PLUGIN_LIMIT {
+                return Err(StoreError::QuotaExceeded);
+            }
+            let row = PluginKvDbRow {
+                plugin_id: plugin_id.to_string(),
+                key: key.to_string(),
+                value: value.to_vec(),
+                updated_at: now_rfc3339(),
+            };
+            let updated = diesel::update(
+                schema::plugin_kv::table
+                    .filter(schema::plugin_kv::plugin_id.eq(plugin_id))
+                    .filter(schema::plugin_kv::key.eq(key)),
+            )
+            .set((
+                schema::plugin_kv::value.eq(&row.value),
+                schema::plugin_kv::updated_at.eq(&row.updated_at),
+            ))
+            .execute(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+            if updated == 0 {
+                diesel::insert_into(schema::plugin_kv::table)
+                    .values(&row)
+                    .execute(&mut *conn)
+                    .map_err(|_| StoreError::Sqlite)?;
+            }
+            Ok(())
+        })
     }
 
     fn kv_delete(&self, plugin_id: &str, key: &str) -> Result<(), StoreError> {
@@ -707,28 +822,172 @@ impl PluginStoreTrait for Store {
     }
 }
 
+/// Who set a session's title (A113), stored in `sessions.title_source`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TitleSource {
+    /// The `title` job's answer after the first turn.
+    Auto,
+    /// A rename; an automatic title never replaces it.
+    User,
+}
+
+impl TitleSource {
+    fn tag(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::User => "user",
+        }
+    }
+}
+
+/// The external ACP agent a session is driven by (T52.6, DT§3.3.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionAgent {
+    /// The `[external_agents.<name>]` or plugin entry's name.
+    pub agent: String,
+    /// The agent's own ACP `sessionId`, which `session/load` reopens.
+    pub agent_session: Option<String>,
+}
+
 /// Public query methods for surfaces like `cox stats`.
 impl Store {
+    /// Marks session `id` as driven by `agent`, whose ACP session is
+    /// `agent_session`.
+    pub fn session_agent_set(
+        &self,
+        id: &SessionId,
+        agent: &SessionAgent,
+    ) -> Result<(), StoreError> {
+        use schema::sessions::dsl as s;
+        let row = s::sessions.filter(s::id.eq(id.to_string()));
+        let values = (
+            s::agent.eq(&agent.agent),
+            s::agent_session.eq(agent.agent_session.as_deref()),
+        );
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        diesel::update(row)
+            .set(values)
+            .execute(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+        Ok(())
+    }
+
+    /// The agent behind session `id`; `None` for a cox session, and for an
+    /// id with no row.
+    pub fn session_agent(&self, id: &SessionId) -> Result<Option<SessionAgent>, StoreError> {
+        use schema::sessions::dsl as s;
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        let row: Option<SessionAgentDb> = s::sessions
+            .filter(s::id.eq(id.to_string()))
+            .select((s::agent, s::agent_session))
+            .first(&mut *conn)
+            .optional()
+            .map_err(|_| StoreError::Sqlite)?;
+        Ok(row.and_then(|row| {
+            Some(SessionAgent {
+                agent: row.agent?,
+                agent_session: row.agent_session,
+            })
+        }))
+    }
+
+    /// Stores `title` as the session's title, set by `source`. An `Auto`
+    /// title never replaces a `User` one (A113); returns whether the row
+    /// changed.
+    pub fn session_title_set(
+        &self,
+        id: &SessionId,
+        title: &str,
+        source: TitleSource,
+    ) -> Result<bool, StoreError> {
+        use schema::sessions::dsl as s;
+        let row = s::sessions.filter(s::id.eq(id.to_string()));
+        let values = (s::title.eq(title), s::title_source.eq(source.tag()));
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        let changed = match source {
+            TitleSource::User => diesel::update(row).set(values).execute(&mut *conn),
+            TitleSource::Auto => diesel::update(
+                row.filter(
+                    s::title_source
+                        .is_null()
+                        .or(s::title_source.ne(TitleSource::User.tag())),
+                ),
+            )
+            .set(values)
+            .execute(&mut *conn),
+        }
+        .map_err(|_| StoreError::Sqlite)?;
+        Ok(changed > 0)
+    }
+
+    /// Every checkpoint row of a session in insertion order, each with its
+    /// RFC 3339 `created_at`: the desktop Changes tab shows when a turn it
+    /// can rewind to started (T37.29.1); the trait's rows carry no time.
+    pub fn checkpoint_rows(
+        &self,
+        session: &SessionId,
+    ) -> Result<Vec<(CheckpointRow, String)>, StoreError> {
+        let rows: Vec<CheckpointDbRow> = {
+            let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+            schema::checkpoints::table
+                .filter(schema::checkpoints::session_id.eq(session.to_string()))
+                .order(schema::checkpoints::id.asc())
+                .select(CheckpointDbRow::as_select())
+                .load(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?
+        };
+        // A tag or id that no longer parses is a corrupt row, not a
+        // defaultable one — same stance as `usage_for_session`.
+        let corrupt = || StoreError::Corrupt {
+            path: self.home.join("cox.db"),
+        };
+        rows.into_iter()
+            .map(|r| {
+                let row = CheckpointRow {
+                    session: *session,
+                    turn: r.turn as u32,
+                    call: r
+                        .call_id
+                        .as_deref()
+                        .map(|c| c.parse().map_err(|_| corrupt()))
+                        .transpose()?,
+                    path: PathBuf::from(r.path),
+                    kind: from_tag(&r.kind).ok_or_else(corrupt)?,
+                    archive: r
+                        .archive_id
+                        .as_deref()
+                        .map(|a| a.parse().map_err(|_| corrupt()))
+                        .transpose()?,
+                };
+                Ok((row, r.created_at))
+            })
+            .collect()
+    }
+
     /// Updates the denormalized session counters at a durable turn boundary.
     /// Usage is recorded before `TurnDone`, so the ledger is the source of
     /// truth for the stored cost rather than a second accumulator.
     fn finish_session_turn(&self, id: &SessionId) -> Result<(), StoreError> {
         let session_id = id.to_string();
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
-        let cost: Option<f64> = schema::usage::table
-            .filter(schema::usage::session_id.eq(&session_id))
-            .select(diesel::dsl::sum(schema::usage::cost_usd))
-            .first(&mut *conn)
-            .map_err(|_| StoreError::Sqlite)?;
-        diesel::update(schema::sessions::table.filter(schema::sessions::id.eq(session_id)))
-            .set((
-                schema::sessions::turns.eq(schema::sessions::turns + 1),
-                schema::sessions::cost_usd.eq(cost.unwrap_or_default()),
-                schema::sessions::updated_at.eq(now_rfc3339()),
-            ))
-            .execute(&mut *conn)
-            .map_err(|_| StoreError::Sqlite)?;
-        Ok(())
+        // The ledger sum and the counter update commit as one, so a usage row
+        // another process adds in between is not lost from `cost_usd`.
+        write_tx(&mut conn, |conn| {
+            let cost: Option<f64> = schema::usage::table
+                .filter(schema::usage::session_id.eq(&session_id))
+                .select(diesel::dsl::sum(schema::usage::cost_usd))
+                .first(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?;
+            diesel::update(schema::sessions::table.filter(schema::sessions::id.eq(session_id)))
+                .set((
+                    schema::sessions::turns.eq(schema::sessions::turns + 1),
+                    schema::sessions::cost_usd.eq(cost.unwrap_or_default()),
+                    schema::sessions::updated_at.eq(now_rfc3339()),
+                ))
+                .execute(&mut *conn)
+                .map_err(|_| StoreError::Sqlite)?;
+            Ok(())
+        })
     }
 
     /// Reads a rollout and reports whether a crash-truncated final line was
@@ -738,7 +997,7 @@ impl Store {
         &self,
         id: &SessionId,
     ) -> Result<(Vec<Event>, bool), StoreError> {
-        let path = self.sessions_dir().join(format!("{id}.jsonl"));
+        let path = self.rollout_path(id);
         rollout::read_lines(&path).map_err(|_| StoreError::Io)
     }
 
@@ -766,10 +1025,25 @@ impl Store {
     /// Every usage row for one session, in turn order — what
     /// `cox stats --session <id>` prints (T1.7).
     pub fn usage_for_session(&self, session_id: &SessionId) -> Result<Vec<UsageRow>, StoreError> {
+        let mut rows: Vec<UsageRow> = self
+            .usage_ledger(session_id)?
+            .into_iter()
+            .map(|r| r.usage)
+            .collect();
+        // Stable, so calls that share a number keep the order they were written in.
+        rows.sort_by_key(|r| r.turn);
+        Ok(rows)
+    }
+
+    /// Every usage row for one session in the order it was written, with
+    /// its time: the inspector's cost history (T37.29.3.2) finds turns by
+    /// it, because `turn` is a call's ordinal within its turn and restarts
+    /// at 1 with each turn.
+    pub fn usage_ledger(&self, session_id: &SessionId) -> Result<Vec<LedgerRow>, StoreError> {
         let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
         let rows: Vec<UsageDbRow> = schema::usage::table
             .filter(schema::usage::session_id.eq(session_id.to_string()))
-            .order_by(schema::usage::turn.asc())
+            .order_by(schema::usage::id.asc())
             .select(UsageDbRow::as_select())
             .load(&mut *conn)
             .map_err(|_| StoreError::Sqlite)?;
@@ -780,7 +1054,7 @@ impl Store {
                 let corrupt = || StoreError::Corrupt {
                     path: self.home.join("cox.db"),
                 };
-                Ok(UsageRow {
+                let usage = UsageRow {
                     session_id: r.session_id.parse().map_err(|_| corrupt())?,
                     turn: r.turn as u32,
                     job: from_tag(&r.job).ok_or_else(corrupt)?,
@@ -801,6 +1075,10 @@ impl Store {
                         cost_usd: r.cost_usd,
                         latency_ms: r.latency_ms as u64,
                     },
+                };
+                Ok(LedgerRow {
+                    usage,
+                    created_at: r.created_at,
                 })
             })
             .collect()
@@ -832,6 +1110,32 @@ mod tests {
                 latency_ms: 100,
             },
         }
+    }
+
+    /// T37.36: a migration version this binary does not embed makes open
+    /// fail with `SchemaNewer`, naming both versions, and runs no migration.
+    #[test]
+    fn older_binary_refuses_newer_schema() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        {
+            let store = Store::open(dir.path()).expect("first open");
+            let mut conn = store.conn.lock().expect("lock");
+            // A future binary's migration row; test-only raw SQL because
+            // `__diesel_schema_migrations` has no public Diesel table.
+            diesel::sql_query(
+                "INSERT INTO __diesel_schema_migrations (version) VALUES ('99991231000000')",
+            )
+            .execute(&mut *conn)
+            .expect("insert future version");
+        }
+        let err = Store::open(dir.path()).err().expect("newer schema refused");
+        assert_eq!(
+            err,
+            StoreError::SchemaNewer {
+                db: "99991231000000".into(),
+                binary: "00000000000006".into(),
+            }
+        );
     }
 
     #[test]
@@ -1027,6 +1331,114 @@ mod tests {
         assert_eq!(store.latest_session_for_cwd(&cwd).expect("latest"), newer);
     }
 
+    /// T37.22.9: a rename reaches the store as a `TitleSet` marked
+    /// `by_user`; the title generated after it (a first turn that was
+    /// already running) leaves it in place.
+    #[test]
+    fn a_user_rename_survives_a_later_generated_title() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(dir.path()).expect("open store");
+        let id = SessionId::new();
+        store
+            .session_create(&SessionRow {
+                id,
+                created_at: String::new(),
+                cwd: PathBuf::from("/tmp"),
+                project_slug: String::new(),
+                title: None,
+                parent_id: None,
+                rollout_path: PathBuf::new(),
+            })
+            .expect("session");
+        for (title, by_user) in [("Mine", true), ("Fix the ledger", false)] {
+            let set = Event::TitleSet {
+                title: title.into(),
+                by_user,
+            };
+            store.rollout_append(&id, &set).expect("append");
+        }
+        let info = store.session_info(&id).expect("info");
+        assert_eq!(info.title.as_deref(), Some("Mine"));
+    }
+
+    /// T52.6: an external agent's name and ACP session id survive a
+    /// reopen of the store; a cox session has neither.
+    #[test]
+    fn sessions_agent_column_round_trips() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (agent, cox) = (SessionId::new(), SessionId::new());
+        {
+            let store = Store::open(dir.path()).expect("open store");
+            for id in [agent, cox] {
+                store
+                    .session_create(&SessionRow {
+                        id,
+                        created_at: String::new(),
+                        cwd: PathBuf::from("/tmp"),
+                        project_slug: String::new(),
+                        title: None,
+                        parent_id: None,
+                        rollout_path: PathBuf::new(),
+                    })
+                    .expect("session");
+            }
+            let row = SessionAgent {
+                agent: "claude".into(),
+                agent_session: Some("acp-7".into()),
+            };
+            store.session_agent_set(&agent, &row).expect("set");
+        }
+        let store = Store::open(dir.path()).expect("reopen store");
+        let expected = SessionAgent {
+            agent: "claude".into(),
+            agent_session: Some("acp-7".into()),
+        };
+        assert_eq!(store.session_agent(&agent).expect("read"), Some(expected));
+        assert_eq!(store.session_agent(&cox).expect("read"), None);
+        assert_eq!(store.session_agent(&SessionId::new()).expect("read"), None);
+    }
+
+    /// A113: a `TitleSet` in the rollout lands in `sessions.title`, where
+    /// the session list reads it, and never replaces a user's title.
+    #[test]
+    fn session_title_round_trips_and_keeps_a_user_title() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = Store::open(dir.path()).expect("open store");
+        let (auto, renamed) = (SessionId::new(), SessionId::new());
+        for id in [auto, renamed] {
+            store
+                .session_create(&SessionRow {
+                    id,
+                    created_at: String::new(),
+                    cwd: PathBuf::from("/tmp"),
+                    project_slug: String::new(),
+                    title: None,
+                    parent_id: None,
+                    rollout_path: PathBuf::new(),
+                })
+                .expect("session");
+        }
+        let generated = Event::TitleSet {
+            title: "Fix the ledger".into(),
+            by_user: false,
+        };
+        store.rollout_append(&auto, &generated).expect("append");
+        assert!(
+            store
+                .session_title_set(&renamed, "Mine", TitleSource::User)
+                .expect("rename")
+        );
+        store.rollout_append(&renamed, &generated).expect("append");
+        let titles: HashMap<_, _> = store
+            .sessions_tree(10)
+            .expect("list")
+            .into_iter()
+            .map(|row| (row.info.id, row.info.title))
+            .collect();
+        assert_eq!(titles[&auto.to_string()].as_deref(), Some("Fix the ledger"));
+        assert_eq!(titles[&renamed.to_string()].as_deref(), Some("Mine"));
+    }
+
     #[test]
     fn usage_insert_and_sum() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -1123,6 +1535,11 @@ mod tests {
             })
             .expect("another session's row");
         assert_eq!(store.checkpoint_list(&session).expect("list"), rows);
+        let timed = store.checkpoint_rows(&session).expect("rows");
+        assert!(
+            timed.iter().all(|(_, at)| at.starts_with("20")),
+            "{timed:?}"
+        );
     }
 
     #[test]

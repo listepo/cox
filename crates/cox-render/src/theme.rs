@@ -46,6 +46,29 @@ pub struct Theme {
     pub mode_bypass: Color,
 }
 
+/// Every `Theme` field's name, in field order: the `[tokens]` keys a theme
+/// file may set. `TrueColorOverrides::set`, `Theme::colors` and the theme
+/// editor (T46.6) all read this one list (T46.5).
+pub const TOKENS: [&str; 17] = [
+    "text",
+    "dim",
+    "accent",
+    "user",
+    "agent",
+    "tool",
+    "ok",
+    "warn",
+    "error",
+    "diff_add",
+    "diff_del",
+    "diff_hunk",
+    "border",
+    "selection",
+    "mode_plan",
+    "mode_auto",
+    "mode_bypass",
+];
+
 /// The banner's alert badge (T4.3's "`danger-full-access` is loud"): black
 /// on `Theme::error`'s red in both themes. This one pair is a fixed
 /// contrast choice, not a per-theme role, so it lives here as a constant
@@ -54,6 +77,29 @@ pub struct Theme {
 pub const ALERT_FG: Color = Color::Black;
 
 impl Theme {
+    /// Every token's colour, in [`TOKENS`] order.
+    pub fn colors(&self) -> [Color; 17] {
+        [
+            self.text,
+            self.dim,
+            self.accent,
+            self.user,
+            self.agent,
+            self.tool,
+            self.ok,
+            self.warn,
+            self.error,
+            self.diff_add,
+            self.diff_del,
+            self.diff_hunk,
+            self.border,
+            self.selection,
+            self.mode_plan,
+            self.mode_auto,
+            self.mode_bypass,
+        ]
+    }
+
     /// The tint of the composer prompt in `mode` (T25.2); the default mode
     /// is plain text so only a mode that changes what runs stands out.
     pub fn mode(&self, mode: PermissionMode) -> Color {
@@ -214,28 +260,36 @@ impl TrueColorOverrides {
     /// Sets the field named `token` (the `[tokens]` key of a theme file);
     /// an unrecognised name is ignored rather than failing the whole file —
     /// the same fail-open contract `Glyphs::set` gives `[tui.icons]`.
-    fn set(&mut self, token: &str, color: Color) {
-        let field = match token {
-            "text" => &mut self.text,
-            "dim" => &mut self.dim,
-            "accent" => &mut self.accent,
-            "user" => &mut self.user,
-            "agent" => &mut self.agent,
-            "tool" => &mut self.tool,
-            "ok" => &mut self.ok,
-            "warn" => &mut self.warn,
-            "error" => &mut self.error,
-            "diff_add" => &mut self.diff_add,
-            "diff_del" => &mut self.diff_del,
-            "diff_hunk" => &mut self.diff_hunk,
-            "border" => &mut self.border,
-            "selection" => &mut self.selection,
-            "mode_plan" => &mut self.mode_plan,
-            "mode_auto" => &mut self.mode_auto,
-            "mode_bypass" => &mut self.mode_bypass,
-            _ => return,
+    pub fn set(&mut self, token: &str, color: Color) {
+        let Some(i) = TOKENS.iter().position(|t| *t == token) else {
+            return;
         };
-        *field = Some(color);
+        if let Some(slot) = self.slots().into_iter().nth(i) {
+            *slot = Some(color);
+        }
+    }
+
+    /// Every field, in [`TOKENS`] order.
+    fn slots(&mut self) -> [&mut Option<Color>; 17] {
+        [
+            &mut self.text,
+            &mut self.dim,
+            &mut self.accent,
+            &mut self.user,
+            &mut self.agent,
+            &mut self.tool,
+            &mut self.ok,
+            &mut self.warn,
+            &mut self.error,
+            &mut self.diff_add,
+            &mut self.diff_del,
+            &mut self.diff_hunk,
+            &mut self.border,
+            &mut self.selection,
+            &mut self.mode_plan,
+            &mut self.mode_auto,
+            &mut self.mode_bypass,
+        ]
     }
 }
 
@@ -316,10 +370,87 @@ pub fn parse_theme_file(src: &str) -> Result<ThemeFile, ThemeFileError> {
     Ok(file)
 }
 
+/// Sets `[tokens.<token>]`'s `dark` (or `light`) colour in a theme file's
+/// source (T46.5), keeping comments, formatting and every other key; the
+/// token's entry (`<token> = { dark = … }`) is created when missing. A token not in
+/// [`TOKENS`], TOML that does not parse, or a `tokens`/token entry that is
+/// not a table is an error, never a panic: the source may be a user file.
+pub fn set_token(
+    src: &str,
+    token: &str,
+    dark: bool,
+    color: Color,
+) -> Result<String, ThemeFileError> {
+    if !TOKENS.contains(&token) {
+        return Err(ThemeFileError(format!("unknown token `{token}`")));
+    }
+    let mut doc: DocumentMut = src
+        .parse()
+        .map_err(|e: toml_edit::TomlError| ThemeFileError(e.message().to_string()))?;
+    let not_a_table = |key: &str| ThemeFileError(format!("`{key}` is not a table"));
+    let tokens = doc
+        .entry("tokens")
+        .or_insert(Item::Table(toml_edit::Table::new()))
+        .as_table_like_mut()
+        .ok_or_else(|| not_a_table("tokens"))?;
+    // Inline, as the built-ins write each token, and valid whether
+    // `tokens` itself is a `[tokens]` table or an inline one.
+    let spec = tokens
+        .entry(token)
+        .or_insert(Item::Value(toml_edit::Value::InlineTable(
+            toml_edit::InlineTable::new(),
+        )))
+        .as_table_like_mut()
+        .ok_or_else(|| not_a_table(token))?;
+    let key = if dark { "dark" } else { "light" };
+    let mut value = toml_edit::Value::from(format_color(color));
+    if let Some(old) = spec.get(key).and_then(Item::as_value) {
+        *value.decor_mut() = old.decor().clone();
+    }
+    spec.insert(key, Item::Value(value));
+    Ok(doc.to_string())
+}
+
+/// The embedded source of a built-in theme, so an edit of one starts from
+/// its own text (T46.5).
+pub fn builtin_source(name: &str) -> Option<&'static str> {
+    BUILT_IN_THEMES
+        .iter()
+        .find(|(builtin, _)| *builtin == name)
+        .map(|(_, src)| *src)
+}
+
+/// [`parse_color`]'s inverse: `#rrggbb`, a bare index, or one of the
+/// sixteen names (plus `reset`) in the spelling `parse_color` reads.
+pub fn format_color(color: Color) -> String {
+    let name = match color {
+        Color::Rgb(r, g, b) => return format!("#{r:02x}{g:02x}{b:02x}"),
+        Color::Indexed(i) => return i.to_string(),
+        Color::Reset => "reset",
+        Color::Black => "black",
+        Color::Red => "red",
+        Color::Green => "green",
+        Color::Yellow => "yellow",
+        Color::Blue => "blue",
+        Color::Magenta => "magenta",
+        Color::Cyan => "cyan",
+        Color::White => "white",
+        Color::Gray => "gray",
+        Color::DarkGray => "darkgray",
+        Color::LightRed => "lightred",
+        Color::LightGreen => "lightgreen",
+        Color::LightYellow => "lightyellow",
+        Color::LightBlue => "lightblue",
+        Color::LightMagenta => "lightmagenta",
+        Color::LightCyan => "lightcyan",
+    };
+    name.to_string()
+}
+
 /// A `[tokens]` colour: `#rrggbb` truecolor, a bare `0`-`255` ANSI index (so
 /// a theme like the `system` built-in can name the terminal's own palette
 /// slot instead of a fixed hex), or one of the sixteen ANSI colour names.
-fn parse_color(s: &str) -> Option<Color> {
+pub fn parse_color(s: &str) -> Option<Color> {
     let s = s.trim();
     if let Some(hex) = s.strip_prefix('#') {
         if hex.len() != 6 {
@@ -720,5 +851,117 @@ system = { dark = "4" }
     #[test]
     fn tmtheme_missing_dir_is_empty_not_an_error() {
         assert!(tm_theme_names(Path::new("/does/not/exist/themes")).is_empty());
+    }
+
+    /// T46.5: `set`, `colors` and `TOKENS` agree on every token, so the one
+    /// list really is the struct's field order.
+    #[test]
+    fn tokens_name_every_theme_field_in_order() {
+        for (i, token) in TOKENS.iter().enumerate() {
+            let mut overrides = TrueColorOverrides::default();
+            let color = Color::Indexed(u8::try_from(i).expect("17 tokens"));
+            overrides.set(token, color);
+            let mut theme = Theme::mono();
+            theme.apply_truecolor(&overrides);
+            let colors = theme.colors();
+            assert_eq!(colors[i], color, "{token}");
+            assert_eq!(colors.iter().filter(|c| **c == color).count(), 1, "{token}");
+        }
+    }
+
+    #[test]
+    fn set_token_keeps_comments_and_other_tokens() {
+        let src = builtin_source("cox-dark").expect("a built-in");
+        let out = set_token(src, "accent", true, Color::Rgb(1, 2, 3)).expect("set");
+        assert!(out.starts_with("# T24.2 built-in"), "{out}");
+        assert!(out.contains("variant = \"dark\""), "{out}");
+        assert!(out.contains("#010203"), "{out}");
+        assert!(
+            !out.contains("dark = \"#7aa2f7\", light = \"#2e5aac\" }\nuser"),
+            "{out}"
+        );
+        let (before, after) = (
+            parse_theme_file(src).expect("parse"),
+            parse_theme_file(&out).expect("parse"),
+        );
+        assert_eq!(after.dark.accent, Some(Color::Rgb(1, 2, 3)));
+        assert_eq!(
+            after.light.accent, before.light.accent,
+            "the other variant stays"
+        );
+        assert_eq!(after.dark.error, before.dark.error, "other tokens stay");
+        assert_eq!(after.syntax, before.syntax);
+        // Only that one value changed: everything else is byte-identical.
+        assert_eq!(out.lines().count(), src.lines().count());
+        let changed: Vec<_> = src
+            .lines()
+            .zip(out.lines())
+            .filter(|(a, b)| a != b)
+            .collect();
+        assert_eq!(changed.len(), 1, "{changed:?}");
+    }
+
+    #[test]
+    fn set_token_round_trips_through_parse() {
+        let mut src = String::from("# mine\n");
+        for (i, token) in TOKENS.iter().enumerate() {
+            let color = Color::Indexed(u8::try_from(i).expect("17 tokens"));
+            src = set_token(&src, token, false, color).expect("set");
+            src = set_token(&src, token, true, Color::Rgb(0, 0, 10 * i as u8)).expect("set");
+        }
+        assert!(src.contains("# mine"), "the comment survives: {src}");
+        let file = parse_theme_file(&src).expect("parse");
+        let (dark, light) = (file.theme(true).colors(), file.theme(false).colors());
+        for i in 0..TOKENS.len() {
+            assert_eq!(dark[i], Color::Rgb(0, 0, 10 * i as u8), "{}", TOKENS[i]);
+            assert_eq!(light[i], Color::Indexed(i as u8), "{}", TOKENS[i]);
+        }
+    }
+
+    #[test]
+    fn format_color_inverts_parse_color() {
+        let mut colors = vec![
+            Color::Reset,
+            Color::Black,
+            Color::Red,
+            Color::Green,
+            Color::Yellow,
+            Color::Blue,
+            Color::Magenta,
+            Color::Cyan,
+            Color::White,
+            Color::Gray,
+            Color::DarkGray,
+            Color::LightRed,
+            Color::LightGreen,
+            Color::LightYellow,
+            Color::LightBlue,
+            Color::LightMagenta,
+            Color::LightCyan,
+            Color::Rgb(0, 0, 0),
+            Color::Rgb(0xab, 0xcd, 0xef),
+        ];
+        colors.extend((0..=255).map(Color::Indexed));
+        for color in colors {
+            assert_eq!(parse_color(&format_color(color)), Some(color), "{color:?}");
+        }
+        assert_eq!(format_color(Color::Rgb(0xab, 0xcd, 0xef)), "#abcdef");
+    }
+
+    #[test]
+    fn set_token_rejects_unknown_token() {
+        let err = set_token("", "backgroundd", true, Color::Red).expect_err("unknown");
+        assert!(err.to_string().contains("backgroundd"), "{err}");
+        assert!(set_token("tokens = 1\n", "text", true, Color::Red).is_err());
+        assert!(set_token("[tokens]\ntext = \"red\"\n", "text", true, Color::Red).is_err());
+        assert!(set_token("not toml [", "text", true, Color::Red).is_err());
+    }
+
+    #[test]
+    fn builtin_source_names_every_built_in() {
+        for (name, src) in BUILT_IN_THEMES {
+            assert_eq!(builtin_source(name), Some(*src));
+        }
+        assert_eq!(builtin_source("mine"), None);
     }
 }

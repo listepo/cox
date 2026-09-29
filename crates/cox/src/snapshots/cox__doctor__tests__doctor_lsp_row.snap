@@ -1,0 +1,8 @@
+---
+source: crates/cox/src/doctor.rs
+expression: "rows.iter().map(human).collect::<String>()"
+---
+LSP servers: ✓ gopls missing, pyright-langserver missing, rust-analyzer ok, typescript-language-server missing
+LSP servers: ⚠ gopls missing, pyright-langserver missing, rust-analyzer missing, typescript-language-server missing
+  fix: install a language server for your project, or set lsp.enabled = false; without one, `diagnostics` tells the model to run the project's checker with `bash`
+LSP servers: ✓ disabled (lsp.enabled = false)

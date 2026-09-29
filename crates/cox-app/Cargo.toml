@@ -1,0 +1,70 @@
+[package]
+name = "cox-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# T37.8 (DT§4.2, §4.3): the UI-agnostic application core the desktop app
+# drives — today the timeline fold. Pure over `Event`s: no ratatui, no
+# terminal, no CLI (`crates/cox/tests/deps.rs` holds that).
+
+[dependencies]
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+# The neutral `StyledDoc` half only; the ratatui layout stays in the TUI.
+cox-render = { path = "../cox-render", version = "0.1.2", default-features = false }
+serde = { workspace = true }
+# Tool inputs and `ToolResult.structured` are JSON values (`summary.rs`).
+serde_json = { workspace = true }
+# "Today" and "this week" in the local time zone (T37.29.3.3).
+chrono = { workspace = true }
+# T37.9 (DT§4.5): the drain task, its wake-up and the per-frame pull.
+tokio = { workspace = true }
+# T37.10 (DT§4.2): the workspace reads sessions, search and lock holders
+# from cox.db, groups them by git root (cox-config's `find_git_root`), and
+# completes `/` from cox-ext's command files and `@` from cox-search's walk.
+cox-store = { path = "../cox-store", version = "0.1.2" }
+cox-config = { path = "../cox-config", version = "0.1.2" }
+cox-ext = { path = "../cox-ext", version = "0.1.2" }
+cox-search = { path = "../cox-search", version = "0.1.2" }
+thiserror = { workspace = true }
+# T37.39 (A86): the app owns its sessions — `cox-session` builds, resumes,
+# forks and hands them off; `cox-core`'s `Session` is what it drives;
+# `cox-tools`'s `GitWorktrees` backs the workspace's worktree list.
+cox-session = { path = "../cox-session", version = "0.1.2" }
+cox-core = { path = "../cox-core", version = "0.1.2" }
+cox-tools = { path = "../cox-tools", version = "0.1.2" }
+# T37.30.3: Settings shows each MCP server's login and runs Log in / Log
+# out through cox-mcp's OAuth; rmcp names its credential store and error.
+# Both were already in the app's tree through cox-session.
+cox-mcp = { path = "../cox-mcp", version = "0.1.2" }
+rmcp = { workspace = true }
+# T37.22.6: a shell's archived output is shown whole, so it passes the
+# terminal-text guard first; already in the tree through cox-render.
+cox-sanitize = { path = "../cox-sanitize", version = "0.1.2" }
+# T37.22.7 (A111): the status names its model from the catalog. Already
+# in the app's tree through cox-session.
+cox-models = { path = "../cox-models", version = "0.1.2" }
+# T51.3 (DT§3.2): the terminal pane's login shell runs in a PTY
+# (wezterm's portable-pty, already the workspace's PTY for the TUI e2e
+# tests), and closing it signals its process groups (nix, as `bash` does).
+portable-pty = { workspace = true }
+nix = { workspace = true, features = ["signal", "process"] }
+# T51.7: the browser tools are `Tool`s and the host's `Browser` is async;
+# `url` parses what `browser_open` is given.
+async-trait = { workspace = true }
+url = { workspace = true }
+# T52.18: the app-server wire's schema (`docs/app-server.schema.json`),
+# as cox-protocol and cox-config generate theirs; already in the tree.
+schemars = { workspace = true }
+
+[dev-dependencies]
+# The scenario tests run a real session over the Scripted provider and
+# reuse cox-core's test harness (`tests/scenarios.rs`).
+cox-provider = { path = "../cox-provider", version = "0.1.2" }
+insta = { workspace = true }
+# Paused time: a consumer that naps 2 s per pull stays a fast test.
+tokio = { workspace = true, features = ["test-util"] }
+# T37.10: intents run against a scratch COX_HOME.
+tempfile = { workspace = true }

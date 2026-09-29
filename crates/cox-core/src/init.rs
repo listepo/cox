@@ -8,14 +8,11 @@
 
 use cox_protocol::errors::CoreError;
 use cox_protocol::ids::{CallId, TurnId};
-use cox_protocol::types::{
-    Content, Event, Job, Level, Message, ProviderEvent, Request, Role, SystemBlock,
-};
+use cox_protocol::types::{Event, Job, Level};
 use serde_json::json;
-use tokio::sync::mpsc;
 
-use crate::budget;
 use crate::session::Session;
+use crate::side::Side;
 use crate::turn::run_tools;
 
 /// The file `/init` writes, at the session workspace root.
@@ -348,60 +345,15 @@ impl Session {
     /// other cheap call; `None` on any failure, and the caller falls back
     /// to [`excerpt`] so a missing key never fails `/init`.
     async fn cheap_summary(&self, readme: &str) -> Option<String> {
-        let route = self.route_for(Job::Summarize, true).await.ok()?;
-        let req = Request {
-            tier: route.tier,
+        self.side_call(Side {
             job: Job::Summarize,
-            model: route.model.clone(),
-            system: vec![SystemBlock {
-                text: SUMMARY_PROMPT.to_string(),
-                cache: false,
-            }],
-            tools: vec![],
-            messages: vec![Message {
-                role: Role::User,
-                content: vec![Content::Text {
-                    text: readme.to_string(),
-                }],
-            }],
-            effort: route.effort,
-            max_tokens: 1024.min(route.max_tokens),
-            thinking: route.thinking,
-            cache_breakpoints: vec![],
-            stop_sequences: vec![],
-        };
-        let (tx, mut rx) = mpsc::channel(64);
-        let provider = self.provider.clone();
-        let cancel = self.cancel_token();
-        let join = tokio::spawn(async move { provider.stream(req, tx, cancel).await });
-        let mut out = String::new();
-        while let Some(ev) = rx.recv().await {
-            if let ProviderEvent::TextDelta { text } = ev {
-                out.push_str(&text);
-                if out.len() >= MAX_SUMMARY_CHARS {
-                    break;
-                }
-            }
-        }
-        let usage = join.await.ok()?.ok()?;
-        self.store
-            .usage_insert(&cox_protocol::UsageRow {
-                session_id: self.id,
-                turn: 0,
-                job: Job::Summarize,
-                tier: route.tier,
-                provider: self.provider.id(),
-                model: route.model,
-                effort: Some(route.effort),
-                usage,
-            })
-            .ok()?;
-        if budget::counts(route.tier, self.config.budget.cheap_counts) {
-            self.add_spend(usage.cost_usd).await;
-        }
-        let mut summary = out.trim().to_string();
-        summary.truncate(MAX_SUMMARY_CHARS);
-        (!summary.is_empty()).then_some(summary)
+            turn: 0,
+            system: SUMMARY_PROMPT,
+            text: readme,
+            max_tokens: 1024,
+            max_chars: MAX_SUMMARY_CHARS,
+        })
+        .await
     }
 }
 

@@ -25,7 +25,7 @@ expression: body
           },
           "extra_content": {
             "google": {
-              "thought_signature": "sig-fixture"
+              "thought_signature": "sig-a"
             }
           }
         },

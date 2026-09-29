@@ -1,24 +1,17 @@
 //! `todo`: a structured task list the model reports progress through
 //! (plan.md §1.11, T3.6). No filesystem or network access — `ReadOnly` per
 //! the tool catalogue — so it does nothing `confine` needs to guard; its
-//! only job is validating the list shape and handing the TUI a
-//! machine-readable panel via `ToolOutput.structured` (T5.5).
+//! only job is validating the list shape and handing every surface the list
+//! as data via `ToolOutput.structured`, which the core carries on into
+//! `ToolResult.structured` (T5.5, DT G3).
 
 use async_trait::async_trait;
-use cox_protocol::{Concurrency, Risk, Tool, ToolCx, ToolError, ToolOutput, ToolSpec};
+use cox_protocol::{
+    Concurrency, Risk, TodoItem, TodoState, Tool, ToolCx, ToolError, ToolOutput, ToolSpec,
+};
 use serde_json::{Value, json};
 
 use crate::write::str_field;
-
-/// The only states a todo item may be in (plan.md §1.11: "state drives the
-/// TUI todo panel").
-const VALID_STATES: [&str; 3] = ["pending", "in_progress", "done"];
-
-struct TodoItem {
-    id: String,
-    text: String,
-    state: String,
-}
 
 pub struct TodoTool;
 
@@ -69,20 +62,9 @@ impl Tool for TodoTool {
 
     async fn call(&self, input: Value, _cx: &ToolCx) -> Result<ToolOutput, ToolError> {
         let items = parse_items(&input)?;
-        validate(&items)?;
-
-        let structured = Value::Array(
-            items
-                .iter()
-                .map(|it| {
-                    json!({
-                        "id": it.id,
-                        "text": it.text,
-                        "state": it.state,
-                    })
-                })
-                .collect(),
-        );
+        let structured = serde_json::to_value(&items).map_err(|_| ToolError::Denied {
+            why: "todo list could not be encoded".to_string(),
+        })?;
 
         Ok(ToolOutput {
             text: render(&items),
@@ -101,49 +83,54 @@ fn parse_items(input: &Value) -> Result<Vec<TodoItem>, ToolError> {
             why: "missing or non-array \"items\" field".to_string(),
         })?;
 
+    let mut seen = std::collections::HashSet::new();
     arr.iter()
         .map(|item| {
+            let id = str_field(item, "id")?;
+            if !seen.insert(id.clone()) {
+                return Err(denied(format!("duplicate todo id \"{id}\"")));
+            }
+            let state = str_field(item, "state")?;
             Ok(TodoItem {
-                id: str_field(item, "id")?,
+                state: state_of(&state).ok_or_else(|| {
+                    denied(format!(
+                        "invalid state \"{state}\" for todo \"{id}\": must be pending, \
+                         in_progress, or done"
+                    ))
+                })?,
                 text: str_field(item, "text")?,
-                state: str_field(item, "state")?,
+                id,
             })
         })
         .collect()
 }
 
-/// Ids must be unique within the list and every state must be one of
-/// `VALID_STATES` — both are `ToolError::Denied` (the closest existing
-/// variant with room for a message; see `edit.rs`'s module docs for why no
-/// dedicated variant exists).
-fn validate(items: &[TodoItem]) -> Result<(), ToolError> {
-    let mut seen = std::collections::HashSet::new();
-    for item in items {
-        if !seen.insert(item.id.as_str()) {
-            return Err(ToolError::Denied {
-                why: format!("duplicate todo id \"{}\"", item.id),
-            });
-        }
-        if !VALID_STATES.contains(&item.state.as_str()) {
-            return Err(ToolError::Denied {
-                why: format!(
-                    "invalid state \"{}\" for todo \"{}\": must be pending, in_progress, or done",
-                    item.state, item.id
-                ),
-            });
-        }
+/// The only states a todo item may be in (plan.md §1.11: "state drives the
+/// TUI todo panel").
+fn state_of(state: &str) -> Option<TodoState> {
+    match state {
+        "pending" => Some(TodoState::Pending),
+        "in_progress" => Some(TodoState::InProgress),
+        "done" => Some(TodoState::Done),
+        _ => None,
     }
-    Ok(())
+}
+
+/// A duplicate id and an unknown state are both `ToolError::Denied` (the
+/// closest existing variant with room for a message; see `edit.rs`'s module
+/// docs for why no dedicated variant exists).
+fn denied(why: String) -> ToolError {
+    ToolError::Denied { why }
 }
 
 fn render(items: &[TodoItem]) -> String {
     items
         .iter()
         .map(|it| {
-            let mark = match it.state.as_str() {
-                "done" => "x",
-                "in_progress" => "~",
-                _ => " ",
+            let mark = match it.state {
+                TodoState::Done => "x",
+                TodoState::InProgress => "~",
+                TodoState::Pending => " ",
             };
             format!("[{mark}] {}: {}", it.id, it.text)
         })

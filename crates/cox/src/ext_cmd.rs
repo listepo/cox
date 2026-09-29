@@ -87,28 +87,13 @@ pub fn list(cli: &Cli, cwd: &Path, json: bool) -> String {
     .to_string()
 }
 
-/// Where the `AGENTS.md`/`CLAUDE.md` chain is read from for `cwd`: one
-/// place, so `cox ext` lists exactly the files a session sends (T50.1).
-pub(crate) fn instruction_roots(
-    cox_home: &Path,
-    claude_home: &Path,
-    cwd: &Path,
-) -> instructions::Roots {
-    instructions::Roots {
-        cox_home: Some(cox_home.to_path_buf()),
-        claude_home: Some(claude_home.to_path_buf()),
-        git_root: find_git_root(cwd),
-        cwd: cwd.to_path_buf(),
-    }
-}
-
 pub fn report(cli: &Cli, cwd: &Path) -> String {
     let config = config_load::load(cwd, cli)
         .map(|l| l.config)
         .unwrap_or_default();
     let cox_home = cli.home.clone().unwrap_or_else(cox_home);
     let claude_home = home_dir().join(".claude");
-    let roots = instruction_roots(&cox_home, &claude_home, cwd);
+    let roots = cox_session::instruction_roots(&cox_home, &claude_home, cwd);
     let project = roots.git_root.clone().unwrap_or_else(|| cwd.to_path_buf());
     let mut out = String::new();
     let loaded = instructions::load(&roots, u32::MAX);

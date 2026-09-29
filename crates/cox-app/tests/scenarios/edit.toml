@@ -1,0 +1,8 @@
+# One edit (T37.23.5): the `edit` stub returns a two-hunk Rust diff, so the
+# `Tool` block's `diff` shows the structured hunks the desktop card draws.
+[[turn]]
+text = "Editing."
+tool_calls = [{ name = "edit", input = { path = "src/lib.rs" } }]
+
+[[turn]]
+text = "Done."

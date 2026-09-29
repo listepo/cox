@@ -1,0 +1,10 @@
+---
+source: crates/cox-tui/src/status.rs
+expression: screen
+---
+
+
+
+> Enter send · Shift+Tab mode cycle · @ file · / command
+main · 3 files · hello from the script
+sonnet-5 · ctx ▱▱▱▱▱ 0% · $0.00/5 · [default]

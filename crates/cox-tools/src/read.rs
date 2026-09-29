@@ -22,11 +22,11 @@ use crate::path::confine;
 /// archiving and re-truncating it losslessly (plan.md §1.2/D6a); this cap
 /// only stops one huge file from ballooning a single call's output before
 /// that safety net runs.
-const VISIBLE_CAP_BYTES: usize = 64 * 1024;
+pub(crate) const VISIBLE_CAP_BYTES: usize = 64 * 1024;
 
 /// How many leading bytes are checked for a NUL byte to decide "binary"
 /// (plan.md T3.2 step 2).
-const BINARY_SNIFF_BYTES: usize = 8 * 1024;
+pub(crate) const BINARY_SNIFF_BYTES: usize = 8 * 1024;
 
 /// `read`: text, ranged, or outline reads of one file inside the workspace.
 pub struct ReadTool;
@@ -122,11 +122,13 @@ impl Tool for ReadTool {
             render_text(&content, total_lines, input.lines.as_deref())
         };
 
+        // The file's line count as data (DT G3): a summary says "120
+        // lines" without parsing the footer.
         Ok(ToolOutput {
             text,
             is_error: false,
             diff: None,
-            structured: None,
+            structured: Some(serde_json::json!({ "lines": total_lines })),
         })
     }
 }
@@ -296,6 +298,7 @@ mod tests {
         assert!(!out.text.contains("line1\n"), "{}", out.text);
         assert!(!out.text.contains("line6"), "{}", out.text);
         assert!(out.text.contains("lines 3-5 of 10 total"), "{}", out.text);
+        assert_eq!(out.structured, Some(serde_json::json!({ "lines": 10 })));
     }
 
     #[tokio::test]

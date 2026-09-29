@@ -93,7 +93,7 @@ impl cox_protocol::Tool for GlobTool {
                 text: "no files matched".into(),
                 is_error: false,
                 diff: None,
-                structured: None,
+                structured: Some(serde_json::json!({ "files": 0 })),
             });
         }
 
@@ -122,11 +122,12 @@ impl cox_protocol::Tool for GlobTool {
             text.push_str(&format!("\n… {} more (raise `limit`)", total - shown));
         }
 
+        // Every match, not only those shown under `limit` (DT G3).
         Ok(ToolOutput {
             text,
             is_error: false,
             diff: None,
-            structured: None,
+            structured: Some(serde_json::json!({ "files": total })),
         })
     }
 }

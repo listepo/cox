@@ -13,7 +13,6 @@ use std::time::{Duration, Instant};
 
 use cox_core::Session;
 use cox_protocol::errors::CoreError;
-use cox_protocol::ids::CallId;
 use crossterm::cursor::MoveTo;
 use crossterm::event::{
     DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
@@ -30,6 +29,7 @@ use ratatui::{Terminal, TerminalOptions, Viewport};
 use crate::cells::cell_lines;
 use crate::state::{Ask, Cmd, GrantDecision, Msg, PluginMgmtRequest, PluginRequest, State, update};
 use crate::view::view;
+use crate::voice::{Driver, Phase};
 
 /// Rows the live viewport keeps below the scrollback; a short terminal
 /// gets two fewer than its height so some scrollback stays visible.
@@ -57,23 +57,6 @@ pub enum TuiOutcome {
     },
 }
 
-/// One `ask_user` call surfaced by the binary (T22.1), mirroring
-/// `cox_tools::ask_user::Question` without this crate taking a `cox-tools`
-/// dependency (same reason `state::GitStatus` mirrors `cox_tools::git::Status`).
-/// `reply` never reaches `State`: a `Modal` must stay `Clone`/`PartialEq` for
-/// tests and snapshots, and a `oneshot::Sender` is neither, so `run` keeps
-/// it in `pending` and answers it once `update` turns a key into `Cmd::Answer`.
-pub struct Question {
-    pub call: CallId,
-    pub question: String,
-    pub options: Vec<String>,
-    pub reply: tokio::sync::oneshot::Sender<String>,
-    /// The subagent asking (T34.3), mirroring
-    /// `cox_tools::ask_user::Question::source`'s `agent`; `None` for the
-    /// top-level session.
-    pub agent: Option<String>,
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum TuiError {
     #[error("terminal: {0}")]
@@ -90,8 +73,7 @@ pub enum TuiError {
 /// `feed` carries what the runtime learns off-screen (the live sessions of
 /// this workspace, T16.3; git counts, T15.2) for the same reason, and
 /// `ask` carries what the TUI wants fetched (the diff, T15.3); the answer
-/// arrives on `feed`. `questions` carries each `ask_user` call (T22.1); its
-/// reply sender is answered from here, never from `state::update`. `persist`
+/// arrives on `feed`. `persist`
 /// carries a `/theme` choice's `(key, value)` (T24.2) out to `config_cmd::set`
 /// — this crate has no `toml_edit`-editing path of its own. `grants`
 /// (T33.8) carries a `Modal::PluginGrant`'s `y` out to `crates/cox`, which
@@ -100,20 +82,24 @@ pub enum TuiError {
 /// the plugin hosts; the answer arrives on `feed` as `Msg::Plugin`.
 /// `plugin_mgmt` (T33.30 `New`; T33.33 `Update`/`Remove`/`List`) carries a
 /// `Cmd::PluginMgmt` the same way; its answer arrives on `feed` as
-/// `Msg::PluginMgmt`.
+/// `Msg::PluginMgmt`. `dictation` (T54.6) is push-to-talk's speech-to-text,
+/// `None` when the build or `[voice]` leaves it off; the voice key then
+/// only says how to turn it on.
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     session: Session,
     mut state: State,
     mut feed: tokio::sync::mpsc::Receiver<Msg>,
     ask: tokio::sync::mpsc::Sender<Ask>,
-    mut questions: tokio::sync::mpsc::Receiver<Question>,
     persist: tokio::sync::mpsc::Sender<(String, String)>,
     grants: tokio::sync::mpsc::Sender<GrantDecision>,
     plugins: tokio::sync::mpsc::Sender<PluginRequest>,
     plugin_mgmt: tokio::sync::mpsc::Sender<PluginMgmtRequest>,
+    dictation: Option<Box<dyn cox_protocol::traits::Dictation>>,
 ) -> Result<TuiOutcome, TuiError> {
     let mut rx = session.events().ok_or(TuiError::EventsTaken)?;
+    state.voice.available = dictation.is_some();
+    let mut voice = Driver::new(dictation);
     enable_raw_mode()?;
     execute!(io::stdout(), EnableBracketedPaste)?;
     // T23.1: only a terminal `cox_tui::term::Caps::query` already found to
@@ -164,14 +150,17 @@ pub async fn run(
     let stop = Arc::new(AtomicBool::new(false));
     let mut input = spawn_input(stop.clone());
     let mut tick = tokio::time::interval(Duration::from_millis(100));
-    // The reply sender for whichever `ask_user` call the modal shows now;
-    // `Cmd::Answer` looks it up here instead of carrying it through `State`.
-    let mut pending: Option<(CallId, tokio::sync::oneshot::Sender<String>)> = None;
     let result = async {
         loop {
             let msg = tokio::select! {
                 Some(ev) = input.recv() => match ev? {
-                    Input::Key(k) if k.kind != KeyEventKind::Release => Msg::Key(k),
+                    // T54.6: a release matters only to a held voice key.
+                    Input::Key(k)
+                        if k.kind != KeyEventKind::Release
+                            || matches!(state.voice.phase, Phase::Recording { .. }) =>
+                    {
+                        Msg::Key(k)
+                    }
                     Input::Paste(text) => Msg::Paste(text),
                     Input::Resize(w, h) => Msg::Resize(w, h),
                     Input::FocusGained => Msg::Focus(true),
@@ -185,15 +174,7 @@ pub async fn run(
                 },
                 _ = tick.tick() => Msg::Tick,
                 Some(msg) = feed.recv() => msg,
-                Some(q) = questions.recv() => {
-                    pending = Some((q.call, q.reply));
-                    Msg::Question {
-                        call: q.call,
-                        question: q.question,
-                        options: q.options,
-                        agent: q.agent,
-                    }
-                }
+                Some(msg) = voice.recv() => msg,
             };
             let ticked = matches!(msg, Msg::Tick);
             for cmd in update(&mut state, msg) {
@@ -224,20 +205,6 @@ pub async fn run(
                     // pending, so a repeat is dropped rather than awaited.
                     Cmd::Ask(what) => {
                         let _ = ask.try_send(what);
-                    }
-                    // `None` (Esc) drops `reply` instead of sending it, so
-                    // `ask_user` sees the call as dismissed, not answered
-                    // with empty text.
-                    Cmd::Answer(call, answer) => {
-                        if let Some((pending_call, reply)) = pending.take() {
-                            if pending_call == call {
-                                if let Some(text) = answer {
-                                    let _ = reply.send(text);
-                                }
-                            } else {
-                                pending = Some((pending_call, reply));
-                            }
-                        }
                     }
                     // Best-effort: a full channel or a closed receiver just
                     // means this one preview is not persisted; the picker
@@ -276,6 +243,7 @@ pub async fn run(
                     Cmd::PluginMgmt(request) => {
                         let _ = plugin_mgmt.try_send(request);
                     }
+                    Cmd::Voice(cmd) => voice.send(cmd),
                 }
             }
             // While a resize settles nothing is drawn or inserted: finished

@@ -1,13 +1,17 @@
 //! `ask_user` modal (T22.1): what the modal shows for a question with
-//! options, and which `Cmd` each key sends — through the same
+//! options, and which `Submission::Answer` each key sends — through the same
 //! `update`/`view` the runtime uses, exactly like `approval.rs` covers the
 //! approval modal.
 
-use cox_protocol::ids::CallId;
-use cox_protocol::types::{PermissionMode, SandboxMode};
+use cox_protocol::ids::{CallId, SessionId};
+use cox_protocol::types::{Event, PermissionMode, SandboxMode, Source, Submission};
 use cox_tui::state::{Cmd, Msg, State, update};
 use cox_tui::view::{buffer_to_string, render};
 use crossterm::event::{KeyCode, KeyEvent};
+
+fn answer(call_id: CallId, text: Option<String>) -> Cmd {
+    Cmd::Submit(Submission::Answer { call_id, text })
+}
 
 fn key(state: &mut State, code: KeyCode) -> Vec<Cmd> {
     update(state, Msg::Key(KeyEvent::from(code)))
@@ -22,12 +26,16 @@ fn question_asked_from(agent: Option<String>) -> (State, CallId) {
     let call_id = CallId::new();
     update(
         &mut state,
-        Msg::Question {
-            call: call_id,
+        Msg::Event(Event::QuestionAsked {
+            call_id,
             question: "which environment?".into(),
             options: vec!["staging".into(), "production".into()],
-            agent,
-        },
+            source: agent.map(|agent| Source {
+                session: SessionId::new(),
+                agent: Some(agent),
+                preset: None,
+            }),
+        }),
     );
     (state, call_id)
 }
@@ -57,7 +65,7 @@ fn question_digit_picks_the_option_and_sends_answer() {
     let (mut state, call_id) = question_asked();
     assert_eq!(
         key(&mut state, KeyCode::Char('2')),
-        vec![Cmd::Answer(call_id, Some("production".into()))]
+        vec![answer(call_id, Some("production".into()))]
     );
     assert!(state.modal.is_none());
 }
@@ -70,7 +78,7 @@ fn question_enter_sends_the_typed_free_text() {
     }
     assert_eq!(
         key(&mut state, KeyCode::Enter),
-        vec![Cmd::Answer(call_id, Some("canary".into()))]
+        vec![answer(call_id, Some("canary".into()))]
     );
     assert!(state.modal.is_none());
 }
@@ -78,9 +86,6 @@ fn question_enter_sends_the_typed_free_text() {
 #[test]
 fn question_esc_dismisses_with_no_answer() {
     let (mut state, call_id) = question_asked();
-    assert_eq!(
-        key(&mut state, KeyCode::Esc),
-        vec![Cmd::Answer(call_id, None)]
-    );
+    assert_eq!(key(&mut state, KeyCode::Esc), vec![answer(call_id, None)]);
     assert!(state.modal.is_none());
 }
