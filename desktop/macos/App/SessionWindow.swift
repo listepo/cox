@@ -98,32 +98,11 @@ struct SessionWindow: View {
       if !appearanceWrites.isPending { readAppearance() }
     }
     .alert(refused ?? "", isPresented: isRefused) {}
-    .sheet(isPresented: isConnecting) {
-      ConnectHostSheet(state: connecting ?? .init()) {
-        switch $0 {
-        case .cancel: connecting = nil
-        case .connect(let host): Task { await connect(host) }
-        }
-      }
-    }
+    .connectHostSheet($connecting, remotes: model.remotes)
     .newSessionSheet($picking) { agent in await open(resume: nil, agent: agent) }
     .bestOfSheet(bestOf, workspace: try? model.launch.live.get()) { session in
       handle(Sidebar.Intent.select(session))
       reviewing = Reviewing(path: nil)
-    }
-  }
-
-  private var isConnecting: Binding<Bool> {
-    Binding(get: { connecting != nil }, set: { if !$0 { connecting = nil } })
-  }
-
-  /// The sheet's Connect: it closes once the host answered, and says why when it did not.
-  private func connect(_ host: String) async {
-    connecting = ConnectHostSheet.State(isConnecting: true)
-    if let failure = await model.remotes.connect(host) {
-      connecting = ConnectHostSheet.State(failure: failure)
-    } else {
-      connecting = nil
     }
   }
 
@@ -306,17 +285,8 @@ struct SessionWindow: View {
     case .toggle(let project): model.sidebar.toggle(project)
     case .newSession: Task { await newSession() }
     case .popOut(let session, let asTab): openPopOut(session, asTab: asTab)
-    case .reconnect(let group):
-      if let host = RemoteHosts.host(section: group) {
-        Task { await model.remotes.reconnect(host) }
-      }
-    case .rename(let session, let title):
-      // An open session renames through its core; the store takes a closed one's directly.
-      if let store = opened[session]?.store {
-        send(.rename(title: title), to: store)
-      } else {
-        model.sidebar.rename(session, to: title)
-      }
+    case .reconnect(let group): reconnect(group)
+    case .rename(let session, let title): rename(session, to: title)
     case .select(let session):
       reviewing = nil
       if opened[session] != nil {
@@ -325,6 +295,21 @@ struct SessionWindow: View {
         // A recording replays one session; its inbox rows name sessions it cannot open.
         Task { await open(resume: session) }
       }
+    }
+  }
+
+  /// A host group's Reconnect (T52.21).
+  private func reconnect(_ group: String) {
+    guard let host = RemoteHosts.host(section: group) else { return }
+    Task { await model.remotes.reconnect(host) }
+  }
+
+  /// An open session renames through its core; the store takes a closed one's directly.
+  private func rename(_ session: String, to title: String) {
+    if let store = opened[session]?.store {
+      send(.rename(title: title), to: store)
+    } else {
+      model.sidebar.rename(session, to: title)
     }
   }
 
