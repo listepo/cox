@@ -1,7 +1,7 @@
 // First run (DT§5.8, T37.31): cox-app's checklist in CoxUI's `OnboardingScreen`, the folder the
 // first session opens in — picked or dropped (T37.45.5) — and the way to Settings for a missing
-// key. Shown in the session window until a project is chosen; the choice is kept, so later
-// launches go straight to the session.
+// key. Shown in the session window, shrunk to the small first-run size, until a project is
+// chosen; the choice is kept, so later launches go straight to the session.
 
 import AppKit
 import CoxClient
@@ -17,7 +17,9 @@ struct FirstRun: View {
   @Environment(\.openSettings) private var openSettings
 
   var body: some View {
-    OnboardingScreen(state: state) { handle($0) }.task { await check() }
+    OnboardingScreen(state: state) { handle($0) }
+      .task { await check() }
+      .windowSize(NSSize(width: Size.windowSmallWidth, height: Size.windowMinHeight))
   }
 
   private func handle(_ intent: OnboardingScreenIntent) {

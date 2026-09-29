@@ -1,7 +1,8 @@
 // The Settings window (DT§5.7, T37.30.1): `SettingsStore`'s pages, tables and fields copied into
 // CoxUI's `SettingsScreenState` case for case, and the screen's intents sent back to the store.
 // A slider's steps are coalesced into one write per rest; until Rust answers, the slider shows
-// the value it was dragged to. Wiring only: what each field shows was decided in CoxModel.
+// the value it was dragged to. Wiring only: what each field shows was decided in CoxModel. The
+// window wears the session window's chrome and appearance, as the mockup's Settings does.
 
 import CoxClient
 import CoxModel
@@ -16,6 +17,7 @@ struct SettingsWindow: View {
   @State private var dragged: [String: Double] = [:]
   /// Why the last key could not be stored; shown until dismissed.
   @State private var refused: String?
+  @Environment(\.coxAppearance) private var base
 
   var body: some View {
     Group {
@@ -30,7 +32,18 @@ struct SettingsWindow: View {
       }
     }
     .frame(minWidth: Size.windowMinWidth, minHeight: Size.windowMinHeight)
+    .environment(\.coxAppearance, appearance.applied(to: base))
+    .behindWindowBlur(
+      appearance.blurFraction, tint: appearance.tint,
+      in: RoundedRectangle(cornerRadius: Radius.window, style: .continuous)
+    )
+    .seeThroughWindow()
     .alert(refused ?? "", isPresented: isRefused) {}
+  }
+
+  /// `[desktop.appearance]` as the session window draws it; the defaults until settings load.
+  private var appearance: AppearancePopover.State {
+    model.settings.map { AppearancePopover.State($0) } ?? AppearancePopover.State()
   }
 
   private var isRefused: Binding<Bool> {
