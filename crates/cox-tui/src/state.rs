@@ -2284,6 +2284,11 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
         // T50.2: the rollout's record of a mode change; `set_mode` already
         // updated the status line when the TUI sent it.
         Event::PermissionModeChanged { .. } => {}
+        // Resume replays this without a local `set_mode`. The permission
+        // mode is the gate the status line shows.
+        Event::ModeChanged { permission_mode, .. } => {
+            state.mode = permission_mode;
+        }
         Event::TaskCreated { task, label, tier } => {
             state.tasks.push((task, label, tier, state.tick, None));
         }
@@ -2417,7 +2422,7 @@ mod tests {
     use crate::theme;
     use cox_core::{History, HistoryTurn};
     use cox_protocol::ids::TurnId;
-    use cox_protocol::types::{Content, Message, PermissionMode, Role, SandboxMode};
+    use cox_protocol::types::{Content, Message, Mode, PermissionMode, Role, SandboxMode};
     use crossterm::event::{KeyCode, KeyEvent};
 
     /// Types `text` into the composer and submits it with a plain `Enter`,
@@ -2441,6 +2446,19 @@ mod tests {
             update(state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
         }
         update(state, Msg::Key(KeyEvent::from(KeyCode::Enter)))
+    }
+
+    #[test]
+    fn a_mode_change_event_sets_the_permission_mode_it_resolved_to() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        update(
+            &mut state,
+            Msg::Event(Event::ModeChanged {
+                mode: Mode::Architect,
+                permission_mode: PermissionMode::Plan,
+            }),
+        );
+        assert_eq!(state.mode, PermissionMode::Plan);
     }
 
     #[test]
