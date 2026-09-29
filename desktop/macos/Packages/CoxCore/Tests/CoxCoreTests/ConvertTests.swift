@@ -74,11 +74,22 @@ import Testing
     files: [.init(path: "a.rs", change: .created, added: 3, removed: 0, call: "c1", turn: 2)],
     checkpoints: [.init(turn: 2, label: "Turn 2 · before a.rs", time: "2026-09-28T14:02:00.000Z")],
     worktree: .init(path: "/w", branch: "t1", base: "main", commit: "4273daa", bytes: 9),
-    worktreeFacts: [], turns: [])
+    worktreeFacts: [.init(label: "Branch", value: "t1", detail: false)],
+    turns: [
+      .init(
+        turn: 2,
+        files: [.init(path: "a.rs", change: .created, added: 3, removed: 0, call: "c1", turn: 2)])
+    ])
   let want = CoxClient.Changes(
     files: [.init(path: "a.rs", change: .created, added: 3, removed: 0, call: "c1", turn: 2)],
     checkpoints: [.init(turn: 2, label: "Turn 2 · before a.rs", time: "2026-09-28T14:02:00.000Z")],
-    worktree: .init(path: "/w", branch: "t1", base: "main", commit: "4273daa", bytes: 9))
+    worktree: .init(path: "/w", branch: "t1", base: "main", commit: "4273daa", bytes: 9),
+    worktreeFacts: [.init(label: "Branch", value: "t1")],
+    turns: [
+      .init(
+        turn: 2,
+        files: [.init(path: "a.rs", change: .created, added: 3, removed: 0, call: "c1", turn: 2)])
+    ])
   #expect(CoxClient.Changes(live) == want)
 }
 

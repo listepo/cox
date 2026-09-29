@@ -1,5 +1,6 @@
 // The Changes tab's state from cox-app's `Changes` (T37.29.1): the files, the checkpoints and
-// the worktree's facts fill the tab, read through SessionStore from the fixture session.
+// the worktree's facts fill the tab, read through SessionStore from the fixture session. What
+// the facts say (`detached`, `Base` only with both) is `cox_app::changes`'s test (T58.4.20).
 
 import CoxClient
 import Foundation
@@ -20,7 +21,10 @@ private let changes = Changes(
   ],
   worktree: Linked(
     path: "/w/_worktrees/cox-t1", branch: "t1", base: "main", commit: "4273daa",
-    bytes: 412_000_000))
+    bytes: 412_000_000),
+  worktreeFacts: [
+    Fact(label: "Branch", value: "t1"), Fact(label: "Base", value: "main @ 4273daa"),
+  ])
 
 @MainActor
 @Test func theStoreFillsTheTabFromTheSession() async throws {

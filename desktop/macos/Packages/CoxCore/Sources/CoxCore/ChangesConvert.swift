@@ -12,7 +12,11 @@ extension CoxClient.Changes {
       checkpoints: changes.checkpoints.map {
         CoxClient.Checkpoint(turn: $0.turn, label: $0.label, time: $0.time)
       },
-      worktree: changes.worktree.map { CoxClient.Linked($0) })
+      worktree: changes.worktree.map { CoxClient.Linked($0) },
+      worktreeFacts: changes.worktreeFacts.map { CoxClient.Fact($0) },
+      turns: changes.turns.map {
+        CoxClient.TurnFiles(turn: $0.turn, files: $0.files.map { CoxClient.ChangedFile($0) })
+      })
   }
 }
 
