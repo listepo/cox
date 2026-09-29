@@ -35,6 +35,14 @@ pub enum McpLogin {
     Unreadable { error: String },
 }
 
+/// The button a login row offers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LoginAction {
+    LogIn,
+    LogOut,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct McpServer {
     pub name: String,
@@ -45,6 +53,11 @@ pub struct McpServer {
     pub status: McpStatus,
     /// Why it failed, sanitized and capped; empty when nothing went wrong.
     pub log: Vec<String>,
+    /// The login's line (`Logged in, expires in 3h`), worded here so no
+    /// client words it (T58.4.1).
+    pub detail: String,
+    /// The button the row offers; `None` for a server with no login.
+    pub action: Option<LoginAction>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -121,15 +134,40 @@ pub async fn servers(
             None => McpLogin::Stdio,
             Some(_) => login_of(secrets.store(name).load().await),
         };
+        let source = found.sources.get(name).cloned().unwrap_or_default();
+        let (detail, action) = words(&login, &source);
         out.push(McpServer {
             name: name.clone(),
-            source: found.sources.get(name).cloned().unwrap_or_default(),
             status: mcp_status::status_of(config.mcp.enabled, name, &login, run),
             log: mcp_status::log_of(name, &login, run),
+            source,
             login,
+            detail,
+            action,
         });
     }
     out
+}
+
+/// A login's line and its button; `source` is where a stdio server is
+/// configured.
+fn words(login: &McpLogin, source: &str) -> (String, Option<LoginAction>) {
+    match login {
+        McpLogin::Stdio => (format!("Runs locally from {source}; no login"), None),
+        McpLogin::LoggedOut => ("Not logged in".into(), Some(LoginAction::LogIn)),
+        McpLogin::LoggedIn {
+            expires: Some(expires),
+        } => (
+            format!("Logged in, expires in {expires}"),
+            Some(LoginAction::LogOut),
+        ),
+        McpLogin::LoggedIn { expires: None } => ("Logged in".into(), Some(LoginAction::LogOut)),
+        McpLogin::Expired => ("Login expired".into(), Some(LoginAction::LogIn)),
+        McpLogin::Unreadable { error } => (
+            format!("Token store unreadable: {error}"),
+            Some(LoginAction::LogIn),
+        ),
+    }
 }
 
 fn login_of(
@@ -175,4 +213,49 @@ pub async fn set_login(
         auth::logout(store).await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_logged_out_server_offers_log_in() {
+        let words = words(&McpLogin::LoggedOut, "config");
+        assert_eq!(words, ("Not logged in".into(), Some(LoginAction::LogIn)));
+    }
+
+    #[test]
+    fn each_login_has_its_line_and_button() {
+        let cases = [
+            (
+                McpLogin::Stdio,
+                "Runs locally from .mcp.json; no login",
+                None,
+            ),
+            (
+                McpLogin::LoggedIn {
+                    expires: Some("3h".into()),
+                },
+                "Logged in, expires in 3h",
+                Some(LoginAction::LogOut),
+            ),
+            (
+                McpLogin::LoggedIn { expires: None },
+                "Logged in",
+                Some(LoginAction::LogOut),
+            ),
+            (McpLogin::Expired, "Login expired", Some(LoginAction::LogIn)),
+            (
+                McpLogin::Unreadable {
+                    error: "locked".into(),
+                },
+                "Token store unreadable: locked",
+                Some(LoginAction::LogIn),
+            ),
+        ];
+        for (login, detail, action) in cases {
+            assert_eq!(words(&login, ".mcp.json"), (detail.to_string(), action));
+        }
+    }
 }

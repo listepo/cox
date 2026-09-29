@@ -24,10 +24,11 @@ use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState
 use cox_app::review::LineComment;
 use cox_app::{
     Activity, BrowserError, ChangedFile, Changes, Checkpoint, Completion, ConfigSource,
-    ContextPart, CostRow, DaySummary, Dropped, FileChange, Icon, InboxItem, Info, Intent, Layer,
-    Linked, McpLogin, McpServer, McpStatus, MeterRow, MeterText, ModelChoice, Need, PageText,
-    PaletteHit, PaletteItem, PaletteKind, Project, SearchHit, SessionEntry, Setting, SettingKind,
-    SettingsView, Tally, TaskKind, TaskTarget, TurnCosts, TurnUsage, UsageView,
+    ContextPart, CostRow, DaySummary, Dropped, FileChange, Icon, InboxItem, InboxStatus, Info,
+    Intent, Layer, Linked, LoginAction, McpLogin, McpServer, McpStatus, MeterRow, MeterText,
+    ModelChoice, Need, PageText, PaletteHit, PaletteItem, PaletteKind, Project, SearchHit,
+    SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind, TaskTarget, TurnCosts,
+    TurnUsage, UsageView,
 };
 use cox_app::{KeyValueRow, PluginKey, PluginSlot, SpanView, WidgetView};
 use cox_app::{PermissionRule, RuleKind, SessionGrant};
@@ -600,6 +601,16 @@ pub struct InboxItem {
     pub need: Need,
     pub expired: bool,
     pub seq: u64,
+    pub title: String,
+    pub subtitle: String,
+    pub status: InboxStatus,
+}
+
+#[uniffi::remote(Enum)]
+pub enum InboxStatus {
+    Waiting,
+    Idle,
+    Error,
 }
 
 #[uniffi::remote(Enum)]
@@ -839,6 +850,14 @@ pub struct McpServer {
     pub login: McpLogin,
     pub status: McpStatus,
     pub log: Vec<String>,
+    pub detail: String,
+    pub action: Option<LoginAction>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum LoginAction {
+    LogIn,
+    LogOut,
 }
 
 #[uniffi::remote(Enum)]
