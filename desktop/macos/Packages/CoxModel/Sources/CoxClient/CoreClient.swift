@@ -42,6 +42,20 @@ public protocol SessionClient: AnyObject, Sendable {
   /// session's `/` commands and `@` files, best first, at most `limit` of each kind
   /// (`cox_app::Completer::palette`, T37.44.13).
   func palette(_ query: String, items: [PaletteItem], limit: UInt32) -> [PaletteHit]
+  /// The token at `caret` (UTF-16 units) that asks for rows: `@` anywhere, `/` only as the first
+  /// word, none inside a word, with a `selection` or in `shell` mode
+  /// (`cox_app::complete::typed_token`, T58.4.16).
+  func typedToken(_ text: String, caret: Int, selection: Bool, shell: Bool) -> TypedToken?
+  /// `insert` in place of `token`, then one space, and the caret after it; an empty token at
+  /// the end appends it as a new word (`cox_app::complete::pick`).
+  func pick(_ text: String, token: TypedToken, insert: String) -> Splice?
+  /// The `picked` `@` files still in `text`, each once (`cox_app::complete::mentions`).
+  func mentions(_ text: String, picked: [String]) -> [String]
+  /// What the draft becomes when sent: shell line, `/` line or turn, queued behind a `running`
+  /// turn unless `when` is `.now` (`cox_app::intent::draft_intent`, T58.4.17).
+  func draftIntent(
+    _ text: String, shell: Bool, attachments: Int, running: Bool, when: SendWhen
+  ) -> DraftIntent
   /// This session's earlier prompts, newest first, at most `limit`: what ↑ walks in an empty
   /// composer (`cox_app::live::LiveSession::history`).
   func history(limit: UInt32) throws -> [String]

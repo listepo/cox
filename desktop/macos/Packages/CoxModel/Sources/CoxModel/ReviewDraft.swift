@@ -44,13 +44,9 @@ public struct ReviewDraft: Equatable, Sendable {
   }
 }
 
-/// `[desktop.review] send`, spelled as Rust stores it (A108).
-public enum ReviewSend: String, Equatable, Sendable, Decodable {
-  /// Behind the running turn, as the composer queues a prompt; at once when no turn runs.
-  case queue
-  /// At once, even while a turn runs.
-  case now
-}
+/// `[desktop.review] send`, spelled as Rust stores it (A108): cox-app's `SendWhen`, which also
+/// decides a review's queueing (T58.4.19).
+public typealias ReviewSend = SendWhen
 
 extension SettingsStore {
   /// `[desktop.review] send` from the loaded view; queue before the first load or when the key
@@ -66,8 +62,10 @@ extension SessionStore {
   /// comment has text.
   public func sendReview(_ when: ReviewSend = .queue) async throws {
     guard let text = session.reviewMessage(reviewDraft.comments) else { return }
+    let draft = session.draftIntent(
+      text, shell: false, attachments: 0, running: isTurnRunning, when: when)
     _ = try await send(
-      when == .queue && isTurnRunning
+      draft.queued
         ? .queue(text: text, attachments: [], confirmThink: false)
         : .send(text: text, attachments: [], confirmThink: false))
     reviewDraft = ReviewDraft()

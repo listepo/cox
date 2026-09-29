@@ -17,8 +17,10 @@ use cox_app::best_of::{
     BestOf, BestOfId, BestOfRequest, Candidate, CandidateState, CandidateView, Launch, Launched,
     Picked,
 };
+use cox_app::complete::{Splice, TypedToken};
 use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange};
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind, TextLine};
+use cox_app::intent::{DraftIntent, DraftKind, SendWhen};
 use cox_app::onboarding::{CheckId, CheckRow, CheckStatus};
 use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 use cox_app::review::LineComment;
@@ -999,6 +1001,41 @@ pub enum SettingKind {
 pub struct Completion {
     pub insert: String,
     pub detail: String,
+}
+
+#[uniffi::remote(Record)]
+pub struct TypedToken {
+    pub start: u32,
+    pub end: u32,
+    pub text: String,
+}
+
+#[uniffi::remote(Record)]
+pub struct Splice {
+    pub text: String,
+    pub caret: u32,
+}
+
+#[uniffi::remote(Enum)]
+pub enum SendWhen {
+    Queue,
+    Now,
+}
+
+#[uniffi::remote(Enum)]
+pub enum DraftKind {
+    Shell,
+    Command,
+    Turn,
+}
+
+#[uniffi::remote(Record)]
+pub struct DraftIntent {
+    pub kind: DraftKind,
+    pub queued: bool,
+    pub can_send: bool,
+    pub keeps_attachments: bool,
+    pub enters_shell: bool,
 }
 
 #[uniffi::remote(Enum)]
