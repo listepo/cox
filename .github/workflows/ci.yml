@@ -29,7 +29,7 @@ jobs:
   # nextest where the runner executes the target (Linux x86_64 and aarch64,
   # macOS aarch64) or a build where it does not (macOS x86_64).
   rust:
-    uses: listepo/infra/.github/workflows/ci-rust.yml@189816ac5a375e18e0235044970efcbc40e3cabd
+    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@189816ac5a375e18e0235044970efcbc40e3cabd
     with:
       # The shared matrix minus Windows: the workspace does not build there
       # yet (P57); the `windows` job below checks the crates that do.
