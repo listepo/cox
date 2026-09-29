@@ -5,6 +5,7 @@
 //! permission engine can rate a command line without running it.
 
 mod classify;
+mod shell;
 
 use std::fs::File;
 use std::io::{self, Read};
@@ -12,8 +13,8 @@ use std::os::fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -34,6 +35,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 pub use classify::{classify, segments};
+pub use shell::default_shell;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long a process gets between SIGTERM and SIGKILL.
@@ -87,10 +89,6 @@ enum Shell {
     Pwsh,
 }
 
-/// Where a shell may live. Not `PATH`: what the sandbox spawns must not
-/// depend on an environment the workspace can rewrite.
-const SHELL_DIRS: &[&str] = &["/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin"];
-
 impl Shell {
     fn name(self) -> &'static str {
         match self {
@@ -106,27 +104,25 @@ impl Shell {
         }
     }
 
-    /// The first installed binary for this shell; every one of them takes
-    /// the command line after `-c`.
+    /// The installed binary for this shell (`shell::resolve`, T57.2);
+    /// every one of them, PowerShell included, takes the command line
+    /// after `-c`.
     fn path(self) -> Result<PathBuf, ToolError> {
-        SHELL_DIRS
-            .iter()
-            .map(|dir| Path::new(dir).join(self.name()))
-            .find(|path| path.is_file())
-            .ok_or_else(|| ToolError::Denied {
-                why: format!(
-                    "shell `{}` is not installed here (looked in {})",
-                    self.name(),
-                    SHELL_DIRS.join(", ")
-                ),
-            })
+        let host = shell::Host::current();
+        shell::resolve(self.name(), host, &shell::System).ok_or_else(|| ToolError::Denied {
+            why: format!(
+                "shell `{}` is not installed here (looked in {})",
+                self.name(),
+                shell::searched(host)
+            ),
+        })
     }
 }
 
 /// The login shell a user's own terminal runs (the desktop terminal pane,
 /// T51.3): `$SHELL`'s file name when it names a shell of the allowlist
 /// above, else the platform default (`zsh` on macOS, `sh` elsewhere), each
-/// resolved in `SHELL_DIRS` and never on `PATH` — the directory `$SHELL`
+/// resolved by `shell::resolve` (on Unix never on `PATH`) — the directory `$SHELL`
 /// points into is ignored, so a workspace cannot pick the program. `None`
 /// when neither is installed.
 pub fn login_shell(env_shell: Option<&str>) -> Option<PathBuf> {
@@ -156,19 +152,25 @@ struct Cmd {
 impl Tool for BashTool {
     fn spec(&self) -> ToolSpec {
         let input_schema = serde_json::to_value(schema_for!(BashInput)).unwrap_or(Value::Null);
+        // Resolved once per process: the tool schema is part of the
+        // cache-stable prefix (T57.2 names the Windows default shell here).
+        static DEFAULT: OnceLock<String> = OnceLock::new();
+        let default =
+            DEFAULT.get_or_init(|| shell::default_label(shell::Host::current(), &shell::System));
         ToolSpec {
             name: "bash".to_string(),
-            description: "Runs a shell command line in the workspace and returns its output \
+            description: format!(
+                "Runs a shell command line in the workspace and returns its output \
                 (stdout and stderr interleaved, ANSI stripped) followed by `[exit <code> in \
                 <ms>]`. Output streams while the command runs; a long-running command is \
                 stopped after `timeout_s` seconds (default 120). Prefer the dedicated `read`, \
                 `grep`, `glob` and `edit` tools for file work; use `bash` for builds, tests, \
                 git and anything that needs a process. `shell` picks the interpreter \
-                (`sh` by default, or `bash`, `zsh`, `fish`, `dash`, `ksh`, `tcsh`, `nu`, \
+                ({default} by default, or `bash`, `zsh`, `fish`, `dash`, `ksh`, `tcsh`, `nu`, \
                 `pwsh` when the command line needs that shell's syntax); it errors if the \
                 shell is not installed. Pass `background: true` for a server \
                 or watcher you do not want to wait for."
-                .to_string(),
+            ),
             input_schema,
             deferred: false,
             risk: Risk::Exec,

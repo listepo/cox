@@ -420,11 +420,14 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
     // sessions of this workspace see every surface, `--no-hooks` or not;
     // PL§6: plugin hooks follow the shell's in one chain, and `--no-hooks`
     // turns off only the shell's.
+    // T57.2: hooks run in the shell a `!` line runs in.
     let shell: Option<Arc<dyn Hook>> = base.hooks.enabled.then(|| {
-        Arc::new(cox_ext::hooks::ShellHooks::new(
-            &base.hooks,
-            cwd.to_path_buf(),
-        )) as Arc<dyn Hook>
+        let hooks = cox_ext::hooks::ShellHooks::new(&base.hooks, cwd.to_path_buf());
+        let hooks = match cox_tools::bash::default_shell() {
+            Some(program) => hooks.with_shell(program),
+            None => hooks,
+        };
+        Arc::new(hooks) as Arc<dyn Hook>
     });
     session.set_hook(Arc::new(
         cox_ext::presence::PresenceHook::new(
