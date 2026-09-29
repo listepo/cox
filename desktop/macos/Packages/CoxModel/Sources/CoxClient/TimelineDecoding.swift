@@ -40,14 +40,17 @@ extension BlockKind: Decodable {
     let tag: String = try keys("type")
     switch tag {
     case "user": self = try .user(text: keys("text"), attachments: keys("attachments"))
-    case "assistant": self = try .assistant(text: keys("text"), doc: keys("doc"))
+    case "assistant":
+      self = try .assistant(
+        text: keys("text"), doc: keys("doc"), pluginView: keys.optional("plugin_view"))
     case "thinking":
       self = try .thinking(text: keys("text"), durationMs: keys.optional("duration_ms"))
     case "tool":
       self = try .tool(
         tool: keys("tool"), summary: keys("summary"), icon: keys("icon"), risk: keys("risk"),
         state: keys("state"), tail: keys("tail"), archive: keys.optional("archive"),
-        diff: keys.optional("diff"), durationMs: keys("duration_ms"))
+        diff: keys.optional("diff"), durationMs: keys("duration_ms"),
+        pluginView: keys.optional("plugin_view"))
     case "tool_group":
       self = try .toolGroup(
         summary: keys("summary"), children: keys("children"), state: keys("state"))
@@ -201,6 +204,43 @@ extension Span: Decodable {
     strike = try keys.optional("strike") ?? false
     underline = try keys.optional("underline") ?? false
     link = try keys.optional("link")
+  }
+}
+
+extension PluginView: Decodable {
+  public init(from decoder: any Decoder) throws {
+    let keys = try decoder.fields()
+    let tag: String = try keys("type")
+    switch tag {
+    case "text": self = try .text(lines: keys("lines"))
+    case "list":
+      self = try .list(items: keys("items"), selected: keys.optional("selected"))
+    case "table": self = try .table(header: keys("header"), rows: keys("rows"))
+    case "key_value": self = try .keyValue(rows: keys("rows"))
+    case "gauge": self = try .gauge(ratio: keys("ratio"), label: keys("label"))
+    case "stack":
+      self = try .stack(vertical: keys("vertical"), children: keys("children"))
+    case "block":
+      self = try .block(title: keys.optional("title"), child: keys("child"))
+    default: throw keys.unknown(tag)
+    }
+  }
+}
+
+extension PluginRun: Decodable {
+  /// serde names the role `style` and omits `bold`/`italic` at their defaults.
+  public init(from decoder: any Decoder) throws {
+    let keys = try decoder.fields()
+    try self.init(
+      keys.optional("text") ?? "", token: keys.optional("style") ?? .text,
+      bold: keys.optional("bold") ?? false, italic: keys.optional("italic") ?? false)
+  }
+}
+
+extension PluginRow: Decodable {
+  public init(from decoder: any Decoder) throws {
+    let keys = try decoder.fields()
+    try self.init(key: keys("key"), value: keys("value"))
   }
 }
 

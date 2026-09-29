@@ -27,6 +27,8 @@ public struct ToolCard: View {
     case diff([Hunk])
     /// The last lines a command printed and how it exited.
     case tail([String], exit: TerminalTail.Exit)
+    /// A plugin's `tool:` tree; when set it is the body instead of the generic diff or tail.
+    case plugin(PluginWidget)
   }
 
   /// One hunk: the core's `@@` header and its lines.
@@ -77,6 +79,8 @@ private struct ToolCardDetail: View {
       }
     case .tail(let lines, let exit):
       TerminalTail(lines, exit: exit)
+    case .plugin(let widget):
+      PluginWidgetView(widget)
     }
   }
 }
@@ -109,3 +113,6 @@ private struct ToolCardFace: ViewModifier {
   PreviewMatrix { ToolCardSample(PreviewState.cardFailed, isExpanded: true) }
 }
 #Preview("explored") { PreviewMatrix { ToolCardSample(PreviewState.cardExplored) } }
+#Preview("plugin, open") {
+  PreviewMatrix { ToolCardSample(PreviewState.cardPlugin, isExpanded: true) }
+}

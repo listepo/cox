@@ -16,16 +16,19 @@ extension CoxClient.BlockKind {
   init(_ value: CoxFFIBindings.BlockKind) {
     switch value {
     case .user(let text, let attachments): self = .user(text: text, attachments: attachments)
-    case .assistant(let text, let doc): self = .assistant(text: text, doc: .init(doc))
+    case .assistant(let text, let doc, let pluginView):
+      self = .assistant(
+        text: text, doc: .init(doc), pluginView: pluginView.map { CoxClient.PluginView($0) })
     case .thinking(let text, let durationMs):
       self = .thinking(text: text, durationMs: durationMs)
     case .tool(
       let tool, let summary, let icon, let risk, let state, let tail, let archive, let diff,
-      let durationMs):
+      let durationMs, let pluginView):
       self = .tool(
         tool: tool, summary: summary, icon: .init(icon), risk: .init(risk), state: .init(state),
         tail: tail, archive: archive.map { .init(id: $0.id, bytes: $0.bytes) },
-        diff: diff.map { CoxClient.DiffModel($0) }, durationMs: durationMs)
+        diff: diff.map { CoxClient.DiffModel($0) }, durationMs: durationMs,
+        pluginView: pluginView.map { CoxClient.PluginView($0) })
     case .toolGroup(let summary, let children, let state):
       self = .toolGroup(summary: summary, children: children, state: .init(state))
     case .approval(
@@ -389,5 +392,85 @@ extension CoxFFIBindings.Intent {
 extension CoxFFIBindings.Attachment {
   init(_ value: CoxClient.Attachment) {
     self.init(name: value.name, mediaType: value.mediaType, dataB64: value.dataB64)
+  }
+}
+
+/// The core's Markdown writer (T58.4.27), for `DocMarkdown.writer`: the doc goes back over the
+/// seam as the generated values it came from, so nothing the core's writer reads is dropped.
+public struct CoreDocWriter: DocWriter {
+  public init() {}
+
+  public func markdown(_ doc: CoxClient.StyledDoc) -> String {
+    CoxFFIBindings.docMarkdown(doc: .init(doc))
+  }
+
+  public func markdown(_ block: CoxClient.DocBlock) -> String? {
+    CoxFFIBindings.blockMarkdown(block: .init(block))
+  }
+}
+
+extension CoxFFIBindings.StyledDoc {
+  init(_ value: CoxClient.StyledDoc) {
+    self.init(blocks: value.blocks.map { CoxFFIBindings.DocBlock($0) })
+  }
+}
+
+extension CoxFFIBindings.DocBlock {
+  init(_ value: CoxClient.DocBlock) {
+    let spans = { (lines: [[CoxClient.Span]]) in lines.map { $0.map { CoxFFIBindings.Span($0) } } }
+    switch value {
+    case .text(let kind, let lines):
+      self = .text(
+        kind: .init(kind),
+        lines: lines.map {
+          .init(
+            quote: $0.quote, depth: $0.depth, marker: $0.marker,
+            spans: $0.spans.map { CoxFFIBindings.Span($0) })
+        })
+    case .code(let lang, let lines): self = .code(lang: lang, lines: spans(lines))
+    case .table(let rows): self = .table(rows: rows)
+    case .rule: self = .rule
+    }
+  }
+}
+
+extension CoxFFIBindings.TextKind {
+  init(_ value: CoxClient.TextKind) {
+    switch value {
+    case .paragraph: self = .paragraph
+    case .heading(let level): self = .heading(level)
+    case .list: self = .list
+    case .quote: self = .quote
+    }
+  }
+}
+
+extension CoxFFIBindings.Span {
+  init(_ value: CoxClient.Span) {
+    self.init(
+      text: value.text, token: .init(value.token), rgb: value.rgb, light: value.light,
+      bold: value.bold, italic: value.italic, strike: value.strike, underline: value.underline,
+      link: value.link)
+  }
+}
+
+extension CoxFFIBindings.StyleToken {
+  init(_ value: CoxClient.StyleToken) {
+    switch value {
+    case .text: self = .text
+    case .dim: self = .dim
+    case .accent: self = .accent
+    case .user: self = .user
+    case .agent: self = .agent
+    case .tool: self = .tool
+    case .ok: self = .ok
+    case .warn: self = .warn
+    case .error: self = .error
+    case .diffAdd: self = .diffAdd
+    case .diffDel: self = .diffDel
+    case .diffHunk: self = .diffHunk
+    case .border: self = .border
+    case .selection: self = .selection
+    }
   }
 }

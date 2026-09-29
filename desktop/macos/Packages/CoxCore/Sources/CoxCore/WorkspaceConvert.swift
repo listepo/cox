@@ -1,9 +1,9 @@
 // The sidebar's workspace over cox-ffi (DT§5.1, DT§4.3): `App.projects`, `sessions`,
-// `activity` and the change wait as CoxClient's values, the toolbar's model catalog and menu
-// (T58.4.12) and the footer's usable providers (T37.22.6, A110), the launch's login-shell
-// environment (DT§4.8) and the browser pane's address check (T51.10), and the row conversions a
-// remote host's list shares (T52.21). Separate from `LiveCoreClient.swift` like the other
-// conversions, so that file stays the list of calls into Rust for one session.
+// `activity`, `sidebar` and the change wait as CoxClient's values, the toolbar's model catalog
+// and menu (T58.4.12) and the footer's usable providers (T37.22.6, A110), the launch's
+// login-shell environment (DT§4.8) and the browser pane's address check (T51.10), and the row
+// conversions a remote host's list shares (T52.21). Separate from `LiveCoreClient.swift` like
+// the other conversions, so that file stays the list of calls into Rust for one session.
 
 import CoxClient
 import CoxFFIBindings
@@ -24,6 +24,10 @@ extension LiveCoreClient: WorkspaceClient {
     case .waitingOnYou: .waitingOnYou
     case .failed: .failed
     }
+  }
+
+  public func sidebar(filter: String, folded: [String]) throws -> [CoxClient.SidebarSection] {
+    try app.sidebar(filter: filter, folded: folded).map { CoxClient.SidebarSection($0) }
   }
 
   public func changed() async throws { try await app.workspaceChanged() }
@@ -61,6 +65,52 @@ extension CoxClient.SessionEntry {
       id: value.info.id, title: value.info.title, cwd: value.info.cwd,
       updatedAt: value.info.updatedAt, turns: value.info.turns, costUsd: value.info.costUsd,
       isHeld: value.heldBy != nil, agent: value.agent, bestOf: value.bestOf)
+  }
+}
+
+extension CoxClient.SidebarSection {
+  init(_ value: CoxFFIBindings.SidebarSection) {
+    self.init(
+      id: value.id, title: value.title, kind: .init(value.kind),
+      rows: value.rows.map { CoxClient.SidebarRow($0) })
+  }
+}
+
+extension CoxClient.SidebarRow {
+  init(_ value: CoxFFIBindings.SidebarRow) {
+    self.init(
+      id: value.id, session: value.session, status: .init(value.status), title: value.title,
+      subtitle: value.subtitle.map { CoxClient.SubtitlePart($0) }, cost: value.cost,
+      isReadOnly: value.isReadOnly)
+  }
+}
+
+extension CoxClient.SidebarKind {
+  init(_ value: CoxFFIBindings.SidebarKind) {
+    switch value {
+    case .section(let count): self = .section(count: count)
+    case .project(let isExpanded): self = .project(isExpanded: isExpanded)
+    }
+  }
+}
+
+extension CoxClient.SidebarStatus {
+  init(_ value: CoxFFIBindings.SidebarStatus) {
+    switch value {
+    case .running: self = .running
+    case .waiting: self = .waiting
+    case .idle: self = .idle
+    case .error: self = .error
+    }
+  }
+}
+
+extension CoxClient.SubtitlePart {
+  init(_ value: CoxFFIBindings.SubtitlePart) {
+    switch value {
+    case .text(let text): self = .text(text)
+    case .age(let updatedAt): self = .age(updatedAt: updatedAt)
+    }
   }
 }
 

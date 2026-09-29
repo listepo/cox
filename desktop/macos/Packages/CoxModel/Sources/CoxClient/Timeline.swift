@@ -22,12 +22,12 @@ public struct Block: Identifiable, Equatable, Sendable, Decodable {
 
 public enum BlockKind: Equatable, Sendable {
   case user(text: String, attachments: [String])
-  case assistant(text: String, doc: StyledDoc)
+  case assistant(text: String, doc: StyledDoc, pluginView: PluginView? = nil)
   /// `durationMs` is `nil` while the thought streams, then how long the model thought (A91).
   case thinking(text: String, durationMs: UInt64? = nil)
   case tool(
     tool: String, summary: String, icon: Icon, risk: Risk, state: ToolState, tail: String,
-    archive: ArchiveRef?, diff: DiffModel?, durationMs: UInt64)
+    archive: ArchiveRef?, diff: DiffModel?, durationMs: UInt64, pluginView: PluginView? = nil)
   case toolGroup(summary: String, children: [BlockID], state: ToolState)
   /// `input` is the call's input as JSON text, what Edit… starts from; `grants` the subjects
   /// Allow for session would grant `tool` (the engine's `grants_for`).
@@ -78,20 +78,22 @@ public struct Status: Equatable, Sendable, Decodable {
   public var effort: Effort?
   /// What the catalog calls that model, `Claude Sonnet 5`; `nil` when it has no name.
   public var modelName: String?
+  /// The chip form the core already shortened, `Sonnet 5`; `nil` on old fixtures that omit it.
+  public var shortName: String?
 
   public init(
     queued: UInt32 = 0, mode: PermissionMode? = nil, nextMode: PermissionMode? = nil,
-    model: String? = nil, effort: Effort? = nil, modelName: String? = nil
+    model: String? = nil, effort: Effort? = nil, modelName: String? = nil, shortName: String? = nil
   ) {
-    (self.queued, self.mode, self.nextMode, self.model, self.effort, self.modelName) = (
-      queued, mode, nextMode, model, effort, modelName
-    )
+    (self.queued, self.mode, self.nextMode, self.model, self.effort, self.modelName, self.shortName)
+      = (queued, mode, nextMode, model, effort, modelName, shortName)
   }
 
   enum CodingKeys: String, CodingKey {
     case queued, mode, model, effort
     case nextMode = "next_mode"
     case modelName = "model_name"
+    case shortName = "short_name"
   }
 }
 

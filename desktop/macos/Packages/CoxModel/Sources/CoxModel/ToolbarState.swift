@@ -43,13 +43,11 @@ public struct ToolbarState: Equatable, Sendable {
     project = entry?.project.name ?? (cwd.isEmpty ? "" : URL(filePath: cwd).lastPathComponent)
     branch = info?.worktree?.branch
     guard let usage else { return }
-    if agent == nil { cost = usd(usage.session.costUsd) }
-    let split = ContextSplit(usage.text)
-    // `7.6% of 1M`: the percent the core formatted, without the window it is of.
-    if let percent = split.share.components(separatedBy: " of ").first, !percent.isEmpty {
-      context = percent
-    }
-    contextFraction = min(1, split.parts.reduce(0) { $0 + $1.fraction })
+    // The core already formatted these; splitting `contextShare` or summing
+    // parts here would drift from the meter the moment either figure changes.
+    if agent == nil { cost = usage.text.cost }
+    if !usage.text.contextPercent.isEmpty { context = usage.text.contextPercent }
+    contextFraction = usage.text.contextFill
   }
 }
 

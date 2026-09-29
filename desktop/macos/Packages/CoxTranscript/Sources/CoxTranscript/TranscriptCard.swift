@@ -27,12 +27,17 @@ extension ToolCard.Content {
   /// it; `nil` for any other block.
   init?(_ block: Block, locale: Locale) {
     switch block.kind {
-    case .tool(_, let summary, let icon, let risk, let state, let tail, _, let diff, let durationMs):
+    case .tool(
+      _, let summary, let icon, let risk, let state, let tail, _, let diff, let durationMs,
+      let pluginView):
       let duration = state == .running ? nil : Self.seconds(durationMs, locale)
       let header = ToolHeader.Item(
         tile: icon.tile, symbol: icon.symbol, verb: summary, subject: "", risk: risk.chip,
         state: state.header, duration: duration)
-      let detail = diff.flatMap(Self.hunks) ?? Self.tail(tail, state: state, status: duration)
+      // A plugin's own tree replaces the generic tail or diff; the fallback is unchanged.
+      let detail =
+        pluginView.map { ToolCard.Detail.plugin(PluginWidget($0)) } ?? diff.flatMap(Self.hunks)
+        ?? Self.tail(tail, state: state, status: duration)
       self.init(header: header, detail: detail)
     case .toolGroup(let summary, _, let state):
       let header = ToolHeader.Item(
@@ -170,6 +175,57 @@ extension ToolState {
     case .running: .running
     case .done: .succeeded
     case .failed: .failed
+    }
+  }
+}
+
+extension PluginWidget {
+  public init(_ view: PluginView) {
+    let line = { (runs: [PluginRun]) in runs.map(PluginSpan.init) }
+    switch view {
+    case .text(let lines): self = .text(lines.map(line))
+    case .list(let items, let selected):
+      self = .list(items: items.map(line), selected: selected.map(Int.init))
+    case .table(let header, let rows): self = .table(header: line(header), rows: rows.map(line))
+    case .keyValue(let rows):
+      self = .keyValue(rows.map { .init(key: PluginSpan($0.key), value: line($0.value)) })
+    case .gauge(let ratio, let label): self = .gauge(ratio: ratio, label: PluginSpan(label))
+    case .stack(let vertical, let children):
+      self = .stack(vertical: vertical, children: children.map(PluginWidget.init))
+    case .block(let title, let child):
+      // The FFI carries the one child as a list; an empty block draws its title over nothing.
+      self = .block(
+        title: title.map(PluginSpan.init),
+        child: child.first.map(PluginWidget.init) ?? .text([]))
+    }
+  }
+}
+
+extension PluginSpan {
+  public init(_ run: PluginRun) {
+    self.init(run.text, Role(run.token), isBold: run.bold, isItalic: run.italic)
+  }
+}
+
+extension PluginSpan.Role {
+  // One case per token: a mapping, not branching logic.
+  // swiftlint:disable:next cyclomatic_complexity
+  public init(_ token: StyleToken) {
+    switch token {
+    case .text: self = .text
+    case .dim: self = .dim
+    case .accent: self = .accent
+    case .user: self = .user
+    case .agent: self = .agent
+    case .tool: self = .tool
+    case .ok: self = .ok
+    case .warn: self = .warn
+    case .error: self = .error
+    case .diffAdd: self = .diffAdd
+    case .diffDel: self = .diffDel
+    case .diffHunk: self = .diffHunk
+    case .border: self = .border
+    case .selection: self = .selection
     }
   }
 }

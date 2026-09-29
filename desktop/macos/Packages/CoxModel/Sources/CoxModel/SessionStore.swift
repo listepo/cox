@@ -114,22 +114,26 @@ extension BlockKind {
       self = .thinking(text: text + more, durationMs: durationMs)
     case .tool(
       let tool, let summary, let icon, let risk, let state, let tail, let archive, let diff,
-      let durationMs):
+      let durationMs, let pluginView):
       self = .tool(
         tool: tool, summary: summary, icon: icon, risk: risk, state: state,
-        tail: lastLines(tail + more), archive: archive, diff: diff, durationMs: durationMs)
+        tail: lastLines(tail + more), archive: archive, diff: diff, durationMs: durationMs,
+        pluginView: pluginView)
     default:
       break
     }
   }
 
-  /// A `docTail` carries doc blocks, not source, so the text becomes the
-  /// doc's Markdown: derived from the doc, never a stale earlier source. The
-  /// reply's closing upsert brings the real source (`cox_app` `ItemDone`).
+  /// A `docTail` carries doc blocks, not source, so the text is left empty rather than a stale
+  /// earlier source or a Markdown re-render on every tail; Copy writes the doc through the
+  /// core's writer when the text is empty. The reply's closing upsert brings the real source
+  /// (`cox_app` `ItemDone`).
   mutating func replaceDoc(from: Int, with tail: [DocBlock]) {
-    guard case .assistant(_, var doc) = self, from <= doc.blocks.count else { return }
+    guard case .assistant(_, var doc, let pluginView) = self, from <= doc.blocks.count else {
+      return
+    }
     doc.blocks.replaceSubrange(from..., with: tail)
-    self = .assistant(text: doc.markdown, doc: doc)
+    self = .assistant(text: "", doc: doc, pluginView: pluginView)
   }
 }
 
@@ -149,6 +153,18 @@ func lastLines(_ text: String) -> String {
     }
   }
   return text
+}
+
+extension BlockKind {
+  /// The plugin tree a `tool:`/`item:` renderer put on this block; `nil` on every other kind
+  /// and until one lands. An upsert replaces it with the block, as a slot patch replaces its
+  /// slot.
+  public var pluginView: PluginView? {
+    switch self {
+    case .assistant(_, _, let view), .tool(_, _, _, _, _, _, _, _, _, let view): view
+    default: nil
+    }
+  }
 }
 
 extension SessionStore {

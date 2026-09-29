@@ -15,6 +15,7 @@ use cox_app::best_of::{BestOfId, BestOfRequest, CandidateView, Picked};
 use cox_app::onboarding::CheckRow;
 use cox_app::remote::RemoteError;
 use cox_app::terminal::TerminalError;
+use cox_app::workspace::SidebarSection;
 use cox_app::{
     Activity, AgentChoice, DaySummary, Holder, InboxItem, ModelChoice, PaletteHit, PaletteItem,
     Project, SearchHit, SessionEntry,
@@ -202,6 +203,18 @@ pub fn web_address(text: String) -> Option<String> {
     cox_app::browser::web_address(&text)
 }
 
+/// A reply's doc as Markdown, one writer for every client (T58.4.26).
+#[uniffi::export]
+pub fn doc_markdown(doc: cox_app::doc::StyledDoc) -> String {
+    doc.markdown()
+}
+
+/// One doc block as Markdown; `None` for a table without rows.
+#[uniffi::export]
+pub fn block_markdown(block: cox_app::doc::Block) -> Option<String> {
+    block.markdown()
+}
+
 /// One per process: the workspace, the inbox across sessions, the host.
 #[derive(uniffi::Object)]
 pub struct App {
@@ -251,6 +264,14 @@ impl App {
     /// Most urgent first, oldest first within a rank.
     pub fn inbox(&self) -> Vec<InboxItem> {
         self.owner.inbox()
+    }
+
+    pub fn sidebar(
+        &self,
+        filter: String,
+        folded: Vec<PathBuf>,
+    ) -> Result<Vec<SidebarSection>, AppError> {
+        Ok(self.owner.sidebar(&filter, &folded)?)
     }
 
     /// The Dock badge.

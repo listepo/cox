@@ -91,6 +91,9 @@ final class AppModel {
 
   init(launch: LaunchCore) {
     self.launch = launch
+    // A reply's doc is written as Markdown by the core (T58.4.28); a fixture run has no core,
+    // so it keeps the plain stand-in. Set before any window can copy.
+    if !launch.isFixture { DocMarkdown.writer = CoreDocWriter() }
     settings = try? SettingsStore(
       client: launch.live.get(), secrets: launch.secrets, catalog: launch.live.get(),
       cwd: LaunchCore.project())

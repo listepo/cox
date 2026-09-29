@@ -7,13 +7,14 @@
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+use cox_protocol::plugin::Widget;
 use cox_protocol::types::{Event, TodoItem};
 use tokio::sync::{Notify, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use crate::coalesce;
-use crate::patch::{Block, TimelinePatch};
+use crate::patch::{Block, BlockId, TimelinePatch};
 use crate::status::StatusFold;
 use crate::timeline::Timeline;
 use crate::usage::Meter;
@@ -159,6 +160,18 @@ impl Controller {
     /// for the next pull.
     pub fn push(&self, patch: TimelinePatch) {
         coalesce::push(&mut self.shared.lock().queue, patch);
+        self.shared.ready.notify_one();
+    }
+
+    /// Puts a plugin's render on block `id` (T52.23.1) and queues its
+    /// upsert; a block the timeline does not hold changes nothing.
+    pub fn land(&self, id: &BlockId, widget: Option<&Widget>) {
+        {
+            let mut state = self.shared.lock();
+            for patch in state.timeline.land(id, widget) {
+                coalesce::push(&mut state.queue, patch);
+            }
+        }
         self.shared.ready.notify_one();
     }
 

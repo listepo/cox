@@ -33,10 +33,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T39.7 | todo | P3 | 2 | 0% | |
-| T43.6 | todo | P3 | 3 | 0% | |
-| T51.23 | todo | P3 | 2 | 95% | |
-| T52.23.1 | todo | P3 | 3 | 40% | |
-| T52.23.2 | todo | P3 | 2 | 0% | |
+| T43.6 | todo | P3 | 3 | 40% | |
 | T53.5 | todo | P3 | 3 | 0% | |
 | T53.6 | todo | P3 | 2 | 0% | |
 | T53.7 | todo | P3 | 2 | 0% | |
@@ -67,20 +64,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T58.2 | todo | P2 | 2 | 0% | |
 | T58.3 | todo | P1 | 3 | 0% | |
 | T58.4 | todo | P1 | 3 | 10% | |
-| T58.4.4 | todo | P1 | 3 | 90% | |
-| T58.4.5 | todo | P1 | 3 | 90% | |
-| T58.4.6 | todo | P1 | 2 | 90% | |
-| T58.4.14 | todo | P1 | 1 | 90% | |
-| T58.4.15 | todo | P2 | 1 | 90% | |
-| T58.4.20 | todo | P1 | 2 | 95% | |
-| T58.4.21 | todo | P1 | 1 | 95% | |
-| T58.4.22 | todo | P1 | 1 | 95% | |
-| T58.4.23 | todo | P1 | 2 | 95% | |
-| T58.4.24 | todo | P1 | 2 | 95% | |
-| T58.4.25 | todo | P1 | 1 | 95% | |
-| T58.4.26 | todo | P2 | 2 | 80% | |
-| T58.4.27 | todo | P2 | 2 | 0% | |
-| T58.4.28 | todo | P2 | 2 | 0% | |
 | T58.5 | todo | P2 | 3 | 0% | |
 | T58.6 | todo | P2 | 3 | 0% | |
 | T58.7 | todo | P2 | 4 | 0% | |
@@ -1260,7 +1243,7 @@ Prerequisite finding: system[2] today is the stub `INSTRUCTIONS` constant (`cont
 
 ### T43.6. Bench the map on and off
 
-Model: claude-sonnet-5 · Status: open · Depends: T43.5 · Size: ~60 · Priority: P3 · Complexity: 3
+Model: claude-sonnet-5 · Status: in progress · Depends: T43.5 · Size: ~60 · Priority: P3 · Complexity: 3
 
 Goal: falsifier 1 of the gate — does the map pay for its tokens — and the default budget.
 
@@ -1419,12 +1402,6 @@ Every card in this phase keeps the P37 rules (business logic in `cox-app`, `cox-
 - a Swift card that draws an M2 screen compares it with its mockup by `npm run diff` in `desktop/design`;
 - a new dependency is named in its card and gets its §1.1 and `toolchain.md` rows in the same commit.
 
-#### T51.23 Panes draw from `glass.fill` and `glass.border`
-
-Depends: T51.22 · Size: ~90 · Files: CoxUI pane/rim code, its snapshot tests, `desktop/design/DESIGN.md` §3.4/§3.5
-Goal: A129 (11): T51.22 left pane fill and rim on `surface.*`/`separator`, drawing dark panes bluer than the near-black tint of renders 31/32; CoxUI's pane fill and rim read `glass.fill`/`glass.border` instead, and the specular sweep's white literal (`Specular.swift`, `TranscriptView.swift`) gets a token in the same change.
-Check: CoxUI `swift test` passes with light and dark snapshots re-recorded on purpose; dark frosted panes compared against renders 31/32; swiftlint --strict clean.
-
 ### P52 — Desktop M3 (goal: beyond a single agent — Claude Agent, Codex, Gemini CLI and Cursor sessions in the same sidebar over ACP, best-of-n across models in worktrees, plugin panels drawn natively from the `Widget` tree, and remote sessions over SSH through `cox app-server`; DT§3.3)
 
 Rationale in §6 A121. Design: DT§3.3, §4.4 (patch types are serde so the same stream can go over a socket), §4.7 G9, §10; PL§8 (`Widget` tree); EA (external agents, P35) and `crates/cox-acp` (`client.rs`, `terminal.rs`, T35.3/T35.11) and `crates/cox-session/src/external_agents.rs` (T35.13). Approved look: mockup 27-external-agents-acp-m3. Starts after P51.
@@ -1434,18 +1411,6 @@ Every card keeps the P51 rules, and:
 - an external agent's usage is its own billing: no `usage` row is invented for it, and the cost pill shows "—" as the mockup does;
 - a remote session never sends API keys or the Keychain's secrets over the wire and never forwards the ssh agent;
 - plugin widgets reach the screen only through `cox_sanitize::sanitize` and PL§8's limits, as in the TUI.
-
-#### T52.23.1 Rust: plugin `tool:`/`item:` render path
-
-Depends: T52.17 · Size: ~150 · Files: `crates/cox-app/src/plugin` (serve/live), a new `Block` field for the renderer's output, `crates/cox-ffi/src/types.rs`
-Goal: A129 (10): T52.17 left out of scope that `cox-app` has no `cox_render_item` path for a plugin's `tool:`/`item:` renderers; `cox-app` grows that path — a plugin's PL§8 `Widget` tree rendered into a tool card's block field — so a plugin can draw its own tool result instead of the generic card. `cox-ffi` forwards the new field in one expression (A90).
-Check: a `cox-app` test that a `tool:`/`item:` renderer's widget tree lands in the block's new field; `mise exec -- cargo nextest run -p cox-ffi` passes.
-
-#### T52.23.2 Swift: the tool card draws a plugin renderer
-
-Depends: T52.23.1 · Size: ~100 · Files: CoxModel `SessionStore` plugin state, CoxUI tool card
-Goal: A129 (10): the CoxModel plugin-view state and the CoxUI tool card read the new block field and draw the plugin's `tool:`/`item:` renderer in place of the generic card, following T52.17's slot-keeping pattern.
-Check: a CoxModel test that the tool card's plugin view state updates from the new field; a CoxUI snapshot of a tool card drawn with a plugin renderer.
 
 ### P53 — Plugin distribution (goal: a plugin installs from git or a URL through the same validation and per-digest grant as a local folder, and the plugin API, the Rust SDK and the Go SDK are ready to publish once `api = 1` is frozen)
 
@@ -1782,90 +1747,6 @@ M2/M3, not carded (A127 (2) keeps P58 to M1; each moves when a Windows M2/M3 is 
 - `CoxModel/BestOfStore.swift` `prunes`, `pending`; `CoxClient/BestOf.swift` `Candidate.label` and `CandidateView`'s sums, which repeat `cox_app::Candidate::label` (T52.11).
 - `CoxModel/AgentPicker.swift` fallback to cox, `[AgentChoice].label(of:)`, `ToolbarState`'s `· ACP` chip and `—` cost (T52.7, mockup 27).
 - `SessionStore.pluginViews` and the slot keeping (T52.17).
-
-#### T58.4.4 Sidebar sections and rows in `cox-app`
-
-Depends: T58.4.1 · Size: ~190 · Files: `crates/cox-app/src/workspace.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`
-Goal: `App::sidebar(filter, folded)` returns the sidebar's sections (audit items 4–7): "Needs you" from the inbox, "Running" lifted out of the projects, then each project, hidden while filtering when nothing matched and open while filtering even when folded. A row carries its status, title (`SessionEntry.name`, `Untitled session` until titled), cost only above zero, and its subtitle as parts: text parts plus one `age` part holding `updated_at`, which each client localizes. The filter matches the title and the text parts, never the localized `age` part, case-insensitively, with diacritic folding only if a crate already in the workspace provides it — otherwise case-insensitive matching alone (A129). `cox-ffi` forwards it in one expression (A90).
-Check: `mise exec -- cargo nextest run -p cox-app workspace` passes `running_sessions_leave_their_project`, `a_filter_opens_a_folded_project`, `an_idle_session_says_done_only_after_a_turn`, `an_untitled_session_is_named_untitled`; `mise exec -- cargo nextest run -p cox-ffi` passes.
-
-#### T58.4.5 SidebarStore shows the core's sections
-
-Depends: T58.4.4 · Size: ~150 · Files: `CoxModel/Sources/CoxClient/Workspace.swift`, `CoxCore/Sources/CoxCore/WorkspaceConvert.swift`, `CoxModel/Sources/CoxModel/SidebarStore.swift`
-Goal: `WorkspaceClient.sidebar(filter:folded:)` with its conversion; `SidebarStore.sections` joins the parts with ` · `, localizing the `age` part, and keeps `folded`, `filter`, `watch` and `paletteItems`. `SessionEntry.name` reads the core's field. The Swift ordering and word tests move to T58.4.4.
-Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter SidebarStoreTests`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter ConvertTests`.
-
-#### T58.4.6 Short model names and the toolbar's figures
-
-Depends: — · Size: ~100 · Files: `crates/cox-app/src/status.rs`, `crates/cox-app/src/meter_text.rs`, `crates/cox-ffi/src/types.rs`
-Goal: `model_names` adds a `short_name` alongside each model's existing name, dropping the `Claude ` prefix and a trailing ` (latest)` (A111, A116) — a new field, not a change to `Status.model_name` or `ModelChoice.display_name`, which keep their current (full) meaning so the TUI and ACP do not change (A129, audit item 8); the meter's text gains `context_percent` (`42%`), `context_fill` (the parts' shares summed, capped at 1) and `cost` (audit item 9).
-Check: `mise exec -- cargo nextest run -p cox-app status meter_text` passes `a_short_name_drops_the_vendor_and_latest`, `context_fill_is_capped_at_one`; `mise exec -- cargo nextest run -p cox-ffi` passes.
-
-#### T58.4.14 Short model names from the core
-
-Depends: T58.4.6, T58.4.11, T58.4.13 · Size: ~30 · Files: `CoxModel/Sources/CoxModel/ModelName.swift` (deleted), `CoxModel/Sources/CoxModel/ComposerStore.swift`
-Goal: the chip shows `status.shortName ?? id`; nothing shortens a name in Swift any more (A129).
-Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter ComposerStoreTests`; `grep -rn "ModelName" desktop/macos` finds nothing.
-
-#### T58.4.15 Toolbar figures from the meter
-
-Depends: T58.4.6 · Size: ~50 · Files: `CoxModel/Sources/CoxClient/Meter.swift`, `CoxCore/Sources/CoxCore/Convert+Meter.swift`, `CoxModel/Sources/CoxModel/ToolbarState.swift`
-Goal: the meter value gains `contextPercent`, `contextFill` and `cost`; `ToolbarState.init` copies them instead of splitting `contextShare` and summing the parts.
-Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter ToolbarStateTests`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter ConvertTests`.
-
-#### T58.4.20 Inspector facts and Review's turns in `cox-app`
-
-Depends: — · Size: ~170 · Files: `crates/cox-app/src/info.rs`, `crates/cox-app/src/changes.rs`, `crates/cox-ffi/src/types.rs`
-Goal: the info view carries its rows as ordered facts (label, value, optional detail: `~` for home, `detached`, `N keys` with the layer's file) and the changes view carries its worktree facts (`Base` only with both base and commit) and `turns`, the files grouped by the turn that changed them last, oldest first (audit items 23–25).
-Check: `mise exec -- cargo nextest run -p cox-app info changes` passes `the_home_directory_reads_as_tilde`, `base_needs_both_base_and_commit`, `a_file_sits_in_the_turn_that_changed_it_last`; `mise exec -- cargo nextest run -p cox-ffi` passes.
-
-#### T58.4.21 Info tab from the core's facts
-
-Depends: T58.4.20 · Size: ~60 · Files: `CoxModel/Sources/CoxClient/Info.swift`, `CoxCore/Sources/CoxCore/InfoConvert.swift`, `CoxModel/Sources/CoxModel/InfoTabState.swift`
-Goal: a `Fact` value and its conversion; `InfoTabState.init` lists the facts as they arrive.
-Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter InfoTabTests`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter ConvertTests`.
-
-#### T58.4.22 Changes tab facts from the core
-
-Depends: T58.4.20, T58.4.21 · Size: ~60 · Files: `CoxModel/Sources/CoxClient/Changes.swift`, `CoxCore/Sources/CoxCore/ChangesConvert.swift`, `CoxModel/Sources/CoxModel/ChangesTabState.swift`
-Goal: the changes value gains the worktree facts (T58.4.21's `Fact`) and `turns`; `ChangesTabState` lists the facts and keeps the localized checkpoint time and sizes.
-Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter ChangesTabTests`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter ConvertTests`.
-
-#### T58.4.23 A task block carries its state
-
-Depends: — · Size: ~60 · Files: `crates/cox-app/src/patch.rs`, `crates/cox-app/src/timeline.rs`, `crates/cox-ffi/src/types.rs`
-Goal: a task block carries `state` (running, succeeded, failed; no exit code is a success) so neither the Tasks tab nor the task card reads the exit code (audit item 26).
-Check: `mise exec -- cargo nextest run -p cox-app timeline patch` passes `a_subagent_without_an_exit_code_succeeded`; `mise exec -- cargo nextest run -p cox-ffi` passes.
-
-#### T58.4.24 Task state reaches the Swift timeline
-
-Depends: T58.4.23 · Size: ~50 · Files: `CoxModel/Sources/CoxClient/Timeline.swift`, `CoxModel/Sources/CoxClient/TimelineDecoding.swift`, `CoxCore/Sources/CoxCore/Convert.swift`
-Goal: `BlockKind.task` gains the state, decoded from the fixtures (re-recorded) and converted from the core.
-Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter SessionStoreTests`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter ConvertTests`.
-
-#### T58.4.25 Tasks tab, Review and the task card read the core's state and turns
-
-Depends: T58.4.22, T58.4.24 · Size: ~60 · Files: `CoxModel/Sources/CoxModel/TaskRows.swift`, `CoxModel/Sources/CoxModel/ReviewState.swift`, `CoxTranscript/Sources/CoxTranscript/TranscriptCard.swift`
-Goal: `SessionStore.tasks` and the task card copy the block's state; `ReviewState.init` shows the core's `turns` instead of grouping the files itself.
-Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter "TaskRowsTests|ReviewStateTests"`; `swift test --package-path desktop/macos/Packages/CoxTranscript --filter "TranscriptSnapshotTests|SessionReviewStateTests"`.
-
-#### T58.4.26 A reply's doc as Markdown in Rust
-
-Depends: — · Size: ~120 · Files: `crates/cox-render/src/doc.rs`, `crates/cox-ffi/src/lib.rs`
-Goal: `StyledDoc::markdown()` writes a reply's doc as Markdown (headings, list markers and depth, quotes, tables, a fence longer than any backtick run, bold/italic/strike marks), `DocBlock::markdown()` one block (audit item 27); `cox-app` re-exports it through `doc`, and `cox-ffi` forwards `doc_markdown` and `block_markdown` as free functions.
-Check: `mise exec -- cargo nextest run -p cox-render doc` passes `a_fence_outgrows_the_longest_backtick_run`, `a_nested_list_keeps_its_depth`, and `mise exec -- cargo nextest run -p cox-app doc`; `mise exec -- cargo nextest run -p cox-ffi` passes.
-
-#### T58.4.27 The Markdown seam uses the core's writer
-
-Depends: T58.4.26 · Size: ~80 · Files: `CoxModel/Sources/CoxClient/DocMarkdown.swift`, `CoxCore/Sources/CoxCore/Convert.swift`, `CoxModel/Sources/CoxModel/SessionStore.swift`
-Goal: `DocMarkdown.swift` keeps a `DocWriter` protocol set once at launch (a stand-in writes plain text for fixture runs) instead of its own writer; CoxCore's `CoreDocWriter` forwards to `doc_markdown`; `BlockKind.replaceDoc` stops re-rendering on each `docTail` and leaves the text empty, so Copy uses the doc (audit item 28).
-Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter SessionStoreTests`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter ConvertTests`.
-
-#### T58.4.28 Copy as Markdown through the core's writer
-
-Depends: T58.4.27 · Size: ~60 · Files: `CoxTranscriptText/Sources/CoxTranscriptText/MarkdownCopy.swift`, `desktop/macos/App/CoxApp.swift`
-Goal: Copy as Markdown asks the writer for a doc or a block; the app sets `CoreDocWriter` at launch.
-Check: `swift test --package-path desktop/macos/Packages/CoxTranscriptText --filter "SelectionTests|BlockSelectionTests"`; `swift test --package-path desktop/macos/Packages/CoxTranscript --filter TranscriptSelectionTests`.
 
 #### T58.5 C# client contract, fixture client and the session store
 

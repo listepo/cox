@@ -32,6 +32,19 @@ let transcript: [Block] = [
   Block(id: "k", turn: 2, kind: .thinking(text: "Next turn.")),
 ]
 
+/// Stands for the core's writer, which these tests do not link: only a code block's fence, the
+/// one rule Copy's cut-through-code case leans on; the rest is the plain stand-in's.
+struct FencingWriter: DocWriter {
+  func markdown(_ doc: StyledDoc) -> String { PlainDocWriter().markdown(doc) }
+
+  func markdown(_ block: DocBlock) -> String? {
+    guard case .code(let lang, _) = block, let body = PlainDocWriter().markdown(block) else {
+      return PlainDocWriter().markdown(block)
+    }
+    return "```\(lang)\n\(body)\n```"
+  }
+}
+
 /// A borderless window far off screen, ordered in so AppKit lays out and
 /// draws it, with the transcript as its content.
 @MainActor
@@ -40,6 +53,7 @@ final class Host {
   let view: TranscriptTextView
 
   init(style: TranscriptStyle = .system) {
+    DocMarkdown.writer = FencingWriter()
     view = TranscriptTextView.make(style: style)
     NSApplication.shared.setActivationPolicy(.accessory)
     window = NSWindow(
@@ -173,26 +187,4 @@ struct SelectionTests {
     view.selectAll(nil)
     #expect(view.selectedRange() == reply)
   }
-
-  @Test func aReplyWithoutItsSourceCopiesFromItsDoc() {
-    let doc = StyledDoc(blocks: [
-      .text(kind: .heading(2), lines: [TextLine([Span(text: "Plan")])]),
-      .text(kind: .paragraph, lines: [TextLine([bold("Run"), Span(text: " it")])]),
-      .code(lang: "", lines: [[Span(text: "a ``` b")]]),
-      .table(rows: [["k", "v"], ["x", "1"]]),
-      .rule,
-    ])
-    let whole = doc.markdown
-
-    #expect(
-      whole
-        == "## Plan\n\n**Run** it\n\n````\na ``` b\n````\n\n| k | v |\n| --- | --- |\n| x | 1 |\n\n---"
-    )
-  }
-}
-
-private func bold(_ text: String) -> Span {
-  var span = Span(text: text)
-  span.bold = true
-  return span
 }

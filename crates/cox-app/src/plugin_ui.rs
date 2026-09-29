@@ -8,14 +8,18 @@
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use cox_protocol::ids::{CallId, ItemId};
 use cox_protocol::plugin::ui::Span;
 use cox_protocol::plugin::{CommandDecl, KeyDecl, RenderIn, Slot, StyleToken, Widget};
+use cox_protocol::types::{Event, ItemKind, ToolCall, ToolResult};
 use cox_sanitize::sanitize;
-use cox_session::plugin_ui::{LivePlugins, PluginAnswer, PluginRequest};
+use cox_session::plugin_ui::{ItemSource, LivePlugins, PluginAnswer, PluginRequest};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use crate::Completion;
+use crate::patch::{BlockId, BlockKind};
+use crate::timeline::key;
 
 /// `cox_render` misses in a row that stop a slot for the session (PL§8).
 pub const MAX_MISSES: u8 = 3;
@@ -196,6 +200,20 @@ pub struct PluginKey {
     pub key: String,
     pub name: String,
     pub description: String,
+}
+
+/// A request to the serve thread with the block its answer is for, if any.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Ask {
+    pub request: PluginRequest,
+    pub block: Option<BlockId>,
+}
+
+/// An answer with the block its request named.
+#[derive(Debug, PartialEq)]
+pub struct Answered {
+    pub block: Option<BlockId>,
+    pub answer: PluginAnswer,
 }
 
 /// What one change to the slots gives: payloads to patch, renders to ask.
@@ -426,6 +444,63 @@ impl PluginSlots {
     }
 }
 
+/// Puts a `cox_render_item` answer on its tool or reply block through the same
+/// [`view`] a slot's render takes, so the sanitize and PL§8 limits are the
+/// one guard. `None` (a miss) clears it and the generic card shows.
+pub fn land(kind: &mut BlockKind, widget: Option<&Widget>) {
+    if let BlockKind::Tool { plugin_view, .. } | BlockKind::Assistant { plugin_view, .. } = kind {
+        *plugin_view = widget.map(view);
+    }
+}
+
+/// The renderer target of an assistant reply (PL§8).
+const ASSISTANT: &str = "item:assistant_message";
+
+/// Follows a session's events for the items a plugin may render: a tool
+/// call with its result, and a reply once it is whole. Separate from the
+/// timeline because it keeps only what a render request needs.
+#[derive(Debug, Default)]
+pub struct ItemWatch {
+    calls: Vec<ToolCall>,
+    replies: Vec<(ItemId, String)>,
+}
+
+impl ItemWatch {
+    /// The block, target and source to render, when `event` finished one.
+    pub fn apply(&mut self, event: &Event) -> Option<(BlockId, String, ItemSource)> {
+        match event {
+            Event::ToolCallRequested { call } => self.calls.push(call.clone()),
+            Event::ItemStarted {
+                item,
+                kind: ItemKind::AssistantMessage { text },
+            } => self.replies.push((*item, text.clone())),
+            Event::TextDelta { item, text } => {
+                if let Some((_, whole)) = self.replies.iter_mut().find(|(i, _)| i == item) {
+                    whole.push_str(text);
+                }
+            }
+            Event::ToolCallDone { call_id, result } => {
+                let at = self.calls.iter().position(|c| c.id == *call_id)?;
+                let call = self.calls.swap_remove(at);
+                let target = format!("tool:{}", call.name);
+                let source = ItemSource::Tool {
+                    call: Box::new(call),
+                    result: result.clone(),
+                };
+                return Some((key("call", call_id), target, source));
+            }
+            Event::ItemDone { item } => {
+                let at = self.replies.iter().position(|(i, _)| i == item)?;
+                let (_, text) = self.replies.swap_remove(at);
+                let source = ItemSource::Assistant { text };
+                return Some((key("item", item), ASSISTANT.to_string(), source));
+            }
+            _ => {}
+        }
+        None
+    }
+}
+
 /// `/<id>:<name>` with both parts sanitized, as the TUI names it.
 fn full_name(plugin: &str, name: &str) -> String {
     format!("{}:{}", sanitize(plugin), sanitize(name))
@@ -447,6 +522,8 @@ struct Declared {
     slots: PluginSlots,
     commands: Vec<(String, CommandDecl)>,
     keys: Vec<(String, KeyDecl)>,
+    /// `(plugin, target)` for each granted `cox_render_item` target.
+    renderers: Vec<(String, String)>,
 }
 
 /// One session's plugin UI: its slots, its plugins' grants and the queue
@@ -454,11 +531,11 @@ struct Declared {
 #[derive(Debug)]
 pub struct PluginUi {
     state: Mutex<Declared>,
-    requests: mpsc::Sender<PluginRequest>,
+    requests: mpsc::Sender<Ask>,
 }
 
 impl PluginUi {
-    pub fn new(requests: mpsc::Sender<PluginRequest>) -> Self {
+    pub fn new(requests: mpsc::Sender<Ask>) -> Self {
         Self {
             state: Mutex::new(Declared::default()),
             requests,
@@ -477,6 +554,7 @@ impl PluginUi {
         slots: &[Slot],
         commands: Vec<CommandDecl>,
         keys: Vec<KeyDecl>,
+        renderers: Vec<String>,
     ) {
         let step = {
             let mut d = self.lock();
@@ -484,6 +562,8 @@ impl PluginUi {
                 .extend(commands.into_iter().map(|c| (plugin.to_string(), c)));
             d.keys
                 .extend(keys.into_iter().map(|k| (plugin.to_string(), k)));
+            d.renderers
+                .extend(renderers.into_iter().map(|t| (plugin.to_string(), t)));
             d.slots.declare(plugin, slots)
         };
         self.ask(step.requests);
@@ -501,7 +581,11 @@ impl PluginUi {
     /// behind a slow plugin, and the next redraw asks again.
     fn ask(&self, requests: Vec<PluginRequest>) {
         for request in requests {
-            let _ = self.requests.try_send(request);
+            let ask = Ask {
+                request,
+                block: None,
+            };
+            let _ = self.requests.try_send(ask);
         }
     }
 
@@ -550,6 +634,30 @@ impl PluginUi {
         asked
     }
 
+    /// Asks the plugin that declared `target` to render a finished item
+    /// (T52.23.1, PL§8) and says whether one did. The ask names `block`, so
+    /// the `ItemRendered` that answers it is [`land`]ed there.
+    pub fn render_item(&self, block: BlockId, target: &str, source: ItemSource) -> bool {
+        let (plugin, width) = {
+            let d = self.lock();
+            let found = d.renderers.iter().find(|(_, t)| t == target);
+            (found.map(|(p, _)| p.clone()), d.slots.area.0)
+        };
+        let Some(plugin) = plugin else {
+            return false;
+        };
+        let request = PluginRequest::RenderItem {
+            plugin,
+            target: target.to_string(),
+            source,
+            width,
+        };
+        let block = Some(block);
+        // A full queue drops the ask, as for every other request.
+        let _ = self.requests.try_send(Ask { request, block });
+        true
+    }
+
     /// The key `name` (as [`PluginKey`] shows it) of `plugin`, if granted.
     pub fn key(&self, plugin: &str, name: &str) -> bool {
         let found = self
@@ -572,8 +680,8 @@ impl PluginUi {
 /// calls, which joins every other answer on `answers`.
 pub fn serve_ui(
     ui: Arc<PluginUi>,
-    requests: mpsc::Receiver<PluginRequest>,
-    answers: mpsc::Sender<PluginAnswer>,
+    requests: mpsc::Receiver<Ask>,
+    answers: mpsc::Sender<Answered>,
 ) -> cox_session::ServeUi {
     Box::new(move |live: &LivePlugins| {
         // A serve thread that fails to start leaves the slots unrendered,
@@ -582,8 +690,8 @@ pub fn serve_ui(
             live.hosts(),
             requests,
             answers.clone(),
-            |request| (request, ()),
-            |(), answer| answer,
+            |ask: Ask| (ask.request, ask.block),
+            |block, answer| Answered { block, answer },
         );
         for p in live.plugins() {
             ui.declare(
@@ -591,11 +699,16 @@ pub fn serve_ui(
                 &p.granted_status(),
                 p.granted_commands(),
                 p.granted_keys(),
+                p.granted_renderers(),
             );
         }
         cox_session::plugin_ui::redraw(move |plugin| {
             // The tap's pump thread must not block on a full queue.
-            let _ = answers.try_send(PluginAnswer::Redraw { plugin });
+            let answer = PluginAnswer::Redraw { plugin };
+            let _ = answers.try_send(Answered {
+                block: None,
+                answer,
+            });
         })
     })
 }
@@ -786,6 +899,130 @@ mod tests {
         );
     }
 
+    fn tool_block() -> BlockKind {
+        BlockKind::Tool {
+            tool: "acme__lint".into(),
+            summary: String::new(),
+            icon: crate::Icon::Shell,
+            risk: cox_protocol::types::Risk::ReadOnly,
+            state: crate::patch::ToolState::Done,
+            tail: String::new(),
+            archive: None,
+            diff: None,
+            duration_ms: 0,
+            plugin_view: None,
+        }
+    }
+
+    fn reply_block() -> BlockKind {
+        BlockKind::Assistant {
+            text: "hi".into(),
+            doc: crate::doc::StyledDoc::default(),
+            plugin_view: None,
+        }
+    }
+
+    fn call(name: &str) -> ToolCall {
+        ToolCall {
+            id: CallId::new(),
+            name: name.into(),
+            input: serde_json::Value::Null,
+            risk: cox_protocol::types::Risk::ReadOnly,
+            subject: String::new(),
+            segments: None,
+        }
+    }
+
+    fn done(call_id: CallId) -> Event {
+        let result = ToolResult {
+            ok: true,
+            visible: "ok".into(),
+            archive: None,
+            bytes: 2,
+            duration_ms: 1,
+            diff: None,
+            structured: None,
+        };
+        Event::ToolCallDone { call_id, result }
+    }
+
+    #[test]
+    fn tool_renderer_widget_lands_sanitized_in_the_block() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let ui = PluginUi::new(tx);
+        let targets = vec!["tool:acme__lint".into(), ASSISTANT.into()];
+        ui.declare("acme", &[], vec![], vec![], targets);
+        let mut watch = ItemWatch::default();
+        let lint = call("acme__lint");
+        let block = key("call", lint.id);
+        watch.apply(&Event::ToolCallRequested { call: lint.clone() });
+        let (id, target, source) = watch.apply(&done(lint.id)).expect("a finished call");
+        assert_eq!(id, block);
+        assert!(ui.render_item(id, &target, source));
+        let ask = rx.try_recv().expect("asked");
+        assert_eq!(ask.block, Some(block));
+        assert!(
+            matches!(ask.request, PluginRequest::RenderItem { ref plugin, ref target, .. }
+            if plugin == "acme" && target == "tool:acme__lint")
+        );
+        let read = call("read");
+        watch.apply(&Event::ToolCallRequested { call: read.clone() });
+        let (id, target, source) = watch.apply(&done(read.id)).expect("a finished call");
+        assert!(!ui.render_item(id, &target, source), "no renderer, no ask");
+
+        let widget = Widget::Text(vec![vec![text("\x1b[2Jdone")]]);
+        let mut kind = tool_block();
+        land(&mut kind, Some(&widget));
+        let BlockKind::Tool { plugin_view, .. } = &kind else {
+            panic!("a tool stays a tool");
+        };
+        assert_eq!(plugin_view, &Some(view(&widget)));
+        let mut all = Vec::new();
+        strings(plugin_view.as_ref().expect("landed"), &mut all);
+        assert_eq!(all, vec!["done".to_string()]);
+        land(&mut kind, None);
+        assert!(matches!(
+            kind,
+            BlockKind::Tool {
+                plugin_view: None,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn item_renderer_widget_lands_sanitized_in_the_reply() {
+        let (tx, mut rx) = mpsc::channel(4);
+        let ui = PluginUi::new(tx);
+        ui.declare("acme", &[], vec![], vec![], vec![ASSISTANT.into()]);
+        let mut watch = ItemWatch::default();
+        let item = ItemId::new();
+        let started = ItemKind::AssistantMessage { text: "he".into() };
+        watch.apply(&Event::ItemStarted {
+            item,
+            kind: started,
+        });
+        watch.apply(&Event::TextDelta {
+            item,
+            text: "llo".into(),
+        });
+        let (id, target, source) = watch.apply(&Event::ItemDone { item }).expect("a reply");
+        assert_eq!(id, key("item", item));
+        assert!(matches!(&source, ItemSource::Assistant { text } if text == "hello"));
+        assert!(ui.render_item(id.clone(), &target, source));
+        assert_eq!(rx.try_recv().expect("asked").block, Some(id));
+
+        let widget = Widget::Text(vec![vec![text("\x1b]8;;http://x\x07hi\u{202e}")]]);
+        let mut kind = reply_block();
+        land(&mut kind, Some(&widget));
+        let BlockKind::Assistant { plugin_view, .. } = &kind else {
+            panic!("a reply stays a reply");
+        };
+        let mut all = Vec::new();
+        strings(plugin_view.as_ref().expect("landed"), &mut all);
+        assert_eq!(all, vec!["hi".to_string()]);
+    }
+
     #[test]
     fn plugin_command_never_shadows_a_builtin() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -814,15 +1051,18 @@ mod tests {
             name: "compact".into(),
             description: String::new(),
         };
-        ui.declare("acme", &[], vec![decl], vec![]);
+        ui.declare("acme", &[], vec![decl], vec![], vec![]);
         assert!(!ui.command("/compact now"), "the built-in stays the core's");
         assert!(ui.command("/acme:compact now"));
         assert_eq!(
             rx.try_recv().ok(),
-            Some(PluginRequest::Command {
-                plugin: "acme".into(),
-                name: "compact".into(),
-                args: "now".into(),
+            Some(Ask {
+                request: PluginRequest::Command {
+                    plugin: "acme".into(),
+                    name: "compact".into(),
+                    args: "now".into(),
+                },
+                block: None,
             })
         );
     }

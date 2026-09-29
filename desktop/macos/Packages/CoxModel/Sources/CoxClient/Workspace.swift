@@ -1,6 +1,7 @@
 // The sessions across projects the sidebar lists (DT§5.1, DT§4.3), field for field as cox-ffi
-// exports `cox_app::Workspace` and the inbox's per-session activity. Separate from the session
-// seam because it answers for every session in `cox.db`, not one open handle.
+// exports `cox_app::Workspace`, its sidebar sections and the inbox's per-session activity.
+// Separate from the session seam because it answers for every session in `cox.db`, not one
+// open handle.
 
 /// `cox_app::Project`: a git root with sessions, newest first.
 public struct Project: Equatable, Sendable {
@@ -45,6 +46,54 @@ public struct SessionEntry: Equatable, Sendable {
 /// `cox_app::Activity`: what a session this process drives is doing.
 public enum Activity: Equatable, Sendable { case idle, running, waitingOnYou, failed }
 
+/// `cox_app::SidebarStatus`: the status glyph, named as the clients' status dots.
+public enum SidebarStatus: Equatable, Sendable { case running, waiting, idle, error }
+
+/// `cox_app::SubtitlePart`. The filter matches text; `age` holds `updated_at` so each client
+/// localizes it and the filter never sees that wording.
+public enum SubtitlePart: Equatable, Sendable {
+  case text(String)
+  case age(updatedAt: String)
+}
+
+/// `cox_app::SidebarKind`: a status section or a project, as the clients' sidebar group.
+public enum SidebarKind: Equatable, Sendable {
+  case section(count: String?)
+  case project(isExpanded: Bool)
+}
+
+/// `cox_app::SidebarRow`: one inbox or session row, before a client joins the subtitle.
+public struct SidebarRow: Equatable, Sendable {
+  public var id: String
+  public var session: String
+  public var status: SidebarStatus
+  public var title: String
+  public var subtitle: [SubtitlePart]
+  /// Set only when the session has spent something.
+  public var cost: Double?
+  public var isReadOnly: Bool
+
+  public init(
+    id: String, session: String, status: SidebarStatus, title: String,
+    subtitle: [SubtitlePart] = [], cost: Double? = nil, isReadOnly: Bool = false
+  ) {
+    (self.id, self.session, self.status, self.title) = (id, session, status, title)
+    (self.subtitle, self.cost, self.isReadOnly) = (subtitle, cost, isReadOnly)
+  }
+}
+
+/// `cox_app::SidebarSection`: "Needs you", "Running", or one project.
+public struct SidebarSection: Equatable, Sendable {
+  public var id: String
+  public var title: String
+  public var kind: SidebarKind
+  public var rows: [SidebarRow]
+
+  public init(id: String, title: String, kind: SidebarKind, rows: [SidebarRow] = []) {
+    (self.id, self.title, self.kind, self.rows) = (id, title, kind, rows)
+  }
+}
+
 /// The workspace half of cox-ffi's `App`.
 public protocol WorkspaceClient: Sendable {
   /// Most recently active first, at most `limit`.
@@ -53,6 +102,9 @@ public protocol WorkspaceClient: Sendable {
   func sessions(project: String, limit: UInt32) throws -> [SessionEntry]
   /// `.idle` for a session this process has not driven.
   func activity(session: String) -> Activity
+  /// "Needs you", "Running", then each project. The core filters and orders; `folded` are
+  /// project roots hidden until a filter opens them.
+  func sidebar(filter: String, folded: [String]) throws -> [SidebarSection]
   /// Returns once the list may read differently: a commit to `cox.db` from another connection,
   /// or a session here that started, stopped or began to wait.
   func changed() async throws
@@ -67,12 +119,16 @@ public struct FixtureWorkspace: WorkspaceClient {
   /// By project root.
   public var fixedSessions: [String: [SessionEntry]]
   public var fixedActivity: [String: Activity]
+  /// Sections the core would have built; the store still joins subtitle parts.
+  public var fixedSidebar: [SidebarSection]
 
   public init(
     projects: [Project] = [], sessions: [String: [SessionEntry]] = [:],
-    activity: [String: Activity] = [:]
+    activity: [String: Activity] = [:], sidebar: [SidebarSection] = []
   ) {
-    (fixedProjects, fixedSessions, fixedActivity) = (projects, sessions, activity)
+    (fixedProjects, fixedSessions, fixedActivity, fixedSidebar) = (
+      projects, sessions, activity, sidebar
+    )
   }
 
   public func projects(limit: UInt32) -> [Project] { Array(fixedProjects.prefix(Int(limit))) }
@@ -82,6 +138,9 @@ public struct FixtureWorkspace: WorkspaceClient {
   }
 
   public func activity(session: String) -> Activity { fixedActivity[session] ?? .idle }
+
+  /// A fixture does not re-filter: the caller already built the sections the core would return.
+  public func sidebar(filter: String, folded: [String]) -> [SidebarSection] { fixedSidebar }
 
   /// A fixed workspace never changes: waits until cancelled.
   public func changed() async throws { try await Task.sleep(for: .seconds(86_400)) }

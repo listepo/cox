@@ -17,6 +17,10 @@ import Testing
     try check(ToolCardSample(PreviewState.cardExplored), variant, "explored")
   }
 
+  @Test(arguments: Variant.all) func pluginRenderer(_ variant: Variant) throws {
+    try check(ToolCardSample(PreviewState.cardPlugin, isExpanded: true), variant, "plugin")
+  }
+
   /// One image per state, named `<state>.<cell>`, at its ideal size. Reduce Motion holds a
   /// running spinner still.
   private func check(

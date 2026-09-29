@@ -25,6 +25,7 @@ use cox_app::onboarding::{CheckId, CheckRow, CheckStatus};
 use cox_app::patch::TaskState;
 use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 use cox_app::review::LineComment;
+use cox_app::workspace::{SidebarKind, SidebarRow, SidebarSection, SidebarStatus, SubtitlePart};
 use cox_app::{
     Activity, BrowserError, ChangedFile, Changes, Checkpoint, Completion, ConfigSource,
     ContextPart, CostRow, DaySummary, Dropped, FileChange, Icon, InboxItem, InboxStatus, Info,
@@ -296,6 +297,7 @@ pub struct Status {
     pub next_mode: Option<PermissionMode>,
     pub model: Option<ModelId>,
     pub model_name: Option<String>,
+    pub short_name: Option<String>,
     pub effort: Option<Effort>,
 }
 
@@ -315,6 +317,7 @@ pub enum BlockKind {
     Assistant {
         text: String,
         doc: StyledDoc,
+        plugin_view: Option<WidgetView>,
     },
     Thinking {
         text: String,
@@ -330,6 +333,7 @@ pub enum BlockKind {
         archive: Option<ArchiveRef>,
         diff: Option<DiffModel>,
         duration_ms: u64,
+        plugin_view: Option<WidgetView>,
     },
     ToolGroup {
         summary: String,
@@ -509,6 +513,9 @@ pub struct MeterText {
     pub cache_hit: String,
     pub cache_hit_session: String,
     pub footnote: String,
+    pub context_percent: String,
+    pub context_fill: f64,
+    pub cost: String,
 }
 
 #[uniffi::remote(Record)]
@@ -676,6 +683,45 @@ pub struct SessionEntry {
     pub held_by: Option<Holder>,
     pub agent: Option<String>,
     pub best_of: Option<String>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum SidebarStatus {
+    Running,
+    Waiting,
+    Idle,
+    Error,
+}
+
+#[uniffi::remote(Enum)]
+pub enum SubtitlePart {
+    Text { text: String },
+    Age { updated_at: String },
+}
+
+#[uniffi::remote(Enum)]
+pub enum SidebarKind {
+    Section { count: Option<String> },
+    Project { is_expanded: bool },
+}
+
+#[uniffi::remote(Record)]
+pub struct SidebarRow {
+    pub id: String,
+    pub session: SessionId,
+    pub status: SidebarStatus,
+    pub title: String,
+    pub subtitle: Vec<SubtitlePart>,
+    pub cost: Option<f64>,
+    pub is_read_only: bool,
+}
+
+#[uniffi::remote(Record)]
+pub struct SidebarSection {
+    pub id: String,
+    pub title: String,
+    pub kind: SidebarKind,
+    pub rows: Vec<SidebarRow>,
 }
 
 #[uniffi::remote(Record)]

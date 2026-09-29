@@ -2,8 +2,9 @@
 // Markdown in block order, next to plain text. Each block's Markdown comes
 // from its timeline value, not from the drawn text, so a card copies as its
 // summary line however it is drawn (T37.41) and a whole reply as its
-// Markdown source. Its own file because it hooks only AppKit's pasteboard
-// path; the clamp lives in `Selection.swift`.
+// Markdown source, or as the core's writer writes its doc (T58.4.28). Its own
+// file because it hooks only AppKit's pasteboard path; the clamp lives in
+// `Selection.swift`.
 
 import AppKit
 import CoxClient
@@ -61,14 +62,14 @@ enum MarkdownCopy {
         let selected = shown(text.substring(with: part), of: kind)
         guard !selected.isEmpty else { continue }
         plain.append(selected)
-        guard case .assistant(let source, let doc) = kind else {
+        guard case .assistant(let source, let doc, _) = kind else {
           markdown.append(selected)
           continue
         }
         if part != full {
           markdown.append(partial(doc, part, from: full.location, in: text))
         } else {
-          markdown.append(source.isEmpty ? doc.markdown : source)
+          markdown.append(source.isEmpty ? DocMarkdown.writer.markdown(doc) : source)
         }
       }
     }
@@ -91,7 +92,7 @@ enum MarkdownCopy {
   /// A card's summary line; `nil` for a block that is not a card.
   static func card(_ kind: BlockKind) -> String? {
     switch kind {
-    case .tool(_, let summary, _, _, _, _, _, _, _), .toolGroup(let summary, _, _),
+    case .tool(_, let summary, _, _, _, _, _, _, _, _), .toolGroup(let summary, _, _),
       .approval(_, _, let summary, _, _, _, _, _, _):
       return summary
     case .question(_, let question, _, _): return question
@@ -116,10 +117,13 @@ enum MarkdownCopy {
       let cut = NSIntersectionRange(range, part)
       guard cut.length > 0 else { continue }
       let selected = text.substring(with: cut)
-      if cut == range, let markdown = block.markdown {
+      if cut == range, let markdown = DocMarkdown.writer.markdown(block) {
         out.append(markdown)
       } else if case .code(let lang, _) = block {
-        out.append(DocBlock.fence(lang, selected))
+        // A cut through code stays fenced: the writer fences the selected lines as one block.
+        out.append(
+          DocMarkdown.writer.markdown(.code(lang: lang, lines: [[Span(text: selected)]]))
+            ?? selected)
       } else {
         out.append(selected)
       }

@@ -96,7 +96,7 @@ enum ShellState {
       providers: providers.text, providerStatus: status(providers.status))
   }
 
-  private static func group(_ section: SidebarSection) -> Sidebar.Group {
+  private static func group(_ section: CoxModel.SidebarSection) -> Sidebar.Group {
     let kind: Sidebar.Group.Kind =
       switch section.kind {
       case .section(let count): .section(count: count)
@@ -114,7 +114,7 @@ enum ShellState {
       })
   }
 
-  private static func status(_ status: SidebarRow.Status) -> StatusDot.Status {
+  private static func status(_ status: CoxModel.SidebarRow.Status) -> StatusDot.Status {
     switch status {
     case .running: .running
     case .waiting: .waiting

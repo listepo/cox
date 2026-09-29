@@ -1,6 +1,6 @@
 // The toolbar's model popover (T37.22.6): the core's sections as they come (T58.4.13; which
-// tiers and models they list is `cox_app::models`' tests), the running one marked, each by its
-// short name (T37.22.7), and a pick sends the TUI's `/model <tier> <id>` switch.
+// tiers and models they list is `cox_app::models`' tests), the running one marked, each by the
+// catalog name the core sent, and a pick sends the TUI's `/model <tier> <id>` switch.
 
 import CoxClient
 import Testing
@@ -21,8 +21,7 @@ private let sections = [
   let menu = ModelMenu(sections: sections, status: Status(model: "claude-sonnet-5", effort: .high))
   #expect(menu.sections.map(\.title) == ["Code", "Think"])
   #expect(menu.sections[0].rows.map(\.model) == ["claude-sonnet-5", "claude-haiku-4-5"])
-  // The catalog's name without its vendor prefix, else the id (A111).
-  #expect(menu.sections[0].rows.map(\.name) == ["Sonnet 5", "claude-haiku-4-5"])
+  #expect(menu.sections[0].rows.map(\.name) == ["Claude Sonnet 5", "claude-haiku-4-5"])
   #expect(menu.sections[0].rows.map(\.detail) == ["low · high", ""])
   #expect(menu.sections[0].rows.map(\.isSelected) == [true, false])
   #expect(menu.sections[1].rows.map(\.model) == ["claude-fable-5-1"])

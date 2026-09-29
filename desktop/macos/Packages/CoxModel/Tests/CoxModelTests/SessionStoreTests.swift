@@ -51,12 +51,12 @@ func replayingAFixtureEndsAtItsSnapshot(url: URL) async throws {
   #expect(session.sent == [.send(text: "hi", attachments: [])])
 }
 
-private func tool(_ id: BlockID, tail: String) -> Block {
+private func tool(_ id: BlockID, tail: String, pluginView: PluginView? = nil) -> Block {
   Block(
     id: id, turn: 1,
     kind: .tool(
       tool: "bash", summary: "Ran", icon: .shell, risk: .exec, state: .running, tail: tail,
-      archive: nil, diff: nil, durationMs: 0))
+      archive: nil, diff: nil, durationMs: 0, pluginView: pluginView))
 }
 
 private func paragraph(_ text: String) -> DocBlock {
@@ -104,30 +104,24 @@ private func paragraph(_ text: String) -> DocBlock {
     .remove(id: "t"),
   ])
   let want = StyledDoc(blocks: [paragraph("a"), paragraph("B"), paragraph("c")])
-  #expect(store.blocks["m"]?.kind == .assistant(text: "a\n\nB\n\nc", doc: want))
+  #expect(store.blocks["m"]?.kind == .assistant(text: "", doc: want))
   #expect(Array(store.blocks.keys) == ["m"])
 }
 
-/// A reply streamed as `cox_app`'s timeline streams it: each chunk re-parsed,
-/// only the blocks from the first changed one re-sent. It starts from a
-/// snapshot that already holds a source, the case a stale source showed in.
+/// A reply streamed as `cox_app`'s timeline streams it: each chunk re-parsed, only the blocks
+/// from the first changed one re-sent. It starts from a snapshot that already holds a source,
+/// the case a stale source showed in; Markdown is the core's writer's job at Copy (T58.4.27).
 @MainActor
-@Test func aStreamedReplysTextIsTheTextSoFarAfterEveryDocTail() {
+@Test func aStreamedReplysTextIsEmptyAfterEveryDocTail() {
   let store = SessionStore(session: FixtureSession(fixture: Fixture(batches: [], snapshot: [])))
-  var bold = Span(text: "bold")
-  bold.bold = true
   let heading = DocBlock.text(kind: .heading(1), lines: [TextLine([Span(text: "Title")])])
   let firstPara = DocBlock.text(kind: .paragraph, lines: [TextLine([Span(text: "first para")])])
-  let fullPara = DocBlock.text(
-    kind: .paragraph, lines: [TextLine([Span(text: "first paragraph, "), bold])])
+  let fullPara = DocBlock.text(kind: .paragraph, lines: [TextLine([Span(text: "first paragraph")])])
   let code = DocBlock.code(lang: "swift", lines: [[Span(text: "let x = 1")]])
-  let stream: [(TimelinePatch, String)] = [
-    (.docTail(id: "m", from: 1, blocks: [firstPara]), "# Title\n\nfirst para"),
-    (.docTail(id: "m", from: 1, blocks: [fullPara]), "# Title\n\nfirst paragraph, **bold**"),
-    (
-      .docTail(id: "m", from: 2, blocks: [code]),
-      "# Title\n\nfirst paragraph, **bold**\n\n```swift\nlet x = 1\n```"
-    ),
+  let stream: [TimelinePatch] = [
+    .docTail(id: "m", from: 1, blocks: [firstPara]),
+    .docTail(id: "m", from: 1, blocks: [fullPara]),
+    .docTail(id: "m", from: 2, blocks: [code]),
   ]
   store.apply([
     .reset(blocks: [
@@ -135,13 +129,13 @@ private func paragraph(_ text: String) -> DocBlock {
     ])
   ])
 
-  for (patch, soFar) in stream {
+  for patch in stream {
     store.apply([patch])
-    guard case .assistant(let copied, _) = store.blocks["m"]?.kind else {
+    guard case .assistant(let copied, _, _) = store.blocks["m"]?.kind else {
       Issue.record("the reply is gone after \(patch)")
       return
     }
-    #expect(copied == soFar)
+    #expect(copied.isEmpty)
   }
 }
 
@@ -165,4 +159,17 @@ private func paragraph(_ text: String) -> DocBlock {
       == .task(
         task: "#5", label: "explore: x", tier: .cheap, done: true, costUsd: 0, exitCode: nil,
         state: .succeeded, kind: .agent))
+}
+
+/// T52.23.2: a tool block's plugin tree is on the block, so an upsert that replaces the
+/// block replaces the tree, as a slot patch replaces only its slot.
+@MainActor
+@Test func aToolBlocksPluginViewReplacesOnUpsert() {
+  let store = SessionStore(session: FixtureSession(fixture: Fixture(batches: [], snapshot: [])))
+  let first = PluginView.text(lines: [[PluginRun("a")]])
+  let second = PluginView.text(lines: [[PluginRun("b")]])
+  store.apply([.upsert(block: tool("t", tail: "", pluginView: first), after: nil)])
+  #expect(store.blocks["t"]?.kind.pluginView == first)
+  store.apply([.upsert(block: tool("t", tail: "", pluginView: second), after: nil)])
+  #expect(store.blocks["t"]?.kind.pluginView == second)
 }

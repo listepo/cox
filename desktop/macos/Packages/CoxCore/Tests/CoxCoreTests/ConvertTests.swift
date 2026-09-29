@@ -14,7 +14,8 @@ import Testing
       id: "call:1", turn: 2,
       kind: .tool(
         tool: "read", summary: "Read `a`", icon: .read, risk: .readOnly, state: .done,
-        tail: "1\thello", archive: .init(id: "01A", bytes: 24), diff: nil, durationMs: 7)),
+        tail: "1\thello", archive: .init(id: "01A", bytes: 24), diff: nil, durationMs: 7,
+        pluginView: nil)),
     after: "item:1")
   let want = CoxClient.TimelinePatch.upsert(
     block: .init(
@@ -24,6 +25,17 @@ import Testing
         tail: "1\thello", archive: .init(id: "01A", bytes: 24), diff: nil, durationMs: 7)),
     after: "item:1")
   #expect(CoxClient.TimelinePatch(live) == want)
+}
+
+@Test func anAssistantPluginViewConverts() {
+  let span = CoxFFIBindings.SpanView(text: "hi", style: .ok, bold: false, italic: false)
+  let live = CoxFFIBindings.BlockKind.assistant(
+    text: "x", doc: .init(blocks: []), pluginView: .text(lines: [[span]]))
+  #expect(
+    CoxClient.BlockKind(live)
+      == .assistant(
+        text: "x", doc: .init(blocks: []),
+        pluginView: .text(lines: [[PluginRun("hi", token: .ok)]])))
 }
 
 @Test func aDocTailKeepsSpanStyleColourAndLineStructure() {
@@ -45,6 +57,26 @@ import Testing
   #expect(CoxClient.TimelinePatch(live) == .docTail(id: "item:2", from: 1, blocks: blocks))
 }
 
+@Test func theCoreWritesADocAsMarkdownThroughTheSeam() {
+  var bold = CoxClient.Span(text: "Plan")
+  bold.bold = true
+  let doc = CoxClient.StyledDoc(blocks: [
+    .text(kind: .heading(2), lines: [CoxClient.TextLine([bold])]),
+    .text(
+      kind: .list,
+      lines: [
+        CoxClient.TextLine([.init(text: "one")], marker: "•"),
+        CoxClient.TextLine([.init(text: "two")], depth: 1, marker: "•"),
+      ]),
+    .code(lang: "sh", lines: [[.init(text: "echo ```")]]),
+    .table(rows: []),
+  ])
+  let writer = CoreDocWriter()
+  #expect(writer.markdown(doc) == "## Plan\n\n- one\n  - two\n\n````sh\necho ```\n````")
+  #expect(writer.markdown(.table(rows: [])) == nil)
+  #expect(writer.markdown(.rule) == "---")
+}
+
 @Test func anApprovalIntentConvertsToTheGeneratedIntent() {
   let intent = CoxClient.Intent.approve(call: "c1", decision: .edit(input: #"{"path":"a"}"#))
   let want = CoxFFIBindings.Intent.approve(call: "c1", decision: .edit(input: #"{"path":"a"}"#))
@@ -62,10 +94,10 @@ import Testing
   let live = CoxFFIBindings.TimelinePatch.status(
     status: .init(
       queued: 2, mode: .plan, nextMode: .auto, model: "claude-sonnet-5",
-      modelName: "Claude Sonnet 5", effort: .high))
+      modelName: "Claude Sonnet 5", shortName: "Sonnet 5", effort: .high))
   let status = CoxClient.Status(
     queued: 2, mode: .plan, nextMode: .auto, model: "claude-sonnet-5", effort: .high,
-    modelName: "Claude Sonnet 5")
+    modelName: "Claude Sonnet 5", shortName: "Sonnet 5")
   #expect(CoxClient.TimelinePatch(live) == .status(status: status))
 }
 
@@ -160,4 +192,41 @@ import Testing
 @Test func aTaskStateConvertsCaseForCase() {
   let live: [CoxFFIBindings.TaskState] = [.running, .succeeded, .failed]
   #expect(live.map { CoxClient.TaskState($0) } == [.running, .succeeded, .failed])
+}
+
+/// T58.4.5: the core's sidebar rows keep their parts; the store localizes `age`, not this layer.
+@Test func theCoresSidebarSectionsConvertFieldForField() {
+  let live = CoxFFIBindings.SidebarSection(
+    id: "running", title: "Running", kind: .section(count: nil),
+    rows: [
+      .init(
+        id: "jitter", session: "jitter", status: .running, title: "Add retry jitter",
+        subtitle: [
+          .text(text: "cox"), .text(text: "running"),
+          .age(updatedAt: "2026-09-29T12:00:00Z"),
+        ], cost: 0.42, isReadOnly: true)
+    ])
+  let want = CoxClient.SidebarSection(
+    id: "running", title: "Running", kind: .section(count: nil),
+    rows: [
+      .init(
+        id: "jitter", session: "jitter", status: .running, title: "Add retry jitter",
+        subtitle: [.text("cox"), .text("running"), .age(updatedAt: "2026-09-29T12:00:00Z")],
+        cost: 0.42, isReadOnly: true)
+    ])
+  #expect(CoxClient.SidebarSection(live) == want)
+  let kinds: [CoxFFIBindings.SidebarKind] = [.section(count: "2"), .project(isExpanded: false)]
+  #expect(
+    kinds.map { CoxClient.SidebarKind($0) } == [
+      .section(count: "2"), .project(isExpanded: false),
+    ])
+  let statuses: [CoxFFIBindings.SidebarStatus] = [.running, .waiting, .idle, .error]
+  #expect(
+    statuses.map { CoxClient.SidebarStatus($0) } == [.running, .waiting, .idle, .error])
+}
+
+@Test func aScratchWorkspaceAnswersAnEmptySidebar() throws {
+  let (home, client) = try scratch()
+  defer { try? FileManager.default.removeItem(at: home) }
+  #expect(try client.sidebar(filter: "", folded: []).isEmpty)
 }

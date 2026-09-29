@@ -195,11 +195,11 @@ public final class ComposerStore {
   /// The permission mode in force, as the core reports it.
   public var mode: PermissionMode? { session.status.mode }
 
-  /// The model the main turn runs on and its effort, `Sonnet 5 · high`: the catalog's name without
-  /// its vendor prefix, else the id.
+  /// The model the main turn runs on and its effort, `Sonnet 5 · high`: the core's short name,
+  /// else the id. Swift does not shorten `modelName` (A129).
   public var model: String? {
     guard let id = session.status.model else { return nil }
-    let model = ModelName.short(session.status.modelName, id: id)
+    let model = session.status.shortName ?? id
     return session.status.effort.map { "\(model) · \($0.rawValue)" } ?? model
   }
 

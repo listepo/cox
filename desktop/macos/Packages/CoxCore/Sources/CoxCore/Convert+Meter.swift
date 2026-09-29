@@ -20,5 +20,6 @@ extension CoxClient.MeterText {
     contextParts = value.contextParts.map {
       .init(kind: $0.kind, label: $0.label, tokens: $0.tokens, share: $0.share)
     }
+    (contextPercent, contextFill, cost) = (value.contextPercent, value.contextFill, value.cost)
   }
 }

@@ -52,8 +52,9 @@ struct TranscriptSelectionTests {
 
     #expect(host.selectedBlocks == ["u", "t", "a"])
     let copied = try #require(host.copy().markdown)
+    // The code cut short comes back from the doc writer, the plain stand-in here: no fence.
     let parts = [
-      "fix the **flaky** test in cox-core.\n\n", summary + "\n\n", "Fixed it:\n\n```sh\ncargo",
+      "fix the **flaky** test in cox-core.\n\n", summary + "\n\n", "Fixed it:\n\ncargo",
     ]
     let found = try parts.map { try #require(copied.range(of: $0), "\($0) in \(copied)") }
     #expect(found.map(\.lowerBound) == found.map(\.lowerBound).sorted())

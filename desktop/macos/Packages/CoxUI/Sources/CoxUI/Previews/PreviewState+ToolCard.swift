@@ -19,6 +19,9 @@ extension PreviewState {
 
   /// A read-only search: a header and nothing to open.
   static let cardExplored = ToolCard.Content(header: toolExplored)
+
+  /// A finished call whose body is a plugin's own tree (T52.23.2).
+  static let cardPlugin = ToolCard.Content(header: toolExplored, detail: .plugin(pluginKeyValue))
 }
 
 /// A tool card across the reading column.

@@ -16,6 +16,12 @@ public struct MeterText: Equatable, Sendable, Decodable {
   public var cacheHit = ""
   /// `88% this session`, every call's; empty before the session sent anything (A104).
   public var cacheHitSession = ""
+  /// `42%` without the window; the toolbar copies this so it does not split `contextShare`.
+  public var contextPercent = ""
+  /// Parts' shares already summed and capped at 1, so the toolbar does not add them.
+  public var contextFill = 0.0
+  /// Session cost as the Cost row already wrote it, so the toolbar does not reformat `costUsd`.
+  public var cost = ""
 
   public init() {}
 
@@ -28,6 +34,34 @@ public struct MeterText: Equatable, Sendable, Decodable {
     case contextParts = "context_parts"
     case cacheHit = "cache_hit"
     case cacheHitSession = "cache_hit_session"
+    case contextPercent = "context_percent"
+    case contextFill = "context_fill"
+    case cost
+  }
+
+  /// Recorded fixtures predate the toolbar fields (T58.4.15). A missing key
+  /// is the empty figure, not a broken snapshot.
+  public init(from decoder: Decoder) throws {
+    let keys = try decoder.container(keyedBy: CodingKeys.self)
+    sent = try keys.decodeIfPresent(String.self, forKey: .sent) ?? ""
+    received = try keys.decodeIfPresent(String.self, forKey: .received) ?? ""
+    rate = try keys.decodeIfPresent(String.self, forKey: .rate) ?? ""
+    spoken = try keys.decodeIfPresent(String.self, forKey: .spoken) ?? ""
+    heading = try keys.decodeIfPresent(String.self, forKey: .heading) ?? ""
+    phase = try keys.decodeIfPresent(String.self, forKey: .phase) ?? ""
+    rateUnit = try keys.decodeIfPresent(String.self, forKey: .rateUnit) ?? ""
+    rateDetail = try keys.decodeIfPresent(String.self, forKey: .rateDetail) ?? ""
+    rows = try keys.decodeIfPresent([MeterRow].self, forKey: .rows) ?? []
+    context = try keys.decodeIfPresent(String.self, forKey: .context) ?? ""
+    footnote = try keys.decodeIfPresent(String.self, forKey: .footnote) ?? ""
+    contextShare = try keys.decodeIfPresent(String.self, forKey: .contextShare) ?? ""
+    contextFree = try keys.decodeIfPresent(String.self, forKey: .contextFree) ?? ""
+    contextParts = try keys.decodeIfPresent([ContextPart].self, forKey: .contextParts) ?? []
+    cacheHit = try keys.decodeIfPresent(String.self, forKey: .cacheHit) ?? ""
+    cacheHitSession = try keys.decodeIfPresent(String.self, forKey: .cacheHitSession) ?? ""
+    contextPercent = try keys.decodeIfPresent(String.self, forKey: .contextPercent) ?? ""
+    contextFill = try keys.decodeIfPresent(Double.self, forKey: .contextFill) ?? 0
+    cost = try keys.decodeIfPresent(String.self, forKey: .cost) ?? ""
   }
 }
 

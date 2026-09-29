@@ -15,7 +15,7 @@ use cox_render::doc::{Block as DocBlock, StyledDoc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::plugin_ui::PluginSlot;
+use crate::plugin_ui::{PluginSlot, WidgetView};
 use crate::summary::Icon;
 use crate::tasks::TaskKind;
 use crate::usage::UsageView;
@@ -52,6 +52,10 @@ pub enum BlockKind {
     Assistant {
         text: String,
         doc: StyledDoc,
+        /// A plugin's `item:assistant_message` renderer's tree (T52.23.1),
+        /// kept as `Tool`'s is; drawn in place of the reply.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plugin_view: Option<WidgetView>,
     },
     /// `duration_ms` is `None` while the thought streams; its
     /// `ThinkingDone` sets it, and the fold header reads "Thought for 12 s".
@@ -74,6 +78,11 @@ pub enum BlockKind {
         /// UI parses unified text (T37.23.5).
         diff: Option<DiffModel>,
         duration_ms: u64,
+        /// A plugin's `tool:` renderer's tree (T52.23.1, PL§8), sanitized and
+        /// bounded like a slot's; the card draws it in place of the generic
+        /// one. Display only: never in the rollout or the model's history.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plugin_view: Option<WidgetView>,
     },
     /// Consecutive read/grep/glob/outline calls of one step: "Explored 3
     /// files". The children stay `Tool` blocks right after this one, so
@@ -246,6 +255,11 @@ pub struct Status {
     /// app shows the id.
     #[serde(default)]
     pub model_name: Option<String>,
+    /// The chip's form of `model_name` (`Sonnet 5`): no leading `Claude `,
+    /// no trailing ` (latest)` (A111, A116). The full name stays on
+    /// `model_name` so the TUI and ACP do not change.
+    #[serde(default)]
+    pub short_name: Option<String>,
     /// The effort that model runs at: the `/effort` override, else the
     /// `code` tier's configured effort.
     pub effort: Option<Effort>,

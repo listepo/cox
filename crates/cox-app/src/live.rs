@@ -28,7 +28,7 @@ use crate::changes::{self, Changes};
 use crate::costs::{self, TurnCosts};
 use crate::info::{self, Info};
 use crate::mcp_status::McpRun;
-use crate::plugin_ui::{self, PluginKey, PluginSlot, PluginUi};
+use crate::plugin_ui::{self, Answered, ItemWatch, PluginKey, PluginSlot, PluginUi};
 use crate::review;
 use crate::status::StatusFold;
 use crate::tasks::{self, TaskTarget};
@@ -138,7 +138,7 @@ impl LiveSession {
         // Review's hunk revert (T51.19): cox-render's diff, which the core cannot reach.
         session.set_hunk_reverter(crate::review::RenderHunks::shared());
         let events = session.events().ok_or(AppError::EventsTaken)?;
-        let events = tee(Arc::clone(&app), session.id(), events);
+        let events = tee(Arc::clone(&app), session.id(), events, Arc::clone(&plugins));
         let claude_home = cox_config::load::home_dir().join(".claude");
         let owner = Arc::clone(&app);
         let mut completer = Completer::load(&cwd, &app.home, &claude_home);
@@ -191,7 +191,12 @@ impl LiveSession {
         let opened = crate::external::open(&app, &config, &cwd, agent, resume).await?;
         // The session's asks carry this id as their source (T52.5).
         let id = opened.id;
-        let events = tee(Arc::clone(&app), id, opened.events);
+        let events = tee(
+            Arc::clone(&app),
+            id,
+            opened.events,
+            Arc::new(PluginUi::new(mpsc::channel(1).0)),
+        );
         let (asks, _) = mpsc::channel(1);
         let owner = Arc::clone(&app);
         let roots = opened.roots;
@@ -517,9 +522,15 @@ impl LiveSession {
 
     /// One answer from the serve thread: a slot's render or miss, a redraw,
     /// or a command's closed effect (PL§4).
-    async fn on_plugin(&self, answer: PluginAnswer) {
+    async fn on_plugin(&self, Answered { block, answer }: Answered) {
         match answer {
             PluginAnswer::Command { plugin, out } => self.plugin_effect(&plugin, out).await,
+            // A miss lands `None`, which leaves the generic card.
+            PluginAnswer::ItemRendered { widget, .. } => {
+                if let Some(id) = block {
+                    self.controller.land(&id, widget.as_ref());
+                }
+            }
             other => {
                 let slots = self.plugins.step(|s| s.fold(other));
                 self.patch_slots(slots);
@@ -645,7 +656,7 @@ impl LiveSession {
 }
 
 /// Feeds the plugin serve thread's answers to `live` until it is gone.
-fn pump(live: Weak<LiveSession>, mut answers: mpsc::Receiver<PluginAnswer>) {
+fn pump(live: Weak<LiveSession>, mut answers: mpsc::Receiver<Answered>) {
     tokio::spawn(async move {
         while let Some(answer) = answers.recv().await {
             let Some(live) = live.upgrade() else {
@@ -658,13 +669,25 @@ fn pump(live: Weak<LiveSession>, mut answers: mpsc::Receiver<PluginAnswer>) {
 
 /// The inbox folds every event before the timeline sees it. A closed
 /// timeline refuses at once, so the core never waits on a view.
-fn tee(app: Arc<App>, id: SessionId, mut from: mpsc::Receiver<Event>) -> mpsc::Receiver<Event> {
+fn tee(
+    app: Arc<App>,
+    id: SessionId,
+    mut from: mpsc::Receiver<Event>,
+    plugins: Arc<PluginUi>,
+) -> mpsc::Receiver<Event> {
     let (tx, rx) = mpsc::channel(EVENTS);
     tokio::spawn(async move {
+        let mut items = ItemWatch::default();
         while let Some(event) = from.recv().await {
             app.apply(id, &event);
+            let finished = items.apply(&event);
             // Err only once the view closed; the inbox keeps following.
             let _ = tx.send(event).await;
+            // After the send, so the block is in the timeline by the time a
+            // plugin's answer names it.
+            if let Some((block, target, source)) = finished {
+                plugins.render_item(block, &target, source);
+            }
         }
         app.expire(id);
     });

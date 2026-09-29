@@ -1,8 +1,8 @@
 // Mockup 18's provider keys and pop-ups (T37.45.2, A120): a key is added and changed in the
 // in-memory `SecretStore` alone — never sent to the settings file, never in the view or an error
 // — and a pop-up Rust chose (an enum past the segment limit, a tier's model from the catalog)
-// shows model names short and its pick writes through the settings set path. Which control a
-// key takes is `cox_app::settings_fields`' test (T58.4.9). No real Keychain (A49).
+// shows titles as the core sent them and its pick writes through the settings set path. Which
+// control a key takes is `cox_app::settings_fields`' test (T58.4.9). No real Keychain (A49).
 
 import CoxClient
 import Testing
@@ -84,7 +84,7 @@ private let tierView = SettingsView(
 }
 
 @MainActor
-@Test func aModelPopUpShowsShortNamesAndAnyOtherPopUpAsSent() async throws {
+@Test func aModelPopUpShowsTitlesAsSentAndAnyOtherPopUpAsSent() async throws {
   let store = SettingsStore(
     client: FixtureSettingsClient(view: tierView), secrets: MemorySecretStore(), cwd: "/p")
   await store.load()
@@ -95,8 +95,8 @@ private let tierView = SettingsView(
       == .menu(
         "claude-sonnet-5",
         options: [
-          .init(value: "claude-sonnet-5", title: "Sonnet 5"),
-          .init(value: "claude-opus-5-5", title: "Opus 5.5"),
+          .init(value: "claude-sonnet-5", title: "Claude Sonnet 5"),
+          .init(value: "claude-opus-5-5", title: "Claude Opus 5.5 (latest)"),
         ]))
   #expect(control("tiers.cheap.model") == tierView.settings[0].control)
   #expect(control("tiers.code.effort") == .menu("high", options: effortOptions))

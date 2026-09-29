@@ -27,7 +27,7 @@ private func editCard() throws -> ToolCard.Content {
   let blocks = try Fixture(contentsOf: editFixture).snapshot
   let edit = try #require(
     blocks.first {
-      guard case .tool(let tool, _, _, _, _, _, _, let diff, _) = $0.kind else { return false }
+      guard case .tool(let tool, _, _, _, _, _, _, let diff, _, _) = $0.kind else { return false }
       return tool == "edit" && diff != nil
     })
   return try #require(ToolCard.Content(edit, locale: Locale(identifier: "en_US_POSIX")))

@@ -85,6 +85,12 @@ def cox_run(provider, shape, model, opts):
             "--ak", f"budget_usd={opts['budget_usd']}", "--ak", f"max_turns={opts['max_turns']}"]
     if opts.get("cox_bin"):
         argv += ["--ak", f"cox_bin={opts['cox_bin']}"]
+    if opts.get("repomap_budget_tokens") is not None:
+        # `--ae` is Harbor's agent env; cox reads `COX_CONTEXT_REPOMAP_BUDGET_TOKENS`
+        # as `context.repomap_budget_tokens`, so the preset needs no config file
+        # and no change to `CoxAgent`. An explicit 0 is passed too, so the off
+        # arm stays off if the default ever changes.
+        argv += ["--ae", f"COX_CONTEXT_REPOMAP_BUDGET_TOKENS={int(opts['repomap_budget_tokens'])}"]
     if provider.local:
         argv += ["--ak", f"base_url={provider.base(shape, in_container=True)}"]
         if cox_provider == "local":
@@ -134,6 +140,15 @@ PRESETS = {
                   "query-optimize", "regex-log", "sanitize-git-repo", "tune-mjcf",
                   "dna-assembly", "password-recovery", "path-tracing-reverse", "regex-chess"],
     },
+}
+
+# T43.6 falsifier 1: does the repo map pay for its tokens. Two presets that
+# differ only in `context.repomap_budget_tokens`, on the same cox agent, model
+# and tasks as `same-model`; compare tool calls, input and cache-read tokens
+# and pass rate between the two job tables.
+PRESETS |= {
+    name: {**PRESETS["same-model"], "agents": ["cox"], "repomap_budget_tokens": budget}
+    for name, budget in (("repomap-off", 0), ("repomap-2k", 2000))
 }
 
 
@@ -249,7 +264,8 @@ def main(argv=None):
     if not (agents and provider and model and tasks):
         parser.error("give --preset or all of --agents, --provider, --model, --tasks")
     opts = {"context": args.context or preset.get("context", 32768), "max_output": args.max_output,
-            "cox_bin": args.cox_bin, "budget_usd": args.budget_usd, "max_turns": args.max_turns}
+            "cox_bin": args.cox_bin, "budget_usd": args.budget_usd, "max_turns": args.max_turns,
+            "repomap_budget_tokens": preset.get("repomap_budget_tokens")}
     runs = [plan_run(agent, provider, model, opts) for agent in agents]
     stamp = datetime.now().strftime("%Y-%m-%d__%H-%M-%S")
     jobs = [(run, f"{stamp}__{run.agent}") for run in runs]

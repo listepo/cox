@@ -117,6 +117,109 @@ impl StyledSpan {
     }
 }
 
+impl StyledDoc {
+    /// Every block as Markdown, joined by a blank line. A streamed reply
+    /// arrives as doc blocks, not source, so this is the one writer Copy and
+    /// the clients share instead of each keeping its own (T58.4.26).
+    pub fn markdown(&self) -> String {
+        let blocks: Vec<String> = self.blocks.iter().filter_map(Block::markdown).collect();
+        blocks.join("\n\n")
+    }
+}
+
+impl Block {
+    /// This block as Markdown; `None` for a table without rows, which has
+    /// nothing to write.
+    pub fn markdown(&self) -> Option<String> {
+        match self {
+            Self::Text { kind, lines } => {
+                let lines: Vec<String> = lines
+                    .iter()
+                    .enumerate()
+                    .map(|(i, line)| text_line(line, *kind, i == 0))
+                    .collect();
+                Some(lines.join("\n"))
+            }
+            Self::Code { lang, lines } => {
+                let body: Vec<String> = lines
+                    .iter()
+                    .map(|l| l.iter().map(|s| s.text.as_str()).collect())
+                    .collect();
+                Some(fence(lang, &body.join("\n")))
+            }
+            Self::Table { rows } => {
+                let head = rows.first()?;
+                let row = |cells: &[String]| format!("| {} |", cells.join(" | "));
+                let rule = vec!["---".to_string(); head.len()];
+                let mut out = vec![row(head), row(&rule)];
+                out.extend(rows[1..].iter().map(|r| row(r)));
+                Some(out.join("\n"))
+            }
+            Self::Rule => Some("---".to_string()),
+        }
+    }
+}
+
+/// A text line as Markdown: its quotes as `>`, then an item's depth indent
+/// and number or `-`, or a heading's `#` run on its first line; a list line
+/// that goes on an item is indented under it.
+fn text_line(line: &TextLine, kind: TextKind, first: bool) -> String {
+    let mut head = "> ".repeat(usize::from(line.quote));
+    let mut bold_marks = true;
+    if !line.marker.is_empty() {
+        let number = line.marker.chars().next().is_some_and(char::is_numeric);
+        head.push_str(&"  ".repeat(usize::from(line.depth)));
+        head.push_str(if number { &line.marker } else { "-" });
+        head.push(' ');
+    } else if kind == TextKind::List {
+        head.push_str(&"  ".repeat(usize::from(line.depth) + 1));
+    } else if let TextKind::Heading(level) = kind {
+        if first {
+            head.push_str(&"#".repeat(usize::from(level)));
+            head.push(' ');
+        }
+        // A heading is bold by its level, so its spans' bold marks would
+        // only double it.
+        bold_marks = false;
+    }
+    head + &line
+        .spans
+        .iter()
+        .map(|s| span(s, bold_marks))
+        .collect::<String>()
+}
+
+/// A span's text with its bold, italic and strike marks; whitespace stays
+/// bare because a mark around it would not parse.
+fn span(span: &StyledSpan, bold_marks: bool) -> String {
+    if span.text.chars().all(char::is_whitespace) {
+        return span.text.clone();
+    }
+    let mut text = span.text.clone();
+    if span.bold && bold_marks {
+        text = format!("**{text}**");
+    }
+    if span.italic {
+        text = format!("_{text}_");
+    }
+    if span.strike {
+        text = format!("~~{text}~~");
+    }
+    text
+}
+
+/// `body` fenced as `lang`, with a fence longer than any backtick run
+/// inside it so the body cannot close it early.
+fn fence(lang: &str, body: &str) -> String {
+    let (mut longest, mut run) = (0, 0);
+    for c in body.chars() {
+        run = if c == '`' { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    let ticks = "`".repeat((longest + 1).max(3));
+    format!("{ticks}{lang}\n{body}\n{ticks}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Block, TextKind};
@@ -195,5 +298,47 @@ mod tests {
                 (TextKind::Quote, 1, 0, s(""), s("after")),
             ]
         );
+    }
+
+    fn code(body: &str) -> Block {
+        Block::Code {
+            lang: "rs".into(),
+            lines: body
+                .lines()
+                .map(|l| vec![super::StyledSpan::plain(l)])
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_fence_outgrows_the_longest_backtick_run() {
+        assert_eq!(
+            code("a ``` b\n````").markdown().as_deref(),
+            Some("`````rs\na ``` b\n````\n`````")
+        );
+        assert_eq!(
+            code("plain").markdown().as_deref(),
+            Some("```rs\nplain\n```")
+        );
+    }
+
+    #[test]
+    fn a_nested_list_keeps_its_depth() {
+        let doc = parse("- one\n  - two\n\n3. three", theme_name(true, ""), &UNICODE);
+        assert_eq!(doc.markdown(), "- one\n  - two\n\n3. three");
+    }
+
+    #[test]
+    fn headings_quotes_tables_and_marks_write_their_markdown() {
+        let doc = parse(
+            "## Plan\n\n> quoted **b** *i*\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n---",
+            theme_name(true, ""),
+            &UNICODE,
+        );
+        assert_eq!(
+            doc.markdown(),
+            "## Plan\n\n> quoted **b** _i_\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n---"
+        );
+        assert_eq!(Block::Table { rows: vec![] }.markdown(), None);
     }
 }

@@ -1,4 +1,236 @@
 
+#### T58.4.25 Tasks tab, Review and the task card read the core's state and turns
+
+Model: already in the tree · Status: done 2026-09-29 · Depends: T58.4.22, T58.4.24 · Size: ~60 · Priority: P1 · Complexity: 1
+Goal: tasks and the task card copy the block's state; Review lists the core's turns.
+What landed: the stores and the task card already read the core's state and turns.
+Check:
+```text
+$ swift test --package-path desktop/macos/Packages/CoxModel --filter "TaskRowsTests|ReviewStateTests"
+4 tests passed, including taskBlocksBecomeRowsWithStateAndCostInTimelineOrder and reviewListsTheCoresTurnsAsTheyArrive
+$ swift test --package-path desktop/macos/Packages/CoxTranscript --filter "TranscriptSnapshotTests|SessionReviewStateTests"
+TranscriptSnapshotTests: 3 tests passed. There is no suite named SessionReviewStateTests; the review pane cases live in TranscriptSnapshotTests.
+```
+
+#### T58.4.24 Task state reaches the Swift timeline
+
+Model: already in the tree · Status: done 2026-09-29 · Depends: T58.4.23 · Size: ~50 · Priority: P1 · Complexity: 2
+Goal: `BlockKind.task` carries the core's state through decode and conversion.
+What landed: the Swift task case, its decoder and `Convert` already carry `state`.
+Check:
+```text
+$ swift test --package-path desktop/macos/Packages/CoxModel --filter SessionStoreTests
+passed, including aTaskBlockDecodesTheCoresState (12 tests in the combined InfoTab run)
+$ swift test --package-path desktop/macos/Packages/CoxCore --filter ConvertTests
+15 tests passed (T58.4.5 run, against the current xcframework)
+```
+
+#### T58.4.23 A task block carries its state
+
+Model: already in the tree · Status: done 2026-09-29 · Depends: — · Size: ~60 · Priority: P1 · Complexity: 2
+Goal: a task block carries `state`; no exit code is a success.
+Check:
+```text
+$ CARGO_TARGET_DIR=/tmp/cox-p37-sidebar mise exec -- cargo nextest run -p cox-app -E 'test(a_subagent_without_an_exit_code_succeeded)'
+1 test passed
+```
+`cox-ffi` was 12/12 on the T58.4.4 run, after this field was already on the remote record.
+
+#### T58.4.22 Changes tab facts from the core
+
+Model: already in the tree · Status: done 2026-09-29 · Depends: T58.4.20, T58.4.21 · Size: ~60 · Priority: P1 · Complexity: 1
+Goal: the changes tab lists the core's worktree facts and turns.
+Check:
+```text
+$ swift test --package-path desktop/macos/Packages/CoxModel --filter ChangesTabTests
+3 tests passed
+```
+
+#### T58.4.21 Info tab from the core's facts
+
+Model: already in the tree · Status: done 2026-09-29 · Depends: T58.4.20 · Size: ~60 · Priority: P1 · Complexity: 1
+Goal: the info tab lists the core's facts in order.
+Check:
+```text
+$ swift test --package-path desktop/macos/Packages/CoxModel --filter InfoTabTests
+2 tests passed, including theTabListsTheCoreFactsInTheirOrder
+```
+
+#### T58.4.20 Inspector facts and Review's turns in `cox-app`
+
+Model: already in the tree · Status: done 2026-09-29 · Depends: — · Size: ~170 · Priority: P1 · Complexity: 2
+Goal: info rows and review turns come from the core.
+Check:
+```text
+$ CARGO_TARGET_DIR=/tmp/cox-p37-sidebar mise exec -- cargo nextest run -p cox-app -E 'test(the_home_directory_reads_as_tilde) | test(base_needs_both_base_and_commit) | test(a_file_sits_in_the_turn_that_changed_it_last)'
+3 tests passed
+```
+
+#### T58.4.5 SidebarStore shows the core's sections
+
+Model: Cursor / grok 4.6 · Status: done 2026-09-29 · Depends: T58.4.4 · Size: ~150 · Priority: P1 · Complexity: 3
+Goal: the sidebar store shows the core's sections and only joins and localizes the subtitle.
+Files: `Workspace.swift`, `WorkspaceConvert.swift`, `SidebarStore.swift`, `ShellState.swift`.
+What landed: `WorkspaceClient.sidebar(filter:folded:)` converts the FFI sections. `SidebarStore` joins subtitle parts with ` · ` and localizes only the age part. `folded`, `filter`, `watch` and `paletteItems` stay. The filter is not reimplemented in Swift. `SessionEntry.name` matches the core. The app qualifies `CoxModel.SidebarSection` so it does not clash with the client type. The xcframework was not rebuilt; the existing one already exported the types.
+Check:
+```text
+$ swift test --package-path desktop/macos/Packages/CoxModel --filter SidebarStoreTests
+8 tests passed
+$ swift test --package-path desktop/macos/Packages/CoxCore --filter ConvertTests
+15 tests passed
+```
+
+#### T58.4.15 Toolbar figures from the meter
+
+Model: Cursor / grok 4.6 · Status: done 2026-09-29 · Depends: T58.4.6 · Size: ~50 · Priority: P2 · Complexity: 1
+Goal: the meter value carries `contextPercent`, `contextFill` and `cost`; the toolbar copies them.
+Files: `Meter.swift`, `ToolbarState.swift`, `Convert+Meter.swift`, `ConvertStatus.swift`.
+What landed: `ToolbarState` copies the three core fields instead of splitting `contextShare`. The xcframework rebuild maps `Status.shortName` from `value.shortName`. The read-and-reply fixture includes the new meter fields.
+Check:
+```text
+$ swift test --package-path desktop/macos/Packages/CoxModel --filter ToolbarStateTests
+3 tests passed
+$ CARGO_TARGET_DIR=/tmp/cox-p37-meter COX_HOME=/tmp/cox-p37-meter-home mise exec -- bash scripts/desktop/xcframework.sh
+xcframework written
+$ swift test --package-path desktop/macos/Packages/CoxCore --filter ConvertTests
+13 tests passed
+```
+
+#### T58.4.14 Short model names from the core
+
+Model: Cursor / grok 4.6 · Status: done 2026-09-29 · Depends: T58.4.6, T58.4.11, T58.4.13 · Size: ~30 · Priority: P1 · Complexity: 1
+Goal: the chip shows `status.shortName ?? id`; nothing in Swift shortens a model name.
+Files: `ModelName.swift` (deleted), `ComposerStore.swift`, `ModelMenu.swift`, `SettingsFields.swift`, `Timeline.swift`, `ConvertStatus.swift`.
+What landed: `CoxClient.Status.shortName` decodes `short_name`. The chip uses it, else the id. The model menu and settings show the string the core sent. `ConvertStatus` still passes `shortName: nil` because the built xcframework predates the field; the next rebuild maps `value.shortName`.
+Check:
+```text
+$ swift test --package-path desktop/macos/Packages/CoxModel --filter ComposerStoreTests
+14 tests passed
+$ grep -rn "ModelName" desktop/macos --exclude-dir=.build --exclude-dir=build
+no matches
+$ swiftlint lint --strict
+0 violations on the edited files
+```
+
+#### T58.4.4 Sidebar sections and rows in `cox-app`
+
+Model: Cursor / grok 4.6 · Status: done 2026-09-29 · Depends: T58.4.1 · Size: ~190 · Priority: P1 · Complexity: 3
+Goal: `App::sidebar` returns Needs you, Running, then each project, with row title, cost and subtitle parts.
+Files: `crates/cox-app/src/workspace.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`.
+What landed: sections come from the existing inbox and project list. A row's subtitle is text parts plus one `age` part holding `updated_at`. The filter matches the title and the text parts, case-insensitively, and never the age. Diacritics are not folded: no crate already in the workspace does that. `cox-ffi` forwards `sidebar` in one expression.
+Check:
+```text
+$ CARGO_TARGET_DIR=/tmp/cox-p37-sidebar mise exec -- cargo nextest run -p cox-app workspace
+7 tests passed, including running_sessions_leave_their_project, a_filter_opens_a_folded_project, an_idle_session_says_done_only_after_a_turn, an_untitled_session_is_named_untitled
+$ CARGO_TARGET_DIR=/tmp/cox-p37-sidebar mise exec -- cargo nextest run -p cox-ffi
+12 tests passed
+```
+
+#### T58.4.6 Short model names and the toolbar's figures
+
+Model: Cursor / grok 4.6 · Status: done 2026-09-29 · Depends: — · Size: ~100 · Priority: P1 · Complexity: 2
+Goal: a short model name beside the full one, and meter text for the toolbar's percent, fill and cost.
+Files: `crates/cox-app/src/status.rs`, `crates/cox-app/src/meter_text.rs`, `crates/cox-ffi/src/types.rs`, `crates/cox-app/src/patch.rs`.
+What landed: `ModelName` keeps `name` and `short_name` (leading `Claude ` and trailing ` (latest)` dropped). `Status.model_name` and `ModelChoice.display_name` stay the full catalog name. `Status.short_name` carries the chip's form. `MeterText` gained `context_percent`, `context_fill` (part shares summed, capped at 1) and `cost`.
+Check:
+```text
+$ CARGO_TARGET_DIR=/tmp/cox-p37-status mise exec -- cargo nextest run -p cox-app status meter_text
+16 tests passed, including a_short_name_drops_the_vendor_and_latest and context_fill_is_capped_at_one
+$ CARGO_TARGET_DIR=/tmp/cox-p37-status mise exec -- cargo nextest run -p cox-ffi
+12 tests passed
+```
+The `Status.short_name` assertion was re-run after the field was added to the status record: `a_short_name_drops_the_vendor_and_latest` passed.
+
+#### T58.4.27 The Markdown seam uses the core's writer
+
+Model: Cursor / claude-sonnet-5.5, then Cursor / grok 4.6 · Status: done 2026-09-29 · Depends: T58.4.26 · Size: ~80 · Priority: P2 · Complexity: 2
+Goal: `DocMarkdown` keeps a `DocWriter` set once at launch; `CoreDocWriter` forwards to `doc_markdown`; `replaceDoc` leaves the reply text empty.
+Files: `DocMarkdown.swift`, `Convert.swift`, `SessionStore.swift`.
+What landed: the protocol and a plain stand-in for fixture runs; `CoreDocWriter` calls `docMarkdown` and `blockMarkdown`. `replaceDoc` no longer re-renders on each `docTail`. `pluginView` is carried on the same `BlockKind` conversion so the rebuilt xcframework still typechecks.
+Check:
+```text
+$ swift test --package-path desktop/macos/Packages/CoxModel --filter SessionStoreTests
+10 tests passed
+$ swift test --package-path desktop/macos/Packages/CoxCore --filter ConvertTests
+13 tests passed (xcframework already built; not rebuilt during T58.4.6)
+```
+
+#### T52.23.2 Swift: the tool card draws a plugin renderer
+
+Model: Cursor / grok 4.6 · Status: done 2026-09-29 · Depends: T52.23.1 · Size: ~100 · Priority: P3 · Complexity: 2
+Goal: the tool card reads the block's plugin view and draws that renderer in place of the generic detail.
+Files: CoxModel `SessionStore`, CoxUI `ToolCard`, plus the `BlockKind` seam (`Timeline.swift`, `TimelineDecoding.swift`, `Convert.swift`).
+What landed: `assistant` and `tool` carry `pluginView` (default nil, omitted in old fixtures). `SessionStore` keeps it across upsert. `ToolCard` draws `PluginWidgetView` when the view is set. Assistant blocks keep the field and do not draw it.
+Check:
+```text
+$ swift test --package-path desktop/macos/Packages/CoxModel --filter SessionStoreTests
+10 tests passed, including aToolBlocksPluginViewReplacesOnUpsert
+$ swift test --package-path desktop/macos/Packages/CoxUI --filter ToolCard
+2 tests, 8 cases passed, including pluginRenderer (4 new snapshots)
+$ swiftlint --strict
+0 violations on the edited files under each package config, except Convert.swift file_length 476 (CoxCore's package lint still passes)
+```
+
+#### T52.23.1 Rust: plugin `tool:`/`item:` render path
+
+Model: Cursor / claude-sonnet-5.5 · Status: done 2026-09-29 · Depends: T52.17 · Size: ~150 · Priority: P3 · Complexity: 3
+Goal: a plugin's `tool:`/`item:` renderer lands its sanitized widget tree on the block.
+Files: `crates/cox-app/src/plugin_ui.rs`, `live.rs`, `crates/cox-ffi/src/types.rs`.
+What landed: `BlockKind::Tool` and `BlockKind::Assistant` carry `plugin_view`. The live path asks the renderer when the tool call or the assistant item finishes, and the timeline upserts the sanitized view. `skip_serializing_if` keeps older snapshots stable.
+Check:
+```text
+$ CARGO_TARGET_DIR=/tmp/cox-p37-plugin mise exec -- cargo nextest run -p cox-app
+208 tests passed, including tool_renderer_widget_lands_sanitized_in_the_block and item_renderer_widget_lands_sanitized_in_the_reply
+$ CARGO_TARGET_DIR=/tmp/cox-p37-plugin mise exec -- cargo nextest run -p cox-ffi
+12 tests passed
+```
+Deviation: a plugin answer that arrives before the timeline applies the finishing event is dropped. An external-agent session has no renderers.
+
+#### T58.4.28 Copy as Markdown through the core's writer
+
+Model: Cursor / claude-sonnet-5.5 · Status: done 2026-09-29 · Depends: T58.4.27 · Size: ~60 · Priority: P2 · Complexity: 2
+Goal: Copy as Markdown asks the writer for a doc or a block; the app sets `CoreDocWriter` at launch.
+Files: `CoxTranscriptText/Sources/CoxTranscriptText/MarkdownCopy.swift`, `desktop/macos/App/CoxApp.swift`.
+What landed: `MarkdownCopy` asks `DocMarkdown.writer`. `AppModel.init` sets `CoreDocWriter()` except on a fixture launch, which keeps the plain stand-in. Selection tests that asserted the old Swift writer were updated to the stand-in, with a small fencing writer where a fence is the claim.
+Check:
+```text
+$ swift test --package-path desktop/macos/Packages/CoxTranscriptText --filter "SelectionTests|BlockSelectionTests"
+8 tests passed
+$ swift test --package-path desktop/macos/Packages/CoxTranscript --filter TranscriptSelectionTests
+passed (with TranscriptReplyTests and TranscriptTurnTests, 8 tests; CoxTranscriptText package 37 tests)
+```
+
+#### T58.4.26 A reply's doc as Markdown in Rust
+
+Model: Cursor / claude-sonnet-5.5 · Status: done 2026-09-29 · Depends: — · Size: ~120 · Priority: P2 · Complexity: 2
+Goal: `StyledDoc::markdown()` writes a reply's doc as Markdown, `DocBlock::markdown()` one block; `cox-ffi` forwards both as free functions.
+Files: `crates/cox-render/src/doc.rs`, `crates/cox-ffi/src/lib.rs`.
+What landed: the writer follows the rules the Swift writer had, and a code fence is the longest backtick run plus one. `doc_markdown` and `block_markdown` are one-expression forwarders. `cox-app` already re-exports `doc`.
+Check:
+```text
+$ CARGO_TARGET_DIR=/tmp/cox-p37-md mise exec -- cargo nextest run -p cox-render doc
+7 tests passed, including a_fence_outgrows_the_longest_backtick_run and a_nested_list_keeps_its_depth
+$ CARGO_TARGET_DIR=/tmp/cox-p37-md mise exec -- cargo nextest run -p cox-ffi
+12 tests passed
+$ CARGO_TARGET_DIR=/tmp/cox-p37-md mise exec -- cargo nextest run -p cox-app doc
+1 test passed
+```
+
+#### T51.23 Panes draw from `glass.fill` and `glass.border`
+
+Model: Cursor / claude-sonnet-5.5 · Status: done 2026-09-29 · Depends: T51.22 · Size: ~90 · Priority: P3 · Complexity: 2
+Goal: pane fill and rim read `glass.fill` and `glass.border`, and the specular sweep uses a token instead of a white literal.
+Files: CoxUI pane and rim, `desktop/design/DESIGN.md` §3.4/§3.5.
+What landed (`df95c244`): `ShellPane` uses `glassFill` and `glassBorder` on glass; solid panes keep `surfaceSidebar`/`surfaceWindow` and `separator`. `glass.specular` is a token (`glassSpecular`); `Specular.swift`, `AppKitText.swift` and `TranscriptView.swift` use it. Frosted light and dark snapshots were re-recorded in that commit.
+Check:
+```text
+$ swift test --package-path desktop/macos/Packages/CoxUI
+Test run with 238 tests in 86 suites passed after 181.275 seconds
+$ swiftlint --strict
+Found 0 violations, 0 serious in 217 files
+```
+Deviation: the dark frosted panes were not compared again against renders 31/32 on 2026-09-29. One earlier `swift test` run failed a single unnamed test and the next two runs passed with no snapshot change.
+
 #### T35.14 Sandboxed plugin and external-agent programs may live under `/tmp`
 
 Model: Cursor / grok 4.7 · Status: done 2026-09-27 · Depends: none · Size: ~200 · Priority: P2 · Complexity: 3

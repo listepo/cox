@@ -123,14 +123,6 @@ struct TranscriptStructureTests {
     #expect(styles(streamed) == styles(loaded))
   }
 
-  @Test func aDocCopiesAsMarkdownWithItsMarkersAsMarkdowns() {
-    #expect(
-      StyledDoc(blocks: structured).markdown
-        == "## Plan\n\n- one\n  - two\n\n> quoted\n\n> > deeper\n\n---\n\n"
-        + "| k | value |\n| --- | --- |\n| key | v |"
-    )
-  }
-
   @Test func aQuoteLineLaysOutWithItsBarsAndProseWithout() throws {
     let view = TranscriptTextView.make(style: style)
     view.load([reply(structured)])

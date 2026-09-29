@@ -219,7 +219,10 @@
             "context_free": "996.3k",
             "cache_hit": "0% this turn",
             "cache_hit_session": "0% this session",
-            "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
+            "footnote": "Cache hit 0% this turn · some counts are cox's estimate",
+            "context_percent": "0.4%",
+            "context_fill": 0.003709,
+            "cost": "$0.00"
           }
         }
       }
@@ -583,7 +586,10 @@
             "context_free": "996.3k",
             "cache_hit": "0% this turn",
             "cache_hit_session": "0% this session",
-            "footnote": "Cache hit 0% this turn · some counts are cox's estimate"
+            "footnote": "Cache hit 0% this turn · some counts are cox's estimate",
+            "context_percent": "0.4%",
+            "context_fill": 0.003728,
+            "cost": "$0.00"
           }
         }
       }

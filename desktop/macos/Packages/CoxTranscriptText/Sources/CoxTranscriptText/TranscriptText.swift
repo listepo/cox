@@ -240,7 +240,7 @@ enum TranscriptText {
       out = NSMutableAttributedString(attachment: CardAttachment(block, cards: cards))
       out.addAttributes(
         look.plain(.text, code: false).attributes, range: NSRange(location: 0, length: out.length))
-    } else if case .assistant(_, let doc) = block.kind {
+    } else if case .assistant(_, let doc, _) = block.kind {
       (out, starts) = self.doc(doc.blocks, look, continuing: false)
     } else if let decorated = decorated(block, look, cards: cards) {
       out = decorated

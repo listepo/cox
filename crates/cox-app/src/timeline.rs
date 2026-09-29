@@ -7,6 +7,7 @@ use std::fmt::Display;
 
 use cox_core::permission::grants_for;
 use cox_protocol::ids::{CallId, ItemId};
+use cox_protocol::plugin::Widget;
 use cox_protocol::types::{Event, ItemKind, TodoItem, ToolCall};
 use cox_render::diffmodel;
 use cox_render::glyph::UNICODE;
@@ -116,6 +117,7 @@ impl Timeline {
                     ItemKind::AssistantMessage { text } => BlockKind::Assistant {
                         text: text.clone(),
                         doc: markdown::parse(text, &self.theme, &UNICODE),
+                        plugin_view: None,
                     },
                     // T39.2 keeps a tool call's signature as an empty signed
                     // item for the provider's history; there is no thought to
@@ -171,6 +173,7 @@ impl Timeline {
                     archive: None,
                     diff: None,
                     duration_ms: 0,
+                    plugin_view: None,
                 };
                 let run = self.explore.take();
                 let id = key("call", call.id);
@@ -486,6 +489,12 @@ impl Timeline {
         }
     }
 
+    /// A plugin's render of block `id` (T52.23.1): kept in the block, so a
+    /// `Reset` carries it, and sent as the upsert every block change is.
+    pub fn land(&mut self, id: &BlockId, widget: Option<&Widget>) -> Vec<TimelinePatch> {
+        self.update(id, |k| crate::plugin_ui::land(k, widget))
+    }
+
     fn update(&mut self, id: &BlockId, f: impl FnOnce(&mut BlockKind)) -> Vec<TimelinePatch> {
         let Some(i) = self.find(id) else {
             return vec![];
@@ -515,7 +524,7 @@ impl Timeline {
         let Some(i) = self.find(&id) else {
             return vec![];
         };
-        let BlockKind::Assistant { text, doc } = &mut self.blocks[i].kind else {
+        let BlockKind::Assistant { text, doc, .. } = &mut self.blocks[i].kind else {
             return vec![];
         };
         text.push_str(delta);
@@ -576,6 +585,33 @@ mod tests {
             panic!("expected one DocTail, got {patches:?}");
         };
         assert_eq!((*from, blocks.len()), (1, 1), "the heading is frozen");
+    }
+
+    #[test]
+    fn a_plugin_render_is_kept_in_the_block_and_sent_as_an_upsert() {
+        let mut timeline = Timeline::default();
+        let item = ItemId::new();
+        let kind = ItemKind::AssistantMessage { text: "hi".into() };
+        timeline.apply(&Event::ItemStarted { item, kind });
+        let id = key("item", item);
+        let widget = Widget::Text(vec![]);
+        let patches = timeline.land(&id, Some(&widget));
+        let [TimelinePatch::Upsert { block, .. }] = patches.as_slice() else {
+            panic!("expected one Upsert, got {patches:?}");
+        };
+        assert!(matches!(
+            &block.kind,
+            BlockKind::Assistant {
+                plugin_view: Some(_),
+                ..
+            }
+        ));
+        assert!(matches!(
+            &timeline.reset(),
+            TimelinePatch::Reset { blocks }
+                if matches!(&blocks[0].kind, BlockKind::Assistant { plugin_view: Some(_), .. })
+        ));
+        assert!(timeline.land(&key("item", ItemId::new()), None).is_empty());
     }
 
     #[test]

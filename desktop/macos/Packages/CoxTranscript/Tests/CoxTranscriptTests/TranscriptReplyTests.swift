@@ -3,7 +3,8 @@
 // list with a nested item, a nested quote, a rule, a table and code — in light and
 // dark, Solid, through the SwiftUI view the app hosts: headings without their `#`
 // run, markers in the gutter, a bar per quote. Copy as Markdown of it, whole and in
-// part, gives its structure back as Markdown, and a loaded reply its source.
+// part, asks the doc writer for the blocks it covers (the core writes the Markdown, T58.4.28;
+// here the plain stand-in), and a loaded reply gives its source.
 
 import AppKit
 import CoxClient
@@ -100,14 +101,14 @@ struct TranscriptReplyTests {
       named: dark ? "dark-solid" : "light-solid", testName: "replyWithEveryBlockKind")
   }
 
-  @Test func copyAsMarkdownGivesTheStructureBack() throws {
+  @Test func copyAsMarkdownAsksTheWriterForTheBlocksItCovers() throws {
     let host = Host(reply, size: size)
     defer { host.close() }
     let text = host.text.string as NSString
 
     host.text.setSelectedRange(NSRange(location: 0, length: text.length))
     let whole = host.copy()
-    #expect(whole.markdown == markdown)
+    #expect(whole.markdown == PlainDocWriter().markdown(doc))
     #expect(whole.plain?.contains("\u{FFFC}") == false, "a rule copies as no text")
 
     // From the first list's bullet to the quote's end: whole doc blocks copy as Markdown.
@@ -115,9 +116,8 @@ struct TranscriptReplyTests {
     let end = NSMaxRange(text.range(of: "nested quote"))
     host.text.setSelectedRange(NSRange(start..<end))
     let part = try #require(host.copy().markdown)
-    let first = try #require(markdown.range(of: "- The"))
-    let last = try #require(markdown.range(of: "nested quote"))
-    #expect(part == String(markdown[first.lowerBound..<last.upperBound]))
+    // The list, the numbered list, "Why" and the quote.
+    #expect(part == PlainDocWriter().markdown(StyledDoc(blocks: Array(doc.blocks[3...6]))))
   }
 
   @Test func copyAsMarkdownOfALoadedReplyGivesItsSource() throws {

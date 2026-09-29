@@ -282,6 +282,7 @@ mod tests {
             archive: None,
             diff: None,
             duration_ms: 0,
+            plugin_view: None,
         };
         let queue = coalesced(&[
             thinking("t", "a"),
@@ -379,6 +380,7 @@ mod tests {
     #[test]
     fn coalescing_reaches_the_state_of_applying_every_patch() {
         let assistant = BlockKind::Assistant {
+            plugin_view: None,
             text: String::new(),
             doc: StyledDoc {
                 blocks: vec![para("p")],

@@ -53,7 +53,7 @@ async fn a_scripted_turn_reaches_the_app_as_blocks_and_the_meter() {
             .any(|k| matches!(k, BlockKind::Tool { tool, .. } if tool == "read"))
     );
     assert!(kinds.iter().any(
-        |k| matches!(k, BlockKind::Assistant { text, doc } if text.contains("**hello**") && !doc.blocks.is_empty())
+        |k| matches!(k, BlockKind::Assistant { text, doc, .. } if text.contains("**hello**") && !doc.blocks.is_empty())
     ));
     assert!(kinds.iter().any(|k| matches!(
         k,

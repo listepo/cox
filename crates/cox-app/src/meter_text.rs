@@ -53,6 +53,15 @@ pub struct MeterText {
     pub cache_hit_session: String,
     /// `Cache hit 94% this turn · counts from the provider's usage, …`.
     pub footnote: String,
+    /// `42%`, the share's percent without the window it is of; empty
+    /// until a request was sent to a model with a known window. The
+    /// toolbar copies this instead of splitting `context_share`.
+    pub context_percent: String,
+    /// The ring's fill: the parts' shares summed, capped at 1 so a
+    /// used-over-window split cannot overflow.
+    pub context_fill: f64,
+    /// `$0.42`, the session's cost as the Cost row already writes it.
+    pub cost: String,
 }
 
 /// One line of the popover's grid.
@@ -129,7 +138,7 @@ impl MeterText {
                 session: tokens(rates.session_thinking),
                 detail: true,
             },
-            row("Cost", |t| format!("${:.2}", t.cost_usd), false),
+            row("Cost", |t| cost(t.cost_usd), false),
         ];
         let source = if s.estimated {
             "some counts are cox's estimate"
@@ -141,6 +150,11 @@ impl MeterText {
             Some(hit) => format!("Cache hit {hit} · {source}"),
             None => format!("C{}", &source[1..]),
         };
+        let context_parts = rates
+            .context
+            .map(|b| parts(&b, view.context_tokens))
+            .unwrap_or_default();
+        let context_fill = context_parts.iter().map(|p| p.share).sum::<f64>().min(1.0);
         Self {
             sent: tokens(s.sent),
             received: tokens(s.received),
@@ -167,10 +181,7 @@ impl MeterText {
                 .context
                 .and_then(|b| share(&b, view.context_tokens))
                 .unwrap_or_default(),
-            context_parts: rates
-                .context
-                .map(|b| parts(&b, view.context_tokens))
-                .unwrap_or_default(),
+            context_parts,
             context_free: rates
                 .context
                 .and_then(|b| free(&b, view.context_tokens))
@@ -178,6 +189,12 @@ impl MeterText {
             cache_hit: cache_hit.unwrap_or_default(),
             cache_hit_session: hit(s, "this session").unwrap_or_default(),
             footnote,
+            context_percent: rates
+                .context
+                .and_then(|b| percent(&b, view.context_tokens))
+                .unwrap_or_default(),
+            context_fill,
+            cost: cost(s.cost_usd),
         }
     }
 }
@@ -201,16 +218,30 @@ fn used(b: &ContextBreakdown, last_context: u32) -> u32 {
     }
 }
 
-/// `7.6% of 1M`; `None` when the window is unknown.
-fn share(b: &ContextBreakdown, last_context: u32) -> Option<String> {
+/// `7.6%` or `42%`; `None` when the window is unknown.
+fn percent(b: &ContextBreakdown, last_context: u32) -> Option<String> {
     let window = b.window.filter(|w| *w > 0)?;
     let pct = f64::from(used(b, last_context)) / f64::from(window) * 100.0;
-    let pct = if pct < 10.0 {
+    Some(if pct < 10.0 {
         format!("{pct:.1}%")
     } else {
         format!("{pct:.0}%")
-    };
-    Some(format!("{pct} of {}", window_size(window)))
+    })
+}
+
+/// `7.6% of 1M`; `None` when the window is unknown.
+fn share(b: &ContextBreakdown, last_context: u32) -> Option<String> {
+    let window = b.window.filter(|w| *w > 0)?;
+    Some(format!(
+        "{} of {}",
+        percent(b, last_context)?,
+        window_size(window)
+    ))
+}
+
+/// `$0.42`, as the Cost row and the toolbar both write a session cost.
+fn cost(usd: f64) -> String {
+    format!("${usd:.2}")
 }
 
 /// The window less `used`; `None` when the window is unknown.
@@ -453,5 +484,33 @@ mod tests {
         assert_eq!(text.cache_hit_session, "", "nothing sent, no cache hit");
         assert!(text.rows.iter().all(|r| r.turn == "–"));
         assert!(text.footnote.starts_with("Counts from"));
+    }
+
+    #[test]
+    fn context_fill_is_capped_at_one() {
+        let view = UsageView {
+            context_tokens: 2_000,
+            ..UsageView::default()
+        };
+        let text = MeterText::of(
+            &view,
+            Rates {
+                context: Some(ContextBreakdown {
+                    window: Some(1_000),
+                    total: 2_000,
+                    system: 500,
+                    tools: 500,
+                    instructions: 500,
+                    history: 500,
+                    cached: 0,
+                }),
+                ..Rates::default()
+            },
+        );
+        let parts: f64 = text.context_parts.iter().map(|p| p.share).sum();
+        assert!(parts > 1.0, "{parts}");
+        assert_eq!(text.context_fill, 1.0);
+        assert_eq!(text.context_percent, "200%");
+        assert_eq!(text.cost, "$0.00");
     }
 }

@@ -248,6 +248,20 @@ private func usage(done: Bool) -> UsageView {
   #expect(store.mode == .default)
 }
 
+/// T58.4.14 (A129): the chip is the core's `shortName`, else the id; `modelName` is not shortened.
+@MainActor
+@Test func theModelChipUsesTheCoresShortNameElseTheId() {
+  let (store, _) = composer()
+  store.session.apply([
+    .status(status: Status(model: "claude-sonnet-5", effort: .high, modelName: "Claude Sonnet 5"))
+  ])
+  #expect(store.model == "claude-sonnet-5 · high")
+  store.session.apply([
+    .status(status: Status(model: "claude-sonnet-5", effort: .high, shortName: "Sonnet 5"))
+  ])
+  #expect(store.model == "Sonnet 5 · high")
+}
+
 /// T37.24.10 (A103): the think toggle sends one turn with `confirmThink` — sent now or queued —
 /// then turns itself off; a `/` command line is not a turn, so the toggle waits for one.
 @MainActor

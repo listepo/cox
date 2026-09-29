@@ -123,3 +123,17 @@ def test_summarize_and_table_show_reward_tokens_time_and_totals(tmp_path):
     assert "| a | 1.0 · 120 tok · 48s | error: AgentTimeoutError |" in out
     assert "| b | 0.0 · 120 tok · 48s | — |" in out
     assert "| **total** | 1/2 · $1.0000 | 0/1 · $0.5000 |" in out
+
+
+def test_repomap_presets_differ_only_in_the_budget_env(monkeypatch, capsys):
+    monkeypatch.setattr(matrix.subprocess, "run", lambda *a, **k: pytest.fail("ran"))
+    out = {}
+    for name in ("repomap-off", "repomap-2k"):
+        assert matrix.main(["--preset", name, "--dry-run"]) == 0
+        out[name] = capsys.readouterr().out.strip()
+    off, on = out["repomap-off"], out["repomap-2k"]
+    assert "--ae COX_CONTEXT_REPOMAP_BUDGET_TOKENS=0 " in off
+    assert "--ae COX_CONTEXT_REPOMAP_BUDGET_TOKENS=2000 " in on
+    assert off.count("harbor run") == on.count("harbor run") == 1
+    assert off.count(" -i ") == on.count(" -i ") == 12
+    assert off.replace("=0 ", "=N ").split(" --job-name")[0] == on.replace("=2000 ", "=N ").split(" --job-name")[0]
