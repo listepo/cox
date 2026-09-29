@@ -117,9 +117,114 @@ impl StyledSpan {
     }
 }
 
+/// The doc back as Markdown (T58.4.26): a streamed `docTail` carries blocks,
+/// not source, so Copy as Markdown on every client rebuilds the source here
+/// rather than each client writing its own rules.
+impl StyledDoc {
+    /// Every block as Markdown, joined by a blank line.
+    pub fn markdown(&self) -> String {
+        let blocks: Vec<String> = self.blocks.iter().filter_map(Block::markdown).collect();
+        blocks.join("\n\n")
+    }
+}
+
+impl Block {
+    /// This block as Markdown; `None` for a table without rows.
+    pub fn markdown(&self) -> Option<String> {
+        match self {
+            Block::Text { kind, lines } => Some(
+                lines
+                    .iter()
+                    .enumerate()
+                    .map(|(index, line)| line.markdown(*kind, index == 0))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+            Block::Code { lang, lines } => {
+                let body: Vec<String> = lines
+                    .iter()
+                    .map(|line| line.iter().map(|s| s.text.as_str()).collect())
+                    .collect();
+                Some(fence(lang, &body.join("\n")))
+            }
+            Block::Table { rows } => {
+                let head = rows.first()?;
+                let row = |cells: &[String]| format!("| {} |", cells.join(" | "));
+                let rule = vec!["---".to_string(); head.len()];
+                let lines: Vec<String> = [row(head), row(&rule)]
+                    .into_iter()
+                    .chain(rows.iter().skip(1).map(|cells| row(cells)))
+                    .collect();
+                Some(lines.join("\n"))
+            }
+            Block::Rule => Some("---".into()),
+        }
+    }
+}
+
+impl TextLine {
+    /// Its quotes as `>`, then an item's depth indent and its number or `-`,
+    /// or a heading's `#` run on its first line; a list line that goes on an
+    /// item is indented under it.
+    fn markdown(&self, kind: TextKind, first: bool) -> String {
+        let mut head = "> ".repeat(usize::from(self.quote));
+        let mut heading = false;
+        if !self.marker.is_empty() {
+            let number = self.marker.chars().next().is_some_and(char::is_numeric);
+            head += &"  ".repeat(usize::from(self.depth));
+            head += if number { &self.marker } else { "-" };
+            head.push(' ');
+        } else if kind == TextKind::List {
+            head += &"  ".repeat(usize::from(self.depth) + 1);
+        } else if let TextKind::Heading(level) = kind {
+            if first {
+                head += &"#".repeat(usize::from(level));
+                head.push(' ');
+            }
+            heading = true;
+        }
+        // A heading is bold by its level, so its spans' bold marks would only
+        // double it.
+        let spans = self
+            .spans
+            .iter()
+            .map(|span| span.markdown(!heading && span.bold));
+        head + &spans.collect::<String>()
+    }
+}
+
+impl StyledSpan {
+    /// The text with its `bold`, italic and strike marks; whitespace bare.
+    fn markdown(&self, bold: bool) -> String {
+        if self.text.chars().all(char::is_whitespace) {
+            return self.text.clone();
+        }
+        let mut text = self.text.clone();
+        if bold {
+            text = format!("**{text}**");
+        }
+        if self.italic {
+            text = format!("_{text}_");
+        }
+        if self.strike {
+            text = format!("~~{text}~~");
+        }
+        text
+    }
+}
+
+/// `body` fenced as `lang`, with a fence longer than any backtick run in it.
+pub fn fence(lang: &str, body: &str) -> String {
+    let mut ticks = "```".to_string();
+    while body.contains(&ticks) {
+        ticks.push('`');
+    }
+    format!("{ticks}{lang}\n{body}\n{ticks}")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Block, TextKind};
+    use super::{Block, StyledDoc, StyledSpan, TextKind, TextLine};
     use crate::glyph::UNICODE;
     use crate::markdown::{parse, theme_name};
 
@@ -195,5 +300,92 @@ mod tests {
                 (TextKind::Quote, 1, 0, s(""), s("after")),
             ]
         );
+    }
+
+    fn line(quote: u8, depth: u8, marker: &str, spans: Vec<StyledSpan>) -> TextLine {
+        TextLine {
+            quote,
+            depth,
+            marker: marker.into(),
+            spans,
+        }
+    }
+
+    #[test]
+    fn a_fence_outgrows_the_longest_backtick_run() {
+        let code = Block::Code {
+            lang: "md".into(),
+            lines: vec![
+                vec![StyledSpan::plain("```rust")],
+                vec![StyledSpan::plain("````")],
+            ],
+        };
+        assert_eq!(
+            code.markdown().as_deref(),
+            Some("`````md\n```rust\n````\n`````")
+        );
+    }
+
+    #[test]
+    fn a_nested_list_keeps_its_depth() {
+        let list = Block::Text {
+            kind: TextKind::List,
+            lines: vec![
+                line(0, 0, "•", vec![StyledSpan::plain("one")]),
+                line(0, 1, "•", vec![StyledSpan::plain("two")]),
+                line(0, 1, "", vec![StyledSpan::plain("more")]),
+                line(1, 0, "3.", vec![StyledSpan::plain("three")]),
+            ],
+        };
+        assert_eq!(
+            list.markdown().as_deref(),
+            Some("- one\n  - two\n    more\n> 3. three")
+        );
+    }
+
+    #[test]
+    fn a_heading_drops_its_bold_marks_and_a_run_keeps_italic_and_strike() {
+        let bold = StyledSpan {
+            bold: true,
+            ..StyledSpan::plain("Plan")
+        };
+        let marked = StyledSpan {
+            bold: true,
+            italic: true,
+            strike: true,
+            ..StyledSpan::plain("x")
+        };
+        let space = StyledSpan {
+            bold: true,
+            ..StyledSpan::plain(" ")
+        };
+        let doc = StyledDoc {
+            blocks: vec![
+                Block::Text {
+                    kind: TextKind::Heading(2),
+                    lines: vec![line(0, 0, "", vec![bold])],
+                },
+                Block::Text {
+                    kind: TextKind::Paragraph,
+                    lines: vec![line(0, 0, "", vec![marked, space])],
+                },
+                Block::Rule,
+            ],
+        };
+        assert_eq!(doc.markdown(), "## Plan\n\n~~_**x**_~~ \n\n---");
+    }
+
+    #[test]
+    fn a_table_gets_its_rule_row_and_an_empty_one_is_left_out() {
+        let s = String::from;
+        let doc = StyledDoc {
+            blocks: vec![
+                Block::Table { rows: Vec::new() },
+                Block::Table {
+                    rows: vec![vec![s("a"), s("b")], vec![s("1"), s("2")]],
+                },
+            ],
+        };
+        assert_eq!(doc.markdown(), "| a | b |\n| --- | --- |\n| 1 | 2 |");
     }
 }

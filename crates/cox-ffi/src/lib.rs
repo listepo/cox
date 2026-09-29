@@ -195,6 +195,18 @@ pub fn check_key(
     cox_app::settings_fields::check_key(&providers, &provider, &secret)
 }
 
+/// A reply's doc as Markdown, for Copy as Markdown (T58.4.26).
+#[uniffi::export]
+pub fn doc_markdown(doc: cox_app::doc::StyledDoc) -> String {
+    doc.markdown()
+}
+
+/// One doc block as Markdown; `None` for a table without rows.
+#[uniffi::export]
+pub fn block_markdown(block: cox_app::doc::Block) -> Option<String> {
+    block.markdown()
+}
+
 /// T51.10: the browser pane's typed address as the URL to load, or `None`
 /// when it is not an `http`/`https` page; `browser_open`'s rule.
 #[uniffi::export]
