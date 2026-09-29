@@ -10,7 +10,8 @@ extension CoxClient.Status {
     self.init(
       queued: value.queued, mode: value.mode.map { .init($0) },
       nextMode: value.nextMode.map { .init($0) }, model: value.model,
-      effort: value.effort.map { .init($0) }, modelName: value.modelName)
+      effort: value.effort.map { .init($0) }, modelName: value.modelName,
+      shortName: value.shortName)
   }
 }
 

@@ -133,6 +133,7 @@ pub struct ModelSection {
 pub struct MenuModel {
     pub id: String,
     pub display_name: Option<String>,
+    pub short_name: Option<String>,
     pub efforts: String,
 }
 

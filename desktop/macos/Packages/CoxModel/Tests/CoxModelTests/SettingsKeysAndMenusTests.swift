@@ -1,7 +1,8 @@
 // Mockup 18's provider keys and pop-ups (T37.45.2, A120): a key is added and changed in the
 // in-memory `SecretStore` alone — never sent to the settings file, never in the view or an error
-// — and a pop-up Rust chose (an enum past the segment limit, a tier's model from the catalog)
-// shows model names short and its pick writes through the settings set path. Which control a
+// — and a pop-up Rust chose (an enum past the segment limit, a tier's model from the catalog,
+// titled by its short name) shows as Rust sent it and its pick writes through the settings set
+// path. Which control a
 // key takes is `cox_app::settings_fields`' test (T58.4.9). No real Keychain (A49).
 
 import CoxClient
@@ -44,8 +45,8 @@ private let tierView = SettingsView(
       control: .menu(
         "claude-sonnet-5",
         options: [
-          .init(value: "claude-sonnet-5", title: "Claude Sonnet 5"),
-          .init(value: "claude-opus-5-5", title: "Claude Opus 5.5 (latest)"),
+          .init(value: "claude-sonnet-5", title: "Sonnet 5"),
+          .init(value: "claude-opus-5-5", title: "Opus 5.5"),
         ])),
   ],
   userFile: "/home/.cox/config.toml")
@@ -84,20 +85,13 @@ private let tierView = SettingsView(
 }
 
 @MainActor
-@Test func aModelPopUpShowsShortNamesAndAnyOtherPopUpAsSent() async throws {
+@Test func everyPopUpShowsAsRustSentIt() async throws {
   let store = SettingsStore(
     client: FixtureSettingsClient(view: tierView), secrets: MemorySecretStore(), cwd: "/p")
   await store.load()
   let fields = try tables(store, .models).flatMap(\.fields)
   let control = { key in fields.first { $0.id == key }?.control }
-  #expect(
-    control("tiers.code.model")
-      == .menu(
-        "claude-sonnet-5",
-        options: [
-          .init(value: "claude-sonnet-5", title: "Sonnet 5"),
-          .init(value: "claude-opus-5-5", title: "Opus 5.5"),
-        ]))
+  #expect(control("tiers.code.model") == tierView.settings[2].control)
   #expect(control("tiers.cheap.model") == tierView.settings[0].control)
   #expect(control("tiers.code.effort") == .menu("high", options: effortOptions))
 }

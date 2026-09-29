@@ -65,7 +65,7 @@ import Testing
       modelName: "Claude Sonnet 5", shortName: "Sonnet 5", effort: .high))
   let status = CoxClient.Status(
     queued: 2, mode: .plan, nextMode: .auto, model: "claude-sonnet-5", effort: .high,
-    modelName: "Claude Sonnet 5")
+    modelName: "Claude Sonnet 5", shortName: "Sonnet 5")
   #expect(CoxClient.TimelinePatch(live) == .status(status: status))
 }
 

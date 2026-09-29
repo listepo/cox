@@ -77,20 +77,26 @@ public struct Status: Equatable, Sendable, Decodable {
   public var effort: Effort?
   /// What the catalog calls that model, `Claude Sonnet 5`; `nil` when it has no name.
   public var modelName: String?
+  /// That name as the chip shows it, `Sonnet 5`, as the core shortened it (A129); `nil` with
+  /// `modelName`.
+  public var shortName: String?
 
   public init(
     queued: UInt32 = 0, mode: PermissionMode? = nil, nextMode: PermissionMode? = nil,
-    model: String? = nil, effort: Effort? = nil, modelName: String? = nil
+    model: String? = nil, effort: Effort? = nil, modelName: String? = nil,
+    shortName: String? = nil
   ) {
     (self.queued, self.mode, self.nextMode, self.model, self.effort, self.modelName) = (
       queued, mode, nextMode, model, effort, modelName
     )
+    self.shortName = shortName
   }
 
   enum CodingKeys: String, CodingKey {
     case queued, mode, model, effort
     case nextMode = "next_mode"
     case modelName = "model_name"
+    case shortName = "short_name"
   }
 }
 

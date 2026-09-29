@@ -11,7 +11,9 @@ private let sections = [
   ModelSection(
     tier: .code, title: "Code",
     models: [
-      MenuModel(id: "claude-sonnet-5", displayName: "Claude Sonnet 5", efforts: "low · high"),
+      MenuModel(
+        id: "claude-sonnet-5", displayName: "Claude Sonnet 5", shortName: "Sonnet 5",
+        efforts: "low · high"),
       MenuModel(id: "claude-haiku-4-5"),
     ]),
   ModelSection(tier: .think, title: "Think", models: [MenuModel(id: "claude-fable-5-1")]),
@@ -21,7 +23,7 @@ private let sections = [
   let menu = ModelMenu(sections: sections, status: Status(model: "claude-sonnet-5", effort: .high))
   #expect(menu.sections.map(\.title) == ["Code", "Think"])
   #expect(menu.sections[0].rows.map(\.model) == ["claude-sonnet-5", "claude-haiku-4-5"])
-  // The catalog's name without its vendor prefix, else the id (A111).
+  // The core's short name, else the id (A111, A129).
   #expect(menu.sections[0].rows.map(\.name) == ["Sonnet 5", "claude-haiku-4-5"])
   #expect(menu.sections[0].rows.map(\.detail) == ["low · high", ""])
   #expect(menu.sections[0].rows.map(\.isSelected) == [true, false])

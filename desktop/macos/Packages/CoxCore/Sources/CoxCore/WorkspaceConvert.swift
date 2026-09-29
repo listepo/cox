@@ -79,7 +79,8 @@ extension LiveCoreClient: ModelsClient {
     try app.models(cwd: cwd).map {
       CoxClient.ModelChoice(
         tier: CoxClient.Tier($0.tier), provider: $0.provider, id: $0.id,
-        displayName: $0.displayName, efforts: $0.efforts.map { CoxClient.Effort($0) },
+        displayName: $0.displayName, shortName: $0.shortName,
+        efforts: $0.efforts.map { CoxClient.Effort($0) },
         contextWindow: $0.contextWindow)
     }
   }
@@ -89,7 +90,9 @@ extension LiveCoreClient: ModelsClient {
       CoxClient.ModelSection(
         tier: CoxClient.Tier(section.tier), title: section.title,
         models: section.models.map {
-          CoxClient.MenuModel(id: $0.id, displayName: $0.displayName, efforts: $0.efforts)
+          CoxClient.MenuModel(
+            id: $0.id, displayName: $0.displayName, shortName: $0.shortName,
+            efforts: $0.efforts)
         })
     }
   }

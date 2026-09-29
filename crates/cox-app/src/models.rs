@@ -94,6 +94,9 @@ pub struct MenuModel {
     pub id: String,
     /// What the catalog calls it; `None` when it has no name.
     pub display_name: Option<String>,
+    /// What the row shows, `Sonnet 5` (A129); `None` with `display_name`,
+    /// and the row shows the id.
+    pub short_name: Option<String>,
     /// `low · high`: the efforts it takes; empty when it takes any.
     pub efforts: String,
 }
@@ -117,6 +120,7 @@ pub fn menu(choices: Vec<ModelChoice>) -> Vec<ModelSection> {
                 .join(" · "),
             id: choice.id,
             display_name: choice.display_name,
+            short_name: choice.short_name,
         };
         match out.iter_mut().find(|s| s.tier == choice.tier) {
             Some(section) => section.models.push(model),
@@ -299,6 +303,9 @@ mod tests {
         );
         let tiers: Vec<Tier> = choices(&config).iter().map(|c| c.tier).collect();
         assert_eq!(tiers.first(), Some(&Tier::Code));
+        let rows = &menu(choices(&config))[0].models;
+        let shown: Vec<_> = rows.iter().map(|m| m.short_name.as_deref()).collect();
+        assert_eq!(shown, [None, Some("Sonnet 5")], "a menu row's short name");
     }
 
     fn choice(tier: Tier, id: &str, efforts: Vec<Effort>) -> ModelChoice {

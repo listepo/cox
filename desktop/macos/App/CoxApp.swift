@@ -92,8 +92,7 @@ final class AppModel {
   init(launch: LaunchCore) {
     self.launch = launch
     settings = try? SettingsStore(
-      client: launch.live.get(), secrets: launch.secrets, catalog: launch.live.get(),
-      cwd: LaunchCore.project())
+      client: launch.live.get(), secrets: launch.secrets, cwd: LaunchCore.project())
     sidebar = SidebarStore(
       workspace: launch.isFixture ? nil : try? launch.live.get(),
       inbox: (try? launch.core.get() as? any InboxClient).map { InboxStore(client: $0) })

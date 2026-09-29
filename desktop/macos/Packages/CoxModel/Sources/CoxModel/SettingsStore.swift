@@ -27,9 +27,6 @@ public final class SettingsStore {
   /// The providers whose key the `SecretStore` holds, read again after each load, store and
   /// removal so the Settings rows that show it redraw.
   public private(set) var storedKeys: Set<String> = []
-  /// Each tier's models as the core's catalog lists them, read again after each load and edit so
-  /// a tier's picker offers what its provider serves.
-  public private(set) var models: [ModelChoice] = []
   /// The sidebar's search: `sections` keeps only the settings whose label or dotted key holds
   /// it, so the pages and their boxes shrink to the matches. Empty keeps every setting.
   public var filter = ""
@@ -37,13 +34,11 @@ public final class SettingsStore {
   public let cwd: String
   @ObservationIgnored private let client: any SettingsClient
   @ObservationIgnored private let secrets: any SecretStore
-  @ObservationIgnored private let catalog: (any ModelsClient)?
 
   public init(
-    client: any SettingsClient, secrets: any SecretStore, catalog: (any ModelsClient)? = nil,
-    cwd: String
+    client: any SettingsClient, secrets: any SecretStore, cwd: String
   ) {
-    (self.client, self.secrets, self.catalog, self.cwd) = (client, secrets, catalog, cwd)
+    (self.client, self.secrets, self.cwd) = (client, secrets, cwd)
   }
 
   public func load() async {
@@ -125,7 +120,6 @@ public final class SettingsStore {
       view = try await fetch(self)
       self[keyPath: failed] = nil
       readKeys()
-      models = (try? catalog?.models(cwd: cwd)) ?? []
     } catch {
       self[keyPath: failed] = String(describing: error)
     }

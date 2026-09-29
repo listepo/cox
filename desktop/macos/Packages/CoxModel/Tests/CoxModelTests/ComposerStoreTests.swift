@@ -242,7 +242,12 @@ private func usage(done: Bool) -> UsageView {
   let status = Status(mode: .default, nextMode: .plan, model: "claude-sonnet-5", effort: .high)
   store.session.apply([.status(status: status)])
   #expect(store.mode == .default)
-  #expect(store.model == "claude-sonnet-5 · high")
+  #expect(store.model == "claude-sonnet-5 · high", "no name, the id")
+  let named = Status(
+    model: "claude-sonnet-5", effort: .high, modelName: "Claude Sonnet 5", shortName: "Sonnet 5")
+  store.session.apply([.status(status: named)])
+  #expect(store.model == "Sonnet 5 · high", "the core's short name")
+  store.session.apply([.status(status: status)])
   await store.cycleMode()
   #expect(session.sent == [.setMode(mode: .plan)])
   #expect(store.mode == .default)

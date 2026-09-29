@@ -230,7 +230,7 @@ pub fn control(
 }
 
 /// `tiers.<tier>.model` as a pop-up of the catalog's models for that tier,
-/// titled by the catalog's name; a value the catalog does not list stays
+/// titled by the catalog's short name (A129), else the id; a value the catalog does not list stays
 /// first, so the pop-up shows it. `None` when the catalog lists none.
 fn model_menu(key: &str, value: &str, models: &[ModelChoice]) -> Option<SettingControl> {
     let ["tiers", tier, "model"] = key.split('.').collect::<Vec<_>>()[..] else {
@@ -247,11 +247,7 @@ fn model_menu(key: &str, value: &str, models: &[ModelChoice]) -> Option<SettingC
         .filter(|m| m.tier == tier)
         .map(|m| SettingOption {
             value: m.id.clone(),
-            title: m
-                .display_name
-                .clone()
-                .filter(|name| !name.is_empty())
-                .unwrap_or_else(|| m.id.clone()),
+            title: m.short_name.clone().unwrap_or_else(|| m.id.clone()),
         })
         .collect();
     if options.is_empty() {
@@ -563,8 +559,8 @@ mod tests {
             SettingControl::Menu {
                 value: "claude-sonnet-5".into(),
                 options: vec![
-                    option("claude-sonnet-5", "Claude Sonnet 5"),
-                    option("claude-opus-5-5", "Claude Opus 5.5"),
+                    option("claude-sonnet-5", "Sonnet 5"),
+                    option("claude-opus-5-5", "Opus 5.5"),
                 ]
             }
         );

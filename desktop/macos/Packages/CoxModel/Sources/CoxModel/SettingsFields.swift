@@ -43,20 +43,10 @@ extension SettingsStore {
         name: name,
         fields: settings.map {
           SettingsField(
-            setting: $0, title: $0.title, detail: $0.detail, control: Self.shortNames($0.control))
+            setting: $0, title: $0.title, detail: $0.detail, control: $0.control)
         },
         provider: settings.first?.provider)
     }
-  }
-
-  /// A pop-up's model names as the toolbar shows them, until the core sends them short
-  /// (T58.4.6, then T58.4.14 drops this); a title with no vendor prefix stays as it is.
-  private static func shortNames(_ control: SettingControl) -> SettingControl {
-    guard case .menu(let value, let options) = control else { return control }
-    let short = options.map {
-      SettingOption(value: $0.value, title: ModelName.short($0.title, id: $0.value))
-    }
-    return .menu(value, options: short)
   }
 }
 
