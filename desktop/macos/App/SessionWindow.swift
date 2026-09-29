@@ -213,6 +213,11 @@ struct SessionWindow: View {
             ) { refused = $0 }
           }
         }
+        // The column is the plugins' window: a panel lays out across it (PL§8 "resized").
+        .onGeometryChange(for: CGSize.self, of: \.size) { size in
+          let cells = PluginWidgets.cells(size, scale: base.textScale)
+          showing.store.pluginArea(width: cells.width, height: cells.height)
+        }
         if isBrowserVisible {
           SessionBrowser(controller: model.launch.browser) { refused = $0 }
             .frame(width: SessionBrowser.paneWidth)

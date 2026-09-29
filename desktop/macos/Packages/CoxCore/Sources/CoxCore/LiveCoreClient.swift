@@ -84,6 +84,7 @@ final class LiveSession: SessionClient {
 
   func close() { handle.close() }
   func closePluginOverlay() { handle.closePluginOverlay() }
+  func pluginArea(width: UInt16, height: UInt16) { handle.pluginArea(width: width, height: height) }
 }
 
 // A local and a remote session build the one review prompt the same way (T52.21).

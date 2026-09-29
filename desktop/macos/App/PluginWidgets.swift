@@ -26,6 +26,18 @@ enum PluginWidgets {
     store.pluginViews(.overlay).first.flatMap(widget)
   }
 
+  /// `size` in cells of the plugin text's font (`monoCode`): the area `cox_render` offers a
+  /// panel or overlay, as a terminal's cells are the TUI's (PL§8).
+  static func cells(_ size: CGSize, scale: Double) -> (width: UInt16, height: UInt16) {
+    let font = FontToken.monoCode.nsFont(scale: scale)
+    let cell = ("M" as NSString).size(withAttributes: [.font: font])
+    let line = NSLayoutManager().defaultLineHeight(for: font)
+    guard cell.width > 0, line > 0 else { return (0, 0) }
+    return (
+      UInt16(clamping: Int(size.width / cell.width)), UInt16(clamping: Int(size.height / line))
+    )
+  }
+
   private static func widget(_ slot: PluginSlot) -> PluginWidget? {
     slot.view.map(PluginWidget.init)
   }

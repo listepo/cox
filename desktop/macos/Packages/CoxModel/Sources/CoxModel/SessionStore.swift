@@ -93,6 +93,11 @@ public final class SessionStore {
     session.closePluginOverlay()
   }
 
+  /// The column is now `width`×`height` cells; a shown panel or overlay renders again for it.
+  public func pluginArea(width: UInt16, height: UInt16) {
+    session.pluginArea(width: width, height: height)
+  }
+
   private static func keyed(_ all: [Block]) -> OrderedDictionary<BlockID, Block> {
     OrderedDictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { _, later in later })
   }
