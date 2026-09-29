@@ -55,7 +55,7 @@ pub use intent::{AgentDispatch, Dispatch, Intent, IntentError, agent_dispatch, d
 pub use mcp_login::{LoginAction, McpLogin, McpServer};
 pub use mcp_status::McpStatus;
 pub use meter_text::{ContextPart, MeterRow, MeterText};
-pub use models::ModelChoice;
+pub use models::{MenuModel, ModelChoice, ModelSection};
 pub use onboarding::{CheckId, CheckRow, CheckStatus};
 pub use palette::{PaletteHit, PaletteItem, PaletteKind};
 pub use patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};

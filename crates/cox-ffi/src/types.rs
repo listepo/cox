@@ -31,6 +31,7 @@ use cox_app::{
     TurnUsage, UsageView,
 };
 use cox_app::{KeyValueRow, PluginKey, PluginSlot, SpanView, WidgetView};
+use cox_app::{MenuModel, ModelSection};
 use cox_app::{PermissionRule, RuleKind, SessionGrant};
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::Slot;
@@ -117,6 +118,20 @@ pub struct ModelChoice {
     pub display_name: Option<String>,
     pub efforts: Vec<Effort>,
     pub context_window: Option<u32>,
+}
+
+#[uniffi::remote(Record)]
+pub struct ModelSection {
+    pub tier: Tier,
+    pub title: String,
+    pub models: Vec<MenuModel>,
+}
+
+#[uniffi::remote(Record)]
+pub struct MenuModel {
+    pub id: String,
+    pub display_name: Option<String>,
+    pub efforts: String,
 }
 
 #[uniffi::remote(Record)]
