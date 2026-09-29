@@ -28,6 +28,10 @@ extension LiveCoreClient: WorkspaceClient {
 
   public func changed() async throws { try await app.workspaceChanged() }
 
+  public func sidebar(filter: String, folded: [String]) throws -> [CoxClient.SidebarGroup] {
+    try app.sidebar(filter: filter, folded: folded).map { CoxClient.SidebarGroup($0) }
+  }
+
   /// The menu bar's "Today" figures, `$4.02 · 7 sessions`, from the cost ledger (T51.12).
   public func today() throws -> String { try app.today().text }
 
@@ -58,7 +62,7 @@ extension CoxClient.Project {
 extension CoxClient.SessionEntry {
   init(_ value: CoxFFIBindings.SessionEntry) {
     self.init(
-      id: value.info.id, title: value.info.title, cwd: value.info.cwd,
+      id: value.info.id, title: value.info.title, name: value.name, cwd: value.info.cwd,
       updatedAt: value.info.updatedAt, turns: value.info.turns, costUsd: value.info.costUsd,
       isHeld: value.heldBy != nil, agent: value.agent, bestOf: value.bestOf)
   }
@@ -99,5 +103,38 @@ extension LiveCoreClient: ModelsClient {
 
   public func usableProviders(cwd: String) async throws -> [String] {
     try await app.usableProviders(cwd: cwd)
+  }
+}
+
+extension CoxClient.SidebarGroup {
+  init(_ value: CoxFFIBindings.SidebarSection) {
+    let kind: Kind =
+      switch value.kind {
+      case .section(let count): .section(count: count)
+      case .project(let expanded): .project(isExpanded: expanded)
+      }
+    self.init(
+      id: value.id, title: value.title, kind: kind,
+      rows: value.rows.map { row in
+        CoxClient.SidebarEntry(
+          id: row.id, session: row.session, status: .init(row.status), title: row.title,
+          subtitle: row.subtitle.map {
+            switch $0 {
+            case .text(let text): .text(text)
+            case .age(let updatedAt): .age(updatedAt: updatedAt)
+            }
+          }, cost: row.cost, isReadOnly: row.readOnly)
+      })
+  }
+}
+
+extension CoxClient.RowStatus {
+  init(_ value: CoxFFIBindings.RowStatus) {
+    switch value {
+    case .running: self = .running
+    case .waiting: self = .waiting
+    case .idle: self = .idle
+    case .error: self = .error
+    }
   }
 }

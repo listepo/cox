@@ -10,7 +10,7 @@ import Foundation
 
 public struct ToolbarState: Equatable, Sendable {
   /// The session's name as the sidebar shows it; `Untitled session` before `cox.db` lists it.
-  public var title = SessionEntry.untitled
+  public var title = "Untitled session"
   /// The project's name and the linked worktree's branch, if any.
   public var project = ""
   public var branch: String?

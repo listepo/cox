@@ -1,8 +1,8 @@
-// The sidebar's session list (DT§5.1, DS§6.4 `Sidebar`): "Needs you" from the inbox, "Running"
-// from each session's activity, then every project with its other sessions, each row with its
-// status, what it did last and its cost; and the providers' footer. Here, not in CoxUI, because
-// these decide what the list shows (DS§1); the app copies each section into CoxUI's
-// `Sidebar.Group` field for field; `watch` re-reads the workspace each time it changed.
+// The sidebar's session list (DT§5.1, DS§6.4 `Sidebar`): the core's sections (T58.4.4) — "Needs
+// you", "Running", then every project — with each row's subtitle parts joined and its age worded
+// in the locale; and the providers' footer. Here, not in CoxUI, because the store owns what the
+// list shows (DS§1); the app copies each section into CoxUI's `Sidebar.Group` field for field;
+// `watch` re-reads the workspace each time it changed.
 
 import CoxClient
 import Foundation
@@ -43,14 +43,17 @@ public struct SidebarSection: Identifiable, Equatable, Sendable {
 @Observable
 @MainActor
 public final class SidebarStore {
-  /// Matched against each row's title and subtitle; empty lists everything.
-  public var filter = ""
+  /// The core matches it against each row's title and words; empty lists everything.
+  public var filter = "" {
+    didSet { if filter != oldValue { reload() } }
+  }
   /// The roots of the projects folded away.
   public private(set) var folded: Set<String> = []
+  /// The sections as the core last sent them.
+  private var groups: [SidebarGroup] = []
   /// Why the last read failed; the next success clears it.
   public private(set) var failure: String?
   private var projects: [(project: Project, sessions: [SessionEntry])] = []
-  private var activity: [String: Activity] = [:]
   private var readAt = Date.distantPast
   @ObservationIgnored private let workspace: (any WorkspaceClient)?
   @ObservationIgnored private let inbox: InboxStore?
@@ -78,9 +81,7 @@ public final class SidebarStore {
       projects = try workspace.projects(limit: Self.projectLimit).map {
         ($0, try workspace.sessions(project: $0.root, limit: Self.sessionLimit))
       }
-      activity = Dictionary(
-        projects.flatMap(\.sessions).map { ($0.id, workspace.activity(session: $0.id)) },
-        uniquingKeysWith: { first, _ in first })
+      groups = try workspace.sidebar(filter: filter, folded: folded.sorted())
       (readAt, failure) = (now, nil)
       didRefresh?()
     } catch {
@@ -125,6 +126,18 @@ public final class SidebarStore {
 
   public func toggle(_ project: String) {
     if folded.remove(project) == nil { folded.insert(project) }
+    reload()
+  }
+
+  /// Asks the core for the sections again after the filter or a fold changed.
+  private func reload() {
+    guard let workspace else { return }
+    do {
+      groups = try workspace.sidebar(filter: filter, folded: folded.sorted())
+      failure = nil
+    } catch {
+      failure = String(describing: error)
+    }
   }
 
   /// The session and its project, for the toolbar's title and breadcrumb.
@@ -161,76 +174,51 @@ public final class SidebarStore {
   /// The inbox's items as the core sent them; the menu bar reads them (T51.14).
   public var inboxItems: [InboxItem] { inbox?.items ?? [] }
 
-  /// "Needs you" and "Running" while they hold a row, then every project that does; with a
-  /// filter, a folded project opens to show what matched.
+  /// The core's sections, each row's subtitle parts joined with ` · ` and its age worded here.
+  /// Without a workspace (a fixture launch) nothing ranks the list, so the inbox's rows alone
+  /// show as "Needs you".
   public var sections: [SidebarSection] {
-    let needs = (inbox?.rows ?? []).map(Self.row).filter(matches)
-    var running: [SidebarRow] = []
-    var groups: [SidebarSection] = []
+    guard workspace != nil else { return inboxOnly }
     let ages = self.ages
-    for (project, sessions) in projects {
-      var rows: [SidebarRow] = []
-      for entry in sessions {
-        let row = row(entry, in: project, ages: ages)
-        guard matches(row) else { continue }
-        if row.status == .running { running.append(row) } else { rows.append(row) }
-      }
-      guard !rows.isEmpty || filter.isEmpty else { continue }
-      let isExpanded = !folded.contains(project.root) || !filter.isEmpty
-      groups.append(
-        SidebarSection(
-          id: project.root, title: project.name, kind: .project(isExpanded: isExpanded),
-          rows: rows))
+    return groups.map { group in
+      let kind: SidebarSection.Kind =
+        switch group.kind {
+        case .section(let count): .section(count: count.map { "\($0)" })
+        case .project(let isExpanded): .project(isExpanded: isExpanded)
+        }
+      return SidebarSection(
+        id: group.id, title: group.title, kind: kind,
+        rows: group.rows.map { row($0, ages: ages) })
     }
-    var sections: [SidebarSection] = []
-    if !needs.isEmpty {
-      sections.append(
-        SidebarSection(
-          id: "needs-you", title: "Needs you", kind: .section(count: "\(needs.count)"), rows: needs)
-      )
-    }
-    if !running.isEmpty {
-      sections.append(
-        SidebarSection(id: "running", title: "Running", kind: .section(count: nil), rows: running))
-    }
-    return sections + groups
   }
 
-  private func matches(_ row: SidebarRow) -> Bool {
-    filter.isEmpty || row.title.localizedStandardContains(filter)
-      || row.subtitle.localizedStandardContains(filter)
+  private var inboxOnly: [SidebarSection] {
+    let rows = (inbox?.rows ?? []).map(Self.row)
+    guard !rows.isEmpty else { return [] }
+    return [
+      SidebarSection(
+        id: "needs-you", title: "Needs you", kind: .section(count: inbox?.count), rows: rows)
+    ]
   }
 
   private static func row(_ inbox: InboxRow) -> SidebarRow {
-    let status: SidebarRow.Status =
-      switch inbox.status {
-      case .waiting: .waiting
-      case .idle: .idle
-      case .error: .error
-      }
-    return SidebarRow(
-      id: inbox.id, session: inbox.session, status: status, title: inbox.title,
-      subtitle: inbox.subtitle, cost: nil, isReadOnly: inbox.isReadOnly)
+    SidebarRow(
+      id: inbox.id, session: inbox.session, status: SidebarRow.Status(inbox.status),
+      title: inbox.title, subtitle: inbox.subtitle, cost: nil, isReadOnly: inbox.isReadOnly)
   }
 
-  private func row(
-    _ entry: SessionEntry, in project: Project, ages: RelativeDateTimeFormatter
-  ) -> SidebarRow {
-    let ago = ChangesTabState.date(entry.updatedAt).map {
-      ages.localizedString(for: $0, relativeTo: readAt)
-    }
-    let (status, subtitle): (SidebarRow.Status, [String?]) =
-      switch activity[entry.id] ?? .idle {
-      case .running: (.running, [project.name, "running"])
-      case .waitingOnYou: (.waiting, [project.name, "waiting for you"])
-      case .failed: (.error, [ago, "failed"])
-      case .idle: (.idle, [ago, entry.turns > 0 ? "done" : nil])
+  private func row(_ entry: SidebarEntry, ages: RelativeDateTimeFormatter) -> SidebarRow {
+    let words = entry.subtitle.compactMap { part -> String? in
+      switch part {
+      case .text(let text): text
+      case .age(let updatedAt):
+        ChangesTabState.date(updatedAt).map { ages.localizedString(for: $0, relativeTo: readAt) }
       }
-    // An external agent's session says whose it is first (mockup 27).
+    }
     return SidebarRow(
-      id: entry.id, session: entry.id, status: status, title: entry.name,
-      subtitle: ([entry.agent] + subtitle).compactMap { $0 }.joined(separator: " · "),
-      cost: entry.costUsd > 0 ? usd(entry.costUsd) : nil, isReadOnly: false)
+      id: entry.id, session: entry.session, status: SidebarRow.Status(entry.status),
+      title: entry.title, subtitle: words.joined(separator: " · "), cost: entry.cost,
+      isReadOnly: entry.isReadOnly)
   }
 
   /// `2h ago`, `yesterday`: how long ago a session last wrote, as of the last read.
@@ -267,10 +255,25 @@ public struct ProviderHealth: Equatable, Sendable {
   }
 }
 
-extension SessionEntry {
-  /// What the toolbar and the sidebar call it: its title, or `Untitled session` until it has one.
-  public var name: String { title ?? Self.untitled }
-  public static let untitled = "Untitled session"
+extension SidebarRow.Status {
+  init(_ status: RowStatus) {
+    self =
+      switch status {
+      case .running: .running
+      case .waiting: .waiting
+      case .idle: .idle
+      case .error: .error
+      }
+  }
+
+  init(_ status: InboxStatus) {
+    self =
+      switch status {
+      case .waiting: .waiting
+      case .idle: .idle
+      case .error: .error
+      }
+  }
 }
 
 /// One row of `SidebarStore.listed`: a session, its project and its last write.

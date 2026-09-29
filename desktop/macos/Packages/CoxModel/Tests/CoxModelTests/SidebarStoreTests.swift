@@ -1,6 +1,7 @@
-// The sidebar's session list (T37.22.5): the inbox first, running sessions next, then each project
-// with its other sessions, each row with its status, age and cost; a filter narrows every section
-// and opens a folded project; the toolbar's title and project come from a session's entry; the list
+// The sidebar's session list (T37.22.5, T58.4.5): the core's sections as they come, each row's
+// subtitle parts joined and its age worded in the locale; the filter and the folds go to the core,
+// which decides what matches (`cox_app::workspace::sidebar`' tests); without a workspace the inbox
+// alone is "Needs you"; the toolbar's title and project come from a session's entry; the list
 // re-reads when the workspace changed; and the providers' footer counts the usable providers
 // (A110) with the checklist's key health as its dot.
 
@@ -16,25 +17,36 @@ private func ago(_ seconds: TimeInterval) -> String {
   Date(timeInterval: -seconds, since: now).formatted(.iso8601)
 }
 
+private let sidebar = [
+  SidebarGroup(
+    id: "running", title: "Running", kind: .section(count: nil),
+    rows: [
+      SidebarEntry(
+        id: "jitter", session: "jitter", status: .running, title: "Add retry jitter",
+        subtitle: [.text("cox"), .text("running")], cost: "$0.42")
+    ]),
+  SidebarGroup(
+    id: "/src/cox", title: "cox", kind: .project(isExpanded: false),
+    rows: [
+      SidebarEntry(
+        id: "bench", session: "bench", status: .idle, title: "Bench plugin cold start",
+        subtitle: [.text("claude"), .age(updatedAt: ago(7200)), .text("done")], cost: "$1.18"),
+      SidebarEntry(
+        id: "fresh", session: "fresh", status: .error, title: "Untitled session",
+        subtitle: [.age(updatedAt: "not a date"), .text("failed")]),
+    ]),
+]
+
 private let workspace = FixtureWorkspace(
-  projects: [
-    Project(root: "/src/cox", name: "cox"), Project(root: "/src/acme-web", name: "acme-web"),
-  ],
+  projects: [Project(root: "/src/cox", name: "cox")],
   sessions: [
     "/src/cox": [
       SessionEntry(
-        id: "jitter", title: "Add retry jitter", cwd: "/src/cox", updatedAt: ago(60), turns: 3,
-        costUsd: 0.42),
-      SessionEntry(
-        id: "bench", title: "Bench plugin cold start", cwd: "/src/cox", updatedAt: ago(7200),
-        turns: 5, costUsd: 1.18),
-    ],
-    "/src/acme-web": [
-      SessionEntry(id: "sitemap", title: "Sitemap generator", updatedAt: ago(3600), turns: 1),
-      SessionEntry(id: "fresh", updatedAt: ago(30)),
-    ],
+        id: "bench", title: "Bench plugin cold start", name: "Bench plugin cold start",
+        cwd: "/src/cox", updatedAt: ago(7200), turns: 5, costUsd: 1.18)
+    ]
   ],
-  activity: ["jitter": .running, "sitemap": .failed])
+  sidebar: sidebar)
 
 @MainActor
 private func listed() -> SidebarStore {
@@ -45,9 +57,9 @@ private func listed() -> SidebarStore {
 }
 
 @MainActor
-@Test func runningSessionsLeaveTheirProjectForTheRunningSection() {
+@Test func theCoresSectionsShowWithTheirPartsJoinedAndTheAgeWorded() {
   let sections = listed().sections
-  #expect(sections.map(\.id) == ["running", "/src/cox", "/src/acme-web"])
+  #expect(sections.map(\.id) == ["running", "/src/cox"])
   #expect(sections[0].kind == .section(count: nil))
   #expect(
     sections[0].rows == [
@@ -55,31 +67,47 @@ private func listed() -> SidebarStore {
         id: "jitter", session: "jitter", status: .running, title: "Add retry jitter",
         subtitle: "cox · running", cost: "$0.42", isReadOnly: false)
     ])
-  #expect(sections[1].kind == .project(isExpanded: true))
-  #expect(sections[1].rows.map(\.id) == ["bench"])
-  #expect(sections[1].rows[0].subtitle == "2h ago · done")
+  #expect(sections[1].kind == .project(isExpanded: false))
+  #expect(sections[1].rows[0].subtitle == "claude · 2h ago · done")
   #expect(sections[1].rows[0].cost == "$1.18")
-  let acme = sections[2].rows
-  #expect(acme.map(\.status) == [.error, .idle])
-  #expect(acme[0].subtitle == "1h ago · failed")
-  #expect(acme[1].title == "Untitled session")
-  #expect(acme[1].cost == nil)
+  #expect(sections[1].rows[1].status == .error)
+  #expect(sections[1].rows[1].subtitle == "failed", "an age that is no date is left out")
+}
+
+/// Records what the sidebar was asked with.
+private final class Asked: WorkspaceClient, @unchecked Sendable {
+  private let lock = NSLock()
+  private var asked: [(String, [String])] = []
+  var last: (filter: String, folded: [String])? { lock.withLock { asked.last } }
+  var count: Int { lock.withLock { asked.count } }
+
+  func projects(limit: UInt32) -> [Project] { [] }
+  func sessions(project: String, limit: UInt32) -> [SessionEntry] { [] }
+  func activity(session: String) -> Activity { .idle }
+  func sidebar(filter: String, folded: [String]) -> [SidebarGroup] {
+    lock.withLock { asked.append((filter, folded)) }
+    return []
+  }
+  func changed() async throws { try await Task.sleep(for: .seconds(86_400)) }
+  func rename(session: String, title: String) -> Bool { false }
 }
 
 @MainActor
-@Test func aFilterNarrowsEverySectionAndOpensAFoldedProject() {
-  let store = listed()
-  store.toggle("/src/acme-web")
-  #expect(store.sections.last?.kind == .project(isExpanded: false))
-
+@Test func theFilterAndTheFoldsGoToTheCore() {
+  let core = Asked()
+  let store = SidebarStore(workspace: core, inbox: nil)
+  store.refresh()
+  #expect(core.last?.filter == "" && core.last?.folded == [])
+  store.toggle("/src/web")
+  store.toggle("/src/acme")
+  #expect(core.last?.folded == ["/src/acme", "/src/web"])
   store.filter = "sitemap"
-  #expect(store.sections.map(\.id) == ["/src/acme-web"])
-  #expect(store.sections[0].kind == .project(isExpanded: true))
-  #expect(store.sections[0].rows.map(\.id) == ["sitemap"])
-
-  store.filter = ""
-  store.toggle("/src/acme-web")
-  #expect(store.sections.last?.kind == .project(isExpanded: true))
+  #expect(core.last?.filter == "sitemap")
+  let asked = core.count
+  store.filter = "sitemap"
+  #expect(core.count == asked, "the same filter asks nothing")
+  store.toggle("/src/web")
+  #expect(core.last?.folded == ["/src/acme"])
 }
 
 @MainActor
@@ -136,6 +164,15 @@ private final class Growing: WorkspaceClient, @unchecked Sendable {
     lock.withLock { (0..<count).map { SessionEntry(id: "s\($0)") } }
   }
   func activity(session: String) -> Activity { .idle }
+  func sidebar(filter: String, folded: [String]) -> [SidebarGroup] {
+    let rows = sessions(project: project.root, limit: 20).map {
+      SidebarEntry(id: $0.id, session: $0.id, status: .idle, title: $0.name)
+    }
+    return [
+      SidebarGroup(
+        id: project.root, title: project.name, kind: .project(isExpanded: true), rows: rows)
+    ]
+  }
   func changed() async throws {
     try await Task.sleep(for: .milliseconds(10))
     lock.withLock { count += 1 }
@@ -151,9 +188,18 @@ private final class Titled: WorkspaceClient, @unchecked Sendable {
 
   func projects(limit: UInt32) -> [Project] { [project] }
   func sessions(project: String, limit: UInt32) -> [SessionEntry] {
-    lock.withLock { [SessionEntry(id: "s1", title: title)] }
+    lock.withLock { [SessionEntry(id: "s1", title: title, name: title ?? "Untitled session")] }
   }
   func activity(session: String) -> Activity { .idle }
+  func sidebar(filter: String, folded: [String]) -> [SidebarGroup] {
+    let rows = sessions(project: project.root, limit: 20).map {
+      SidebarEntry(id: $0.id, session: $0.id, status: .idle, title: $0.name)
+    }
+    return [
+      SidebarGroup(
+        id: project.root, title: project.name, kind: .project(isExpanded: true), rows: rows)
+    ]
+  }
   func changed() async throws { try await Task.sleep(for: .seconds(86_400)) }
   func rename(session: String, title: String) -> Bool {
     lock.withLock { self.title = title }
@@ -182,23 +228,4 @@ private final class Titled: WorkspaceClient, @unchecked Sendable {
     try? await Task.sleep(for: .milliseconds(5))
   }
   #expect((store.sections.first?.rows.count ?? 0) >= 2)
-  #expect(store.sections.first?.rows.first?.title == "Untitled session")
-}
-
-@MainActor
-@Test func anExternalAgentsSessionRowNamesItsAgentFirst() {
-  let store = SidebarStore(
-    workspace: FixtureWorkspace(
-      projects: [Project(root: "/src/cox", name: "cox")],
-      sessions: [
-        "/src/cox": [
-          SessionEntry(
-            id: "acp", title: "Refactor", cwd: "/src/cox", updatedAt: ago(7200), turns: 1,
-            agent: "claude")
-        ]
-      ]),
-    inbox: nil, locale: Locale(identifier: "en_US_POSIX"))
-  store.refresh(now: now)
-  let row = store.sections.flatMap(\.rows).first { $0.id == "acp" }
-  #expect(row?.subtitle == "claude · 2h ago · done")
 }
