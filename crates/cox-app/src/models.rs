@@ -34,6 +34,9 @@ pub struct ModelChoice {
     /// What the catalog calls it (`Claude Sonnet 5`, A111); `None` when it
     /// has no name, and the popover shows the id.
     pub display_name: Option<String>,
+    /// `display_name` as the desktop shows it, `Sonnet 5` (A129,
+    /// `status::short_name`); `None` with it.
+    pub short_name: Option<String>,
     /// The efforts it takes; empty means any.
     pub efforts: Vec<Effort>,
     /// Its window in tokens, when the config knows it.
@@ -53,6 +56,9 @@ pub fn choices(config: &Config) -> Vec<ModelChoice> {
             provider: t.provider.clone(),
             id: id.to_owned(),
             display_name: names.get(id).cloned(),
+            short_name: names
+                .get(id)
+                .and_then(|name| crate::status::short_name(name)),
             efforts,
             context_window,
         };

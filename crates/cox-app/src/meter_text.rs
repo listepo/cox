@@ -38,6 +38,12 @@ pub struct MeterText {
     /// `7.6% of 1M`, that context's share of the model's window (A98);
     /// empty until a request was sent to a model with a known window.
     pub context_share: String,
+    /// `7.6%`, the share without the window it is of: the toolbar ring's
+    /// label; empty with `context_share`.
+    pub context_percent: String,
+    /// How full the toolbar ring is, 0…1: the parts' shares summed, capped
+    /// at 1.
+    pub context_fill: f64,
     /// System, tools, instructions and history, in that order; empty
     /// until the first request.
     pub context_parts: Vec<ContextPart>,
@@ -53,6 +59,8 @@ pub struct MeterText {
     pub cache_hit_session: String,
     /// `Cache hit 94% this turn · counts from the provider's usage, …`.
     pub footnote: String,
+    /// `$0.42`, the session's cost so far, as the `Cost` row writes it.
+    pub cost: String,
 }
 
 /// One line of the popover's grid.
@@ -129,7 +137,7 @@ impl MeterText {
                 session: tokens(rates.session_thinking),
                 detail: true,
             },
-            row("Cost", |t| format!("${:.2}", t.cost_usd), false),
+            row("Cost", cost, false),
         ];
         let source = if s.estimated {
             "some counts are cox's estimate"
@@ -137,6 +145,10 @@ impl MeterText {
             "counts from the provider's usage, one ledger row per request"
         };
         let cache_hit = t.and_then(|(t, _)| hit(&t, "this turn"));
+        let context_parts = rates
+            .context
+            .map(|b| parts(&b, view.context_tokens))
+            .unwrap_or_default();
         let footnote = match &cache_hit {
             Some(hit) => format!("Cache hit {hit} · {source}"),
             None => format!("C{}", &source[1..]),
@@ -167,10 +179,12 @@ impl MeterText {
                 .context
                 .and_then(|b| share(&b, view.context_tokens))
                 .unwrap_or_default(),
-            context_parts: rates
+            context_percent: rates
                 .context
-                .map(|b| parts(&b, view.context_tokens))
+                .and_then(|b| percent(&b, view.context_tokens))
                 .unwrap_or_default(),
+            context_fill: context_parts.iter().map(|p| p.share).sum::<f64>().min(1.0),
+            context_parts,
             context_free: rates
                 .context
                 .and_then(|b| free(&b, view.context_tokens))
@@ -178,6 +192,7 @@ impl MeterText {
             cache_hit: cache_hit.unwrap_or_default(),
             cache_hit_session: hit(s, "this session").unwrap_or_default(),
             footnote,
+            cost: cost(s),
         }
     }
 }
@@ -201,16 +216,31 @@ fn used(b: &ContextBreakdown, last_context: u32) -> u32 {
     }
 }
 
-/// `7.6% of 1M`; `None` when the window is unknown.
-fn share(b: &ContextBreakdown, last_context: u32) -> Option<String> {
+/// `$0.42`: what `t` cost.
+fn cost(t: &Tally) -> String {
+    format!("${:.2}", t.cost_usd)
+}
+
+/// `7.6%`, `42%`: the context's share of the window; `None` when the
+/// window is unknown.
+fn percent(b: &ContextBreakdown, last_context: u32) -> Option<String> {
     let window = b.window.filter(|w| *w > 0)?;
     let pct = f64::from(used(b, last_context)) / f64::from(window) * 100.0;
-    let pct = if pct < 10.0 {
+    Some(if pct < 10.0 {
         format!("{pct:.1}%")
     } else {
         format!("{pct:.0}%")
-    };
-    Some(format!("{pct} of {}", window_size(window)))
+    })
+}
+
+/// `7.6% of 1M`; `None` when the window is unknown.
+fn share(b: &ContextBreakdown, last_context: u32) -> Option<String> {
+    let window = b.window.filter(|w| *w > 0)?;
+    Some(format!(
+        "{} of {}",
+        percent(b, last_context)?,
+        window_size(window)
+    ))
 }
 
 /// The window less `used`; `None` when the window is unknown.
@@ -366,6 +396,7 @@ mod tests {
             ("$0.42", "$0.42")
         );
         assert_eq!(text.context, "Context · 76.4k");
+        assert_eq!(text.cost, "$0.42", "the session's cost");
         assert_eq!(text.cache_hit, "90% this turn");
         assert_eq!(text.cache_hit_session, "87% this session");
         assert!(
@@ -415,6 +446,8 @@ mod tests {
         let text = &meter.view().text;
         assert_eq!(text.context, "Context · 76.4k");
         assert_eq!(text.context_share, "7.6% of 1M");
+        assert_eq!(text.context_percent, "7.6%", "the share without its window");
+        assert!((text.context_fill - 0.0764).abs() < 1e-9);
         assert_eq!(text.context_free, "923.6k", "the window less the context");
         let shown: Vec<_> = text
             .context_parts
@@ -437,11 +470,39 @@ mod tests {
         meter.apply(&split(breakdown), Duration::ZERO);
         let text = &meter.view().text;
         assert_eq!(text.context_share, "", "no window, no share");
+        assert_eq!(text.context_percent, "", "no window, no percent");
         assert_eq!(text.context_free, "", "no window, nothing free");
         let filled: f64 = text.context_parts.iter().map(|p| p.share).sum();
         assert!((filled - 1.0).abs() < 1e-9, "the bar is the whole context");
         assert_eq!(window_size(200_000), "200k");
         assert_eq!(window_size(262_144), "262.1k");
+    }
+
+    #[test]
+    fn context_fill_is_capped_at_one() {
+        let breakdown = ContextBreakdown {
+            window: Some(100_000),
+            total: 150_000,
+            system: 10_000,
+            tools: 20_000,
+            instructions: 20_000,
+            history: 100_000,
+            cached: 0,
+        };
+        let rates = Rates {
+            context: Some(breakdown),
+            ..Rates::default()
+        };
+        let text = MeterText::of(&UsageView::default(), rates);
+        let parts: f64 = text.context_parts.iter().map(|p| p.share).sum();
+        assert!(parts > 1.0, "{parts}");
+        assert!((text.context_fill - 1.0).abs() < f64::EPSILON);
+        assert_eq!(text.context_percent, "150%");
+        assert_eq!(
+            MeterText::of(&UsageView::default(), Rates::default()).context_fill,
+            0.0,
+            "no split, an empty ring"
+        );
     }
 
     #[test]

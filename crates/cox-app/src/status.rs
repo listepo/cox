@@ -30,6 +30,34 @@ pub(crate) fn model_names(config: &Config) -> HashMap<String, String> {
         .unwrap_or_default()
 }
 
+/// Brand words a vendor puts before every model it names, dropped because
+/// the chip already sits beside that vendor's session. Only where the rest
+/// still names the model on its own: `GPT-5.1` has no separate prefix, and
+/// `Grok 4.3` or `DeepSeek V4 Pro` without theirs would not.
+const VENDOR_PREFIXES: [&str; 1] = ["Claude "];
+
+/// The alias marker models.dev appends to a name; the chip has no room for
+/// it and the version already says which model runs.
+const LATEST_SUFFIX: &str = " (latest)";
+
+/// A catalog name as the desktop's chip, pop-ups and menu show it (A111,
+/// A116, A129): without its vendor prefix or a trailing ` (latest)`,
+/// `Claude Haiku 4.5 (latest)` → `Haiku 4.5`; a marker that is the whole
+/// name stays. `None` for an empty name, and the client shows the id. Its
+/// own field beside the full name, which the TUI and ACP keep showing.
+pub(crate) fn short_name(name: &str) -> Option<String> {
+    let whole = |rest: &&str| !rest.is_empty();
+    let name = name
+        .strip_suffix(LATEST_SUFFIX)
+        .filter(whole)
+        .unwrap_or(name);
+    let name = VENDOR_PREFIXES
+        .iter()
+        .find_map(|p| name.strip_prefix(p).filter(whole))
+        .unwrap_or(name);
+    (!name.is_empty()).then(|| name.to_owned())
+}
+
 /// The status and what it needs to put back when an override is cleared.
 #[derive(Debug, Clone, Default)]
 pub struct StatusFold {
@@ -88,6 +116,7 @@ impl StatusFold {
 
     fn name(&mut self, model: ModelId) {
         self.status.model_name = self.names.get(&model.0).cloned();
+        self.status.short_name = self.status.model_name.as_deref().and_then(short_name);
         self.status.model = Some(model);
     }
 
@@ -171,5 +200,36 @@ mod tests {
         assert_eq!(fold.status().model_name.as_deref(), Some("Claude Opus 5"));
         assert!(fold.apply(&turn(Job::Main, "my-local-model")));
         assert_eq!(fold.status().model_name, None);
+    }
+
+    #[test]
+    fn a_short_name_drops_the_vendor_and_latest() {
+        let cases = [
+            ("Claude Sonnet 5", Some("Sonnet 5")),
+            ("GPT-5.1", Some("GPT-5.1")),
+            ("DeepSeek V4 Pro", Some("DeepSeek V4 Pro")),
+            ("Claude ", Some("Claude ")),
+            ("Claude Haiku 4.5 (latest)", Some("Haiku 4.5")),
+            ("GPT (latest) Mini", Some("GPT (latest) Mini")),
+            (" (latest)", Some(" (latest)")),
+            ("", None),
+        ];
+        for (name, short) in cases {
+            assert_eq!(short_name(name).as_deref(), short, "{name:?}");
+        }
+    }
+
+    #[test]
+    fn the_status_keeps_the_full_name_beside_the_short_one() {
+        let mut fold = opened();
+        let status = fold.status();
+        assert_eq!(status.model_name.as_deref(), Some("Claude Sonnet 5"));
+        assert_eq!(status.short_name.as_deref(), Some("Sonnet 5"));
+        assert!(fold.apply(&turn(Job::Main, "my-local-model")));
+        assert_eq!(
+            fold.status().short_name,
+            None,
+            "no name, the client shows the id"
+        );
     }
 }

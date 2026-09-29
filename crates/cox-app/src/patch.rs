@@ -223,6 +223,10 @@ pub struct Status {
     /// app shows the id.
     #[serde(default)]
     pub model_name: Option<String>,
+    /// `model_name` as the desktop shows it, `Sonnet 5` (A129,
+    /// `status::short_name`); `None` with it.
+    #[serde(default)]
+    pub short_name: Option<String>,
     /// The effort that model runs at: the `/effort` override, else the
     /// `code` tier's configured effort.
     pub effort: Option<Effort>,

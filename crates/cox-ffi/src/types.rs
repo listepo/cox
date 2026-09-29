@@ -115,6 +115,7 @@ pub struct ModelChoice {
     pub provider: String,
     pub id: String,
     pub display_name: Option<String>,
+    pub short_name: Option<String>,
     pub efforts: Vec<Effort>,
     pub context_window: Option<u32>,
 }
@@ -276,6 +277,7 @@ pub struct Status {
     pub next_mode: Option<PermissionMode>,
     pub model: Option<ModelId>,
     pub model_name: Option<String>,
+    pub short_name: Option<String>,
     pub effort: Option<Effort>,
 }
 
@@ -476,11 +478,14 @@ pub struct MeterText {
     pub rows: Vec<MeterRow>,
     pub context: String,
     pub context_share: String,
+    pub context_percent: String,
+    pub context_fill: f64,
     pub context_parts: Vec<ContextPart>,
     pub context_free: String,
     pub cache_hit: String,
     pub cache_hit_session: String,
     pub footnote: String,
+    pub cost: String,
 }
 
 #[uniffi::remote(Record)]

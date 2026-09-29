@@ -435,6 +435,7 @@ mod tests {
             provider: "anthropic".into(),
             id: id.into(),
             display_name: name.map(String::from),
+            short_name: name.and_then(crate::status::short_name),
             efforts: Vec::new(),
             context_window: None,
         }
