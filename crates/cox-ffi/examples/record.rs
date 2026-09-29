@@ -38,6 +38,7 @@ impl AppHost for MemoryHost {
     }
     fn badge(&self, _: u32) {}
     fn open_url(&self, _: String) {}
+    fn confirm_open_url(&self, _: String, _: String) {}
     fn secret(&self, section: String) -> Option<String> {
         let found = self.secrets.get(&section).cloned();
         self.asked

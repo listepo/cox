@@ -47,6 +47,11 @@ pub trait Host: Send + Sync {
     fn badge(&self, badge: u32);
     /// An MCP server's login page, or a link the person asked to follow.
     fn open_url(&self, url: &str);
+    /// T52.20: a web link a session on the ssh host `origin` asked to show.
+    /// That machine, not the person, chose it, so the host names `origin`
+    /// and opens `url` only once the person confirms. The default opens
+    /// nothing: a host that cannot ask never opens a remote's link.
+    fn confirm_open_url(&self, _origin: &str, _url: &str) {}
     /// The stored secret for a provider section (`anthropic`, `openai`, a
     /// `[providers.<name>]`); its env var, when set, wins.
     fn secret(&self, section: &str) -> Option<String>;

@@ -15,6 +15,7 @@ final class SilentHost: AppHost {
   func notify(item: CoxFFIBindings.InboxItem, badge: UInt32) {}
   func badge(badge: UInt32) {}
   func openUrl(url: String) {}
+  func confirmOpenUrl(origin: String, url: String) {}
   func secret(section: String) -> String? { nil }
 }
 

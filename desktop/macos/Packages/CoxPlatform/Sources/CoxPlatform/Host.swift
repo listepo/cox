@@ -1,8 +1,9 @@
 // The app's host (DT§4.4, T37.30.2): `secret` reads `KeychainSecretStore`,
 // `notify` posts `NotificationActions`' content with its Allow, Deny or
 // Answer actions through `UNUserNotificationCenter`, `open` goes through
-// `NSWorkspace`. Separate from the Keychain store because this is the
-// AppKit side; the store stays usable without it. Only `secret` and the URL
+// `NSWorkspace`, and a remote host's link only after an alert (T52.20).
+// Separate from the Keychain store because this is the AppKit side; the
+// store stays usable without it. Only `secret` and the URL
 // check are tested: the notification centre needs an app bundle, and a test
 // must never post a notification or open a URL. T51.9: with a
 // `BrowserController`, the browser methods drive its page.
@@ -49,6 +50,20 @@ public struct MacHost: PlatformHost {
   public func open(_ url: String) {
     guard let url = Self.openable(url) else { return }
     Task { @MainActor in _ = NSWorkspace.shared.open(url) }
+  }
+
+  /// A remote host's link (T52.20): the alert names the host and the whole URL, and only Open
+  /// opens it.
+  public func confirmOpen(_ url: String, from origin: String) {
+    guard let url = Self.openable(url) else { return }
+    Task { @MainActor in
+      let alert = NSAlert()
+      alert.messageText = "Open a link from \(origin)?"
+      alert.informativeText = url.absoluteString
+      alert.addButton(withTitle: "Open")
+      alert.addButton(withTitle: "Cancel")
+      if alert.runModal() == .alertFirstButtonReturn { _ = NSWorkspace.shared.open(url) }
+    }
   }
 
   public var hasBrowser: Bool { browser != nil }

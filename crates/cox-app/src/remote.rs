@@ -8,7 +8,9 @@
 //! read it as an option; ssh runs non-interactively with agent and port
 //! forwarding off and a scrubbed environment, so no local variable (a key
 //! among them) reaches the remote side. Authentication is the person's own
-//! ssh configuration and agent — the app never asks for a password.
+//! ssh configuration and agent — the app never asks for a password. A link
+//! the remote asks to show is a web link or nothing, and it opens only after
+//! the person confirms it (`Host::confirm_open_url`).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -225,8 +227,8 @@ async fn read(link: Arc<Link>, reader: impl AsyncRead + Unpin, local: Arc<dyn Ho
                 // would overwrite it.
                 ServerEvent::Badge { .. } => {}
                 ServerEvent::OpenUrl { url } => {
-                    if url.starts_with("https://") || url.starts_with("http://") {
-                        local.open_url(&url);
+                    if let Some(url) = web_link(&url) {
+                        local.confirm_open_url(&link.host, &url);
                     }
                 }
             },
@@ -234,6 +236,15 @@ async fn read(link: Arc<Link>, reader: impl AsyncRead + Unpin, local: Arc<dyn Ho
         }
     }
     link.drop_all();
+}
+
+/// `text` as a normalized `http(s)` link with a host; anything else (a
+/// `file:` path, another app's scheme) is dropped, since it would launch
+/// something here rather than show a page.
+fn web_link(text: &str) -> Option<String> {
+    let url = url::Url::parse(text).ok()?;
+    let web = matches!(url.scheme(), "http" | "https") && url.host().is_some();
+    web.then(|| url.into())
 }
 
 /// One host's workspace over ssh.
@@ -495,6 +506,63 @@ mod tests {
         for host in ["devbox", "me@devbox.local", "devbox:2222", "[::1]"] {
             assert!(check_host(host).is_ok(), "{host:?} was refused");
         }
+    }
+
+    /// Remembers every link it was asked to open, and how.
+    #[derive(Default)]
+    struct Links {
+        opened: Mutex<Vec<String>>,
+        asked: Mutex<Vec<(String, String)>>,
+    }
+
+    impl Host for Links {
+        fn notify(&self, _: crate::InboxItem, _: u32) {}
+        fn badge(&self, _: u32) {}
+        fn open_url(&self, url: &str) {
+            lock(&self.opened).push(url.to_owned());
+        }
+        fn secret(&self, _: &str) -> Option<String> {
+            None
+        }
+        fn confirm_open_url(&self, origin: &str, url: &str) {
+            lock(&self.asked).push((origin.to_owned(), url.to_owned()));
+        }
+    }
+
+    #[tokio::test]
+    async fn remote_link_opens_only_after_the_person_confirms() {
+        let (client, mut server) = tokio::io::duplex(4096);
+        let (reader, writer) = tokio::io::split(client);
+        let links = Arc::new(Links::default());
+        let local: Arc<dyn Host> = Arc::clone(&links);
+        let link = Link::start("devbox", reader, writer, None, local);
+        for url in [
+            "https://example.com/login",
+            "file:///etc/passwd",
+            "x-apple.systempreferences:",
+            "http://",
+        ] {
+            let line = Line::Notification(wire::Notification {
+                v: wire::VERSION,
+                event: ServerEvent::OpenUrl { url: url.into() },
+            });
+            let text = wire::encode(&line).expect("encodes");
+            server.write_all(text.as_bytes()).await.expect("write");
+        }
+        // EOF: the link reads every line, then drops.
+        drop(server);
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while link.connected.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the link ends at EOF");
+        assert!(lock(&links.opened).is_empty(), "opened without asking");
+        assert_eq!(
+            *lock(&links.asked),
+            [("devbox".to_owned(), "https://example.com/login".to_owned())]
+        );
     }
 
     #[test]

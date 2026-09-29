@@ -15,6 +15,9 @@ public protocol PlatformHost: Sendable {
   func badge(_ count: Int)
   /// An MCP server's login page or a link; the host decides what it opens.
   func open(_ url: String)
+  /// T52.20: a web link a session on the ssh host `origin` asked to show. That machine chose it,
+  /// so the host opens it only once the person confirms.
+  func confirmOpen(_ url: String, from origin: String)
   /// T51.8: whether there is a page the agent may drive (the browser
   /// pane). Without one, sessions get no browser tools.
   var hasBrowser: Bool { get }
@@ -32,6 +35,11 @@ extension PlatformHost {
   public func browserLoad(_ url: String) async throws(BrowserFailure) { throw .noPage }
   public func browserText() async throws(BrowserFailure) -> PageText { throw .noPage }
   public func browserSnapshot() async throws(BrowserFailure) -> [UInt8] { throw .noPage }
+}
+
+/// A host that cannot ask opens no remote link.
+extension PlatformHost {
+  public func confirmOpen(_ url: String, from origin: String) {}
 }
 
 /// What the browser pane reports of its page (T51.8).

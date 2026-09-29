@@ -21,6 +21,9 @@ pub trait AppHost: Send + Sync {
     fn badge(&self, badge: u32);
     /// An MCP server's login page, or a link the person asked to follow.
     fn open_url(&self, url: String);
+    /// T52.20: a web link a session on the ssh host `origin` asked to
+    /// show; opened only after the person confirms it.
+    fn confirm_open_url(&self, origin: String, url: String);
     /// The Keychain secret stored for a provider section (`anthropic`,
     /// `openai`, a `[providers.<name>]`); its env var, when set, wins.
     fn secret(&self, section: String) -> Option<String>;
@@ -47,6 +50,9 @@ impl cox_app::app::Host for Bridge {
     }
     fn open_url(&self, url: &str) {
         self.0.open_url(url.to_string());
+    }
+    fn confirm_open_url(&self, origin: &str, url: &str) {
+        self.0.confirm_open_url(origin.to_string(), url.to_string());
     }
     fn secret(&self, section: &str) -> Option<String> {
         self.0.secret(section.to_string())
@@ -100,6 +106,7 @@ mod tests {
         fn notify(&self, _: InboxItem, _: u32) {}
         fn badge(&self, _: u32) {}
         fn open_url(&self, _: String) {}
+        fn confirm_open_url(&self, _: String, _: String) {}
         fn secret(&self, _: String) -> Option<String> {
             None
         }

@@ -20,6 +20,8 @@ public final class HostBridge: AppHost {
 
   public func openUrl(url: String) { host.open(url) }
 
+  public func confirmOpenUrl(origin: String, url: String) { host.confirmOpen(url, from: origin) }
+
   public func secret(section: String) -> String? { host.secret(for: section) }
 
   public func hasBrowser() -> Bool { host.hasBrowser }
