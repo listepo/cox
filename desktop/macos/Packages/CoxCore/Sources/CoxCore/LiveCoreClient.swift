@@ -131,6 +131,20 @@ extension LiveCoreClient: SettingsClient {
     ClientSettings(try await app.setSetting(cwd: cwd, key: key, value: json))
   }
 
+  public func setSettingInput(
+    cwd: String, key: String, input: CoxClient.SettingValue
+  ) async throws -> ClientSettings {
+    ClientSettings(try await app.setSettingInput(cwd: cwd, key: key, input: .init(input)))
+  }
+
+  public func checkKey(providers: [String], provider: String, secret: String) throws -> String {
+    do {
+      return try CoxFFIBindings.checkKey(providers: providers, provider: provider, secret: secret)
+    } catch let error as CoxFFIBindings.KeyError {
+      throw CoxClient.KeyError(error)
+    }
+  }
+
   public func mcpLogin(cwd: String, server: String, login: Bool) async throws {
     try await app.mcpLogin(cwd: cwd, name: server, login: login)
   }

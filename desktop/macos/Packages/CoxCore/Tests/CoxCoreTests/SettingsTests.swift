@@ -91,3 +91,22 @@ func scratch() throws -> (URL, LiveCoreClient) {
   #expect(dropped.value == "999")
   #expect(dropped.reason == "A project may not raise a budget above your own")
 }
+
+@Test func aTypedInputAndAProviderKeyAreCheckedInRust() async throws {
+  let (home, client) = try scratch()
+  defer { try? FileManager.default.removeItem(at: home) }
+  let after = try await client.setSettingInput(
+    cwd: home.path(), key: "core.max_turns", input: .text(" 12 "))
+  let row = try #require(after.settings.first { $0.key == "core.max_turns" })
+  #expect(row.value == "12" && row.layer == .user)
+  #expect(row.group == .general && row.title == "Max turns" && row.control == .field("12"))
+  #expect(after.providers.contains("anthropic"))
+  #expect(
+    try client.checkKey(providers: after.providers, provider: "anthropic", secret: " k\n") == "k")
+  #expect(throws: CoxClient.KeyError.empty) {
+    try client.checkKey(providers: after.providers, provider: "anthropic", secret: " ")
+  }
+  #expect(throws: CoxClient.KeyError.unknownProvider("nope")) {
+    try client.checkKey(providers: after.providers, provider: "nope", secret: "k")
+  }
+}

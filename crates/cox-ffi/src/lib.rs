@@ -142,6 +142,17 @@ pub fn palette(query: String, items: Vec<PaletteItem>, limit: u32) -> Vec<Palett
     cox_app::palette::rank(&query, items, usize::try_from(limit).unwrap_or(usize::MAX))
 }
 
+/// The provider key to store, trimmed, or why not (T58.4.8): `providers`
+/// is the view's.
+#[uniffi::export]
+pub fn check_key(
+    providers: Vec<String>,
+    provider: String,
+    secret: String,
+) -> Result<String, cox_app::KeyError> {
+    cox_app::settings_fields::check_key(&providers, &provider, &secret)
+}
+
 /// T51.10: the browser pane's typed address as the URL to load, or `None`
 /// when it is not an `http`/`https` page; `browser_open`'s rule.
 #[uniffi::export]
@@ -229,6 +240,22 @@ impl App {
             on_runtime(async move { self.owner.set_setting(Path::new(&cwd), &key, &value).await })
                 .await??,
         )
+    }
+
+    /// Sets `key` from what its control sent, typed by the key's kind in
+    /// Rust (T58.4.9); the new view.
+    pub async fn set_setting_input(
+        self: Arc<Self>,
+        cwd: String,
+        key: String,
+        input: cox_app::SettingInput,
+    ) -> Result<SettingsView, AppError> {
+        Ok(on_runtime(async move {
+            (self.owner)
+                .set_setting_input(Path::new(&cwd), &key, input)
+                .await
+        })
+        .await??)
     }
 
     /// Adds (`old` none), replaces or removes (`new` none) one permission

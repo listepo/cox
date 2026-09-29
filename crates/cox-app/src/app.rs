@@ -425,6 +425,18 @@ impl App {
         self.settings(cwd).await
     }
 
+    /// Sets `key` from what its control sent, typed by the key's kind
+    /// (T58.4.9); the new view.
+    pub async fn set_setting_input(
+        &self,
+        cwd: &Path,
+        key: &str,
+        input: crate::settings_fields::SettingInput,
+    ) -> Result<SettingsView, AppError> {
+        crate::settings::set_input(&self.user_config(), cwd, key, input)?;
+        self.settings(cwd).await
+    }
+
     /// Logs in to (`log_in`) or out of the MCP server `name` (T37.30.3); a
     /// login's page opens through [`Host::open_url`] and waits up to
     /// `cox_mcp::auth::LOGIN_TIMEOUT` for the browser to come back.

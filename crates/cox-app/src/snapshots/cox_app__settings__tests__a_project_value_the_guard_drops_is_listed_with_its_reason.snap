@@ -7,6 +7,8 @@ expression: view.dropped
     "key": "budget.session_usd",
     "value": "999",
     "kept": "5",
-    "reason": "A project may not raise a budget above your own"
+    "reason": "A project may not raise a budget above your own",
+    "group": "budget",
+    "change": "999 → 5"
   }
 ]

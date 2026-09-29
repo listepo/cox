@@ -13,14 +13,19 @@ import Testing
     session: "01J0000000000000000000000A", title: "Add retry jitter", tool: "bash",
     subject: "git push")
 
+  static let modes = ["default", "plan", "auto", "bypass"]
+
+  /// The rows as Rust sends them: a rule list with no table, the mode segmented (T58.4.8–9).
   static let view = SettingsView(
     settings: [
       Setting(
         key: "permissions.allow", value: "[\"Bash(cargo nextest:*)\"]", layer: .user,
-        editable: true, kind: .list, description: ""),
+        editable: true, kind: .list, description: "", group: .permissions, title: "Allow",
+        control: .json("[\"Bash(cargo nextest:*)\"]")),
       Setting(
         key: "permissions.mode", value: "\"default\"", layer: .default, editable: true,
-        kind: .choice(options: ["default", "plan", "auto", "bypass"]), description: ""),
+        kind: .choice(options: modes), description: "", group: .permissions, title: "Mode",
+        table: "permissions", control: .choice("default", options: modes)),
     ],
     userFile: "/u/config.toml",
     rules: [
@@ -80,7 +85,6 @@ import Testing
     let fields = section.map { store.tables(in: $0).flatMap(\.fields) } ?? []
 
     #expect(fields.map(\.id) == ["permissions.mode"])
-    let modes = ["default", "plan", "auto", "bypass"]
-    #expect(fields.first?.control == .choice("default", options: modes))
+    #expect(fields.first?.control == .choice("default", options: Self.modes))
   }
 }

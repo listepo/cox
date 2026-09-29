@@ -1,7 +1,7 @@
-// Project values the guard list threw out (T37.30.4, DT§5.7), on the page their key belongs to:
-// the key, why the project may not set it, and what it asked for against what holds. Here, not
-// in CoxUI, because these decide what the screen shows (DS§1); the app copies them into CoxUI's
-// `SettingsScreen.DroppedValue` field for field.
+// Project values the guard list threw out (T37.30.4, DT§5.7), on the page Rust put their key on:
+// the key, why the project may not set it, and Rust's `999 → 5`. Here, not in CoxUI, because
+// CoxUI depends on no cox package; the app copies them into CoxUI's `SettingsScreen.DroppedValue`
+// field for field.
 
 import CoxClient
 
@@ -18,8 +18,8 @@ public struct DroppedRow: Identifiable, Equatable, Sendable {
 extension SettingsStore {
   /// The values the project set under `group` that the guard list dropped, in Rust's order.
   public func dropped(in group: SettingsGroup) -> [DroppedRow] {
-    (view?.dropped ?? []).filter { SettingsGroup(key: $0.key) == group }.map {
-      DroppedRow(key: $0.key, reason: $0.reason, change: "\($0.value) → \($0.kept)")
+    (view?.dropped ?? []).filter { $0.group == group }.map {
+      DroppedRow(key: $0.key, reason: $0.reason, change: $0.change)
     }
   }
 }

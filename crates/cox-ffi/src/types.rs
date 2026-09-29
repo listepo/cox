@@ -29,8 +29,9 @@ use cox_app::{
     PaletteHit, PaletteItem, PaletteKind, Project, SearchHit, SessionEntry, Setting, SettingKind,
     SettingsView, Tally, TaskKind, TaskTarget, TurnCosts, TurnUsage, UsageView,
 };
+use cox_app::{KeyError, PermissionRule, RuleKind, SessionGrant, SettingsGroup};
 use cox_app::{KeyValueRow, PluginKey, PluginSlot, SpanView, WidgetView};
-use cox_app::{PermissionRule, RuleKind, SessionGrant};
+use cox_app::{SettingControl, SettingInput, SettingOption};
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::Slot;
 use cox_protocol::plugin::ui::StyleToken;
@@ -777,6 +778,7 @@ pub struct SettingsView {
     pub dropped: Vec<Dropped>,
     pub rules: Vec<PermissionRule>,
     pub grants: Vec<SessionGrant>,
+    pub providers: Vec<String>,
 }
 
 #[uniffi::remote(Record)]
@@ -830,6 +832,8 @@ pub struct Dropped {
     pub value: String,
     pub kept: String,
     pub reason: String,
+    pub group: SettingsGroup,
+    pub change: String,
 }
 
 #[uniffi::remote(Record)]
@@ -867,6 +871,73 @@ pub struct Setting {
     pub editable: bool,
     pub kind: SettingKind,
     pub description: String,
+    pub group: SettingsGroup,
+    pub title: String,
+    pub table: Option<String>,
+    pub provider: Option<String>,
+    pub detail: Option<String>,
+    pub control: SettingControl,
+}
+
+#[uniffi::remote(Enum)]
+pub enum SettingControl {
+    Toggle {
+        on: bool,
+    },
+    Slider {
+        value: f64,
+        min: f64,
+        max: f64,
+        text: String,
+    },
+    Choice {
+        value: String,
+        options: Vec<String>,
+    },
+    Menu {
+        value: String,
+        options: Vec<SettingOption>,
+    },
+    Field {
+        text: String,
+    },
+    Json {
+        text: String,
+    },
+}
+
+#[uniffi::remote(Record)]
+pub struct SettingOption {
+    pub value: String,
+    pub title: String,
+}
+
+#[uniffi::remote(Enum)]
+pub enum SettingInput {
+    Bool { value: bool },
+    Integer { value: i64 },
+    Number { value: f64 },
+    Text { value: String },
+    List { values: Vec<String> },
+}
+
+#[uniffi::remote(Enum)]
+pub enum SettingsGroup {
+    General,
+    Models,
+    Permissions,
+    Sandbox,
+    Budget,
+    Mcp,
+    Plugins,
+    Appearance,
+    Advanced,
+}
+
+#[uniffi::remote(Error)]
+pub enum KeyError {
+    Empty,
+    UnknownProvider { provider: String },
 }
 
 #[uniffi::remote(Enum)]
