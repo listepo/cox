@@ -238,6 +238,14 @@ async fn read_loop<R: AsyncBufRead + Unpin>(
         match (method, msg.remove("id")) {
             (Some(method), Some(id)) => {
                 let reply = answer(method, msg.get("params"), id);
+                // A dropped receiver only means nobody listens any more; the
+                // server still gets its acknowledgement below.
+                if method == "workspace/diagnostic/refresh" {
+                    let _ = notes.send(Notification {
+                        method: method.to_owned(),
+                        params: Value::Null,
+                    });
+                }
                 let writer = writer.clone();
                 // Replying from its own task keeps this loop reading while a
                 // large client write holds the writer, or both sides block.
@@ -282,7 +290,10 @@ fn answer(method: &str, params: Option<&Value>, id: Value) -> Value {
         "window/workDoneProgress/create"
         | "client/registerCapability"
         | "client/unregisterCapability"
-        | "window/showMessageRequest" => Value::Null,
+        | "window/showMessageRequest"
+        // Acknowledged so the server does not see "method not found" and
+        // give up asking; the pull-mode consumer reacts to it (T41.10).
+        | "workspace/diagnostic/refresh" => Value::Null,
         _ => {
             return json!({"jsonrpc": "2.0", "id": id, "error": {
                 "code": METHOD_NOT_FOUND,
@@ -440,6 +451,21 @@ mod tests {
         let reply = read_message(&mut sr).await.unwrap().unwrap();
         assert_eq!(reply["id"], "x");
         assert_eq!(reply["error"]["code"], METHOD_NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn diagnostic_refresh_is_acknowledged_and_forwarded() {
+        let (_client, mut notes, (mut sr, mut sw)) = connect();
+        write_message(
+            &mut sw,
+            &json!({"jsonrpc": "2.0", "id": 1, "method": "workspace/diagnostic/refresh"}),
+        )
+        .await
+        .unwrap();
+        let ack = read_message(&mut sr).await.unwrap().unwrap();
+        assert_eq!(ack, json!({"jsonrpc": "2.0", "id": 1, "result": null}));
+        let note = notes.recv().await.unwrap();
+        assert_eq!(note.method, "workspace/diagnostic/refresh");
     }
 
     #[tokio::test]

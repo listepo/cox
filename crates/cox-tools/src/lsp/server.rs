@@ -202,6 +202,10 @@ impl Server {
             "workspaceFolders": [{"uri": root_uri, "name": name}],
             "capabilities": {
                 "general": {"positionEncodings": ["utf-16"]},
+                // Without this a server may never send `$/progress`, so
+                // there is nothing to wait on for a freshly started one
+                // (research.md §4.8).
+                "window": {"workDoneProgress": true},
                 "workspace": {"workspaceFolders": true, "configuration": true},
                 "textDocument": {
                     "synchronization": {"didSave": true},
@@ -279,23 +283,31 @@ impl Server {
         self.client.notify("textDocument/didSave", save).await?;
 
         if self.pull {
-            let left = deadline.saturating_duration_since(Instant::now());
-            let params = json!({"textDocument": {"uri": uri}});
-            match self
-                .client
-                .request("textDocument/diagnostic", params, left)
-                .await
-            {
-                // `unchanged` means the last report still holds.
-                Ok(report) if report["kind"] == "unchanged" => {}
-                Ok(report) => {
-                    let items = report.get("items").cloned().unwrap_or(Value::Null);
-                    let diags: Vec<Diagnostic> = serde_json::from_value(items)
-                        .map_err(|e| LspError::Parse(format!("diagnostic report: {e}")))?;
-                    st.latest.insert(path.to_path_buf(), diags);
+            loop {
+                match self.pull_once(&mut st, &uri, path, deadline).await {
+                    Ok(()) => {}
+                    Err(LspError::Timeout { .. }) => return Ok(partial(&st, path, budget)),
+                    // A server may cancel a pull it now considers stale
+                    // (rust-analyzer does this while still loading, LSP's
+                    // reserved `RequestCancelled`/`ContentModified` range):
+                    // that is not a failure, just an empty answer to retry.
+                    Err(LspError::Server { code, .. }) if (-32802..=-32800).contains(&code) => {}
+                    Err(e) => return Err(e),
                 }
-                Err(LspError::Timeout { .. }) => return Ok(partial(&st, path, budget)),
-                Err(e) => return Err(e),
+                // A freshly opened file's empty pull may predate the
+                // server finishing its load (research.md §4.8): its
+                // indexing can end (or the server can ask for a re-pull)
+                // in more than one wave before the slower check behind the
+                // diagnostics actually finishes, so keep re-pulling on
+                // each such sign, bounded by the same deadline as
+                // everything else here. A server that reports neither
+                // still answers empty, unchanged, once the deadline
+                // passes.
+                let worth_a_retry = version == 1 && st.latest.get(path).is_none_or(Vec::is_empty);
+                if !worth_a_retry || !wait_for_pull_trigger(&mut st, path, version, deadline).await
+                {
+                    break;
+                }
             }
             return Ok(Report {
                 diagnostics: st.latest.get(path).cloned().unwrap_or_default(),
@@ -328,6 +340,34 @@ impl Server {
                 }
                 Err(_) => {}
             }
+        }
+    }
+
+    /// One `textDocument/diagnostic` pull; stores a non-`unchanged` result.
+    async fn pull_once(
+        &self,
+        st: &mut State,
+        uri: &str,
+        path: &Path,
+        deadline: Instant,
+    ) -> Result<(), LspError> {
+        let left = deadline.saturating_duration_since(Instant::now());
+        let params = json!({"textDocument": {"uri": uri}});
+        match self
+            .client
+            .request("textDocument/diagnostic", params, left)
+            .await
+        {
+            // `unchanged` means the last report still holds.
+            Ok(report) if report["kind"] == "unchanged" => Ok(()),
+            Ok(report) => {
+                let items = report.get("items").cloned().unwrap_or(Value::Null);
+                let diags: Vec<Diagnostic> = serde_json::from_value(items)
+                    .map_err(|e| LspError::Parse(format!("diagnostic report: {e}")))?;
+                st.latest.insert(path.to_path_buf(), diags);
+                Ok(())
+            }
+            Err(e) => Err(e),
         }
     }
 
@@ -399,6 +439,36 @@ impl State {
                 false
             }
             _ => false,
+        }
+    }
+}
+
+/// Waits, bounded by `deadline`, for a sign that a first empty pull for
+/// `path` was premature: the server's `$/progress` ending after it began,
+/// or it asking to pull again (`workspace/diagnostic/refresh`). Mirrors how
+/// push mode already waits the full deadline for its first push (research
+/// shows rust-analyzer's indexing runs several seconds, well past a short
+/// grace period); a server that reports neither leaves the deadline to
+/// pass and the original, empty pull stands (research.md §4.8).
+async fn wait_for_pull_trigger(
+    st: &mut State,
+    path: &Path,
+    version: i32,
+    deadline: Instant,
+) -> bool {
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return false;
+        }
+        let Ok(Some(note)) = tokio::time::timeout(left, st.notes.recv()).await else {
+            return false;
+        };
+        let refresh = note.method == "workspace/diagnostic/refresh";
+        let was_busy = !st.busy.is_empty();
+        st.absorb(note, path, version);
+        if refresh || (was_busy && st.busy.is_empty()) {
+            return true;
         }
     }
 }
@@ -595,6 +665,152 @@ pub(crate) mod tests {
         assert_eq!(report.diagnostics.len(), 1);
         assert_eq!(report.diagnostics[0].message, "pulled");
         assert_eq!(report.note, None);
+        fake.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pull_retries_after_indexing_ends_when_the_first_result_is_empty() {
+        let (pipes, mut r, mut w, _) = fake_pipes();
+        let fake = tokio::spawn(async move {
+            let init = expect(&mut r, "initialize").await;
+            assert_eq!(
+                init["params"]["capabilities"]["window"]["workDoneProgress"],
+                true
+            );
+            let caps = json!({"diagnosticProvider": {"interFileDependencies": false, "workspaceDiagnostics": false}});
+            reply(&mut w, &init, json!({"capabilities": caps})).await;
+            expect(&mut r, "initialized").await;
+            expect(&mut r, "textDocument/didOpen").await;
+            expect(&mut r, "textDocument/didSave").await;
+            // Too early: the server has not loaded the crate yet.
+            let first = expect(&mut r, "textDocument/diagnostic").await;
+            reply(&mut w, &first, json!({"kind": "full", "items": []})).await;
+            let begin = json!({"token": "rustAnalyzer/Indexing", "value": {"kind": "begin"}});
+            push(&mut w, "$/progress", begin).await;
+            let end = json!({"token": "rustAnalyzer/Indexing", "value": {"kind": "end"}});
+            push(&mut w, "$/progress", end).await;
+            // The re-pull now finds the real error.
+            let second = expect(&mut r, "textDocument/diagnostic").await;
+            reply(
+                &mut w,
+                &second,
+                json!({"kind": "full", "items": [diag("E0308")]}),
+            )
+            .await;
+            (r, w)
+        });
+        let server = Server::start(pipes, opts(50)).await.unwrap();
+        let report = server
+            .diagnostics(Path::new(FILE), "x", Duration::from_secs(10))
+            .await
+            .unwrap();
+        assert_eq!(report.diagnostics.len(), 1);
+        assert_eq!(report.diagnostics[0].message, "E0308");
+        assert_eq!(report.note, None);
+        fake.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pull_retries_after_a_refresh_request_when_the_first_result_is_empty() {
+        let (pipes, mut r, mut w, _) = fake_pipes();
+        let fake = tokio::spawn(async move {
+            let caps = json!({"diagnosticProvider": {"interFileDependencies": false, "workspaceDiagnostics": false}});
+            handshake(&mut r, &mut w, caps).await;
+            expect(&mut r, "textDocument/didOpen").await;
+            expect(&mut r, "textDocument/didSave").await;
+            let first = expect(&mut r, "textDocument/diagnostic").await;
+            reply(&mut w, &first, json!({"kind": "full", "items": []})).await;
+            // The server asks the client to pull again instead of pushing.
+            write_message(
+                &mut w,
+                &json!({"jsonrpc": "2.0", "id": 9000, "method": "workspace/diagnostic/refresh"}),
+            )
+            .await
+            .unwrap();
+            let second = expect(&mut r, "textDocument/diagnostic").await;
+            reply(
+                &mut w,
+                &second,
+                json!({"kind": "full", "items": [diag("E0308")]}),
+            )
+            .await;
+            (r, w)
+        });
+        let server = Server::start(pipes, opts(50)).await.unwrap();
+        let report = server
+            .diagnostics(Path::new(FILE), "x", Duration::from_secs(10))
+            .await
+            .unwrap();
+        assert_eq!(report.diagnostics[0].message, "E0308");
+        fake.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pull_retries_after_the_server_cancels_a_stale_pull() {
+        let (pipes, mut r, mut w, _) = fake_pipes();
+        let fake = tokio::spawn(async move {
+            let caps = json!({"diagnosticProvider": {"interFileDependencies": false, "workspaceDiagnostics": false}});
+            handshake(&mut r, &mut w, caps).await;
+            expect(&mut r, "textDocument/didOpen").await;
+            expect(&mut r, "textDocument/didSave").await;
+            // rust-analyzer cancels a pull it now considers stale instead
+            // of answering it, while it is still loading.
+            let first = expect(&mut r, "textDocument/diagnostic").await;
+            write_message(
+                &mut w,
+                &json!({"jsonrpc": "2.0", "id": first["id"], "error": {
+                    "code": -32801, "message": "content modified",
+                }}),
+            )
+            .await
+            .unwrap();
+            let begin = json!({"token": "t", "value": {"kind": "begin"}});
+            push(&mut w, "$/progress", begin).await;
+            let end = json!({"token": "t", "value": {"kind": "end"}});
+            push(&mut w, "$/progress", end).await;
+            let second = expect(&mut r, "textDocument/diagnostic").await;
+            reply(
+                &mut w,
+                &second,
+                json!({"kind": "full", "items": [diag("E0308")]}),
+            )
+            .await;
+            (r, w)
+        });
+        let server = Server::start(pipes, opts(50)).await.unwrap();
+        let report = server
+            .diagnostics(Path::new(FILE), "x", Duration::from_secs(10))
+            .await
+            .unwrap();
+        assert_eq!(report.diagnostics[0].message, "E0308");
+        fake.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pull_with_no_progress_or_refresh_stands_once_the_deadline_passes() {
+        let (pipes, mut r, mut w, _) = fake_pipes();
+        let fake = tokio::spawn(async move {
+            let caps = json!({"diagnosticProvider": {"interFileDependencies": false, "workspaceDiagnostics": false}});
+            handshake(&mut r, &mut w, caps).await;
+            expect(&mut r, "textDocument/didOpen").await;
+            expect(&mut r, "textDocument/didSave").await;
+            let req = expect(&mut r, "textDocument/diagnostic").await;
+            reply(&mut w, &req, json!({"kind": "full", "items": []})).await;
+            (r, w)
+        });
+        let server = Server::start(pipes, opts(50)).await.unwrap();
+        let start = Instant::now();
+        let report = server
+            .diagnostics(Path::new(FILE), "x", Duration::from_secs(10))
+            .await
+            .unwrap();
+        // No progress and no refresh ever arrived: the wait (bounded by
+        // the same 10 s deadline as everything else) elapses and the
+        // original, empty pull result stands, exactly as it does today.
+        assert!(report.diagnostics.is_empty());
+        assert_eq!(report.note, None);
+        let elapsed = Instant::now() - start;
+        assert!(elapsed >= Duration::from_secs(9), "{elapsed:?}");
         fake.await.unwrap();
     }
 
