@@ -78,12 +78,12 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T58.4.17 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T58.4.18 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T58.4.19 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
-| T58.4.20 | todo | P1 | 2 | 0% | |
-| T58.4.21 | todo | P1 | 1 | 0% | |
-| T58.4.22 | todo | P1 | 1 | 0% | |
-| T58.4.23 | todo | P1 | 2 | 0% | |
-| T58.4.24 | todo | P1 | 2 | 0% | |
-| T58.4.25 | todo | P1 | 1 | 0% | |
+| T58.4.20 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
+| T58.4.21 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
+| T58.4.22 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
+| T58.4.23 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
+| T58.4.24 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
+| T58.4.25 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
 | T58.4.26 | todo | P2 | 2 | 0% | |
 | T58.4.27 | todo | P2 | 2 | 0% | |
 | T58.4.28 | todo | P2 | 2 | 0% | |
