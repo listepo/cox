@@ -133,6 +133,10 @@ struct SessionWindow: View {
       }
       .joinsTabs(of: popOut?.tabOf)
       .closeGuard { opened.values.contains { $0.store.hasBusyTerminal } }
+      // The browser takes the inspector's place beside the column, as mockup 25 draws it: with
+      // both, the panes outgrow the window and push the toolbar's trailing buttons off its edge.
+      .onChange(of: isBrowserVisible) { if isBrowserVisible { screen.isInspectorVisible = false } }
+      .onChange(of: screen.isInspectorVisible) { _, shown in if shown { isBrowserVisible = false } }
   }
 
   private var shown: MainScreenState {
@@ -182,7 +186,8 @@ struct SessionWindow: View {
             AcpBanner(agent: agent)
               .frame(maxWidth: Size.readingWidth)
               .padding(.horizontal, Space.xl)
-              .padding(.top, Space.ml)
+              // Mockup 27: the transcript's 6 over the notice's own 10.
+              .padding(.top, Space.xl)
           }
           TranscriptView(store: showing.store, send: send)
             .composer(showing.composer)
@@ -208,8 +213,10 @@ struct SessionWindow: View {
           showing.store.pluginArea(width: cells.width, height: cells.height)
         }
         if isBrowserVisible {
+          // Up to the mockup's width, narrower when the window is: at a fixed width a small
+          // window's column cannot hold it beside the transcript.
           SessionBrowser(controller: model.launch.browser) { refused = $0 }
-            .frame(width: SessionBrowser.paneWidth)
+            .frame(maxWidth: SessionBrowser.paneWidth)
         }
       }
       // A new view per session, so the transcript's text is rebuilt from the one it shows.

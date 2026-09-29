@@ -44,7 +44,7 @@ final class TerminalSurfaces {
 struct SessionTerminal: View {
   /// Mockup 24's `.term` height, until the user drags the header.
   static let defaultHeight: CGFloat = 250
-  /// The least the pane shrinks to: its header and a few lines.
+  /// The least the well shrinks to: a few lines.
   static let minHeight: CGFloat = 120
 
   let store: SessionStore
@@ -58,12 +58,18 @@ struct SessionTerminal: View {
 
   var body: some View {
     TerminalPaneChrome(state: state, send: handle) {
-      if let tab = store.terminals.first(where: { $0.id == store.terminalSelection }) {
-        TerminalPane(surface: surfaces.surface(for: tab, style: style), style: style)
-          .id(tab.id)
+      // `height` is the well's, margin included, as mockup 24's `.term` is 250 under its header.
+      ZStack {
+        if let tab = store.terminals.first(where: { $0.id == store.terminalSelection }) {
+          TerminalPane(surface: surfaces.surface(for: tab, style: style), style: style)
+            .id(tab.id)
+        }
       }
+      .frame(maxWidth: .infinity)
+      .frame(height: height - 2 * Space.ml)
     }
-    .frame(height: height)
+    // The chrome's well is greedy; at its ideal height it keeps to the header and `height`.
+    .fixedSize(horizontal: false, vertical: true)
     .overlay(alignment: .top) { resizeEdge }
   }
 
@@ -78,11 +84,18 @@ struct SessionTerminal: View {
       selection: store.terminalSelection)
   }
 
+  /// The terminal's own background is `surface.terminal` at no opacity: the chrome's well already
+  /// lays that translucent colour once, margin included, and a second coat inside the margin
+  /// drew a lighter frame round a darker terminal. The colour stays for inverse video.
+  /// Lines keep the token's pitch (`font.mono.terminal`, 1.5), not the font's tighter own.
   private var style: TerminalStyle {
-    TerminalStyle(
-      font: FontToken.monoTerminal.nsFont(scale: appearance.textScale),
-      foreground: TerminalColour.text.nsColor, background: TerminalColour.surface.nsColor,
-      caret: TerminalColour.text.nsColor)
+    let token = FontToken.monoTerminal
+    return TerminalStyle(
+      font: token.nsFont(scale: appearance.textScale),
+      foreground: TerminalColour.text.nsColor,
+      background: TerminalColour.surface.nsColor.withAlphaComponent(0),
+      caret: TerminalColour.text.nsColor,
+      lineHeight: token.size * appearance.textScale * token.lineHeight)
   }
 
   /// The pane's top edge drags its height; UI-only state, never written to config.

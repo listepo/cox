@@ -12,21 +12,30 @@ import CoxClient
 import SwiftUI
 
 /// How the pane draws: the mono font token and the `surface.terminal`, `text.terminal` and
-/// `text.terminalOk` colours, resolved by the caller.
+/// `text.terminalOk` colours, resolved by the caller. `lineHeight` is the token's line pitch in
+/// points; `nil` keeps the font's own, which SwiftTerm uses unless told.
 public struct TerminalStyle {
   public var font: NSFont
   public var foreground: NSColor
   public var background: NSColor
   public var caret: NSColor
+  public var lineHeight: CGFloat?
 
-  public init(font: NSFont, foreground: NSColor, background: NSColor, caret: NSColor) {
-    (self.font, self.foreground, self.background, self.caret) = (
-      font, foreground, background, caret
+  public init(
+    font: NSFont, foreground: NSColor, background: NSColor, caret: NSColor,
+    lineHeight: CGFloat? = nil
+  ) {
+    (self.font, self.foreground, self.background, self.caret, self.lineHeight) = (
+      font, foreground, background, caret, lineHeight
     )
   }
 
   @MainActor func apply(to view: TerminalView) {
     if view.font != font { view.font = font }
+    // SwiftTerm spaces lines as a multiple of the font's ascent, descent and leading.
+    let natural = font.ascender - font.descender + font.leading
+    let spacing = lineHeight.map { natural > 0 ? $0 / natural : 1 } ?? 1
+    if view.lineSpacing != spacing { view.lineSpacing = spacing }
     view.nativeForegroundColor = foreground
     view.nativeBackgroundColor = background
     view.caretColor = caret
