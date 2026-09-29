@@ -46,8 +46,9 @@ impl Backend {
 
 /// The backend that will confine commands here, or `None` when nothing
 /// will (Windows, `linux_backend = none`, or a Linux host with neither
-/// namespaces nor Landlock). The surface that builds the session turns
-/// `None` into a security notice and forces `on-request`.
+/// namespaces nor Landlock). D7: `cox_session::sandbox::effective_approval`
+/// turns `None` into a security notice and forces `on-failure` to
+/// `on-request` on every session open (T57.3).
 pub fn backend(linux: LinuxBackend) -> Option<Backend> {
     if cfg!(target_os = "macos") {
         return Path::new(SANDBOX_EXEC)

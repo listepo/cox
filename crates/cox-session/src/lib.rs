@@ -208,6 +208,13 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
         base.core.workspace_roots =
             vec![cox_config::load::find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf())];
     }
+    // T57.3: D7 applied before anything reads the policy, so the core,
+    // external agents and `Opened::config` all see the effective one.
+    let (approval, unsandboxed) = sandbox::effective_approval(
+        cox_tools::sandbox::backend(base.sandbox.linux_backend),
+        base.permissions.approval,
+    );
+    base.permissions.approval = approval;
     let worktree_main = if worktree {
         let main = project_root(cwd).await;
         add_read_root(&mut base, &main);
@@ -458,6 +465,9 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
         session.notice(Level::Warn, warning).await?;
     }
     for (level, text) in plugin_started {
+        session.notice(level, text).await?;
+    }
+    if let Some((level, text)) = unsandboxed {
         session.notice(level, text).await?;
     }
     Ok(Opened {

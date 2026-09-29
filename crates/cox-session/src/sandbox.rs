@@ -1,11 +1,16 @@
 //! The one argv wrap a host-spawned process runs under (T33.19, T33.42,
 //! T35.2): a plugin's `[[mcp]]` servers and external agents, every other
 //! stdio MCP server, and `doctor`'s probe of them. Separate so each of those
-//! reaches the same `cox_tools::sandbox` guard `bash` runs under.
+//! reaches the same `cox_tools::sandbox` guard `bash` runs under. Also D7
+//! as code ([`effective_approval`], T57.3): what a host with no backend
+//! does to the approval policy, applied once where every surface opens a
+//! session.
 
 use std::path::{Path, PathBuf};
 
 use cox_protocol::Config;
+use cox_protocol::types::{ApprovalPolicy, Level};
+use cox_tools::sandbox::Backend;
 
 /// The `[sandbox]` config as the policy a host-spawned process runs under:
 /// `sandboxed_argv`'s wrap and the ACP client's `fs/*` checks for the same
@@ -129,4 +134,85 @@ fn host_program(program: &Path) -> PathBuf {
         }
     }
     program.to_path_buf()
+}
+
+/// D7 as code (T57.3, A128 (3)): with no sandbox backend (Windows, or a
+/// Linux host where `linux_backend` finds none) a command runs unconfined,
+/// so `on-failure` — which runs `Exec` without asking because the sandbox
+/// would catch it — becomes `on-request`. `untrusted` and `never` are
+/// stricter already (`never` turns every `Ask` into `Deny`) and stay. The
+/// notice is `Security`, so every surface pins it, and comes on every open:
+/// the host has not become safer since the last one.
+pub fn effective_approval(
+    backend: Option<Backend>,
+    configured: ApprovalPolicy,
+) -> (ApprovalPolicy, Option<(Level, String)>) {
+    if backend.is_some() {
+        return (configured, None);
+    }
+    let unconfined = "no sandbox backend on this host: commands run unconfined";
+    match configured {
+        ApprovalPolicy::OnFailure => (
+            ApprovalPolicy::OnRequest,
+            Some((
+                Level::Security,
+                format!("{unconfined}; approval `on-failure` is forced to `on-request` (D7)"),
+            )),
+        ),
+        policy => (
+            policy,
+            Some((Level::Security, format!("{unconfined} (D7)"))),
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL: [ApprovalPolicy; 4] = [
+        ApprovalPolicy::Untrusted,
+        ApprovalPolicy::OnRequest,
+        ApprovalPolicy::OnFailure,
+        ApprovalPolicy::Never,
+    ];
+
+    #[test]
+    fn no_backend_forces_on_request() {
+        let effective = |p| effective_approval(None, p).0;
+        assert_eq!(
+            effective(ApprovalPolicy::OnFailure),
+            ApprovalPolicy::OnRequest
+        );
+        // The stricter policies stay as configured (A128 (3)).
+        for p in [
+            ApprovalPolicy::Untrusted,
+            ApprovalPolicy::OnRequest,
+            ApprovalPolicy::Never,
+        ] {
+            assert_eq!(effective(p), p);
+        }
+    }
+
+    #[test]
+    fn no_backend_emits_a_security_notice() {
+        for p in ALL {
+            let (level, text) = effective_approval(None, p).1.expect("a notice");
+            assert_eq!(level, Level::Security, "{p:?}");
+            assert!(text.contains("no sandbox backend"), "{text}");
+        }
+        let (_, text) = effective_approval(None, ApprovalPolicy::OnFailure)
+            .1
+            .expect("a notice");
+        assert!(text.contains("forced to `on-request`"), "{text}");
+    }
+
+    #[test]
+    fn backend_present_keeps_the_configured_policy() {
+        for backend in [Backend::Seatbelt, Backend::Bwrap, Backend::Landlock] {
+            for p in ALL {
+                assert_eq!(effective_approval(Some(backend), p), (p, None));
+            }
+        }
+    }
 }
