@@ -16,7 +16,8 @@ extension CoxClient.MeterText {
     }
     (context, footnote) = (value.context, value.footnote)
     (contextShare, contextFree, cacheHit) = (value.contextShare, value.contextFree, value.cacheHit)
-    cacheHitSession = value.cacheHitSession
+    (cacheHitSession, cost) = (value.cacheHitSession, value.cost)
+    (contextPercent, contextFill) = (value.contextPercent, value.contextFill)
     contextParts = value.contextParts.map {
       .init(kind: $0.kind, label: $0.label, tokens: $0.tokens, share: $0.share)
     }

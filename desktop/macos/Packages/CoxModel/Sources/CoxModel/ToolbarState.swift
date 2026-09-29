@@ -20,9 +20,9 @@ public struct ToolbarState: Equatable, Sendable {
   /// `Claude Agent · ACP` for an external agent's session; `nil` for cox's own, whose chip shows
   /// the composer's model.
   public var model: String?
-  /// `38%` of the window, as the core formatted the share; `–` while the window is unknown.
+  /// `38%` of the window, as the core formatted it; `–` while the window is unknown.
   public var context = "–"
-  /// The share the ring fills, 0…1: the split's parts laid end to end.
+  /// The share the ring fills, 0…1, as the core summed the split's parts.
   public var contextFraction = 0.0
 
   public init() {}
@@ -43,13 +43,9 @@ public struct ToolbarState: Equatable, Sendable {
     project = entry?.project.name ?? (cwd.isEmpty ? "" : URL(filePath: cwd).lastPathComponent)
     branch = info?.worktree?.branch
     guard let usage else { return }
-    if agent == nil { cost = usd(usage.session.costUsd) }
-    let split = ContextSplit(usage.text)
-    // `7.6% of 1M`: the percent the core formatted, without the window it is of.
-    if let percent = split.share.components(separatedBy: " of ").first, !percent.isEmpty {
-      context = percent
-    }
-    contextFraction = min(1, split.parts.reduce(0) { $0 + $1.fraction })
+    if agent == nil { cost = usage.text.cost }
+    if !usage.text.contextPercent.isEmpty { context = usage.text.contextPercent }
+    contextFraction = usage.text.contextFill
   }
 }
 

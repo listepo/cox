@@ -1,6 +1,6 @@
 // The session toolbar's figures (T37.22.5): the title and project from the session's entry, the
-// branch from its Info, the cost and the context share the meter formatted with the ring's fill
-// from the split; before the first usage patch, a zero cost and an unknown share; an external
+// branch from its Info, the cost, the context percent and the ring's fill as the meter computed
+// them (T58.4.15); before the first usage patch, a zero cost and an unknown share; an external
 // agent's session names its agent in the model chip and has no cost (T52.8).
 
 import CoxClient

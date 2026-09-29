@@ -61,11 +61,24 @@ import Testing
   let live = CoxFFIBindings.TimelinePatch.status(
     status: .init(
       queued: 2, mode: .plan, nextMode: .auto, model: "claude-sonnet-5",
-      modelName: "Claude Sonnet 5", effort: .high))
+      modelName: "Claude Sonnet 5", shortName: "Sonnet 5", effort: .high))
   let status = CoxClient.Status(
     queued: 2, mode: .plan, nextMode: .auto, model: "claude-sonnet-5", effort: .high,
     modelName: "Claude Sonnet 5")
   #expect(CoxClient.TimelinePatch(live) == .status(status: status))
+}
+
+/// T58.4.15: the toolbar's figures arrive as the core computed them.
+@Test func theMetersToolbarFiguresConvert() {
+  let live = CoxFFIBindings.MeterText(
+    sent: "", received: "", rate: "", spoken: "", heading: "", phase: "", rateUnit: "",
+    rateDetail: "", rows: [], context: "", contextShare: "7.6% of 1M", contextPercent: "7.6%",
+    contextFill: 0.076, contextParts: [], contextFree: "", cacheHit: "", cacheHitSession: "",
+    footnote: "", cost: "$0.42")
+  let text = CoxClient.MeterText(live)
+  #expect(text.contextPercent == "7.6%")
+  #expect(text.contextFill == 0.076)
+  #expect(text.cost == "$0.42")
 }
 
 @Test func aChangesRecordConvertsFieldForField() {

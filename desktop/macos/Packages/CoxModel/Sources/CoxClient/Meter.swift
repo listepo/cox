@@ -10,6 +10,12 @@ public struct MeterText: Equatable, Sendable, Decodable {
   public var context = "", footnote = ""
   /// `7.6% of 1M` and `923.6k` free; empty while the window is unknown (A98).
   public var contextShare = "", contextFree = ""
+  /// `7.6%`, the share without its window, and how full the toolbar ring is, 0…1; `""` and 0
+  /// while the window is unknown or before the first request.
+  public var contextPercent = ""
+  public var contextFill = 0.0
+  /// `$0.42`, the session's cost so far.
+  public var cost = ""
   /// System, tools, instructions and history; empty until the first request.
   public var contextParts: [ContextPart] = []
   /// `94% this turn`; empty before a turn sent anything.
@@ -25,6 +31,9 @@ public struct MeterText: Equatable, Sendable, Decodable {
     case rateDetail = "rate_detail"
     case contextShare = "context_share"
     case contextFree = "context_free"
+    case contextPercent = "context_percent"
+    case contextFill = "context_fill"
+    case cost
     case contextParts = "context_parts"
     case cacheHit = "cache_hit"
     case cacheHitSession = "cache_hit_session"
