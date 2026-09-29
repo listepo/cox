@@ -297,6 +297,9 @@ struct SessionWindow: View {
         shared = model.registry.adopt(client, window: windowID)
       }
       let client = shared.store.session
+      // Notification and menu-bar answers find the store by the session's id; registered now,
+      // since a remote session has no `info()` to wait for (T52.20).
+      model.register(shared.store, as: client.id)
       // An asked session was held for this window (T51.17); the window holds it now.
       if let handoff = popOut?.handoff { model.registry.release(client.id, window: handoff) }
       if opened[client.id] == nil { opened[client.id] = OpenedSession(shared) }
@@ -311,10 +314,7 @@ struct SessionWindow: View {
         opened[client.id]?.agents = (try? await live.agents(cwd: cwd)) ?? []
       }
       // After it shows: Info asks git about the cwd, which can take a while.
-      if let info = try? await client.info() {
-        model.register(shared.store, as: info.session)
-        opened[client.id]?.info = info
-      }
+      if let info = try? await client.info() { opened[client.id]?.info = info }
     } catch {
       // Without a first session the column says why; later, an alert does.
       if current == nil {
