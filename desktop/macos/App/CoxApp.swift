@@ -55,7 +55,7 @@ struct CoxApp: App {
 
 /// What every window of this launch shares: the core, one `SettingsStore` for the project, the
 /// session list, the login shell's environment read once, and the notification centre's
-/// delegate, which routes an action to the session it names.
+/// delegate, which routes an action to the session it names and Open to its window.
 @MainActor
 final class AppModel {
   let launch: LaunchCore
@@ -90,7 +90,7 @@ final class AppModel {
       connector: launch.isFixture ? nil : try? launch.live.get(), settings: settings)
     let responder = NotificationResponder(
       handle: { [weak self] route in Task { @MainActor in self?.route(route) } },
-      show: { _ in Task { @MainActor in NSApp.activate() } })
+      show: { [weak self] session in Task { @MainActor in self?.bringForward(session) } })
     // The centre holds its delegate weakly; this model lives as long as the app.
     UNUserNotificationCenter.current().delegate = responder
     self.responder = responder
@@ -133,6 +133,14 @@ final class AppModel {
 
   /// Opens a window of the scene `id`; nothing before a scene appeared, as launching opens one.
   func show(id: String) { openWindow?.callAsFunction(id: id) }
+
+  /// Open on a notification, or a click on one (T37.44.15): cox comes forward on the session's
+  /// window, where its pending approval waits; a window already showing that pop-out is reused,
+  /// as the menu bar's and Spotlight's Open do.
+  func bringForward(_ session: String) {
+    NSApp.activate()
+    show(PopOut(session: session, asTab: false))
+  }
 
   /// Makes `store` the target of the notifications for `session`.
   func register(_ store: SessionStore, as session: String) {

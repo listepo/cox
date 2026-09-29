@@ -1,7 +1,7 @@
-// Notification actions without posting one (T37.27): a note's content carries what its
-// action needs, each action becomes its intent, and approving the recorded `approve-write`
-// fixture's note from the notification resumes the waiting turn. The menu bar's Allow and Deny
-// take the same route (T51.14).
+// Notification actions without posting one (T37.27, T37.44.15): a note's content carries what
+// its action needs, each action becomes its intent or the session it brings forward, and
+// approving the recorded `approve-write` fixture's note from the notification resumes the
+// waiting turn. The menu bar's Allow and Deny take the same route (T51.14).
 
 import CoxClient
 import Foundation
@@ -26,7 +26,7 @@ private func routed(_ note: HostNote, _ action: String, text: String? = nil) -> 
     action: action, userInfo: NotificationActions.content(for: note).userInfo, text: text)
 }
 
-@Test func anApprovalOffersAllowAndDenyAndEachBecomesItsDecision() {
+@Test func anApprovalOffersAllowOnceDenyAndOpenAndEachMapsToItsIntent() {
   let note = HostNote(session: "s1", kind: .approval, text: "bash git push", badge: 1, call: "c1")
   let content = NotificationActions.content(for: note)
   #expect(content.categoryIdentifier == NotificationActions.approval)
@@ -39,6 +39,24 @@ private func routed(_ note: HostNote, _ action: String, text: String? = nil) -> 
   #expect(
     routed(note, NotificationActions.deny)
       == NotificationRoute(session: "s1", intent: .approve(call: "c1", decision: .deniedByUser)))
+  // Open answers nothing: it brings the session forward, as a click on the notification does.
+  #expect(routed(note, NotificationActions.open) == nil)
+  let userInfo = NotificationActions.content(for: note).userInfo
+  #expect(NotificationActions.shows(action: NotificationActions.open, userInfo: userInfo) == "s1")
+  #expect(
+    NotificationActions.shows(action: UNNotificationDefaultActionIdentifier, userInfo: userInfo)
+      == "s1")
+  #expect(NotificationActions.shows(action: NotificationActions.allow, userInfo: userInfo) == nil)
+  #expect(
+    NotificationActions.shows(action: UNNotificationDismissActionIdentifier, userInfo: userInfo)
+      == nil)
+}
+
+@Test func allowOnceNeverAllowsForTheSession() {
+  let note = HostNote(session: "s1", kind: .approval, text: "bash git push", badge: 1, call: "c1")
+  #expect(
+    routed(note, NotificationActions.allow)?.intent
+      != .approve(call: "c1", decision: .allowForSession))
 }
 
 @Test func allowFromTheMenuBarSendsTheNotificationPathsIntent() {
@@ -76,9 +94,13 @@ private func routed(_ note: HostNote, _ action: String, text: String? = nil) -> 
 @Test func theCategoriesCarryTheActionsContentNames() {
   let byID = Dictionary(
     uniqueKeysWithValues: NotificationActions.categories.map { ($0.identifier, $0) })
+  let approval = byID[NotificationActions.approval]?.actions
   #expect(
-    byID[NotificationActions.approval]?.actions.map(\.identifier)
-      == [NotificationActions.allow, NotificationActions.deny])
+    approval?.map(\.identifier)
+      == [NotificationActions.allow, NotificationActions.deny, NotificationActions.open])
+  // Mockup 23's buttons; Open alone brings the app forward.
+  #expect(approval?.map(\.title) == ["Allow once", "Deny", "Open"])
+  #expect(approval?.map { $0.options.contains(.foreground) } == [false, false, true])
   let answer = byID[NotificationActions.question]?.actions.first
   #expect(answer?.identifier == NotificationActions.answer)
   #expect(answer is UNTextInputNotificationAction)
