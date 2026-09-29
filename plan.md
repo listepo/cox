@@ -34,9 +34,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.33 | todo | P1 | 3 | 0% | |
 | T39.7 | todo | P3 | 2 | 0% | |
 | T43.6 | todo | P3 | 3 | 0% | |
-| T51.23 | in progress | P3 | 2 | 95% | Claude Code / opus-5.5 |
-| T52.23.1 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
-| T52.23.2 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
+| T51.23 | todo | P3 | 2 | 95% | |
+| T52.23.1 | todo | P3 | 3 | 40% | |
+| T52.23.2 | todo | P3 | 2 | 0% | |
 | T53.5 | todo | P3 | 3 | 0% | |
 | T53.6 | todo | P3 | 2 | 0% | |
 | T53.7 | todo | P3 | 2 | 0% | |
@@ -67,20 +67,20 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T58.2 | todo | P2 | 2 | 0% | |
 | T58.3 | todo | P1 | 3 | 0% | |
 | T58.4 | todo | P1 | 3 | 10% | |
-| T58.4.4 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
-| T58.4.5 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
-| T58.4.6 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
-| T58.4.14 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
-| T58.4.15 | in progress | P2 | 1 | 0% | Claude Code / opus-5.5 |
-| T58.4.20 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
-| T58.4.21 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
-| T58.4.22 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
-| T58.4.23 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
-| T58.4.24 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
-| T58.4.25 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
-| T58.4.26 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
-| T58.4.27 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
-| T58.4.28 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
+| T58.4.4 | todo | P1 | 3 | 90% | |
+| T58.4.5 | todo | P1 | 3 | 90% | |
+| T58.4.6 | todo | P1 | 2 | 90% | |
+| T58.4.14 | todo | P1 | 1 | 90% | |
+| T58.4.15 | todo | P2 | 1 | 90% | |
+| T58.4.20 | todo | P1 | 2 | 95% | |
+| T58.4.21 | todo | P1 | 1 | 95% | |
+| T58.4.22 | todo | P1 | 1 | 95% | |
+| T58.4.23 | todo | P1 | 2 | 95% | |
+| T58.4.24 | todo | P1 | 2 | 95% | |
+| T58.4.25 | todo | P1 | 1 | 95% | |
+| T58.4.26 | todo | P2 | 2 | 80% | |
+| T58.4.27 | todo | P2 | 2 | 0% | |
+| T58.4.28 | todo | P2 | 2 | 0% | |
 | T58.5 | todo | P2 | 3 | 0% | |
 | T58.6 | todo | P2 | 3 | 0% | |
 | T58.7 | todo | P2 | 4 | 0% | |

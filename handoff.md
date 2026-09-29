@@ -22,9 +22,20 @@ State as of 2026-09-29. Read `AGENTS.md`, then `plan.md` (§0 decisions, the tas
 
 ## Open work
 
-### Running when this was written (Claude Code / opus-5.5)
+### Left mid-flight by the previous agent (all released to `todo`, free to claim)
 
-T58.4.4–6, T58.4.14–15 (sidebar filter, short model names), T58.4.20–25 (inspector and tasks logic into `cox-app`), T58.4.26–28 (Markdown writer into `cox-render`), T52.23.1–2 (plugin `tool:`/`item:` renderers). If a row still says `in progress` with that agent and no commits land for a long time, ask the creator before taking it over.
+Each branch below is pushed to `origin`; its worktree was removed. Make a fresh worktree (`wt.sh new <id>`), then `git merge origin/<branch>` into it (or merge the branch into `p37-desktop` directly when it only needs verifying).
+
+| Cards | Branch | State | What is left |
+| --- | --- | --- | --- |
+| T58.4.20–25 | already merged into `p37-desktop` | code done; the agent's own checks passed on its branch (`nextest -p cox-app -p cox-ffi` 208/208, CoxModel 128, CoxCore 20, CoxTranscriptText 39, CoxTranscript 55, `just desktop-app` ok) | run the post-merge checks on `p37-desktop` (nextest `-p cox-app -p cox-ffi`, clippy, `swift test` in CoxModel, CoxCore, CoxTranscriptText, CoxTranscript, `just desktop-app`), then close all six using the reports at the end of this file |
+| T58.4.4–6, T58.4.14–15 | `t58.4.4` | one commit per card, all five committed (last `fac0c9de` T58.4.5); the agent was stopped before its final check run | merge into `p37-desktop`, run the cards' Checks and the checks above, close |
+| T58.4.26 | `t58.4.26` | committed (`5e27b973`), not verified | verify T58.4.26's Check; then do T58.4.27 and T58.4.28 (Swift uses the core's Markdown writer) |
+| T52.23.1 | `t52.23.1` | one WIP commit, stopped mid-edit (`cox-app` changes, `patch.rs`, `plugin_ui.rs`, `timeline.rs`, `cox-ffi/src/types.rs`); unbuilt | finish the card from its plan.md text, then T52.23.2 |
+
+Known flaky under load (pass alone): `terminal_close_kills_the_process_group`, CoxTranscript `PinnedDecisionTests`.
+
+A warm build tree for verification is `_worktrees/cox-p51` (branch `p51-roadmap`, locked by the previous agent): the creator may hand it over; otherwise build in your own worktree.
 
 ### Waiting on the creator
 
@@ -50,3 +61,66 @@ Benchmarks and measurement cards (T37.33, T43.6) — the creator asked not to ta
 - UI: tokens and components from CoxUI; a visual change re-records the affected snapshots and, for a mockup, re-renders it (`desktop/design/mockups`). Figma writes go only to file `KA9a0R7n6P0QbwDn92e167`.
 - Never kill the app by name (`pkill -f Cox` hits other sessions); quit it by PID.
 - Anything that needs the creator's decision: stop and ask, do not guess.
+
+## Close reports for T58.4.20–T58.4.24 (merged, post-merge check pending)
+
+### T58.4.20
+
+Result: `cox-app/src/info.rs` `Fact { label, value: Option<String>, detail }`; `Info.facts` (Session, Folder, Worktree, Branch detail — `detached` without a branch —, Rollout; home as `~`) and `config_facts` (`N key(s)` per layer with its file as a detail row); `build` takes `home` (`live.rs` passes `cox_config::load::home_dir()`). `changes.rs`: `worktree_facts` (Branch; Base only with both base and commit) and `turns: Vec<TurnFiles>` (a file in the turn that changed it last, oldest first). `cox-ffi` declares the records. Commit 9de35b37.
+
+Deviations: the worktree size stays in each client (locale byte formatting); `lib.rs`, `live.rs` touched for the call change.
+
+Check (2026-09-29): `nextest -p cox-app info changes` 10 passed incl. `the_home_directory_reads_as_tilde`, `base_needs_both_base_and_commit`, `a_file_sits_in_the_turn_that_changed_it_last`, `a_layer_lists_its_key_count_and_its_file_under_it`; `-p cox-app -p cox-ffi` 207/207; clippy, fmt clean. After the merge into p37-desktop: see T58.4.25's Check.
+
+Not done: nothing.
+
+### T58.4.21
+
+Result: `CoxClient.Fact`, `Info.facts`/`configFacts` converted in `InfoConvert.swift`; `InfoTabState` copies the facts; its `home:` parameter and the Swift `~`/key-count logic removed. Commit dedb8c4d.
+
+Deviations: ConvertTests' Changes record got `worktreeFacts: [], turns: []` here so the commit compiles.
+
+Check (2026-09-29): CoxModel `InfoTabTests` 2 passed; CoxCore ConvertTests 10 passed incl. `anInfoRecordCarriesItsFacts`. After the merge into p37-desktop: see T58.4.25's Check.
+
+Not done: nothing.
+
+### T58.4.22
+
+Result: `Changes.worktreeFacts`, `turns` (`TurnFiles`) converted in `ChangesConvert.swift`; `ChangesTabState` lists the core's facts and appends the localized Size itself. Commit 45b5176c.
+
+Deviations: none.
+
+Check (2026-09-29): CoxModel `ChangesTabTests|InfoTabTests` 5 passed; CoxCore ConvertTests passed. After the merge into p37-desktop: see T58.4.25's Check.
+
+Not done: nothing.
+
+### T58.4.23
+
+Result: `patch::TaskState { Running, Succeeded, Failed }` with `TaskState::ended` (no exit code or 0 is success); `BlockKind::Task.state` set by the timeline on create and completion; re-exported and declared in `cox-ffi`; `done` and `exit_code` kept. Commit 9d091bbf.
+
+Deviations: `crates/cox-app/tests/snapshots/scenarios__subagent_explore.snap` re-recorded (`state` on its two task lines).
+
+Check (2026-09-29): `a_subagent_without_an_exit_code_succeeded` passes; `nextest -p cox-app -p cox-ffi` 208/208 (`terminal_close_kills_the_process_group` failed once under load, passes alone and on re-run); clippy, fmt clean. After the merge into p37-desktop: see T58.4.25's Check.
+
+Not done: nothing.
+
+### T58.4.24
+
+Result: `BlockKind.task` carries `state: TaskState`; fixture decoding reads `"state"`; the conversion is in `TaskConvert.swift`. Commits 956594ab, 68823482.
+
+Deviations: `Convert.swift` would pass SwiftLint's 400 lines, so the conversion went to `TaskConvert.swift`; positional `.task(...)` patterns in `TaskRows.swift`, `TranscriptCard.swift`, `MarkdownCopy.swift` and two tests updated. No fixture JSON re-recorded — none of the four fixture scenarios has a task block; inline tests `aTaskBlockDecodesTheCoresState` and `aTaskStateConvertsCaseForCase` added instead.
+
+Check (2026-09-29): CoxModel SessionStore/TaskRows/decoding 11 passed; CoxCore ConvertTests 11 passed. After the merge into p37-desktop: see T58.4.25's Check.
+
+Not done: fixture re-record (no task block in any fixture).
+
+
+### T58.4.25
+
+Result: `SessionStore.tasks` copies the block state (`TaskRow.State` is a typealias of `TaskState`); `TranscriptCard` maps it to the header state; `ReviewState` shows `changes.turns` (the Swift grouping removed); a shared `ChangesTabState.File.init(_ ChangedFile)` builds rows for the Changes tab and Review. Commit 1ff30259.
+
+Deviations: `ChangesTabState.swift` touched for that shared helper.
+
+Check (2026-09-29): CoxModel `TaskRowsTests|ReviewStateTests` 4 passed; CoxTranscript `TranscriptSnapshotTests|SessionReviewStateTests` 3 passed; SwiftLint/swift-format clean on changed files except two findings already on HEAD (`TranscriptCard.swift` long `isWholeSecond` line, `DurationFormattingTests.swift:21` identifier_name).
+
+Not done: nothing.
