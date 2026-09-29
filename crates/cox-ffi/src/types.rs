@@ -17,6 +17,7 @@ use cox_app::best_of::{
     BestOf, BestOfId, BestOfRequest, Candidate, CandidateState, CandidateView, Launch, Launched,
     Picked,
 };
+use cox_app::complete::{Splice, TypedToken};
 use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange};
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind, TextLine};
 use cox_app::onboarding::{CheckId, CheckRow, CheckStatus};
@@ -965,6 +966,19 @@ pub enum SettingKind {
 pub struct Completion {
     pub insert: String,
     pub detail: String,
+}
+
+#[uniffi::remote(Record)]
+pub struct TypedToken {
+    pub start: u32,
+    pub end: u32,
+    pub text: String,
+}
+
+#[uniffi::remote(Record)]
+pub struct Splice {
+    pub text: String,
+    pub caret: u32,
 }
 
 #[uniffi::remote(Enum)]

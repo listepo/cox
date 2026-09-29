@@ -134,6 +134,34 @@ pub fn review_message(comments: Vec<cox_app::review::LineComment>) -> Option<Str
     cox_app::review::message(&comments)
 }
 
+/// The composer's token at `caret` that asks for rows, in UTF-16 units
+/// (T58.4.16).
+#[uniffi::export]
+pub fn typed_token(
+    text: String,
+    caret: u32,
+    selection: bool,
+    shell: bool,
+) -> Option<cox_app::complete::TypedToken> {
+    cox_app::complete::typed_token(&text, caret, selection, shell)
+}
+
+/// `insert` in place of `token`, then one space, and the caret after it.
+#[uniffi::export]
+pub fn pick(
+    text: String,
+    token: cox_app::complete::TypedToken,
+    insert: String,
+) -> Option<cox_app::complete::Splice> {
+    cox_app::complete::pick(&text, &token, &insert)
+}
+
+/// The picked `@` files still in `text`.
+#[uniffi::export]
+pub fn mentions(text: String, picked: Vec<String>) -> Vec<String> {
+    cox_app::complete::mentions(&text, picked)
+}
+
 /// The command palette's rows for a session without a completer of its own
 /// (a remote one): `items` ranked for `query`, at most `limit` of each kind
 /// (T37.44.13).
