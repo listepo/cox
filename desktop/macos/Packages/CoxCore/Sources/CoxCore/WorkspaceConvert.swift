@@ -1,10 +1,9 @@
 // The sidebar's workspace over cox-ffi (DT§5.1, DT§4.3): `App.projects`, `sessions`,
-// `activity` and the change wait as CoxClient's values, the toolbar's model catalog and the
-// footer's usable providers (T37.22.6, A110), the launch's login-shell environment (DT§4.8) and the
-// browser pane's address check (T51.10), and the row conversions a remote host's list shares
-// (T52.21). Separate
-// from `LiveCoreClient.swift` like the other conversions, so that file stays the list of calls
-// into Rust for one session.
+// `activity` and the change wait as CoxClient's values, the toolbar's model catalog and menu
+// (T58.4.12) and the footer's usable providers (T37.22.6, A110), the launch's login-shell
+// environment (DT§4.8) and the browser pane's address check (T51.10), and the row conversions a
+// remote host's list shares (T52.21). Separate from `LiveCoreClient.swift` like the other
+// conversions, so that file stays the list of calls into Rust for one session.
 
 import CoxClient
 import CoxFFIBindings
@@ -82,6 +81,16 @@ extension LiveCoreClient: ModelsClient {
         tier: CoxClient.Tier($0.tier), provider: $0.provider, id: $0.id,
         displayName: $0.displayName, efforts: $0.efforts.map { CoxClient.Effort($0) },
         contextWindow: $0.contextWindow)
+    }
+  }
+
+  public func modelMenu(cwd: String) throws -> [CoxClient.ModelSection] {
+    try app.modelMenu(cwd: cwd).map { section in
+      CoxClient.ModelSection(
+        tier: CoxClient.Tier(section.tier), title: section.title,
+        models: section.models.map {
+          CoxClient.MenuModel(id: $0.id, displayName: $0.displayName, efforts: $0.efforts)
+        })
     }
   }
 
