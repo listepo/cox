@@ -77,6 +77,10 @@ public struct TranscriptView<Approval: View>: NSViewRepresentable {
     text.drawsBackground = false
     let scroll = text.inScrollView(frame: .zero)
     scroll.drawsBackground = false
+    // The pane sits below the toolbar, yet AppKit would pad it by the full-size content's title
+    // bar overlap, and `TailFollow`'s scroll to the end, which counts no content inset, would
+    // then hide the first line's top under that padding.
+    scroll.automaticallyAdjustsContentInsets = false
     text.load(store.blocks.values)
     context.coordinator.follow(store, into: text)
     return scroll
@@ -182,6 +186,7 @@ extension TranscriptStyle {
     lineHeight: Double = FontToken.transcript.lineHeight
   ) -> TranscriptStyle {
     let secondary = TextColour.secondary.nsColor
+    let bubble = TranscriptStyle.Bubble.cox(appearance)
     return TranscriptStyle(
       body: FontToken.transcript.nsFont(scale: textScale),
       code: FontToken.monoCode.nsFont(scale: textScale),
@@ -194,8 +199,10 @@ extension TranscriptStyle {
         .dim: secondary, .tool: secondary, .diffHunk: secondary,
         .accent: TextColour.accent.nsColor, .border: TextColour.tertiary.nsColor,
       ],
-      blockSpacing: Space.l, inset: NSSize(width: Space.xl, height: Space.xl),
-      bubble: .cox(appearance),
+      // A prompt's bubble reaches its padding above the text; the mockup keeps `Space.xxl`
+      // clear between the pane's top edge and the first bubble.
+      blockSpacing: Space.l,
+      inset: NSSize(width: Space.xl, height: Space.xxl + bubble.padding.height), bubble: bubble,
       thought: .init(
         font: NSFontManager.shared.convert(
           FontToken.caption.nsFont(scale: textScale), toHaveTrait: .italicFontMask),
@@ -205,7 +212,8 @@ extension TranscriptStyle {
       indent: Space.xxl,
       lineHeights: .init(
         body: lineHeight, code: FontToken.monoCode.lineHeight,
-        heading: FontToken.transcriptH3.lineHeight, thought: FontToken.caption.lineHeight))
+        heading: FontToken.transcriptH3.lineHeight, thought: FontToken.caption.lineHeight),
+      readingWidth: Size.readingWidth)
   }
 }
 

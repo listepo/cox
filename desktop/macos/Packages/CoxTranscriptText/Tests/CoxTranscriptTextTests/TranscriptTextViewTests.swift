@@ -106,3 +106,24 @@ func everyFixtureBlockMapsToItsRangeAndBack(url: URL) throws {
   #expect(BlockRanges().index(at: 0) == nil)
   #expect(BlockRanges().index(at: -1) == nil)
 }
+
+@MainActor
+@Test func linesStayInTheReadingColumnCentredAsTheViewWidens() throws {
+  let edge: CGFloat = 16
+  let column: CGFloat = 760
+  let (tall, wide): (CGFloat, CGFloat) = (400, 1000)
+  var style = TranscriptStyle.system
+  (style.inset, style.readingWidth) = (NSSize(width: edge, height: edge), column)
+  let view = TranscriptTextView.make(style: style)
+  let scroll = view.inScrollView(
+    frame: NSRect(origin: .zero, size: NSSize(width: wide, height: tall)))
+  let padding = try #require(view.textContainer?.lineFragmentPadding)
+  let lines = { (view.textContainer?.size.width ?? 0) - 2 * padding }
+  #expect(lines() == column)
+  #expect(view.textContainerInset == NSSize(width: (wide - column) / 2 - padding, height: edge))
+  scroll.setFrameSize(NSSize(width: wide * 2, height: tall))
+  #expect(lines() == column)
+  // Narrower than the column plus the insets, the lines take what the insets leave.
+  scroll.setFrameSize(NSSize(width: column, height: tall))
+  #expect(view.textContainerInset.width == edge)
+}

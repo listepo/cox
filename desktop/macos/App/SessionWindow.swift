@@ -47,7 +47,7 @@ struct SessionWindow: View {
           await model.loadLoginEnv()
           isEnvLoaded = true
         }
-      } else if !onboarded && !model.launch.isFixture {
+      } else if isFirstRun {
         FirstRun(launch: model.launch) { onboarded = true }
       } else {
         main
@@ -58,7 +58,8 @@ struct SessionWindow: View {
       screen.appearance.blurFraction, tint: screen.appearance.tint,
       in: RoundedRectangle(cornerRadius: Radius.window, style: .continuous)
     )
-    .seeThroughWindow()
+    // First run has no sidebar: its buttons sit on its window pane's top row.
+    .seeThroughWindow(paneTop: isEnvLoaded && isFirstRun ? 0 : Size.paneGap)
     .task { await readSettings() }
     .onChange(of: model.settings?.view) {
       if !appearanceWrites.isPending { readAppearance() }
@@ -93,6 +94,8 @@ struct SessionWindow: View {
   }
 
   private var showing: OpenedSession? { current.flatMap { opened[$0] } }
+
+  private var isFirstRun: Bool { !onboarded && !model.launch.isFixture }
 
   private var isRefused: Binding<Bool> {
     Binding(get: { refused != nil }, set: { if !$0 { refused = nil } })
