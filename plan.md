@@ -33,7 +33,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
 | T39.7 | todo | P3 | 2 | 0% | |
-| T41.10 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T43.6 | todo | P3 | 3 | 0% | |
 | T51.2 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T51.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
@@ -1240,12 +1239,6 @@ Rationale in §6 A74.
 Creator's decision (2026-09-28): built ONCE at session start; ranked by recent git changes, not prompts; in the byte-stable cache prefix; refreshed only by an explicit `/repomap refresh` (a deliberate, announced prefix change) or at compaction (which already restarts the cache); never rebuilt automatically mid-session.
 
 Prerequisite finding: system[2] today is the stub `INSTRUCTIONS` constant (`context.rs`, "stub until T7.1") and the core passes an empty skills index; instruction files never reach the request. T43.3 adds the first real system[2] content path; open question 8 asks whether instruction files/skills get their own card on the same path.
-
-### T41.10. `diagnostics` waits for a fresh server instead of reporting none
-
-Depends: — · Size: ~80 · Files: `crates/cox-tools/src/lsp/*` (the client), its tests
-Goal: T41.9's live run (research.md §4.8) found that the first `diagnostics` call on a freshly started rust-analyzer returns "no diagnostics" for a file with a type error: cox pulls once before the server has loaded the crate, does not advertise `window.workDoneProgress` (so the server sends no progress to wait on), and answers `workspace/diagnostic/refresh` with "method not found" instead of pulling again. Fix: advertise the capability and wait (bounded) for the server's indexing progress to end before the first pull, and re-pull on `workspace/diagnostic/refresh`; a server that never reports progress keeps today's behaviour.
-Check: a fake-LSP test where the server answers the first pull empty, then sends progress end (or a refresh), and `diagnostics` returns the error; `cargo nextest run -p cox --test lsp --run-ignored only` shows the first call already reports the E0308.
 
 ### T43.6. Bench the map on and off
 

@@ -86,4 +86,3 @@
 - T56.9. Docs: cloud agents for users and in EA
 - T56.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T51.22. CoxUI draws glass from the `glass.*` tokens
-- T41.10. `diagnostics` waits for a fresh server instead of reporting none
