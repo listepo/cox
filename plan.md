@@ -69,15 +69,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T58.2 | todo | P2 | 2 | 0% | |
 | T58.3 | todo | P1 | 3 | 0% | |
 | T58.4 | todo | P1 | 3 | 10% | |
-| T58.4.1 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
-| T58.4.2 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
-| T58.4.3 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
 | T58.4.4 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T58.4.5 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T58.4.6 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
-| T58.4.7 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
-| T58.4.12 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
-| T58.4.13 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T58.4.14 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
 | T58.4.15 | in progress | P2 | 1 | 0% | Claude Code / opus-5.5 |
 | T58.4.16 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
@@ -1807,24 +1801,6 @@ M2/M3, not carded (A127 (2) keeps P58 to M1; each moves when a Windows M2/M3 is 
 - `CoxModel/AgentPicker.swift` fallback to cox, `[AgentChoice].label(of:)`, `ToolbarState`'s `· ACP` chip and `—` cost (T52.7, mockup 27).
 - `SessionStore.pluginViews` and the slot keeping (T52.17).
 
-#### T58.4.1 Inbox and MCP login words in `cox-app`
-
-Depends: — · Size: ~140 · Files: `crates/cox-app/src/inbox.rs`, `crates/cox-app/src/mcp_login.rs`, `crates/cox-ffi/src/types.rs`
-Goal: an `InboxItem` carries `title` (the notification line: `tool subject`, the tool alone, the question, the error, the task label), `subtitle` (`agent · approval waiting` … `task failed`, `expired`) and `status` (waiting, idle, error), and an MCP server's status carries its `detail` line and its `action` (log in, log out, none), so no client builds them (audit items 1–3). The `#[uniffi::remote]` records in `types.rs` gain the same fields.
-Check: `mise exec -- cargo nextest run -p cox-app inbox mcp_login` passes `an_approval_names_its_tool_and_subject`, `an_expired_item_reads_expired`, `a_logged_out_server_offers_log_in`; `mise exec -- cargo nextest run -p cox-ffi` passes.
-
-#### T58.4.2 Inbox rows and notifications read the core's words
-
-Depends: T58.4.1 · Size: ~80 · Files: `CoxModel/Sources/CoxClient/Inbox.swift`, `CoxCore/Sources/CoxCore/HostBridge.swift`, `CoxModel/Sources/CoxModel/InboxStore.swift`
-Goal: `InboxItem` gains the three fields, `HostBridge` converts them, `HostNote.init(_:badge:)` and `InboxRow.init` copy them instead of choosing words; the fixture inbox JSON is re-recorded with the fields. `InboxStoreTests`' word cases move to T58.4.1's tests.
-Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter "InboxStoreTests|FixtureInboxTests"`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter HostBridgeTests`.
-
-#### T58.4.3 MCP login rows read the core's words
-
-Depends: T58.4.1 · Size: ~50 · Files: `CoxModel/Sources/CoxClient/McpLogin.swift`, `CoxCore/Sources/CoxCore/SettingsConvert.swift`, `CoxModel/Sources/CoxModel/McpLogins.swift`
-Goal: `McpServer` gains `detail` and `action`; `SettingsStore.logins` shows them as they arrive.
-Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter McpLoginTests`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter SettingsTests`.
-
 #### T58.4.4 Sidebar sections and rows in `cox-app`
 
 Depends: T58.4.1 · Size: ~190 · Files: `crates/cox-app/src/workspace.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`
@@ -1842,24 +1818,6 @@ Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter Sideb
 Depends: — · Size: ~100 · Files: `crates/cox-app/src/status.rs`, `crates/cox-app/src/meter_text.rs`, `crates/cox-ffi/src/types.rs`
 Goal: `model_names` adds a `short_name` alongside each model's existing name, dropping the `Claude ` prefix and a trailing ` (latest)` (A111, A116) — a new field, not a change to `Status.model_name` or `ModelChoice.display_name`, which keep their current (full) meaning so the TUI and ACP do not change (A129, audit item 8); the meter's text gains `context_percent` (`42%`), `context_fill` (the parts' shares summed, capped at 1) and `cost` (audit item 9).
 Check: `mise exec -- cargo nextest run -p cox-app status meter_text` passes `a_short_name_drops_the_vendor_and_latest`, `context_fill_is_capped_at_one`; `mise exec -- cargo nextest run -p cox-ffi` passes.
-
-#### T58.4.7 The model menu in `cox-app`
-
-Depends: T58.4.6 · Size: ~130 · Files: `crates/cox-app/src/models.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`
-Goal: `App::model_menu(cwd)` returns one section per tier in first-listed order with its title, each model once across tiers with its efforts line joined by ` · ` (audit item 10); which model runs is left to the client to mark. One-expression forwarder.
-Check: `mise exec -- cargo nextest run -p cox-app models` passes `a_model_is_listed_once_across_tiers`, `tiers_keep_their_first_listed_order`; `mise exec -- cargo nextest run -p cox-ffi` passes.
-
-#### T58.4.12 Model menu sections reach Swift
-
-Depends: T58.4.7 · Size: ~60 · Files: `CoxModel/Sources/CoxClient/Models.swift`, `CoxCore/Sources/CoxCore/WorkspaceConvert.swift`
-Goal: `ModelsClient.modelMenu(cwd:)` and its section value, converted from `App::model_menu`; the fixture client builds one section per tier.
-Check: `swift test --package-path desktop/macos/Packages/CoxModel`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter ConvertTests`.
-
-#### T58.4.13 The model popover shows the core's sections
-
-Depends: T58.4.12 · Size: ~80 · Files: `CoxModel/Sources/CoxModel/ModelMenu.swift`, `desktop/macos/App/ShellState.swift`, `desktop/macos/App/SessionWindow.swift`
-Goal: `ModelMenu.init` takes the core's sections and marks the running model only; the window reads `modelMenu(cwd:)` where it read `models(cwd:)`.
-Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter ModelMenuTests`; `just desktop-app` succeeds.
 
 #### T58.4.14 Short model names from the core
 
