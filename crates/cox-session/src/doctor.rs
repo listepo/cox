@@ -263,7 +263,11 @@ mod tests {
         let stored = |section: &str| (section == "anthropic").then(|| "sk-test".to_string());
         assert_eq!(check_api_keys_in(&config, &stored).status, "ok");
         let result = check_api_keys_in(&config, &|_| None);
-        assert_eq!(result.status, "fail", "{}", result.detail);
+        assert_eq!(
+            result.status,
+            "fail",
+            "expected fail status when no stored key is available"
+        );
         assert!(result.detail.contains("cox/anthropic"), "{}", result.detail);
     }
 }
