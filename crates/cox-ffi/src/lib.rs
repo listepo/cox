@@ -142,6 +142,17 @@ pub fn palette(query: String, items: Vec<PaletteItem>, limit: u32) -> Vec<Palett
     cox_app::palette::rank(&query, items, usize::try_from(limit).unwrap_or(usize::MAX))
 }
 
+/// The provider key to store, trimmed, or why not (T58.4.8): `providers`
+/// is the view's.
+#[uniffi::export]
+pub fn check_key(
+    providers: Vec<String>,
+    provider: String,
+    secret: String,
+) -> Result<String, cox_app::KeyError> {
+    cox_app::settings_fields::check_key(&providers, &provider, &secret)
+}
+
 /// T51.10: the browser pane's typed address as the URL to load, or `None`
 /// when it is not an `http`/`https` page; `browser_open`'s rule.
 #[uniffi::export]

@@ -1,6 +1,6 @@
 ---
 source: crates/cox-app/src/settings.rs
-expression: "rows(&view,\n&[\"tiers.code.model\", \"budget.session_usd\", \"desktop.appearance.material\",\n\"desktop.appearance.opacity\", \"desktop.appearance.tint\", \"core.max_turns\",\n\"core.workspace_roots\",])"
+expression: shown
 ---
 [
   {
@@ -11,7 +11,12 @@ expression: "rows(&view,\n&[\"tiers.code.model\", \"budget.session_usd\", \"desk
     "kind": {
       "type": "text"
     },
-    "description": "The model id sent in the request."
+    "description": "The model id sent in the request.",
+    "group": "models",
+    "title": "Model",
+    "table": "tiers.code",
+    "provider": null,
+    "detail": "Set in <tmp>/project/.cox/config.toml"
   },
   {
     "key": "budget.session_usd",
@@ -23,7 +28,12 @@ expression: "rows(&view,\n&[\"tiers.code.model\", \"budget.session_usd\", \"desk
       "min": null,
       "max": null
     },
-    "description": "Session spend cap, in USD."
+    "description": "Session spend cap, in USD.",
+    "group": "budget",
+    "title": "Session usd",
+    "table": "budget",
+    "provider": null,
+    "detail": "Session spend cap, in USD."
   },
   {
     "key": "desktop.appearance.material",
@@ -38,7 +48,12 @@ expression: "rows(&view,\n&[\"tiers.code.model\", \"budget.session_usd\", \"desk
         "solid"
       ]
     },
-    "description": "`frosted` | `glossy` | `solid`."
+    "description": "`frosted` | `glossy` | `solid`.",
+    "group": "appearance",
+    "title": "Material",
+    "table": "desktop.appearance",
+    "provider": null,
+    "detail": "`frosted` | `glossy` | `solid`."
   },
   {
     "key": "desktop.appearance.opacity",
@@ -50,7 +65,12 @@ expression: "rows(&view,\n&[\"tiers.code.model\", \"budget.session_usd\", \"desk
       "min": 0.0,
       "max": 1.0
     },
-    "description": "Window and pane background opacity, 0 (clear) to 1 (opaque). Text\npanels never drop below `material.readableFloor`, whatever this is."
+    "description": "Window and pane background opacity, 0 (clear) to 1 (opaque). Text\npanels never drop below `material.readableFloor`, whatever this is.",
+    "group": "appearance",
+    "title": "Opacity",
+    "table": "desktop.appearance",
+    "provider": null,
+    "detail": "Window and pane background opacity, 0 (clear) to 1 (opaque). Text\npanels never drop below `material.readableFloor`, whatever this is."
   },
   {
     "key": "desktop.appearance.tint",
@@ -60,7 +80,12 @@ expression: "rows(&view,\n&[\"tiers.code.model\", \"budget.session_usd\", \"desk
     "kind": {
       "type": "toggle"
     },
-    "description": "Tint the glass from the wallpaper."
+    "description": "Tint the glass from the wallpaper.",
+    "group": "appearance",
+    "title": "Tint",
+    "table": "desktop.appearance",
+    "provider": null,
+    "detail": "Tint the glass from the wallpaper."
   },
   {
     "key": "core.max_turns",
@@ -72,7 +97,12 @@ expression: "rows(&view,\n&[\"tiers.code.model\", \"budget.session_usd\", \"desk
       "min": 0.0,
       "max": null
     },
-    "description": "`core.max_turns`: provider calls allowed per `UserTurn`."
+    "description": "`core.max_turns`: provider calls allowed per `UserTurn`.",
+    "group": "general",
+    "title": "Max turns",
+    "table": "core",
+    "provider": null,
+    "detail": "`core.max_turns`: provider calls allowed per `UserTurn`."
   },
   {
     "key": "core.workspace_roots",
@@ -82,6 +112,11 @@ expression: "rows(&view,\n&[\"tiers.code.model\", \"budget.session_usd\", \"desk
     "kind": {
       "type": "list"
     },
-    "description": "`core.workspace_roots`: empty means \"git root of cwd, else cwd\";\n`--add-dir`/`--cwd` append to this."
+    "description": "`core.workspace_roots`: empty means \"git root of cwd, else cwd\";\n`--add-dir`/`--cwd` append to this.",
+    "group": "general",
+    "title": "Workspace roots",
+    "table": "core",
+    "provider": null,
+    "detail": "`core.workspace_roots`: empty means \"git root of cwd, else cwd\";\n`--add-dir`/`--cwd` append to this."
   }
 ]

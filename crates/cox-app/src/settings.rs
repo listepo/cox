@@ -16,6 +16,7 @@ use serde_json::Value;
 
 use crate::mcp_login::McpServer;
 use crate::permissions::{PermissionRule, SessionGrant};
+use crate::settings_fields::{self as fields, SettingsGroup};
 
 /// The layer a value came from, the badge beside each field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -88,6 +89,16 @@ pub struct Setting {
     pub editable: bool,
     pub kind: SettingKind,
     pub description: String,
+    /// The page it is on (DT§5.7).
+    pub group: SettingsGroup,
+    /// Its label, `base_url` → `Base url`.
+    pub title: String,
+    /// The box it sits in, its table; `None` for a rule list.
+    pub table: Option<String>,
+    /// For a `providers.<name>` table's key, the section whose key the box takes.
+    pub provider: Option<String>,
+    /// `Set in <project file>` for a project value, else the schema's help.
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -106,6 +117,8 @@ pub struct SettingsView {
     pub rules: Vec<PermissionRule>,
     /// The grants of the sessions open here; `App::settings` adds them.
     pub grants: Vec<SessionGrant>,
+    /// The provider sections a key can be stored for, sorted.
+    pub providers: Vec<String>,
 }
 
 /// A value the project's `.cox/config.toml` set and the guard list threw
@@ -119,6 +132,10 @@ pub struct Dropped {
     /// What is in effect instead.
     pub kept: String,
     pub reason: String,
+    /// The page it is listed on.
+    pub group: SettingsGroup,
+    /// `999 → 5`.
+    pub change: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -161,6 +178,7 @@ pub fn view_of(
     cwd: &Path,
 ) -> Result<SettingsView, SettingsError> {
     let schema = cox_config::schema()?;
+    let project_file = cox_config::load::project_config_path(cwd).filter(|p| p.exists());
     let settings: Vec<Setting> = cox_config::cmd::leaves(loaded)?
         .into_iter()
         .map(|(key, value)| {
@@ -168,6 +186,11 @@ pub fn view_of(
             let (kind, description) = describe(&schema, &key);
             Setting {
                 editable: matches!(layer, Layer::Default | Layer::User),
+                group: SettingsGroup::of(&key),
+                title: fields::title(&key),
+                table: fields::table(&key),
+                provider: fields::provider(&key),
+                detail: fields::detail(layer, &description, project_file.as_deref()),
                 key,
                 value,
                 layer,
@@ -179,15 +202,18 @@ pub fn view_of(
     Ok(SettingsView {
         rules: crate::permissions::rules(&settings),
         grants: Vec::new(),
+        providers: fields::providers(settings.iter().map(|s| s.key.as_str())),
         settings,
         user_file: user_file.to_path_buf(),
-        project_file: cox_config::load::project_config_path(cwd).filter(|p| p.exists()),
+        project_file,
         mcp: Vec::new(),
         dropped: loaded
             .violations
             .iter()
             .map(|v| Dropped {
                 key: v.key.to_string(),
+                group: SettingsGroup::of(v.key),
+                change: fields::change(&v.project_value, &v.reverted_to),
                 value: v.project_value.clone(),
                 kept: v.reverted_to.clone(),
                 reason: v.reason().to_string(),
@@ -342,10 +368,15 @@ mod tests {
 
     #[test]
     fn a_setting_the_project_overrides_is_read_only_with_its_layer() {
-        let (_dir, user, project) = scratch();
+        let (dir, user, project) = scratch();
         let view = view(&user, &project).expect("view");
         assert!(view.project_file.is_some());
-        insta::assert_json_snapshot!(rows(
+        // The scratch directory differs per run; the snapshot names it `<tmp>`.
+        let tmp = fs::canonicalize(dir.path())
+            .expect("canonical")
+            .display()
+            .to_string();
+        let shown: Vec<Setting> = rows(
             &view,
             &[
                 "tiers.code.model",
@@ -355,8 +386,15 @@ mod tests {
                 "desktop.appearance.tint",
                 "core.max_turns",
                 "core.workspace_roots",
-            ]
-        ));
+            ],
+        )
+        .into_iter()
+        .map(|row| Setting {
+            detail: row.detail.as_ref().map(|d| d.replace(&tmp, "<tmp>")),
+            ..row.clone()
+        })
+        .collect();
+        insta::assert_json_snapshot!(shown);
     }
 
     #[test]
@@ -364,6 +402,20 @@ mod tests {
         let (_dir, user, project) = scratch();
         let view = view(&user, &project).expect("view");
         insta::assert_json_snapshot!(view.dropped);
+    }
+
+    #[test]
+    fn a_dropped_value_says_what_replaced_it() {
+        let (_dir, user, project) = scratch();
+        let view = view(&user, &project).expect("view");
+        let budget = view
+            .dropped
+            .iter()
+            .find(|d| d.key == "budget.session_usd")
+            .expect("dropped");
+        assert_eq!(budget.group, SettingsGroup::Budget);
+        assert_eq!(budget.change, format!("{} → {}", budget.value, budget.kept));
+        assert!(budget.change.starts_with("999"), "{}", budget.change);
     }
 
     #[test]
