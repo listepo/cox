@@ -31,6 +31,12 @@ allow = [
     # can slip in and break the royalty-free option.
     "LicenseRef-cox-Royalty-Free",
 ]
+# whisper-rs and its -sys crate (cox-voice, P54) are Unlicense; the creator
+# approved them with that licence in A123. Allowed for these two crates only.
+exceptions = [
+    { allow = ["Unlicense"], crate = "whisper-rs" },
+    { allow = ["Unlicense"], crate = "whisper-rs-sys" },
+]
 
 [bans]
 multiple-versions = "warn"
