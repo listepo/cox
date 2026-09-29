@@ -4,7 +4,8 @@
 //! deferred tool through `tool_search` and calls it on a workspace file,
 //! the session starts the server under the same sandbox wrap as a stdio MCP
 //! server, and `cox run -p` kills it when the session ends. No network, no
-//! real language server.
+//! real language server — except the ignored T41.9 live check at the
+//! bottom, which runs the real `rust-analyzer` and only on request.
 
 #![cfg(unix)]
 
@@ -170,5 +171,120 @@ fn project_config_cannot_set_lsp_servers() {
     assert!(
         stderr.contains("project config ignores lsp.servers"),
         "{stderr}"
+    );
+}
+
+/// T41.9's scenario: a cold call, a wait long enough for rust-analyzer to
+/// load the crate, then a warm call.
+const LIVE_SCENARIO: &str = r#"
+[[turn]]
+text = "looking for a checker"
+tool_calls = [{ name = "tool_search", input = { query = "diagnostics" } }]
+[[turn]]
+text = "cold"
+tool_calls = [{ name = "diagnostics", input = { path = "src/a.rs" } }]
+[[turn]]
+text = "let it load"
+tool_calls = [{ name = "bash", input = { command = "sleep 20" } }]
+[[turn]]
+text = "warm"
+tool_calls = [{ name = "diagnostics", input = { path = "src/a.rs" } }]
+[[turn]]
+text = "done"
+"#;
+
+/// T41.9: the real `rust-analyzer`, started by the real binary under the
+/// real sandbox, reports a type error in a scratch crate. Proves the
+/// Seatbelt/bwrap profile lets it read `~/.cargo`, `~/.rustup` and the
+/// toolchain's sysroot; prints the backend, each call's latency, whether
+/// the server was asked (pull) or waited for (push), and when its first
+/// push and first `workspace/diagnostic/refresh` arrived, for research.md.
+/// `HOME` stays real: the rustup proxy finds the toolchain through it. The
+/// server's stdout is tee'd to a file so the exchange can be read back.
+#[test]
+#[ignore = "needs rust-analyzer on PATH; run with --run-ignored only (T41.9)"]
+fn real_rust_analyzer_reports_a_type_error_under_the_sandbox() {
+    let found = std::process::Command::new("rust-analyzer")
+        .arg("--version")
+        .output();
+    let Some(version) = found.ok().filter(|o| o.status.success()) else {
+        eprintln!("skipped: rust-analyzer is not on PATH");
+        return;
+    };
+    let dir = || tempfile::tempdir().expect("tempdir");
+    let (home, work) = (dir(), dir());
+    let w = work.path();
+    std::fs::create_dir_all(w.join("src")).expect("src");
+    std::fs::write(
+        w.join("Cargo.toml"),
+        "[package]\nname = \"scratch\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .expect("Cargo.toml");
+    std::fs::write(w.join("src/main.rs"), "mod a;\nfn main() {}\n").expect("main.rs");
+    std::fs::write(w.join("src/a.rs"), "pub fn f() -> u32 {\n    \"one\"\n}\n").expect("a.rs");
+    let scenario = home.path().join("scenario.toml");
+    std::fs::write(&scenario, LIVE_SCENARIO).expect("scenario");
+    let capture = w.join("lsp.out");
+    let config = format!(
+        "[permissions]\nallow = [\"Diagnostics\", \"Bash(sleep:*)\"]\n\n\
+         [lsp.servers.rust]\ncommand = \"/bin/sh\"\nargs = [\"-c\", {:?}]\n",
+        format!("rust-analyzer | tee {}", capture.display()),
+    );
+    std::fs::write(home.path().join("config.toml"), config).expect("config");
+
+    let start = Instant::now();
+    let child = std::process::Command::new(env!("CARGO_BIN_EXE_cox"))
+        .current_dir(w)
+        .env("COX_HOME", home.path())
+        .env("COX_PROVIDER", "scripted")
+        .env("COX_SCENARIO", &scenario)
+        .args(["--cwd", w.to_str().expect("utf-8 path")])
+        .args(["run", "-p", "check a.rs", "--output-format", "stream-json"])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn cox");
+    // Poll the capture for the first push and the first refresh request.
+    let watch = capture.clone();
+    let watcher = std::thread::spawn(move || {
+        let (mut push, mut refresh) = (None, None);
+        while start.elapsed() < Duration::from_secs(60) && (push.is_none() || refresh.is_none()) {
+            let raw = std::fs::read_to_string(&watch).unwrap_or_default();
+            if push.is_none() && raw.contains("textDocument/publishDiagnostics") {
+                push = Some(start.elapsed());
+            }
+            if refresh.is_none() && raw.contains("workspace/diagnostic/refresh") {
+                refresh = Some(start.elapsed());
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        (push, refresh)
+    });
+    let out = child.wait_with_output().expect("cox ran");
+    assert!(out.status.success(), "{out:?}");
+    let (push_at, refresh_at) = watcher.join().expect("watcher");
+
+    let events = json_lines(&String::from_utf8(out.stdout).expect("utf-8"));
+    let done: Vec<&Value> = events
+        .iter()
+        .filter(|e| e["type"] == "tool_call_done")
+        .collect();
+    assert_eq!(done.len(), 4, "search, cold, sleep, warm: {events:#?}");
+    let (cold, warm) = (&done[1]["result"], &done[3]["result"]);
+    let warm_text = warm["visible"].as_str().unwrap_or_default();
+    assert!(warm_text.contains("src/a.rs:2:5: error:"), "{warm_text}");
+    assert!(warm_text.contains("E0308"), "{warm_text}");
+
+    // cox pulls when `initialize` advertised `diagnosticProvider`.
+    let raw = std::fs::read_to_string(&capture).expect("the server's stdout was captured");
+    let pull = raw.contains("\"diagnosticProvider\":{");
+    eprintln!(
+        "T41.9: {} | backend {:?} | {} | cold call {} ms: {:?} | warm call {} ms | \
+         first push at {push_at:?}, first refresh at {refresh_at:?} after cox started\n{warm_text}",
+        String::from_utf8_lossy(&version.stdout).trim(),
+        cox_tools::sandbox::backend(cox_protocol::LinuxBackend::Auto),
+        if pull { "pull" } else { "push" },
+        cold["duration_ms"],
+        cold["visible"].as_str().unwrap_or_default(),
+        warm["duration_ms"],
     );
 }

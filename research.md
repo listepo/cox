@@ -763,6 +763,38 @@ names. The machine ran four other agents' builds (load average 19–25 on
 16 cores), and wasmtime compiles functions in parallel, so the start row is
 the noisiest; the call rows are within budget by an order of magnitude.
 
+### 4.8 `diagnostics` with a real rust-analyzer (T41.9, checked 2026-09-29)
+
+Source: the ignored test `real_rust_analyzer_reports_a_type_error_under_the_sandbox`
+in `crates/cox/tests/lsp.rs`, run with `mise exec -- cargo nextest run -p cox
+--test lsp --run-ignored only --no-capture`, plus two manual `cox run -p`
+runs against `COX_HOME=/tmp/cox-t41-9` with the server's stdin and stdout
+tee'd to files. The host is macOS, so the sandbox backend is Seatbelt; bwrap
+was not run. Server: `rust-analyzer 1.98.1 (48a229ce 2026-09-01)`, from the
+mise-pinned toolchain, found on `PATH` through the rustup proxy with the
+real `HOME`. Scratch crate: `src/main.rs` with `mod a;`, and `src/a.rs`
+returning `"one"` from a `-> u32` fn.
+
+| Measure | Result |
+| --- | --- |
+| Sandbox | no denial: rust-analyzer loaded the crate and its sysroot and ran `cargo check` (it wrote `Cargo.lock` and `target/flycheck0` in the workspace) |
+| Push or pull | pull: the `initialize` result carries `diagnosticProvider = {identifier: "rust-analyzer", interFileDependencies: true, workspaceDiagnostics: false}` |
+| First call, cold | 279 and 1,248 ms over two test runs (manual runs: 552 and 626 ms), result `no diagnostics`: the pull is answered with `items: []` before the crate is loaded |
+| Server ready | first `workspace/diagnostic/refresh` request at 5.1 and 7.5 s, first `publishDiagnostics` push (the `cargo check` E0308) at 5.3 and 7.7 s after `cox` started |
+| Call after a 20 s wait | 3 and 5 ms: `src/a.rs:2:5: error: expected u32, found &'static str [rust-analyzer E0308]` |
+
+So the profile is not the problem; the cold start is. On a fresh server the
+first call reports the file clean when it is not. In pull mode cox asks once
+and returns what it gets. Two protocol facts explain why nothing else tells
+it to wait (LSP 3.17,
+https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/,
+checked 2026-09-29). First, a server may start its own progress only if the
+client sets `window.workDoneProgress`. cox's `initialize` does not set it, so
+rust-analyzer sent no `$/progress`. Second, a server sends
+`workspace/diagnostic/refresh` to ask the client to pull again. cox answers
+it with "method not found" and does not pull again. Fixing that is a new
+card, not part of T41.9.
+
 ## 5. Testability patterns adopted
 1. `Provider` trait with `Scripted` and `Replay` (cassette) implementations; cassettes re-recorded on demand and redacted. Temperature 0 and seeds do not give bit-exact replay across providers; replaying the event log does. [high]
 2. Golden `Event` JSONL for loop scenarios (`insta`); the rollout file and the fixture are the same format. [design]
