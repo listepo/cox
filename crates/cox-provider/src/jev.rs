@@ -319,6 +319,8 @@ impl JevProvider {
             _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
             res = self
                 .http
+                // CodeQL cleartext-transmission: the key travels only in the
+                // Authorization header; base_url is user-configured (https by default).
                 .post(format!("{}/v1/systemone", self.base_url))
                 .header("content-type", "application/json")
                 .header("authorization", crate::http::bearer(&self.api_key)?)

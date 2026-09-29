@@ -99,13 +99,16 @@ pub enum Warning {
 }
 
 impl std::fmt::Display for Warning {
+    /// Secret-shaped runs (API keys, bearer tokens, PEM blocks) are masked
+    /// with `cox_sanitize::redact::scrub`: a warning may quote an error or a
+    /// config line, and every surface shows or logs this text.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (Self::Skill(text)
         | Self::Agent(text)
         | Self::Mcp(text)
         | Self::Env(text)
         | Self::Instruction(text)) = self;
-        f.write_str(text)
+        f.write_str(&cox_sanitize::redact::scrub(text))
     }
 }
 
@@ -168,7 +171,7 @@ pub struct Opened {
     /// `spec.config` with the defaults [`open`] filled in, before granted
     /// plugins' provider sections joined it.
     pub config: Config,
-    /// In the order they happened.
+    /// In the order they happened; empty from [`open_reporting`].
     pub warnings: Vec<Warning>,
 }
 
@@ -187,6 +190,21 @@ pub async fn open(spec: SessionSpec) -> Result<Opened, SessionError> {
 /// [`open`], with the main provider's key looked up in `keys` rather than
 /// the OS keyring when given.
 pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Opened, SessionError> {
+    let mut warnings = Vec::new();
+    let mut opened = open_reporting(spec, keys, &mut warnings).await?;
+    opened.warnings = warnings;
+    Ok(opened)
+}
+
+/// [`open_with_keys`], with the warnings pushed into `warnings` as they
+/// happen and [`Opened::warnings`] left empty. A caller that logs them
+/// uses this, so what it prints never comes out of the value that holds
+/// the session and its provider key.
+pub async fn open_reporting(
+    spec: SessionSpec,
+    keys: Option<Keys>,
+    warnings: &mut Vec<Warning>,
+) -> Result<Opened, SessionError> {
     let SessionSpec {
         config: mut base,
         cwd,
@@ -202,7 +220,6 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
         tools: surface_tools,
     } = spec;
     let cwd = cwd.as_path();
-    let mut warnings = Vec::new();
     // §1.6: empty `workspace_roots` means the git root of cwd, else cwd.
     if base.core.workspace_roots.is_empty() {
         base.core.workspace_roots =
@@ -473,7 +490,7 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
     Ok(Opened {
         session,
         config: base,
-        warnings,
+        warnings: Vec::new(),
     })
 }
 
@@ -552,6 +569,18 @@ impl cox_protocol::traits::RepoMapper for ToolsRepoMapper {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A key-shaped run in a warning's text never reaches a surface.
+    #[test]
+    fn warning_display_masks_secrets() {
+        let w = Warning::Mcp("server x: 401 for Bearer tok123secret, key sk-abcdefghijk".into());
+        let shown = w.to_string();
+        assert!(
+            !shown.contains("tok123secret") && !shown.contains("sk-abcdefghijk"),
+            "{shown}"
+        );
+        assert!(shown.starts_with("server x: 401 for "), "{shown}");
+    }
 
     /// T37.1: a broken `SKILL.md` comes back from `open` as a
     /// `Warning::Skill`, for the caller to show, and the session still opens.

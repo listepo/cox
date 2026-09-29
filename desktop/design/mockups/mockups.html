@@ -588,7 +588,7 @@ const S={};
 S['01-main-session-streaming']=()=>shell({center:mainTranscript(),below:composer({queued:false})});
 S['02-main-session-dark']=()=>{document.body.classList.add('dark');return S['01-main-session-streaming']()};
 
-S['03-approval-required']=()=>shell({tb:{},center:mainTranscript({approval:true,after:`
+S['03-approval-required']=()=>shell({center:mainTranscript({approval:true,after:`
   ${tool({icon:'term',sum:'Ran <b class="mono" style="font-weight:500">cargo nextest run -p cox-provider-http</b> — 38 passed',time:'14.2 s',exp:false})}
   ${asst('<p>All 38 tests pass, including the new cap test. Pushing the branch so CI can run the full matrix.</p>')}
   <div class="appr"><div class="ah"><span style="color:var(--orange)">${I('warn',16)}</span> Run this command? <span class="risk" style="margin-left:6px">network · writes remote</span></div>
@@ -597,7 +597,7 @@ S['03-approval-required']=()=>shell({tb:{},center:mainTranscript({approval:true,
    <div class="acts"><span class="pb pri">Allow <span class="k">⏎</span></span><span class="pb">Allow for session <span class="k">⌘⏎</span></span><span class="pb">Edit… <span class="k">⌘E</span></span><span class="pb dan">Deny <span class="k">⎋</span></span><span class="grant">Session grant: <code class="mono">git push *</code></span></div></div>`}),
   below:`<div class="pinned"><span style="color:var(--orange)">${I('warn',15)}</span><span style="flex:1">Waiting for you: <b class="mono" style="font-weight:600">git push -u origin wt/retry-jitter</b></span><span class="pb pri">Allow</span><span class="pb">For session</span><span class="pb dan">Deny</span></div>`+composer({}),tb:{ctx:'41%',cost:'$0.47'}});
 
-S['04-question-ask-user']=()=>shell({side:'q',sideOpt:{q:true},tb:{title:'Retry cap for 429s',branch:'main',cost:'$0.08',ctx:'12%'},center:`<div class="reading">
+S['04-question-ask-user']=()=>shell({side:'q',sideOpt:{q:true},center:`<div class="reading">
   ${user('Make the provider client respect rate limits properly.',1)}
   ${explored}
   ${asst('<p>429 responses from Anthropic and OpenAI both carry <code>retry-after</code>. Before I change behaviour, one decision is yours:</p>')}
@@ -876,9 +876,13 @@ S['32-main-glass-dark-glossy']=()=>{document.body.classList.add('dark');return g
 
 // ---------- render ----------
 const key=decodeURIComponent(location.hash.slice(1))||'01-main-session-streaming';
-if(key==='__list'){document.getElementById('root').textContent=Object.keys(S).join('\n')}
+// A fixed dispatch map: only a screen defined above renders; an unknown hash
+// falls back to the first.
+const screens=new Map(Object.entries(S));
+const render=screens.get(key)||screens.get('01-main-session-streaming');
+if(key==='__list'){document.getElementById('root').textContent=Object.keys(S).join('\n');}
 else{
-  document.getElementById('root').innerHTML=S[key]();
+  document.getElementById('root').innerHTML=render();
   document.querySelectorAll('.scroll:not(.top)').forEach(e=>{e.scrollTop=e.scrollHeight});
 }
 </script>

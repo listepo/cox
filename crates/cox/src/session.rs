@@ -72,7 +72,10 @@ pub async fn open(
         (None, true) => "plain",
         (None, false) => "headless",
     };
-    let opened = cox_session::open(cox_session::SessionSpec {
+    // Warnings come back through their own vector, never out of `opened`
+    // (which holds the provider key); their text is already redacted.
+    let mut warnings = Vec::new();
+    let spec = cox_session::SessionSpec {
         config: loaded.config.clone(),
         cwd: cwd.to_path_buf(),
         home: cli.home.clone().unwrap_or_else(config_load::cox_home),
@@ -85,9 +88,9 @@ pub async fn open(
         client: None,
         surface: surface.into(),
         tools: Vec::new(),
-    })
-    .await?;
-    for warning in &opened.warnings {
+    };
+    let opened = cox_session::open_reporting(spec, None, &mut warnings).await?;
+    for warning in &warnings {
         eprintln!("cox: warning: {warning}");
     }
     loaded.config = opened.config;

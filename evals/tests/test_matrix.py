@@ -85,7 +85,7 @@ def test_dry_run_prints_one_command_per_agent_and_runs_nothing(monkeypatch, caps
 
 def test_preflight_reports_a_model_the_server_does_not_serve(monkeypatch):
     body = json.dumps({"data": [{"id": "other"}]}).encode()
-    monkeypatch.setattr(matrix.urllib.request, "urlopen", lambda *a, **k: io.BytesIO(body))
+    monkeypatch.setattr(matrix.OPENER, "open", lambda *a, **k: io.BytesIO(body))
     assert "does not serve m" in matrix.preflight(LMSTUDIO, "m")
     assert matrix.preflight(LMSTUDIO, "other") is None
     assert matrix.preflight(matrix.PROVIDERS["anthropic"], "m") is None
@@ -94,8 +94,28 @@ def test_preflight_reports_a_model_the_server_does_not_serve(monkeypatch):
 def test_preflight_reports_a_server_that_is_down(monkeypatch):
     def down(*a, **k):
         raise OSError("connection refused")
-    monkeypatch.setattr(matrix.urllib.request, "urlopen", down)
+    monkeypatch.setattr(matrix.OPENER, "open", down)
     assert "not reachable" in matrix.preflight(LMSTUDIO, "m")
+
+
+def test_preflight_refuses_a_url_that_is_not_local_http(monkeypatch):
+    def never(*a, **k):
+        raise AssertionError("opened a non-local URL")
+    monkeypatch.setattr(matrix.OPENER, "open", never)
+    for url in ["http://example.com:1234", "file:///etc", "ftp://localhost:1234"]:
+        remote = matrix.Provider("x", url, {matrix.CHAT: "/v1"}, local=True)
+        assert "not a local http(s) URL" in matrix.preflight(remote, "m")
+    assert matrix.local_url("http://[::1]:1234/v1/models")
+    assert matrix.local_url("https://127.0.0.1/v1/models")
+
+
+def test_prepare_steps_are_argv_without_shell_syntax():
+    assert matrix.prepare_argv("lms load {model} --context-length {context} -y",
+                               model="a b; rm -rf /", context=4096) == [
+        "lms", "load", "a b; rm -rf /", "--context-length", "4096", "-y"]
+    for provider in matrix.PROVIDERS.values():
+        for step in provider.prepare:
+            assert not set(step) & set("|&;<>`$"), step
 
 
 def trial(job, name, reward, *, error=None):

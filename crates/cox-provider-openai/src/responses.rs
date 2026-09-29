@@ -589,6 +589,8 @@ impl OpenAiResponsesProvider {
 
         let mut request = self
             .http
+            // CodeQL cleartext-transmission: the key travels only in the
+            // Authorization header; base_url is user-configured (https by default).
             .post(format!("{}/responses", self.base_url))
             .header("content-type", "application/json")
             .json(&body);

@@ -20,6 +20,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -29,6 +30,13 @@ CHAT, MESSAGES = "openai-chat", "anthropic-messages"
 JOBS_DIR = Path.home() / ".cache" / "cox-evals" / "tb-jobs"
 # colima's name for the macOS host inside its VM; Harbor adds no host alias.
 CONTAINER_HOST = "host.lima.internal"
+# The only hosts `preflight` talks to: it checks a server on this machine.
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+# http(s) handlers only, no proxy: a `file://` or `ftp://` URL cannot be opened.
+OPENER = urllib.request.OpenerDirector()
+for _handler in (urllib.request.HTTPHandler, urllib.request.HTTPSHandler,
+                 urllib.request.HTTPDefaultErrorHandler, urllib.request.HTTPErrorProcessor):
+    OPENER.add_handler(_handler())
 
 
 @dataclass(frozen=True)
@@ -38,7 +46,9 @@ class Provider:
     shapes: dict  # API shape -> path under `url`
     key_env: dict = field(default_factory=dict)  # API shape -> key env var
     local: bool = False  # a server on this machine: dummy key, host rewrite
-    prepare: tuple = ()  # commands that start the server and load the model
+    # Commands that start the server and load the model: plain argv, split
+    # with `shlex` and run without a shell, so no pipes, `&&` or redirects.
+    prepare: tuple = ()
 
     def base(self, shape, *, in_container):
         url = self.url + self.shapes[shape]
@@ -176,13 +186,31 @@ def harbor_argv(run, tasks, *, job_name, jobs_dir, concurrency):
     return argv
 
 
+def local_url(url):
+    """`url` when it is http(s) on this machine; otherwise `ValueError`."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme not in ("http", "https") or parts.hostname not in LOCAL_HOSTS:
+        raise ValueError(f"not a local http(s) URL: {url}")
+    return url
+
+
+def prepare_argv(step, **values):
+    """One `prepare` step as argv: split first, then each arg formatted, so a
+    value never becomes extra arguments or shell syntax."""
+    return [arg.format(**values) for arg in shlex.split(step)]
+
+
 def preflight(provider, model):
     """A local server must be up and serve `model`; returns an error or None."""
     if not provider.local:
         return None
     path = provider.shapes.get(CHAT, "/v1")
     try:
-        with urllib.request.urlopen(f"{provider.url}{path}/models", timeout=5) as resp:
+        url = local_url(f"{provider.url}{path}/models")
+    except ValueError as err:
+        return f"{provider.name}: {err}"
+    try:
+        with OPENER.open(url, timeout=5) as resp:
             ids = [m.get("id") for m in json.load(resp).get("data", [])]
     except OSError as err:
         return f"{provider.name} is not reachable at {provider.url}: {err}"
@@ -278,7 +306,7 @@ def main(argv=None):
         return 0
     if args.prepare:
         for step in provider.prepare:
-            subprocess.run(step.format(model=model, context=opts["context"]), shell=True, check=True)
+            subprocess.run(prepare_argv(step, model=model, context=opts["context"]), check=True)
     error = preflight(provider, model)
     if error:
         raise SystemExit(error)
