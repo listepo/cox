@@ -52,6 +52,17 @@ public final class TranscriptTextView: NSTextView {
     return view
   }
 
+  override public func setFrameSize(_ newSize: NSSize) {
+    super.setFrameSize(newSize)
+    fitColumn()
+  }
+
+  /// Keeps the lines in the style's reading column as the view's width changes.
+  private func fitColumn() {
+    let inset = style.inset(width: frame.width, padding: textContainer?.lineFragmentPadding ?? 0)
+    if inset != textContainerInset { textContainerInset = inset }
+  }
+
   /// A vertically scrolling host, sized to `frame`, with this view as its document.
   public func inScrollView(frame: NSRect) -> NSScrollView {
     let scroll = NSScrollView(frame: frame)
@@ -84,7 +95,7 @@ public final class TranscriptTextView: NSTextView {
   public func restyle(_ style: TranscriptStyle) {
     guard style != self.style, let storage = textStorage else { return }
     self.style = style
-    textContainerInset = style.inset
+    fitColumn()
     let shown = blockRanges.ids.compactMap { blocks[$0] }
     let built = TranscriptText.build(shown, style: style, cards: hostedCards)
     // Patches keep the text what a load gives (T37.43); should that ever slip, load it anew.
@@ -111,4 +122,14 @@ public final class TranscriptTextView: NSTextView {
 
   /// The block whose text holds `location` (see `BlockRanges.index(at:)`).
   public func blockID(at location: Int) -> BlockID? { blockRanges.blockID(at: location) }
+}
+
+extension TranscriptStyle {
+  /// The text container's inset in a view `width` wide: `inset`, widened on both sides so the
+  /// lines — the container less its line fragment `padding` each side — are `readingWidth` wide.
+  func inset(width: CGFloat, padding: CGFloat) -> NSSize {
+    guard let readingWidth else { return inset }
+    let centred = (width - readingWidth) / 2 - padding
+    return NSSize(width: max(inset.width, centred), height: inset.height)
+  }
 }

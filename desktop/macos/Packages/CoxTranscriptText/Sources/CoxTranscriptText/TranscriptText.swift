@@ -24,6 +24,8 @@ public struct TranscriptStyle: Equatable {
   public var blockSpacing: CGFloat
   /// The space between the text and the view's edges.
   public var inset: NSSize
+  /// The widest a line runs, centred in a wider view as the composer is (DS§4); `nil`: no limit.
+  public var readingWidth: CGFloat?
   /// A user prompt's bubble and a thought's look (`TranscriptDecor.swift`); a quote's bars.
   public var bubble: Bubble
   public var thought: Thought
@@ -37,7 +39,7 @@ public struct TranscriptStyle: Equatable {
     body: NSFont, code: NSFont, headings: Headings? = nil, text: NSColor,
     colors: [StyleToken: NSColor] = [:], blockSpacing: CGFloat, inset: NSSize,
     bubble: Bubble = .system, thought: Thought = .system, quote: Quote = .system,
-    indent: CGFloat = 0, lineHeights: LineHeights = .natural
+    indent: CGFloat = 0, lineHeights: LineHeights = .natural, readingWidth: CGFloat? = nil
   ) {
     (self.body, self.code, self.text, self.colors) = (body, code, text, colors)
     self.headings =
@@ -45,7 +47,8 @@ public struct TranscriptStyle: Equatable {
     (self.blockSpacing, self.inset, self.bubble, self.thought) = (
       blockSpacing, inset, bubble, thought
     )
-    (self.quote, self.indent, self.lineHeights) = (quote, indent, lineHeights)
+    (self.quote, self.indent) = (quote, indent)
+    (self.lineHeights, self.readingWidth) = (lineHeights, readingWidth)
   }
 
   public static var system: TranscriptStyle {
