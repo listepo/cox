@@ -47,6 +47,3 @@
 - T56.8. Offline end-to-end over hand-written fixtures
 - T56.9. Docs: cloud agents for users and in EA
 - T56.10. Optional: live check against a real Cursor account (needs the creator's key)
-- T37.44.13. Command palette and its shortcuts
-- T37.44.14. New session windows open at 1440×900
-- T37.44.15. Approval notification: Allow once, Deny, Open

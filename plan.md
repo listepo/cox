@@ -32,9 +32,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.44.13 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
-| T37.44.14 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
-| T37.44.15 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T39.7 | todo | P3 | 2 | 0% | |
 | T43.6 | todo | P3 | 3 | 0% | |
 | T51.6 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
@@ -1352,24 +1349,6 @@ Confirm the bundle id `io.github.listepo.cox` (T37.32.1 derived it from the repo
 On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
-
-#### T37.44.13 Command palette and its shortcuts
-
-Depends: — · Size: ~200 · Files: `desktop/macos/App` (palette window and menu commands), CoxUI palette organism and snapshots, `cox-app` `Completer` if the command list is not there yet
-Goal: A126 (2). Mockup 12's command palette, opened with ⌘K, lists commands and sessions with fuzzy search from `cox-app` (logic in Rust, Swift draws); ⌘N opens a new session and ⌘⇧R opens review, as the mockups' menus show.
-Check: CoxUI snapshots of the palette in every variant; a `cox-app` test for the palette's ranking; the running app's palette diffed against mockup 12.
-
-#### T37.44.14 New session windows open at 1440×900
-
-Depends: — · Size: ~60 · Files: token `size.window.default` (DTCG source and generated Swift), `desktop/macos/App`
-Goal: A126 (3). A new session window opens at 1440×900, the mockups' size, from a new default-size token, clamped to the screen's visible frame so it never opens larger than the screen; a window the user resized keeps its saved frame.
-Check: a unit test of the clamp; `just desktop-tokens` pass; the running app's new window measured at 1440×900 on a large screen.
-
-#### T37.44.15 Approval notification: Allow once, Deny, Open
-
-Depends: — · Size: ~60 · Files: `desktop/macos/App` (notification category), `docs/design/desktop.md` DT§5.6
-Goal: A126 (4). The approval notification carries the mockup's three actions: "Allow once" (the one-call approval, never a standing rule), "Deny" and "Open" (brings the session window forward on the pending approval). DT§5.6 is updated to match.
-Check: a test that each action maps to the right `Intent`; screen 23 checked in the running app once notifications are allowed for Cox.
 
 ### P51 — Desktop M2 (goal: the rest of the terminal inside the app — a sandboxed terminal pane, a browser pane the agent can read and screenshot, pop-out windows and tabs, a menu-bar extra with a global hotkey, Spotlight and App Intents, and per-hunk revert — plus the dark glass look; DT§3.2)
 

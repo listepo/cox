@@ -8665,3 +8665,45 @@ Deviations: `crates/cox/tests/docs.rs` also checks that paths cited in app-serve
 Check (2026-09-29, verify round 3 on p51-roadmap): `cargo nextest run -p cox --test docs` passes; `just desktop-app` builds with Metal (merged SessionWindow.swift, split into `SessionWindow+Intents.swift`, 300e5c7b); swiftlint --strict over App and all packages clean; nextest 1897/1897, clippy and fmt clean, `cargo deny check` passes.
 
 Not done: nothing.
+
+#### T37.44.13 Command palette and its shortcuts
+
+Depends: — · Size: ~200 · Files: `desktop/macos/App` (palette window and menu commands), CoxUI palette organism and snapshots, `cox-app` `Completer` if the command list is not there yet
+Goal: A126 (2). Mockup 12's command palette, opened with ⌘K, lists commands and sessions with fuzzy search from `cox-app` (logic in Rust, Swift draws); ⌘N opens a new session and ⌘⇧R opens review, as the mockups' menus show.
+Check: CoxUI snapshots of the palette in every variant; a `cox-app` test for the palette's ranking; the running app's palette diffed against mockup 12.
+Status: done 2026-09-29
+Result: the command palette of mockup 12 (A126 (2)). Rust ranks: `cox-search/src/fuzzy.rs` `FuzzyQuery` (nucleo score plus matched offsets); `cox-app/src/palette.rs` `rank` groups actions, sessions, commands, files, best first within a group (ties keep order), a per-kind limit; `Completer::palette` adds `/` commands and `@` files once something is typed; exported through cox-ffi as `SessionHandle::palette` and a free `palette()` for remote sessions. Swift: CoxUI `CommandPalette` organism and `.commandPalette` overlay; `SessionClient.palette` (fixture default, live and remote call Rust); `SidebarStore.paletteItems`, `ComposerStore.append`; window wiring in `App/SessionPalette.swift`; File menu New Session ⌘N, New Window, Command Palette… ⌘K, Review Changes ⌘⇧R. An action runs, a session is shown, a command or file is appended to the composer; Rewind and Revert open the Changes tab. DS§6.4 catalogue row, DESIGN.md tokens, DT§5.5 paragraph.
+
+Deviations: over the card's size — 49 files, ~1270 lines (12 of them snapshot PNGs). New tokens `size.paletteWidth` 640, `size.paletteIcon` 26, `font.title.palette` (18 regular), `color.shadow.scrim` (black 0.18, added to `KEPT` in `high-contrast.mjs`). No new dependency (nucleo already in the workspace). `toggleTerminal` moved to `SessionWindow+Intents.swift` and a few `SessionWindow` members lost `private` for the type-body limit (326 + 113 lines). `ShellShortcut.review` public; `palette` and `newSession` shortcuts added. With an empty query each kind shows at most 5 rows (5 of 9 actions) — the agent's choice.
+
+Check (2026-09-29): `cargo nextest run -p cox-search -p cox-app -p cox-ffi` 188 passed (ranking tests included), clippy -D warnings and fmt clean; CoxUI palette snapshots 3 looks × 4 variants pass; CoxModel 128, CoxCore 16 (remote ranking round-trips through FFI) pass; swiftlint --strict and swift-format lint --strict clean on changed files; `just desktop-app` builds. Running fixture app: ⌘K opens the palette, "rev" ranks Review changes first with the match bold, ⏎ opens Review, ⌘⇧R closes it, layout matches mockup 12. Commit a9201543.
+
+Not done: Esc-to-dismiss and ⌘N not confirmed in the running app (another agent's Cox instance kept taking the front); a fixture launch lists no sessions, commands or files, so only the Actions group was compared live.
+
+#### T37.44.14 New session windows open at 1440×900
+
+Depends: — · Size: ~60 · Files: token `size.window.default` (DTCG source and generated Swift), `desktop/macos/App`
+Goal: A126 (3). A new session window opens at 1440×900, the mockups' size, from a new default-size token, clamped to the screen's visible frame so it never opens larger than the screen; a window the user resized keeps its saved frame.
+Check: a unit test of the clamp; `just desktop-tokens` pass; the running app's new window measured at 1440×900 on a large screen.
+Status: done 2026-09-29
+Result: tokens `size.windowDefaultWidth` 1440 and `size.windowDefaultHeight` 900; `Size.defaultWindow(fitting:)` clamps to the screen's visible area (`CoxUI/Foundations/DefaultWindowSize.swift`); both window groups use `.defaultWindowPlacement`, which applies only to new windows, so a user-resized window keeps its saved frame. DESIGN.md updated (A126 (3)).
+
+Deviations: none.
+
+Check (2026-09-29): CoxUI `DefaultWindowSize` clamp tests (2) pass; `just desktop-tokens` no diff; the running app with `-ApplePersistenceIgnoreState YES` measured 1440×900 on a 1728×1083 visible screen (CGWindowList bounds). Commit 4522a67f.
+
+Not done: that a restored user-resized window keeps its frame (system state restoration) was not exercised.
+
+#### T37.44.15 Approval notification: Allow once, Deny, Open
+
+Depends: — · Size: ~60 · Files: `desktop/macos/App` (notification category), `docs/design/desktop.md` DT§5.6
+Goal: A126 (4). The approval notification carries the mockup's three actions: "Allow once" (the one-call approval, never a standing rule), "Deny" and "Open" (brings the session window forward on the pending approval). DT§5.6 is updated to match.
+Check: a test that each action maps to the right `Intent`; screen 23 checked in the running app once notifications are allowed for Cox.
+Status: done 2026-09-29
+Result: the approval notification's actions are Allow once (allow, never for the session), Deny and Open; Open and tapping the notification bring the session forward through the same PopOut route as the menu bar and Spotlight (`CoxPlatform/NotificationActions.swift`, `App/CoxApp.swift`). DT§5.6 rewritten to match (A126 (4)).
+
+Deviations: none.
+
+Check (2026-09-29): `swift test --package-path desktop/macos/Packages/CoxPlatform` 30 passed, including action → `Intent`/route mapping and titles/options tests. Commit 0f085e80.
+
+Not done: screen 23 not checked — needs notification permission for io.github.listepo.cox (system permission left unchanged).
