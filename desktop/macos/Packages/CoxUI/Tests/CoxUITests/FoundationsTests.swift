@@ -2,6 +2,7 @@
 // Reduce Transparency and Increase Contrast overrides, and the appearance arithmetic the
 // modifiers share.
 
+import AppKit
 import SwiftUI
 import Testing
 
@@ -121,6 +122,21 @@ private let everyMaterial = [ColorScheme.light, .dark].flatMap { scheme in
     let dark = Appearance().effective(reduceTransparency: false, colorScheme: .dark)
     #expect(dark.highlightStrength(.e1) == MaterialToken.darkHighlightNone)
     #expect(dark.highlightStrength(.e2) == 1)
+  }
+
+  /// T51.22: a lifted pane's top edge is `glass.highlight` as each scheme's token has it, not the
+  /// light 0.95 in dark too.
+  @MainActor @Test func theTopEdgeHighlightIsTheGlassHighlightTokenInEachScheme() throws {
+    func topEdge(_ scheme: ColorScheme) throws -> Double {
+      let drawn = Appearance().effective(reduceTransparency: false, colorScheme: scheme)
+      let layer = try #require(ElevationToken.e2.layers(at: drawn).first { $0.inset && $0.y > 0 })
+      return Double(layer.color.resolve(in: EnvironmentValues()).opacity)
+    }
+    let light = try topEdge(.light)
+    let dark = try topEdge(.dark)
+    #expect(abs(light - Appearance.glassHighlightAlpha(.aqua)) < 0.005)
+    #expect(abs(dark - Appearance.glassHighlightAlpha(.darkAqua)) < 0.005)
+    #expect(dark < light)
   }
 
   @Test func theSubtleHighlightReachesEveryLiftedLevelOnlyAtScopeAll() {

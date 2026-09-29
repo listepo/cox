@@ -2,6 +2,7 @@
 // scales every lifted thing at once. Drop shadows sit behind the view; inset layers are the
 // top-edge highlight drawn inside the view's shape.
 
+import AppKit
 import SwiftUI
 
 extension View {
@@ -42,18 +43,50 @@ private struct Elevation: ViewModifier {
 
 extension ElevationToken {
   /// The level's layers at `appearance`'s Depth (DS§3.4): each layer's opacity, and a drop
-  /// shadow's offset down, scaled by Depth; the window's level ignores it. The highlight also
-  /// takes the dark-mode share (A109). Public for the transcript's AppKit bubble (T37.23.9), so
-  /// it lifts as `.elevation` does.
+  /// shadow's offset down, scaled by Depth; the window's level ignores it. The highlight takes
+  /// `glass.highlight`'s strength and the dark-mode share (DS§3.5, A109). Public for the
+  /// transcript's AppKit bubble (T37.23.9), so it lifts as `.elevation` does.
+  @MainActor
   public func layers(at appearance: Appearance) -> [ShadowLayer] {
     let scale = self == .e5 ? 1 : appearance.depth
-    let highlight = scale * appearance.highlightStrength(self)
+    let highlight =
+      scale * appearance.highlightStrength(self) * appearance.glassHighlightShare
     return layers.map {
       ShadowLayer(
         color: $0.color.opacity($0.inset ? highlight : scale), x: $0.x,
         y: $0.inset ? $0.y : $0.y * scale,
         blur: $0.blur, spread: $0.spread, inset: $0.inset)
     }
+  }
+}
+
+extension Appearance {
+  /// `glass.highlight` where this appearance draws, as a share of its light value (DS§3.5).
+  /// The elevation tokens hold the light highlight (mockup 28's); dark glass draws it at its
+  /// own, lower strength (mockups 31, 32), and High Contrast at its own. Read from the colour
+  /// asset, so the value lives only in the token files.
+  @MainActor
+  var glassHighlightShare: Double {
+    let light = Self.glassHighlightAlpha(.aqua)
+    guard light > 0 else { return 0 }
+    let drawn: NSAppearance.Name =
+      switch (isDark, increaseContrast) {
+      case (false, false): .aqua
+      case (true, false): .darkAqua
+      case (false, true): .accessibilityHighContrastAqua
+      case (true, true): .accessibilityHighContrastDarkAqua
+      }
+    return Self.glassHighlightAlpha(drawn) / light
+  }
+
+  /// `glass.highlight`'s alpha as the colour asset resolves it under `name`.
+  @MainActor
+  static func glassHighlightAlpha(_ name: NSAppearance.Name) -> Double {
+    var alpha = 0.0
+    NSAppearance(named: name)?.performAsCurrentDrawingAppearance {
+      alpha = Double(NSColor(resource: .glassHighlight).usingColorSpace(.sRGB)?.alphaComponent ?? 0)
+    }
+    return alpha
   }
 }
 
