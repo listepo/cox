@@ -34,6 +34,7 @@ uses part of cox as a library and is better than the others.
 
 **Non-goals (v1).** Windows/Linux GUI; Mac App Store; a code editor (the app
 opens files in the user's editor); cloud execution; iOS.
+Windows is now planned (`plan.md` A127, P57 and P58: M1 parity, WinUI 3 over `cox-ffi`; its design doc comes from T58.2).
 
 **Budgets — the falsifiers.** If the shipped M1 misses any of these on an
 M1 MacBook Air with 8 GB, the native-first argument failed and the design is
