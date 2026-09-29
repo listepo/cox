@@ -27,7 +27,7 @@ const BASE_GROUPS = {
   size: {
     collection: 'Size',
     swift: 'Size',
-    scopes: (name) => (/hairline|quoteBar|Ring$/.test(name) ? ['STROKE_FLOAT', 'WIDTH_HEIGHT'] : name === 'paneGap' ? ['GAP'] : ['WIDTH_HEIGHT']),
+    scopes: (name) => (/(?:hairline|quoteBar|Ring)$/.test(name) ? ['STROKE_FLOAT', 'WIDTH_HEIGHT'] : name === 'paneGap' ? ['GAP'] : ['WIDTH_HEIGHT']),
   },
   material: { collection: 'Material', swift: 'MaterialToken', scopes: (name) => (/blur/i.test(name) ? ['EFFECT_FLOAT'] : []) },
   motion: { collection: 'Motion', swift: 'Motion', scopes: () => [] },
