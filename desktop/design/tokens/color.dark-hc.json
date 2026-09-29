@@ -97,6 +97,49 @@
         "$description": "Inset terminal tail"
       }
     },
+    "glass": {
+      "fill": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.0784,
+            0.0784,
+            0.102
+          ],
+          "hex": "#14141a",
+          "alpha": 0.835
+        },
+        "$description": "Glass pane tint over the window's glass: a cool near-black, so the wallpaper keeps its colour and text keeps its contrast (mockups 31, 32)"
+      },
+      "border": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.4784,
+            0.4784,
+            0.4824
+          ],
+          "hex": "#7a7a7b"
+        },
+        "$description": "The 0.5 pt rim around glass panes and controls (mockups 31, 32)"
+      },
+      "highlight": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            1,
+            1,
+            1
+          ],
+          "hex": "#ffffff",
+          "alpha": 0.22
+        },
+        "$description": "The 1 pt top-edge highlight of lifted glass panes (e2 and up) in dark; controls (e1) draw it at material.darkHighlight's share, none by default (A109; mockups 31, 32)"
+      }
+    },
     "fill": {
       "primary": {
         "$type": "color",

@@ -33,11 +33,15 @@ const BASE_GROUPS = {
   motion: { collection: 'Motion', swift: 'Motion', scopes: () => [] },
   font: { collection: 'Type', swift: 'FontToken' },
 };
-// The code families map to the names Figma lists; a family Figma does not have stays as written and
-// its text style is skipped (the script reports it) rather than drawn in a stand-in font.
-const FIGMA_FAMILY = { 'SF Pro Text': 'SF Pro' };
-// Figma's style names for SF Pro's weights; DS§3.2 reads 650 as semibold, so a weight rounds down.
-const WEIGHT_STYLES = ['Ultralight', 'Thin', 'Light', 'Regular', 'Medium', 'Semibold', 'Bold', 'Heavy', 'Black'];
+// A125: Figma draws each code family with a stand-in it renders, because `use_figma` lists SF Pro but
+// does not render it and does not list SF Mono. The product and the HTML renders keep SF, so metrics
+// are compared there, not in Figma. `styles` holds the family's style names for weights 100…900; DS§3.2
+// reads 650 as semibold, so a weight rounds down. A font Figma still lacks is skipped and reported.
+export const FIGMA_FONT = {
+  'SF Pro Text': { family: 'Inter', styles: ['Thin', 'Extra Light', 'Light', 'Regular', 'Medium', 'Semi Bold', 'Bold', 'Extra Bold', 'Black'] },
+  'SF Mono': { family: 'Roboto Mono', styles: ['Thin', 'ExtraLight', 'Light', 'Regular', 'Medium', 'SemiBold', 'Bold'] },
+};
+const standIn = (family, where) => FIGMA_FONT[family] ?? fail(`${where}: no Figma stand-in for ${family}`);
 
 const fail = (msg) => {
   throw new Error(`figma tokens: ${msg}`);
@@ -118,7 +122,7 @@ function typeVariables(path, token, where) {
   const code = { iOS: `FontToken.${camel(path.slice(1))}` };
   const one = (suffix, type, value, scopes, description = '') => ({ name: `${name}/${suffix}`, type, values: { Value: value }, scopes, description, code });
   return [
-    one('family', 'STRING', FIGMA_FAMILY[family] ?? family, ['FONT_FAMILY'], `Code: ${v.fontFamily.join(', ')}`),
+    one('family', 'STRING', standIn(family, where).family, ['FONT_FAMILY'], `Code: ${v.fontFamily.join(', ')}`),
     one('size', 'FLOAT', size, ['FONT_SIZE']),
     one('weight', 'FLOAT', v.fontWeight, ['FONT_WEIGHT']),
     one('lineHeight', 'FLOAT', round(size * v.lineHeight), ['LINE_HEIGHT'], `${v.lineHeight} × size`),
@@ -173,9 +177,9 @@ export function styles({ base }) {
     const name = parts(path).join('/');
     if (token.$type === 'typography') {
       const v = token.$value;
-      const family = v.fontFamily[0];
-      const style = WEIGHT_STYLES[Math.floor(v.fontWeight / 100) - 1] ?? fail(`${where}: weight ${v.fontWeight}`);
-      text.push({ name, family: FIGMA_FAMILY[family] ?? family, style, description: token.$description ?? '' });
+      const font = standIn(v.fontFamily[0], where);
+      const style = font.styles[Math.floor(v.fontWeight / 100) - 1] ?? fail(`${where}: weight ${v.fontWeight}`);
+      text.push({ name, family: font.family, style, description: token.$description ?? '' });
     } else if (token.$type === 'shadow') {
       const layers = (Array.isArray(token.$value) ? token.$value : [token.$value]).map((l) => ({
         type: l.inset === true ? 'INNER_SHADOW' : 'DROP_SHADOW',

@@ -412,6 +412,9 @@ pub struct State {
     /// input and answer; the runtime sets it at startup when a command is
     /// configured. `None` leaves the screen exactly as without the key.
     pub status_script: Option<crate::status::StatusScript>,
+    /// Push-to-talk (T54.6): whether a `Dictation` exists, `[voice]
+    /// auto_submit`, and the recording in progress.
+    pub voice: crate::voice::Voice,
 }
 
 /// `/loop`'s running state (T27.4). `interval_ticks`/`next_at` are
@@ -506,6 +509,8 @@ pub enum Msg {
     /// The theme editor's file was written (T46.7): its stem and what it
     /// parses to, so `/theme` lists and applies it without a restart.
     ThemeSaved(String, ThemeFile),
+    /// The `Dictation`'s answer to a `Cmd::Voice` (T54.6).
+    Voice(crate::voice::VoiceMsg),
 }
 
 /// The runtime's side of the plugin redraw model (PL§8): `cox-tui` never
@@ -709,6 +714,9 @@ pub enum Cmd {
     /// functions `cox plugin ...` calls and answers on the feed as
     /// `Msg::PluginMgmt`.
     PluginMgmt(PluginMgmtRequest),
+    /// Push-to-talk (T54.6): `app.rs` hands this to the `Dictation` it
+    /// holds; the answer arrives as `Msg::Voice`.
+    Voice(crate::voice::VoiceCmd),
 }
 
 impl State {
@@ -796,6 +804,7 @@ impl State {
             think_confirmed: false,
             think_consent: None,
             status_script: None,
+            voice: crate::voice::Voice::default(),
         }
     }
 
@@ -1064,6 +1073,7 @@ fn step(state: &mut State, msg: Msg) -> Vec<Cmd> {
             }
             apply_theme_choice(state, &stem)
         }
+        Msg::Voice(msg) => crate::voice::on_msg(state, msg),
     }
 }
 
@@ -1161,9 +1171,14 @@ fn notify(state: &State, body: String) -> Vec<Cmd> {
 }
 
 fn on_key(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
+    // T54.6: a recording owns `Esc` and the voice key's release and repeats
+    // before anything else sees them.
+    if let Some(cmds) = crate::voice::on_key(state, key) {
+        return cmds;
+    }
     // A held `Enter`/`Esc` must not repeat-submit or repeat-dismiss under the
-    // Kitty keyboard protocol (T23.1); `Release` is already filtered in
-    // `app.rs`'s select loop, before a `Msg::Key` ever reaches here.
+    // Kitty keyboard protocol (T23.1); `app.rs` forwards a `Release` only
+    // while push-to-talk records, and `voice::on_key` takes it above.
     if key.kind == KeyEventKind::Repeat && matches!(key.code, KeyCode::Enter | KeyCode::Esc) {
         return Vec::new();
     }
@@ -1644,6 +1659,7 @@ fn run(state: &mut State, action: keymap::Action, key: KeyEvent) -> Option<Vec<C
         }
         // The composer decides what an `Enter` does; these hand it the one
         // each action means, whatever key was bound.
+        A::Voice => crate::voice::toggle(state),
         A::Send => compose(state, enter(KeyModifiers::NONE)),
         A::Newline => compose(state, enter(KeyModifiers::SHIFT)),
         A::SendNow => compose(state, enter(KeyModifiers::ALT)),
@@ -1710,7 +1726,7 @@ fn toggle_fold(state: &mut State, i: usize) -> Vec<Cmd> {
 }
 
 /// A key for the composer, and what its `Edit` means for the session.
-fn compose(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
+pub(crate) fn compose(state: &mut State, key: KeyEvent) -> Vec<Cmd> {
     match state.composer.key(key, state.status.busy) {
         Edit::Submit(text) => {
             if let Some((name, task)) = agent_line(&state.agent_names, &text) {

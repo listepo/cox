@@ -48,13 +48,16 @@ pub async fn build(
 }
 
 /// `recent` ∩ `files` in `recent`'s order, then the rest of `files` (already
-/// sorted by path), each once.
+/// sorted by path), each once. The shared walk shows hidden files, so it
+/// also yields git's own `.git/` store, which is no source and would eat
+/// the budget.
 fn order(recent: &[String], files: &[String]) -> Vec<String> {
     let known: HashSet<&str> = files.iter().map(String::as_str).collect();
     let mut seen = HashSet::new();
     recent
         .iter()
         .chain(files)
+        .filter(|p| !p.starts_with(".git/"))
         .filter(|p| known.contains(p.as_str()) && seen.insert(p.as_str()))
         .cloned()
         .collect()
@@ -185,6 +188,15 @@ mod tests {
         );
         assert!(m < z && z < a && a < b, "{map}");
         assert!(map.contains("  2: pub fn m2()"), "outline follows: {map}");
+    }
+
+    #[tokio::test]
+    async fn repomap_leaves_out_the_git_dir() {
+        let Some(dir) = repo() else {
+            return;
+        };
+        let map = build(dir.path(), 100_000, &allow_all).await;
+        assert!(!map.contains(".git/"), "{map}");
     }
 
     #[tokio::test]

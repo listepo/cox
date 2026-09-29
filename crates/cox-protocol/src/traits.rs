@@ -546,7 +546,10 @@ pub trait RepoMapper: Send + Sync {
         &self,
         root: &Path,
         budget_bytes: usize,
-        admit: &(dyn Fn(&Path) -> bool + Send + Sync),
+        // An explicit `for<'p>`: `#[async_trait]` names every elided lifetime,
+        // the one inside `Fn(&Path)` too, which would tie the argument to the
+        // call and reject `admit(&root.join(rel))`.
+        admit: &(dyn for<'p> Fn(&'p Path) -> bool + Send + Sync),
     ) -> String;
 }
 
@@ -698,6 +701,33 @@ pub trait Advisor: Send + Sync {
     ) -> Option<crate::plugin::Advice>;
 }
 
+/// Why a push-to-talk press produced no transcript (T54.4). Each carries
+/// the one line the TUI shows the user.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum DictationError {
+    /// Recording could not start or run: no microphone, the OS denied
+    /// access, or the stream failed.
+    #[error("{0}")]
+    Capture(String),
+    /// The model could not be loaded or the audio could not be transcribed.
+    #[error("{0}")]
+    Transcribe(String),
+}
+
+/// Push-to-talk dictation (P54, A123): the TUI starts and stops a recording
+/// and receives text, never audio. Defined here so `cox-tui` depends on this
+/// trait and never on `cox-voice`, which implements it behind `crates/cox`'s
+/// `voice` feature.
+#[async_trait]
+pub trait Dictation: Send {
+    /// Starts recording from the microphone.
+    fn start(&mut self) -> Result<(), DictationError>;
+    /// Stops recording and returns the transcript of what was said.
+    async fn stop(&mut self) -> Result<String, DictationError>;
+    /// Stops recording and discards the audio untranscribed.
+    fn cancel(&mut self);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -718,5 +748,6 @@ mod tests {
         assert_object_safe::<dyn EventTap>();
         assert_object_safe::<dyn ModelCaller>();
         assert_object_safe::<dyn ToolInvoker>();
+        assert_object_safe::<dyn Dictation>();
     }
 }

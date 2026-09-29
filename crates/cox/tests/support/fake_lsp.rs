@@ -11,7 +11,7 @@
 //! only. It exits on `exit` or at the end of stdin.
 
 use std::collections::HashMap;
-use std::io::{BufRead, Read, Write};
+use std::io::{BufRead, Write};
 use std::process::ExitCode;
 
 use serde_json::{Value, json};

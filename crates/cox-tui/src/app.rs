@@ -29,6 +29,7 @@ use ratatui::{Terminal, TerminalOptions, Viewport};
 use crate::cells::cell_lines;
 use crate::state::{Ask, Cmd, GrantDecision, Msg, PluginMgmtRequest, PluginRequest, State, update};
 use crate::view::view;
+use crate::voice::{Driver, Phase};
 
 /// Rows the live viewport keeps below the scrollback; a short terminal
 /// gets two fewer than its height so some scrollback stays visible.
@@ -81,7 +82,9 @@ pub enum TuiError {
 /// the plugin hosts; the answer arrives on `feed` as `Msg::Plugin`.
 /// `plugin_mgmt` (T33.30 `New`; T33.33 `Update`/`Remove`/`List`) carries a
 /// `Cmd::PluginMgmt` the same way; its answer arrives on `feed` as
-/// `Msg::PluginMgmt`.
+/// `Msg::PluginMgmt`. `dictation` (T54.6) is push-to-talk's speech-to-text,
+/// `None` when the build or `[voice]` leaves it off; the voice key then
+/// only says how to turn it on.
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     session: Session,
@@ -92,8 +95,11 @@ pub async fn run(
     grants: tokio::sync::mpsc::Sender<GrantDecision>,
     plugins: tokio::sync::mpsc::Sender<PluginRequest>,
     plugin_mgmt: tokio::sync::mpsc::Sender<PluginMgmtRequest>,
+    dictation: Option<Box<dyn cox_protocol::traits::Dictation>>,
 ) -> Result<TuiOutcome, TuiError> {
     let mut rx = session.events().ok_or(TuiError::EventsTaken)?;
+    state.voice.available = dictation.is_some();
+    let mut voice = Driver::new(dictation);
     enable_raw_mode()?;
     execute!(io::stdout(), EnableBracketedPaste)?;
     // T23.1: only a terminal `cox_tui::term::Caps::query` already found to
@@ -148,7 +154,13 @@ pub async fn run(
         loop {
             let msg = tokio::select! {
                 Some(ev) = input.recv() => match ev? {
-                    Input::Key(k) if k.kind != KeyEventKind::Release => Msg::Key(k),
+                    // T54.6: a release matters only to a held voice key.
+                    Input::Key(k)
+                        if k.kind != KeyEventKind::Release
+                            || matches!(state.voice.phase, Phase::Recording { .. }) =>
+                    {
+                        Msg::Key(k)
+                    }
                     Input::Paste(text) => Msg::Paste(text),
                     Input::Resize(w, h) => Msg::Resize(w, h),
                     Input::FocusGained => Msg::Focus(true),
@@ -162,6 +174,7 @@ pub async fn run(
                 },
                 _ = tick.tick() => Msg::Tick,
                 Some(msg) = feed.recv() => msg,
+                Some(msg) = voice.recv() => msg,
             };
             let ticked = matches!(msg, Msg::Tick);
             for cmd in update(&mut state, msg) {
@@ -230,6 +243,7 @@ pub async fn run(
                     Cmd::PluginMgmt(request) => {
                         let _ = plugin_mgmt.try_send(request);
                     }
+                    Cmd::Voice(cmd) => voice.send(cmd),
                 }
             }
             // While a resize settles nothing is drawn or inserted: finished

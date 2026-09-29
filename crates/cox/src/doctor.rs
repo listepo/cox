@@ -4,7 +4,7 @@
 //! capabilities (TERM, true colour, size), prices table age, whether every
 //! configured model has a catalog price (T30.27), what LM Studio runs when
 //! it is the code tier's provider (T30.16), `.claude/settings.json`,
-//! each `[lsp.servers]` program on PATH (T41.7),
+//! each `[lsp.servers]` program on PATH (T41.7), push-to-talk (T54.7),
 //! one OAuth row per HTTP MCP server (T22.5), and one row per granted
 //! `[[external_agents]]` entry (EA§7, T35.8), and one row per discovered
 //! plugin: loaded, skipped (with reason), not granted, or dev, plus
@@ -107,6 +107,9 @@ pub fn run(
 
     // Each `[lsp.servers]` program found on PATH or missing (T41.7).
     results.push(check_lsp(config));
+
+    // Push-to-talk: built, enabled, model present, input device (T54.7).
+    results.push(check_voice(config, &home));
 
     // One row per granted `[[external_agents]]` entry: CLI on PATH (+
     // `--version`, best-effort), `key_env` set, sandboxed or refused
@@ -355,6 +358,69 @@ fn check_lsp_with(
              without one, `diagnostics` tells the model to run the project's checker with `bash`"
                 .to_string(),
         )
+    }
+}
+
+const VOICE: &str = "voice";
+
+#[cfg(not(feature = "voice"))]
+fn check_voice(_: &cox_protocol::Config, _: &std::path::Path) -> CheckResult {
+    CheckResult::ok(
+        VOICE,
+        "not built (`cargo build --features voice`)".to_string(),
+    )
+}
+
+#[cfg(feature = "voice")]
+fn check_voice(config: &cox_protocol::Config, home: &std::path::Path) -> CheckResult {
+    check_voice_with(
+        &config.voice,
+        crate::voice_cmd::model_path(home, &config.voice.model),
+        cox_voice::input_device,
+    )
+}
+
+/// `device` names the default input device; it is asked only once the
+/// feature is on and the model is there, and it never opens a stream.
+#[cfg(feature = "voice")]
+fn check_voice_with(
+    voice: &cox_protocol::config::VoiceConfig,
+    model: Option<PathBuf>,
+    device: impl Fn() -> Option<String>,
+) -> CheckResult {
+    let name = &voice.model;
+    if !voice.enabled {
+        return CheckResult::ok(VOICE, "built; off (voice.enabled = false)".to_string());
+    }
+    let Some(model) = model else {
+        return CheckResult::warn(
+            VOICE,
+            format!("built, enabled; {name} is not a pinned model"),
+            "set voice.model to a name `cox voice model list` shows".to_string(),
+        );
+    };
+    if !model.is_file() {
+        return CheckResult::warn(
+            VOICE,
+            format!("built, enabled; model {name} missing"),
+            format!("run `cox voice model download {name}`"),
+        );
+    }
+    match device() {
+        Some(mic) => CheckResult::ok(
+            VOICE,
+            format!(
+                "built, enabled, model {name} present, input {}",
+                cox_sanitize::sanitize(&mic)
+            ),
+        ),
+        None => CheckResult::warn(
+            VOICE,
+            format!("built, enabled, model {name} present; no input device"),
+            "connect a microphone; on macOS allow this terminal under System Settings > \
+             Privacy & Security > Microphone"
+                .to_string(),
+        ),
     }
 }
 
@@ -780,7 +846,9 @@ fn ymd_to_days(date: (u32, u32, u32)) -> Option<u32> {
 fn days_between(from: &str, to: (u32, u32, u32)) -> Option<u32> {
     let from_days = ymd_to_days(parse_iso_date(from)?)?;
     let to_days = ymd_to_days(to)?;
-    Some(to_days - from_days)
+    // `cox-vendor` stamps the local date, which runs ahead of the UTC `today`
+    // near midnight: a date after today is as fresh as today, not a panic.
+    Some(to_days.saturating_sub(from_days))
 }
 
 fn today_ymd() -> (u32, u32, u32) {
@@ -1229,6 +1297,39 @@ mod tests {
         insta::assert_snapshot!(rows.iter().map(human).collect::<String>());
     }
 
+    /// T54.7: enabled with the model not downloaded warns and names the
+    /// download command, without asking for the input device; the other
+    /// rows are off, present with a device, and present without one.
+    #[cfg(feature = "voice")]
+    #[test]
+    fn doctor_reports_voice_model_missing() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let voice = cox_protocol::config::VoiceConfig {
+            enabled: true,
+            ..Default::default()
+        };
+        let model = crate::voice_cmd::model_path(home.path(), "base.en");
+        let missing = check_voice_with(&voice, model.clone(), || unreachable!("no device probe"));
+        assert_eq!(missing.status, "warn");
+        assert!(
+            human(&missing).contains("cox voice model download base.en"),
+            "{}",
+            human(&missing)
+        );
+
+        let path = model.clone().expect("pinned");
+        std::fs::create_dir_all(path.parent().expect("dir")).expect("mkdir");
+        std::fs::write(&path, b"ggml").expect("model");
+        let with = check_voice_with(&voice, model.clone(), || Some("Built-in Mic".into()));
+        let without = check_voice_with(&voice, model.clone(), || None);
+        let off = check_voice_with(&Default::default(), model, || None);
+        assert_eq!(
+            [&with, &without, &off].map(|r| r.status.as_str()),
+            ["ok", "warn", "ok"]
+        );
+        assert!(human(&with).contains("Built-in Mic"));
+    }
+
     /// T37.36: a `cox.db` a newer `cox` migrated fails the `db` row with
     /// both versions and an update fix, never "remove cox.db".
     #[test]
@@ -1248,6 +1349,21 @@ mod tests {
         let result = check_prices();
         assert_eq!(result.status, "ok");
         assert!(result.detail.starts_with("oldest verified_on "));
+    }
+
+    #[test]
+    fn doctor_prices_verified_after_today_is_fresh() {
+        let ahead = Price {
+            id: "claude-haiku-4-5".to_string(),
+            input: 1.0,
+            output: 5.0,
+            cache_write: 1.25,
+            cache_read: 0.1,
+            verified_on: "2026-09-13".to_string(),
+            source_url: "https://example.com".to_string(),
+        };
+        let result = prices_status(&[ahead], (2026, 9, 12));
+        assert_eq!(result.status, "ok", "{}", result.detail);
     }
 
     #[test]

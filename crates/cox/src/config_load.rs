@@ -83,6 +83,8 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
         ("continue", "runtime.continue"),
         ("resume", "runtime.resume"),
         ("deep", "runtime.deep"),
+        // T40.7: `cox run --image` attaches files to this one prompt.
+        ("image", "runtime.image"),
         // T27.6: `cox run --loop`/`--max-iterations` are invocation
         // parameters (the loop's own state), not persisted config.
         ("loop", "runtime.loop"),

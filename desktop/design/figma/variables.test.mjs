@@ -3,13 +3,13 @@
 // in-memory stand-in for the Plugin API calls the scripts make.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COLOR_MODES, chunks, collections, loadTokens, styles, walk } from './variables.mjs';
+import { COLOR_MODES, FIGMA_FONT, chunks, collections, loadTokens, styles, walk } from './variables.mjs';
 
 const tokens = await loadTokens();
 const AsyncFunction = (async () => {}).constructor;
 const name = (path) => path.filter((p) => p !== '$root').join('/');
 
-function fakeFigma({ fonts = ['SF Pro'], rendered = fonts } = {}) {
+function fakeFigma({ fonts = ['Inter', 'Roboto Mono'], rendered = fonts } = {}) {
   let next = 1;
   const id = (kind) => `${kind}:${next++}`;
   const cols = [];
@@ -137,21 +137,32 @@ test('a_second_run_updates_in_place_and_prunes_what_the_tokens_dropped', async (
   assert.equal(new Set(figma.state.texts.map((s) => s.name)).size, figma.state.texts.length);
 });
 
-test('a_font_figma_lacks_skips_its_text_style_and_says_so', async () => {
-  const figma = fakeFigma({ fonts: ['SF Pro'] });
+test('every_text_style_uses_a_stand_in_style_figma_renders_mono_included', async () => {
+  const { text } = styles(tokens);
+  const stand = Object.values(FIGMA_FONT);
+  for (const s of text) assert.ok(stand.some((f) => f.family === s.family && f.styles.includes(s.style)), `${s.name}: ${s.family} ${s.style}`);
+  assert.ok(text.some((s) => s.family === 'Roboto Mono'), 'no mono text style');
+  const figma = fakeFigma();
   const report = (await run(figma)).find((r) => r.styles);
-  const mono = styles(tokens).text.filter((s) => s.family === 'SF Mono').map((s) => s.name);
+  assert.deepEqual([report.missingFonts, report.unrenderedFonts], [[], []]);
+  assert.deepEqual(figma.state.texts.map((s) => s.name), text.map((s) => s.name));
+});
+
+test('a_font_figma_lacks_skips_its_text_style_and_says_so', async () => {
+  const figma = fakeFigma({ fonts: ['Inter'] });
+  const report = (await run(figma)).find((r) => r.styles);
+  const mono = styles(tokens).text.filter((s) => s.family === 'Roboto Mono').map((s) => s.name);
   assert.ok(mono.length > 0);
   assert.deepEqual(report.missingFonts.map((m) => m.split(':')[0]), mono);
   assert.ok(figma.state.texts.every((s) => !mono.includes(s.name) && s.bound.fontSize));
 });
 
 test('a_font_figma_lists_but_cannot_render_is_reported_and_kept', async () => {
-  const figma = fakeFigma({ fonts: ['SF Pro'], rendered: [] });
+  const figma = fakeFigma({ rendered: [] });
   const report = (await run(figma)).find((r) => r.styles);
-  const plain = styles(tokens).text.filter((s) => s.family === 'SF Pro').map((s) => s.name);
-  assert.deepEqual(report.unrenderedFonts.map((m) => m.split(':')[0]), plain);
-  assert.deepEqual(figma.state.texts.map((s) => s.name), plain);
+  const all = styles(tokens).text.map((s) => s.name);
+  assert.deepEqual(report.unrenderedFonts.map((m) => m.split(':')[0]), all);
+  assert.deepEqual(figma.state.texts.map((s) => s.name), all);
 });
 
 test('a_drop_shadow_is_not_painted_under_its_own_box', () => {

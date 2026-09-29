@@ -27,6 +27,7 @@ Programs the project uses and the direct packages from its manifests.
 | SwiftLint | mise (`mise.toml`, aqua) | Lints the macOS app (T37.18): default rules plus DS§9's no-literal custom rules in `desktop/macos/.swiftlint.yml`; CI's `desktop-macos-lint` job; packages run the same version through the SwiftLintPlugins build-tool plugin | https://github.com/realm/SwiftLint |
 | swift-format | Xcode toolchain (`xcrun swift-format`) | Formats the macOS app's Swift (research.md §9.5.5); CI's `desktop-macos-lint` job runs `lint --strict` | https://github.com/swiftlang/swift-format |
 | XcodeGen | mise (`mise.toml`, aqua) | Generates the macOS app's thin `desktop/macos/Cox.xcodeproj` from `desktop/macos/project.yml`, so only the spec is in git and the project never merge-conflicts (`just desktop-app`, T37.32.1); CI's `desktop-macos` job | https://github.com/yonaskolb/XcodeGen |
+| cmake | mise (`mise.toml`) | Builds whisper.cpp for `cox-voice` through `whisper-rs-sys` (T54.2, A123); 3.31.12, the version sibling projects already pin (apps/bindsmith) | https://github.com/Kitware/CMake |
 
 ## ketch
 
@@ -51,6 +52,7 @@ Programs the project uses and the direct packages from its manifests.
 | bytes | local | https://crates.io/crates/bytes | T1.2: turns a reqwest byte stream into SSE frames (`sse.rs`) and drives the in-memory fixture parser (`parse_sse_str`) through the same code path. |
 | chrono | local (`clock`) | https://crates.io/crates/chrono | cox-app: local midnight and week start for the desktop's project spend (T37.29.3.3) |
 | clap | local | https://crates.io/crates/clap | cox (CLI) |
+| cpal | local | https://github.com/RustAudio/cpal | cox-voice: the default microphone (CoreAudio, ALSA, WASAPI) for push-to-talk, in memory only (T54.3, A123); Linux builds need the ALSA headers (libasound2-dev) |
 | crossterm | local | https://crates.io/crates/crossterm | Terminal I/O |
 | diesel | local | https://crates.io/crates/diesel | cox-store diesel/diesel_migrations pinned "2.2" per plan.md D9 resolve to the latest 2.x compatible release (2.3.x) on crates.io as of 2026-09-02; verified no semver-breaking API change vs. 2.2 for the sqlite backend used here. |
 | diesel_migrations | local | https://crates.io/crates/diesel_migrations | SQLite migrations |
@@ -87,6 +89,7 @@ Programs the project uses and the direct packages from its manifests.
 | reqwest | local | https://crates.io/crates/reqwest | cox-provider |
 | url | local | https://crates.io/crates/url | cox-tools: LSP `file://` URI ↔ path (T41.3); `cox-app`'s browser tools parse a URL and pass only http/https (T51.7). 2.5.8, the latest release, 2026-01-05 |
 | rmcp | local | https://crates.io/crates/rmcp | cox-mcp |
+| rubato | local | https://github.com/HEnquist/rubato | cox-voice: the microphone's rate (often 44.1 or 48 kHz) to whisper's 16 kHz (T54.3, A123) |
 | rstest | local | https://crates.io/crates/rstest | Rust dependency |
 | schemars | local | https://crates.io/crates/schemars | Rust dependency |
 | schemars 0.8 | local (build-dependency) | https://crates.io/crates/schemars | cox-provider `build.rs`: typify 0.8's `TypeSpace` takes schemars 0.8 schema types |
@@ -122,6 +125,7 @@ Programs the project uses and the direct packages from its manifests.
 | unicode-width | local | https://crates.io/crates/unicode-width | Rust dependency |
 | vt100 | local | https://crates.io/crates/vt100 | Rust dependency |
 | wasmtime | local (`anyhow` feature only) | https://github.com/bytecodealliance/wasmtime | cox-plugin: the runtime under extism; declared only to enable the `anyhow` feature extism 1.30.0 needs with its default features off (T33.3) |
+| whisper-rs | local (`tracing_backend`) | https://codeberg.org/tazz4843/whisper-rs | cox-voice: local push-to-talk transcription through whisper.cpp (MIT, built with cmake), behind `crates/cox`'s `voice` feature, off by default (T54.2, A123) |
 | wiremock | local | https://crates.io/crates/wiremock | Rust dependency |
 | trycmd | local | https://github.com/assert-rs/trycmd | dev-dep: `cox run -p` output fixtures (P48) |
 

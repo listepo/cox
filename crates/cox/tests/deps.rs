@@ -154,6 +154,31 @@ fn only_plugin_depends_on_extism() {
     );
 }
 
+/// P54 (A123): whisper.cpp's C++ build and platform audio live in
+/// `cox-voice` alone, and the default `cox` build never pulls it: only the
+/// `voice` feature, off by default, links it.
+#[test]
+fn only_cox_voice_depends_on_whisper_cpal_and_rubato() {
+    for (crate_name, crate_deps) in &all_deps() {
+        if crate_name == "cox-voice" {
+            continue;
+        }
+        for audio in ["whisper-rs", "cpal", "rubato"] {
+            assert!(
+                !crate_deps.contains(audio),
+                "{crate_name} must not depend on {audio}; only cox-voice does"
+            );
+        }
+    }
+    let default = tree("cox", &[]);
+    for banned in ["cox-voice", "whisper-rs", "whisper-rs-sys"] {
+        assert!(
+            !default.contains(banned),
+            "the default cox build must not pull {banned}"
+        );
+    }
+}
+
 /// Names of every package in `package`'s normal dependency tree under `features`.
 fn tree(package: &str, features: &[&str]) -> HashSet<String> {
     let output = Command::new("cargo")

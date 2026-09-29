@@ -266,6 +266,18 @@
         }
       }
     },
+    "voice": {
+      "description": "`[voice]`",
+      "$ref": "#/$defs/VoiceConfig",
+      "default": {
+        "enabled": false,
+        "model": "base.en",
+        "language": "en",
+        "key": "alt+v",
+        "auto_submit": true,
+        "max_seconds": 120
+      }
+    },
     "plugins": {
       "description": "`[plugins]`",
       "$ref": "#/$defs/PluginsConfig",
@@ -1714,6 +1726,45 @@
             "type": "string"
           },
           "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "VoiceConfig": {
+      "description": "`[voice]` (P54, A123): push-to-talk dictation with local whisper, used\nonly by a `cox` built with the `voice` feature. User config only: a\nproject config cannot set any `voice.*` key (the guard in `cox-config`'s\n`load.rs`), so a cloned repository can neither switch the microphone on\nnor choose the model file.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Whether the TUI's push-to-talk key records at all.",
+          "type": "boolean",
+          "default": false
+        },
+        "model": {
+          "description": "Whisper model name from `cox voice model list` (`tiny.en`,\n`base.en`, `small.en`, `tiny`, `base`, `small`).",
+          "type": "string",
+          "default": "base.en"
+        },
+        "language": {
+          "description": "ISO-639-1 language code passed to whisper; `auto` lets it detect.",
+          "type": "string",
+          "default": "en"
+        },
+        "key": {
+          "description": "The push-to-talk key, in the keymap's `modifier+key` form.",
+          "type": "string",
+          "default": "alt+v"
+        },
+        "auto_submit": {
+          "description": "Submit the transcript as `Enter` would, but only when the draft was\nempty before recording.",
+          "type": "boolean",
+          "default": true
+        },
+        "max_seconds": {
+          "description": "Longest recording kept, in seconds; audio past it is dropped.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 120
         }
       },
       "additionalProperties": false

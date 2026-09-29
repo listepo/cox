@@ -15,6 +15,7 @@ mod mcp_cmd;
 mod plain;
 #[cfg(feature = "plugins")]
 mod plugin_cmd;
+mod plugin_fetch;
 #[cfg(feature = "plugins")]
 mod plugin_new;
 #[cfg(feature = "plugins")]
@@ -28,9 +29,21 @@ mod sessions;
 mod stats;
 mod status_line;
 mod telemetry;
+#[cfg(feature = "voice")]
+mod voice_cmd;
 
 use clap::Parser;
 use cli::{Cli, Command, ConfigAction};
+
+/// `[y/N]` on stdin, same idiom as `session::offer_worktree_removal`; the
+/// one prompt `cox plugin` and `cox voice` ask before acting.
+#[cfg(any(feature = "plugins", feature = "voice"))]
+pub(crate) fn confirm(question: &str) -> bool {
+    eprint!("{question} [y/N] ");
+    let mut answer = String::new();
+    let _ = std::io::stdin().read_line(&mut answer);
+    matches!(answer.trim(), "y" | "Y" | "yes")
+}
 
 fn main() -> anyhow::Result<()> {
     load_dotenv()?;
@@ -100,9 +113,20 @@ fn main() -> anyhow::Result<()> {
                 print!("{}", plugin_cmd::list(&cli, &cwd, *json));
                 Ok(())
             }
-            Some(crate::cli::PluginAction::Install { dir, yes }) => {
-                plugin_cmd::install(&cli, dir, *yes)
-            }
+            Some(crate::cli::PluginAction::Install {
+                source,
+                sha256,
+                rev,
+                path,
+                yes,
+            }) => plugin_cmd::install(
+                &cli,
+                source,
+                sha256.as_deref(),
+                rev.as_deref(),
+                path.as_deref(),
+                *yes,
+            ),
             Some(crate::cli::PluginAction::Enable { id, project, yes }) => {
                 plugin_cmd::enable(&cli, &cwd, id, *project, *yes)
             }
@@ -159,6 +183,11 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Expand(args)) => {
             let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
             expand_cmd::run(&home, &args.id, args.lines.as_deref())
+        }
+        #[cfg(feature = "voice")]
+        Some(Command::Voice(args)) => {
+            let home = cli.home.clone().unwrap_or_else(config_load::cox_home);
+            voice_cmd::run(&home, &args.action)
         }
         Some(Command::SelfUpdate(args)) => {
             let version = match &args.action {

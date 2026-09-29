@@ -122,6 +122,42 @@ pub enum Command {
     /// Self-update the binary.
     #[command(name = "self")]
     SelfUpdate(SelfUpdateArgs),
+    /// Push-to-talk dictation: the local whisper models (T54.5).
+    #[cfg(feature = "voice")]
+    Voice(VoiceArgs),
+}
+
+/// `cox voice model list|download <name>` (T54.5).
+#[cfg(feature = "voice")]
+#[derive(Args, Debug, Clone)]
+pub struct VoiceArgs {
+    #[command(subcommand)]
+    pub action: VoiceAction,
+}
+
+/// `cox voice` subcommands.
+#[cfg(feature = "voice")]
+#[derive(Subcommand, Debug, Clone)]
+pub enum VoiceAction {
+    /// The whisper models cox can download and use.
+    #[command(subcommand)]
+    Model(VoiceModelAction),
+}
+
+/// `cox voice model` subcommands.
+#[cfg(feature = "voice")]
+#[derive(Subcommand, Debug, Clone)]
+pub enum VoiceModelAction {
+    /// Every pinned model with its size and whether it is downloaded.
+    List,
+    /// Download one pinned model and verify its SHA-256.
+    Download {
+        /// Model name from `cox voice model list` (`base.en`).
+        name: String,
+        /// Download without asking (required when stdin is not a terminal).
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 /// `cox app-server --stdio` (T52.19, DT§4.4): the app-server protocol for
@@ -371,11 +407,26 @@ pub enum PluginAction {
         #[arg(long)]
         json: bool,
     },
-    /// Validate `<dir>`, copy it into `versions/<digest12>/`, write
-    /// `current`, then ask for its capabilities (PL§1).
+    /// Validate a package, copy it into `versions/<digest12>/`, write
+    /// `current`, then ask for its capabilities (PL§1). An https URL is
+    /// downloaded and unpacked, and a git repository cloned, into staging
+    /// first.
     Install {
-        /// A local plugin package directory (the only v1 source).
-        dir: PathBuf,
+        /// A local plugin package directory, an `https://` URL of a
+        /// `.tar.gz` package archive (needs `--sha256`), or `git+<url>`
+        /// (needs `--rev`).
+        source: String,
+        /// The archive's SHA-256; required with a URL. A mismatch is
+        /// refused before anything is unpacked.
+        #[arg(long, value_name = "HEX", conflicts_with_all = ["rev", "path"])]
+        sha256: Option<String>,
+        /// The tag or full commit hash to install from a `git+<url>`; a
+        /// branch is refused.
+        #[arg(long, value_name = "TAG|COMMIT")]
+        rev: Option<String>,
+        /// The package's directory inside the git repository.
+        #[arg(long, value_name = "SUBDIR", requires = "rev")]
+        path: Option<String>,
         /// Skip the stdin prompt and grant what the manifest asks for.
         #[arg(long)]
         yes: bool,

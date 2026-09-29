@@ -57,6 +57,8 @@ pub struct Config {
     pub mcp: McpConfig,
     /// `[lsp]`
     pub lsp: LspConfig,
+    /// `[voice]`
+    pub voice: VoiceConfig,
     /// `[plugins]`
     pub plugins: PluginsConfig,
     /// `[memory]`
@@ -1204,6 +1206,43 @@ pub struct ExternalAgentConfig {
     pub writable: Vec<PathBuf>,
 }
 
+/// `[voice]` (P54, A123): push-to-talk dictation with local whisper, used
+/// only by a `cox` built with the `voice` feature. User config only: a
+/// project config cannot set any `voice.*` key (the guard in `cox-config`'s
+/// `load.rs`), so a cloned repository can neither switch the microphone on
+/// nor choose the model file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct VoiceConfig {
+    /// Whether the TUI's push-to-talk key records at all.
+    pub enabled: bool,
+    /// Whisper model name from `cox voice model list` (`tiny.en`,
+    /// `base.en`, `small.en`, `tiny`, `base`, `small`).
+    pub model: String,
+    /// ISO-639-1 language code passed to whisper; `auto` lets it detect.
+    pub language: String,
+    /// The push-to-talk key, in the keymap's `modifier+key` form.
+    pub key: String,
+    /// Submit the transcript as `Enter` would, but only when the draft was
+    /// empty before recording.
+    pub auto_submit: bool,
+    /// Longest recording kept, in seconds; audio past it is dropped.
+    pub max_seconds: u32,
+}
+
+impl Default for VoiceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            model: "base.en".to_string(),
+            language: "en".to_string(),
+            key: "alt+v".to_string(),
+            auto_submit: true,
+            max_seconds: 120,
+        }
+    }
+}
+
 /// `[plugins]` (PL§1, T33.6): the global switch for WASM plugins. Even
 /// when on, only a plugin granted for its exact digest loads (PL§3). Not
 /// `deny_unknown_fields`: the per-plugin `[plugins.<id>]` tables flatten in
@@ -1757,7 +1796,7 @@ mode.cycle = \"shift+tab\"
 ```
 
 - Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, \
-`thinking`, `expand`, `diff`, `plugin.leader`, `background`, `unqueue`, `quit`, `copy`, `copy.all`. \
+`thinking`, `expand`, `diff`, `plugin.leader`, `background`, `unqueue`, `quit`, `copy`, `copy.all`, `voice`. \
 `@`, `/`, `Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
 - `plugin.leader` (default `ctrl+k`) rebinds the leader itself; a plugin's own keys, reachable \
 only as `<leader> <key>`, come from the plugin's manifest, not from here — a clash between two \

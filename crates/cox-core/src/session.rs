@@ -906,7 +906,10 @@ impl Session {
         // submission — `build` cannot await and the surface installs the
         // hook runner (`set_hook`) only after `Session::new` returns. Its
         // `additionalContext` rides in `system[3]` from here on.
-        if let Some(source) = self.inner.lock().await.startup.take() {
+        // A `let` first: an `if let` scrutinee's guard would live through the
+        // block and deadlock `start_repomap`'s own lock.
+        let startup = self.inner.lock().await.startup.take();
+        if let Some(source) = startup {
             let outcome = hooks::fire_configured(
                 self,
                 HookEvent::SessionStart,
