@@ -99,17 +99,24 @@ fn convert(widget: &Widget) -> WidgetView {
         Widget::Text(ls) => WidgetView::Text { lines: lines(ls) },
         Widget::List { items, selected } => WidgetView::List {
             items: lines(items),
-            selected: selected.and_then(|i| u32::try_from(i).ok()),
+            selected: selected
+                .filter(|&i| i < items.len())
+                .and_then(|i| u32::try_from(i).ok()),
         },
         Widget::Table {
             header,
             rows,
             widths,
-        } => WidgetView::Table {
-            header: spans(header),
-            rows: lines(rows),
-            widths: widths.clone(),
-        },
+        } => {
+            // PL§8 caps nodes and text, not these lists: at most one width
+            // per column, so a render cannot hand the UI a million numbers.
+            let columns = rows.iter().map(Vec::len).fold(header.len(), usize::max);
+            WidgetView::Table {
+                header: spans(header),
+                rows: lines(rows),
+                widths: widths.iter().take(columns).copied().collect(),
+            }
+        }
         Widget::KeyValue(pairs) => WidgetView::KeyValue {
             rows: pairs
                 .iter()
@@ -134,7 +141,8 @@ fn convert(widget: &Widget) -> WidgetView {
         } => WidgetView::Stack {
             vertical: *vertical,
             children: children.iter().map(convert).collect(),
-            sizes: sizes.clone(),
+            // At most one size per child, as for a table's widths.
+            sizes: sizes.iter().take(children.len()).copied().collect(),
         },
         Widget::Block { title, child } => WidgetView::Block {
             title: title.as_ref().map(span),
@@ -690,6 +698,36 @@ mod tests {
             sizes: vec![],
         };
         assert_eq!(view(&wide), too_large, "513 nodes is over the cap");
+    }
+
+    #[test]
+    fn plugin_widget_sizes_never_outnumber_their_parts() {
+        let table = Widget::Table {
+            header: vec![text("a"), text("b")],
+            rows: vec![vec![text("1"), text("2"), text("3")]],
+            widths: vec![4; 100_000],
+        };
+        let WidgetView::Table { widths, .. } = view(&table) else {
+            panic!("a table stays a table");
+        };
+        assert_eq!(widths, vec![4; 3], "one width per column");
+        let stack = Widget::Stack {
+            vertical: true,
+            children: vec![Widget::Text(vec![])],
+            sizes: vec![1; 100_000],
+        };
+        let WidgetView::Stack { sizes, .. } = view(&stack) else {
+            panic!("a stack stays a stack");
+        };
+        assert_eq!(sizes, vec![1], "one size per child");
+        let list = Widget::List {
+            items: vec![vec![text("only")]],
+            selected: Some(7),
+        };
+        assert!(matches!(
+            view(&list),
+            WidgetView::List { selected: None, .. }
+        ));
     }
 
     /// A plugin whose `cox_render` never returns.
