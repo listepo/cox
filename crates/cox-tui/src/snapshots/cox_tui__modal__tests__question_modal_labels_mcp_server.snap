@@ -1,0 +1,7 @@
+---
+source: crates/cox-tui/src/modal.rs
+expression: text
+---
+ mcp:github asks: mcp Sign up — Name
+ 1) send  2) edit  3) decline
+ > ▏   Enter sends · Esc dismisses

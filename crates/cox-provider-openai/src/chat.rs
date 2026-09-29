@@ -12,7 +12,9 @@
 //! to, arguments arrive split across many chunks, and the whole batch
 //! finishes together on `finish_reason: "tool_calls"`. So this state
 //! machine — unlike `responses` — keeps per-call state: a Vec of
-//! accumulators keyed by wire index. Wire ids (`tool_call_id`) are opaque
+//! accumulators keyed by wire index, emitted only when the batch finishes,
+//! one whole call at a time (`ToolUseStart` → input → `ToolUseEnd`),
+//! because a `ToolUseInputDelta` names no call (T38.1). Wire ids (`tool_call_id`) are opaque
 //! provider strings (Ollama mints `call_xxx`, never a ULID), so cox mints
 //! its own `CallId` per call and sends it back out as
 //! `tool.role: "tool"`, `tool_call_id` — the same "cox owns the id space"
@@ -26,8 +28,11 @@
 //! be: same wire shape, real auth.
 //!
 //! **Thinking.** Chat has no reasoning-item replay (that is a Responses
-//! feature), so `Content::Thinking` is treated exactly as in
-//! `responses.rs`: unsigned dropped, signed rejected with `Unsupported`.
+//! feature), so `Content::Thinking` is treated as in `responses.rs`:
+//! unsigned dropped, signed rejected with `Unsupported`. The one exception
+//! is a tool call's thought signature (Gemini, T39.3): core keeps it as a
+//! signed empty-text thinking block directly before its `ToolUse`, and it
+//! goes back out as `extra_content.google.thought_signature` on that call.
 
 use async_trait::async_trait;
 use cox_models::{Api, Capabilities, effort_for};
@@ -43,11 +48,26 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 /// Translates a `Request` into the JSON body for `POST /v1/chat/completions`.
-/// Errors only when history carries a signed thinking block (see module
-/// header) — every other shape translates unconditionally. `caps` is what
-/// the model's `models` entry declares: `reasoning_effort` goes out only
-/// when it declares the field (`cox_models::effort_for`).
+/// Errors when history carries a signed thinking block that is not a tool
+/// call's signature (see module header) or an image for a model declared
+/// `images = false` — every other shape translates unconditionally. `caps`
+/// is what the model's `models` entry declares: `reasoning_effort` goes out
+/// only when it declares the field (`cox_models::effort_for`).
 pub fn build_body(req: &Request, caps: &Capabilities) -> Result<Value, ProviderError> {
+    // The core already holds images back from a Chat model that does not
+    // declare them; this is the wire's own refusal, so a declared
+    // text-only model never gets a request it would reject after a
+    // network round-trip. Unset still sends and lets the server answer.
+    let has_image = req
+        .messages
+        .iter()
+        .flat_map(|m| &m.content)
+        .any(|c| matches!(c, Content::Image { .. }));
+    if has_image && caps.images == Some(false) {
+        return Err(ProviderError::Unsupported {
+            feature: format!("image input ({} is declared images = false)", req.model.0),
+        });
+    }
     let mut messages = Vec::new();
     // Chat takes one `system` message; the blocks are joined in order.
     if !req.system.is_empty() {
@@ -113,8 +133,11 @@ fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
     let mut text = String::new();
     let mut tool_calls = Vec::new();
     let mut images = Vec::new();
+    // A tool call's signature waits here for the `ToolUse` right after it.
+    let mut pending_signature: Option<&str> = None;
 
-    for c in &m.content {
+    let mut blocks = m.content.iter().peekable();
+    while let Some(c) = blocks.next() {
         match c {
             Content::Text { text: t } => {
                 if !text.is_empty() {
@@ -122,11 +145,17 @@ fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
                 }
                 text.push_str(t);
             }
-            Content::ToolUse { id, name, input } => tool_calls.push(json!({
-                "id": id.to_string(),
-                "type": "function",
-                "function": {"name": name, "arguments": input.to_string()},
-            })),
+            Content::ToolUse { id, name, input } => {
+                let mut call = json!({
+                    "id": id.to_string(),
+                    "type": "function",
+                    "function": {"name": name, "arguments": input.to_string()},
+                });
+                if let Some(sig) = pending_signature.take() {
+                    call["extra_content"] = signature_extra(sig);
+                }
+                tool_calls.push(call);
+            }
             Content::ToolResult {
                 call_id,
                 content,
@@ -160,14 +189,20 @@ fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
                 }
                 text.push_str(&format!("[archived: {summary}; expand {}]", archive.id));
             }
-            Content::Thinking { signature, .. } => {
-                if signature.is_some() {
+            Content::Thinking { text: t, signature } => match signature {
+                // No signature: nothing to replay, drop silently.
+                None => {}
+                Some(sig)
+                    if t.is_empty() && matches!(blocks.peek(), Some(Content::ToolUse { .. })) =>
+                {
+                    pending_signature = Some(sig.as_str());
+                }
+                Some(_) => {
                     return Err(ProviderError::Unsupported {
                         feature: "thinking replay".into(),
                     });
                 }
-                // No signature: nothing to replay, drop silently.
-            }
+            },
         }
     }
 
@@ -196,14 +231,35 @@ fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
 /// header: Chat interleaves parallel calls by wire index).
 #[derive(Debug)]
 pub struct AccruedCall {
-    /// The cox id minted at `ToolUseStart`; sent back out as `tool_call_id`.
+    /// The cox id minted when the index first appears; carried by
+    /// `ToolUseStart` and sent back out as `tool_call_id`.
     pub id: CallId,
     /// The tool's name.
     pub name: String,
     /// The JSON input, accumulated one string chunk at a time.
     pub arguments: String,
-    /// Whether `ToolUseStart` was emitted for this call yet.
-    started: bool,
+    /// The server's own id for the call, which tells apart calls from a
+    /// server that omits `index`.
+    pub wire_id: Option<String>,
+    /// The call's thought signature (Gemini); the last one sent wins.
+    pub signature: Option<String>,
+}
+
+/// A tool call's `extra_content` carrying its thought signature back to the
+/// server: the inverse of [`thought_signature`], under the same UNVERIFIED
+/// path.
+fn signature_extra(sig: &str) -> Value {
+    json!({"google": {"thought_signature": sig}})
+}
+
+/// Where Gemini puts a tool call's thought signature on the Chat wire.
+/// UNVERIFIED: the page that documented `extra_content.google.thought_signature`
+/// is now a "moved" notice (plan.md P39); T39.7 checks it against the live
+/// endpoint, so every read of the path stays here.
+fn thought_signature(chunk: &Value) -> Option<&str> {
+    chunk
+        .pointer("/extra_content/google/thought_signature")
+        .and_then(Value::as_str)
 }
 
 /// The state carried across one `POST /v1/chat/completions` SSE body:
@@ -240,6 +296,14 @@ impl OpenAiChatStream {
         }
     }
 
+    /// Called once the SSE body ends: emits any call a server left open by
+    /// closing without a `finish_reason` (empty after a normal batch).
+    pub fn finish(&mut self) -> Vec<ProviderEvent> {
+        let mut events = Vec::new();
+        self.flush(&mut events);
+        events
+    }
+
     /// The usage accumulated so far (cost/latency filled in by the caller).
     pub fn usage(&self) -> Usage {
         self.usage
@@ -253,6 +317,11 @@ impl OpenAiChatStream {
     /// Ollama and vLLM do) just updates the counters.
     pub fn feed(&mut self, data: &str) -> Result<Vec<ProviderEvent>, ProviderError> {
         self.frame_no += 1;
+        // OpenAI-style servers end the stream with a non-JSON sentinel; the
+        // end of the byte stream, not this frame, finishes the turn.
+        if data.trim() == "[DONE]" {
+            return Ok(Vec::new());
+        }
         let value: Value = serde_json::from_str(data).map_err(|_| ProviderError::Parse {
             line: self.frame_no,
         })?;
@@ -313,11 +382,12 @@ impl OpenAiChatStream {
             }
             if let Some(tool_chunks) = delta.get("tool_calls").and_then(Value::as_array) {
                 for chunk in tool_chunks {
-                    self.on_tool_call_chunk(chunk, events);
+                    self.on_tool_call_chunk(chunk);
                 }
             }
         }
         if let Some(finish) = choice.get("finish_reason").and_then(Value::as_str) {
+            self.flush(events);
             match finish {
                 // §1.2 StopReason: a provider only ever emits EndTurn/
                 // Refusal/Error. `tool_calls`, `stop`, `length` and any
@@ -341,50 +411,82 @@ impl OpenAiChatStream {
     }
 
     /// One `delta.tool_calls[i]` chunk: index-keyed accumulation (module
-    /// header). The first chunk for an index carries `id` + `function.name`
-    /// and emits `ToolUseStart`; later chunks append to `arguments`.
-    fn on_tool_call_chunk(&mut self, chunk: &Value, events: &mut Vec<ProviderEvent>) {
-        let idx = chunk.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+    /// header). The first chunk for an index carries `id` + `function.name`;
+    /// later chunks append to `arguments`. Nothing is emitted here: an input
+    /// delta names no call, so a chunk interleaved from another index would
+    /// land in the wrong one — [`Self::flush`] emits each call whole.
+    fn on_tool_call_chunk(&mut self, chunk: &Value) {
+        let wire_id = chunk
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty());
+        let idx = match chunk.get("index").and_then(Value::as_u64) {
+            Some(idx) => idx as usize,
+            // No index: continue the current call unless a new wire id says
+            // this chunk opens another one (else parallel calls would merge).
+            None => {
+                let last = self.calls.len().saturating_sub(1);
+                let opens_new = wire_id.is_some_and(|id| {
+                    self.calls
+                        .get(last)
+                        .is_some_and(|c| c.wire_id.as_deref() != Some(id))
+                });
+                if opens_new { last + 1 } else { last }
+            }
+        };
         while self.calls.len() <= idx {
             self.calls.push(AccruedCall {
                 id: CallId::new(),
                 name: String::new(),
                 arguments: String::new(),
-                started: false,
+                wire_id: None,
+                signature: None,
             });
         }
         let call = &mut self.calls[idx];
+        if let Some(id) = wire_id {
+            call.wire_id = Some(id.to_string());
+        }
+        if let Some(signature) = thought_signature(chunk) {
+            call.signature = Some(signature.to_string());
+        }
+        let function = chunk.get("function");
 
-        if let Some(name) = chunk
-            .get("function")
-            .and_then(|f| f.get("name"))
-            .and_then(Value::as_str)
+        // Some servers resend the name on later chunks; the last one wins.
+        if let Some(name) = function.and_then(|f| f.get("name")).and_then(Value::as_str)
             && !name.is_empty()
         {
             call.name = name.to_string();
         }
-
-        // Emit `ToolUseStart` once, on the chunk that first names the tool.
-        // The name is set above and the id was minted when the accumulator
-        // was created, so a second name chunk (some servers resend it) is
-        // idempotent: `started` is a separate flag.
-        if !call.name.is_empty() && !call.started {
-            call.started = true;
-            events.push(ProviderEvent::ToolUseStart {
-                id: call.id,
-                name: call.name.clone(),
-            });
-        }
-        if let Some(args) = chunk
-            .get("function")
+        if let Some(args) = function
             .and_then(|f| f.get("arguments"))
             .and_then(Value::as_str)
-            && !args.is_empty()
         {
             call.arguments.push_str(args);
-            events.push(ProviderEvent::ToolUseInputDelta {
-                text: args.to_string(),
+        }
+    }
+
+    /// Emits the batch in wire-index order, each call as `ToolUseStart` →
+    /// its signature, if any → its input → `ToolUseEnd`, and drains it so a
+    /// second flush is a no-op.
+    /// `cox-core` commits a call only on `ToolUseEnd` (the bug T30.6 fixed
+    /// for Anthropic, T38.1 here). A call that never got a name has no tool
+    /// to run and is dropped.
+    fn flush(&mut self, events: &mut Vec<ProviderEvent>) {
+        for call in self.calls.drain(..).filter(|c| !c.name.is_empty()) {
+            events.push(ProviderEvent::ToolUseStart {
+                id: call.id,
+                name: call.name,
             });
+            if let Some(signature) = call.signature {
+                events.push(ProviderEvent::ToolUseSignature { signature });
+            }
+            if !call.arguments.is_empty() {
+                events.push(ProviderEvent::ToolUseInputDelta {
+                    text: call.arguments,
+                });
+            }
+            events.push(ProviderEvent::ToolUseEnd);
         }
     }
 
@@ -454,7 +556,7 @@ pub struct OpenAiChatProvider {
 impl OpenAiChatProvider {
     /// Builds a client for any `api = "chat"` section — native `local` and
     /// every Type-2 compatible section alike (T30.23: `openai_shaped` in
-    /// `crates/cox/src/session.rs` is the one production caller for both).
+    /// `crates/cox-session/src/provider.rs` is the one production caller for both).
     /// `api_key` is already resolved by the caller (`None` means no
     /// `Authorization` header at all — most local/self-hosted gateways
     /// need none).
@@ -482,6 +584,15 @@ impl OpenAiChatProvider {
 impl Provider for OpenAiChatProvider {
     fn id(&self) -> ProviderId {
         ProviderId::Local
+    }
+
+    /// Only a `models` entry that declares `images = true`: a local server
+    /// hosts text-only models too, and they reject an `image_url` part.
+    fn accepts_images(&self, model: &str) -> bool {
+        self.models
+            .iter()
+            .find(|m| m.id == model)
+            .is_some_and(|m| Capabilities::declared_by(m).images == Some(true))
     }
 
     fn capabilities(&self) -> Caps {
@@ -539,6 +650,8 @@ impl OpenAiChatProvider {
 
         let mut request = self
             .http
+            // CodeQL cleartext-transmission: the key travels only in the
+            // Authorization header; base_url is user-configured (https by default).
             .post(format!("{}/chat/completions", self.base_url))
             .header("content-type", "application/json")
             .json(&body);
@@ -574,16 +687,23 @@ impl OpenAiChatProvider {
                 _ = cancel.cancelled() => return Err(ProviderError::Cancelled),
                 frame = frames.next() => frame,
             };
-            let Some(frame) = next else {
-                break;
+            let done = next.is_none();
+            let events = match next {
+                Some(frame) => {
+                    let (_event, data) = frame.map_err(|_| ProviderError::Network)?;
+                    machine.feed(&data)?
+                }
+                None => machine.finish(),
             };
-            let (_event, data) = frame.map_err(|_| ProviderError::Network)?;
-            for provider_event in machine.feed(&data)? {
+            for provider_event in events {
                 // The receiving end hung up: unwind as a cancellation
                 // rather than silently dropping the rest of the call.
                 if sink.send(provider_event).await.is_err() {
                     return Err(ProviderError::Cancelled);
                 }
+            }
+            if done {
+                break;
             }
         }
 
@@ -641,6 +761,22 @@ mod tests {
             .collect()
     }
 
+    /// Test-only: the tool-call and stop events as short strings, so an
+    /// ordering assertion reads as the sequence it pins.
+    fn tool_shape(events: &[ProviderEvent]) -> Vec<String> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                ProviderEvent::ToolUseStart { name, .. } => Some(format!("start {name}")),
+                ProviderEvent::ToolUseSignature { signature } => Some(format!("sig {signature}")),
+                ProviderEvent::ToolUseInputDelta { text } => Some(format!("delta {text}")),
+                ProviderEvent::ToolUseEnd => Some("end".into()),
+                ProviderEvent::Stop { .. } => Some("stop".into()),
+                _ => None,
+            })
+            .collect()
+    }
+
     fn run_fixture(name: &str) -> Vec<ProviderEvent> {
         let mut stream = OpenAiChatStream::new();
         let mut events = Vec::new();
@@ -660,20 +796,89 @@ mod tests {
         insta::assert_json_snapshot!("chat_stream_one_tool_call", run_fixture("one_tool_call"));
     }
 
+    /// T38.1: `cox-core` commits a call only on `ToolUseEnd` and a delta
+    /// carries no call id, so interleaved calls must come out one whole
+    /// call at a time: the fixture's second chunk for index 0 arrives after
+    /// index 1 has started.
     #[test]
-    fn chat_stream_parallel_tool_calls_by_index() {
+    fn chat_stream_parallel_tool_calls_come_out_whole_each_ending_before_the_next() {
         let events = run_fixture("parallel_tool_calls");
-        let starts = events
-            .iter()
-            .filter(|e| matches!(e, ProviderEvent::ToolUseStart { .. }))
-            .count();
-        assert_eq!(starts, 2, "two interleaved-by-index calls: {events:?}");
-        let stops = events
-            .iter()
-            .filter(|e| matches!(e, ProviderEvent::Stop { .. }))
-            .count();
-        assert_eq!(stops, 1, "one terminal finish_reason for the batch");
+        assert_eq!(
+            tool_shape(&events),
+            [
+                "start read",
+                r#"delta {"path":"a.rs"} more"#,
+                "end",
+                "start read",
+                r#"delta {"path":"b.rs"}"#,
+                "end",
+                "stop",
+            ],
+            "{events:?}"
+        );
         insta::assert_json_snapshot!("chat_stream_parallel_tool_calls", events);
+    }
+
+    #[test]
+    fn chat_stream_calls_left_open_by_a_body_without_finish_reason_end_on_finish() {
+        let mut stream = OpenAiChatStream::new();
+        let open = stream
+            .feed(r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"c","function":{"name":"read","arguments":"{}"}}]}}]}"#)
+            .expect("well-formed");
+        assert!(open.is_empty(), "buffered until the batch ends: {open:?}");
+        let flushed = stream.finish();
+        assert!(matches!(
+            flushed.as_slice(),
+            [
+                ProviderEvent::ToolUseStart { .. },
+                ProviderEvent::ToolUseInputDelta { .. },
+                ProviderEvent::ToolUseEnd
+            ]
+        ));
+        assert!(stream.finish().is_empty(), "a flush drains the batch");
+    }
+
+    /// T39.1: a Gemini tool-call chunk's thought signature comes out once,
+    /// between its call's `ToolUseStart` and `ToolUseEnd`.
+    #[test]
+    fn chat_stream_emits_signature_between_start_and_end() {
+        let events = run_fixture("gemini-tool-signature");
+        assert_eq!(
+            tool_shape(&events),
+            [
+                "start read",
+                "sig sig-fixture",
+                r#"delta {"path":"src/main.rs"}"#,
+                "end",
+                "stop"
+            ],
+            "{events:?}"
+        );
+    }
+
+    /// T39.1: a server that omits `index` must not merge parallel calls into
+    /// call 0; a new wire `id` starts a new call.
+    #[test]
+    fn chat_stream_splits_calls_without_index_by_wire_id() {
+        let mut stream = OpenAiChatStream::new();
+        for frame in [
+            r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"id":"a","function":{"name":"read","arguments":"{\"path\":"}}]}}]}"#,
+            r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"function":{"arguments":"\"a.rs\"}"}}]}}]}"#,
+            r#"{"choices":[{"index":0,"delta":{"tool_calls":[{"id":"b","function":{"name":"grep","arguments":"{}"}}]}}]}"#,
+        ] {
+            assert!(stream.feed(frame).expect("well-formed").is_empty());
+        }
+        assert_eq!(
+            tool_shape(&stream.finish()),
+            [
+                "start read",
+                r#"delta {"path":"a.rs"}"#,
+                "end",
+                "start grep",
+                "delta {}",
+                "end"
+            ]
+        );
     }
 
     #[test]
@@ -706,6 +911,12 @@ mod tests {
         let mut stream = OpenAiChatStream::new();
         let err = stream.feed("{not json").unwrap_err();
         assert!(matches!(err, ProviderError::Parse { line: 1 }));
+    }
+
+    #[test]
+    fn chat_stream_done_sentinel_is_not_a_parse_error() {
+        let mut stream = OpenAiChatStream::new();
+        assert!(stream.feed("[DONE]").expect("sentinel").is_empty());
     }
 
     #[test]
@@ -824,6 +1035,61 @@ mod tests {
         }];
         let err = build_body(&req, &Capabilities::default())
             .expect_err("signed thinking must not drop silently");
+        assert!(matches!(err, ProviderError::Unsupported { .. }));
+    }
+
+    #[test]
+    fn chat_request_replays_signature_on_its_tool_call() {
+        let mut req = base("gemini-3.8-flash");
+        req.messages = vec![
+            user_text("read both files"),
+            Message {
+                role: Role::Assistant,
+                content: vec![
+                    Content::Thinking {
+                        text: String::new(),
+                        signature: Some("sig-a".into()),
+                    },
+                    Content::ToolUse {
+                        id: call(1),
+                        name: "read".into(),
+                        input: json!({"path": "a.rs"}),
+                    },
+                    Content::ToolUse {
+                        id: call(2),
+                        name: "read".into(),
+                        input: json!({"path": "b.rs"}),
+                    },
+                ],
+            },
+        ];
+        let body = build_body(&req, &Capabilities::default()).expect("a tool call's signature");
+        let calls = &body["messages"][2]["tool_calls"];
+        assert_eq!(
+            calls[0]["extra_content"]["google"]["thought_signature"],
+            "sig-a"
+        );
+        assert!(calls[1].get("extra_content").is_none());
+        insta::assert_json_snapshot!(body);
+    }
+
+    #[test]
+    fn chat_request_signature_not_before_a_tool_call_unsupported() {
+        let mut req = base("gemini-3.8-flash");
+        req.messages = vec![Message {
+            role: Role::Assistant,
+            content: vec![
+                Content::Thinking {
+                    text: String::new(),
+                    signature: Some("sig-a".into()),
+                },
+                Content::Text {
+                    text: "no call follows".into(),
+                },
+            ],
+        }];
+        let err = build_body(&req, &Capabilities::default())
+            .expect_err("a signature with no call after it has nowhere to go");
         assert!(matches!(err, ProviderError::Unsupported { .. }));
     }
 
@@ -1071,6 +1337,71 @@ mod tests {
         )
         .expect("client builds");
         assert_eq!(bare.capabilities().max_context, 32_768);
+    }
+
+    /// T37.6 Check: a local Chat model takes images only when its
+    /// `models` entry declares them; anything else gets the core's notice.
+    #[test]
+    fn chat_accepts_images_only_where_a_model_declares_them() {
+        use cox_protocol::config::ProviderModel;
+        let client = OpenAiChatProvider::new(
+            &transport("http://localhost:11434/v1"),
+            None,
+            vec![
+                ProviderModel {
+                    id: "llava".into(),
+                    images: Some(true),
+                    ..Default::default()
+                },
+                ProviderModel {
+                    id: "qwen3-coder".into(),
+                    ..Default::default()
+                },
+            ],
+            32_768,
+        )
+        .expect("client builds");
+        assert!(client.accepts_images("llava"));
+        assert!(!client.accepts_images("qwen3-coder"));
+        assert!(!client.accepts_images("unlisted"));
+    }
+
+    /// T40.9 Check: an image aimed at a model declared text-only is refused
+    /// before any body exists; the same request to an undeclared model
+    /// still goes out, as today.
+    #[test]
+    fn chat_request_images_refused_for_text_only_model() {
+        use cox_protocol::config::ProviderModel;
+        let mut req = base("qwen3-coder");
+        req.messages = vec![Message {
+            role: Role::User,
+            content: vec![
+                Content::Image {
+                    media_type: "image/png".into(),
+                    data_b64: "iVBORw0KGgo=".into(),
+                },
+                Content::Text {
+                    text: "what is this?".into(),
+                },
+            ],
+        }];
+        let text_only = Capabilities::declared_by(&ProviderModel {
+            id: "qwen3-coder".into(),
+            images: Some(false),
+            ..Default::default()
+        });
+        let err = build_body(&req, &text_only).expect_err("text-only model refuses images");
+        match err {
+            ProviderError::Unsupported { feature } => {
+                assert!(feature.starts_with("image input"), "{feature}");
+                assert!(feature.contains("qwen3-coder"), "{feature}");
+            }
+            other => panic!("expected Unsupported, got {other:?}"),
+        }
+        let body = build_body(&req, &Capabilities::default()).expect("unset still sends");
+        assert_eq!(body["messages"][1]["content"][1]["type"], "image_url");
+        req.messages[0].content.remove(0);
+        build_body(&req, &text_only).expect("text alone is fine for a text-only model");
     }
 
     #[test]

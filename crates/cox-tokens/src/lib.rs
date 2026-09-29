@@ -19,6 +19,7 @@
 //! working for existing callers.
 
 use cox_protocol::errors::ProviderError;
+use cox_protocol::image::IMAGE_TOKEN_ESTIMATE;
 use cox_protocol::types::{Content, Request};
 use serde_json::Value;
 
@@ -62,8 +63,8 @@ const TOKENS_PER_MESSAGE: u32 = 1;
 
 /// Heuristic size of `req`: UTF-8 bytes of all text content divided by
 /// [`BYTES_PER_TOKEN`], plus [`TOKENS_PER_SCHEMA_KEY`] per JSON key in every
-/// tool's `input_schema`, plus [`TOKENS_PER_MESSAGE`] per message. The
-/// fallback when neither `count_openai` nor `count_anthropic` is available
+/// tool's `input_schema`, plus [`TOKENS_PER_MESSAGE`] per message, plus
+/// `IMAGE_TOKEN_ESTIMATE` per `Content::Image` (T40.3). The fallback when neither `count_openai` nor `count_anthropic` is available
 /// (plan.md T1.8 step 3).
 pub fn estimate(req: &Request) -> Estimate {
     let text_bytes = rendered_message_text(req).len() as f64;
@@ -74,7 +75,8 @@ pub fn estimate(req: &Request) -> Estimate {
         .sum();
     let tokens = (text_bytes / BYTES_PER_TOKEN).ceil() as u32
         + schema_keys * TOKENS_PER_SCHEMA_KEY
-        + req.messages.len() as u32 * TOKENS_PER_MESSAGE;
+        + req.messages.len() as u32 * TOKENS_PER_MESSAGE
+        + image_count(req).saturating_mul(IMAGE_TOKEN_ESTIMATE as u32);
     Estimate {
         tokens,
         estimated: true,
@@ -145,10 +147,8 @@ pub fn strip_for_count(body: &mut Value) {
 /// JSON input, joined with newlines. This is the "text content" [`estimate`]
 /// prices by the byte — tool schemas are deliberately excluded here because
 /// `estimate` prices those separately, per JSON key ([`TOKENS_PER_SCHEMA_KEY`]).
-/// Images carry no text and are not represented.
-// ponytail: images are excluded rather than given a flat token cost — add
-// one (Anthropic bills images by pixel area, not text) if a fixture ever
-// needs it; none of the request shapes in cox today send one to `estimate`.
+/// Images carry no text and are not represented here; [`estimate`] prices
+/// them flat through [`image_count`].
 fn rendered_message_text(req: &Request) -> String {
     let mut s = String::new();
     for block in &req.system {
@@ -183,6 +183,20 @@ fn rendered_message_text(req: &Request) -> String {
         }
     }
     s
+}
+
+/// The `Content::Image` blocks in `req`'s messages. Why a flat cost per
+/// image: Anthropic bills an image by pixel area, capped at 1568 visual
+/// tokens on standard models (plan.md P40), and sizing one would need
+/// decoding it; the provider's reported usage corrects the guess.
+fn image_count(req: &Request) -> u32 {
+    let images = req
+        .messages
+        .iter()
+        .flat_map(|m| &m.content)
+        .filter(|c| matches!(c, Content::Image { .. }))
+        .count();
+    u32::try_from(images).unwrap_or(u32::MAX)
 }
 
 /// [`rendered_message_text`] plus each tool's name, description and
@@ -281,6 +295,24 @@ mod tests {
     fn tokens_estimate_is_always_flagged_estimated() {
         let (_, req, _) = &fixtures()[0];
         assert!(estimate(req).estimated);
+    }
+
+    /// T40.3: each image adds `IMAGE_TOKEN_ESTIMATE`, whatever its size.
+    #[test]
+    fn estimate_counts_each_image_flat() {
+        use cox_protocol::types::{Message, Role};
+        let (_, mut req, _) = fixtures().swap_remove(0);
+        let before = estimate(&req).tokens;
+        let image = |data_b64: String| Content::Image {
+            media_type: "image/png".into(),
+            data_b64,
+        };
+        req.messages.push(Message {
+            role: Role::User,
+            content: vec![image("iVBORw==".into()), image("A".repeat(4000))],
+        });
+        let expected = before + TOKENS_PER_MESSAGE + 2 * IMAGE_TOKEN_ESTIMATE as u32;
+        assert_eq!(estimate(&req).tokens, expected);
     }
 
     #[test]

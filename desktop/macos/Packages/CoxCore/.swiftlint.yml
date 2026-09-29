@@ -1,0 +1,6 @@
+parent_config: ../../.swiftlint.yml
+# UniFFI output, a symlink into the gitignored build/.
+excluded: [Sources/CoxFFIBindings]
+# A mapping switch has one case per enum variant; its length is not logic.
+cyclomatic_complexity:
+  ignores_case_statements: true

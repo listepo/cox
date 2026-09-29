@@ -13,14 +13,14 @@
 //! `default.toml`'s values are not a Rust type's zero value (`true`,
 //! non-empty strings, non-zero numbers).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::types::{
-    ApprovalPolicy, Effort, LinuxBackend, PermissionMode, SandboxMode, Thinking, Tier,
+    ApprovalPolicy, Effort, LinuxBackend, Mode, PermissionMode, SandboxMode, Thinking, Tier,
 };
 
 /// The embedded lowest-precedence config layer (plan.md §1.6/D13):
@@ -55,14 +55,24 @@ pub struct Config {
     pub hooks: HooksConfig,
     /// `[mcp]`
     pub mcp: McpConfig,
+    /// `[lsp]`
+    pub lsp: LspConfig,
+    /// `[voice]`
+    pub voice: VoiceConfig,
     /// `[plugins]`
     pub plugins: PluginsConfig,
     /// `[memory]`
     pub memory: MemoryConfig,
+    /// `[session]`
+    pub session: SessionConfig,
     /// `[telemetry]`
     pub telemetry: TelemetryConfig,
     /// `[record]`
     pub record: RecordConfig,
+    /// `[desktop.appearance]` / `[desktop.transcript]` (macOS app, P37)
+    pub desktop: DesktopConfig,
+    /// `[external_agents.<name>]` (T52.2): user config only.
+    pub external_agents: BTreeMap<String, ExternalAgentConfig>,
 }
 
 impl Config {
@@ -161,6 +171,12 @@ pub struct CoreConfig {
     /// a ≤300-token system prompt, no skills or memory index;
     /// `cox --profile minimal`).
     pub profile: String,
+    /// `core.mode` (P42): the session's starting mode, `editor` (default)
+    /// or `architect`; also `cox --mode`, and `/mode` switches it live.
+    /// Not in the project-config guard list: architect only narrows
+    /// `permissions.mode` and its think tier still needs confirmation, so a
+    /// project config may set it.
+    pub mode: Mode,
 }
 
 impl Default for CoreConfig {
@@ -173,6 +189,7 @@ impl Default for CoreConfig {
             max_concurrent_subagents: 8,
             log_level: "info".to_string(),
             profile: String::new(),
+            mode: Mode::Editor,
         }
     }
 }
@@ -351,6 +368,10 @@ pub struct ProviderModel {
     /// gateways the full `"vendor/model"` id, e.g.
     /// `"anthropic/claude-sonnet-5"`).
     pub id: String,
+    /// What a person calls the model (`"Claude Sonnet 5"`), from models.dev's
+    /// `name` (A111). Unset means a reader shows the id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
     /// Context window in tokens (local servers do not report it; gateways
     /// vary it per model, so the section default is only a fallback).
     pub context_window: u32,
@@ -363,6 +384,14 @@ pub struct ProviderModel {
     /// §4.3.3), so it is opt-in per model rather than per wire.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<bool>,
+    /// Whether this model takes image input (T37.6). Read only by an
+    /// `api = "chat"` section, where one server hosts both vision and
+    /// text-only models: unset means "not declared", and an attached image
+    /// is then held back with a notice rather than sent to a model that
+    /// would reject it. `false` also makes the Chat wire refuse any request
+    /// that still carries an image (T40.9).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub images: Option<bool>,
 }
 
 /// `[providers]` (plan.md §1.6).
@@ -761,6 +790,9 @@ pub struct ContextConfig {
     /// `"default"` or `"minimal"` (T30.1: the ≤300-token prompt; profiles
     /// set this, users normally set `core.profile` instead).
     pub system_prompt: String,
+    /// Token budget for the session repo map, placed last in system[2]
+    /// (P43); `0` is off, the default until the T43.6 bench sets one.
+    pub repomap_budget_tokens: u32,
 }
 
 impl Default for ContextConfig {
@@ -777,6 +809,7 @@ impl Default for ContextConfig {
             memory_budget_tokens: 800,
             deferred_tools: true,
             system_prompt: "default".to_string(),
+            repomap_budget_tokens: 0,
         }
     }
 }
@@ -919,7 +952,48 @@ pub struct TuiConfig {
     /// field (`osc8 = false`) for a terminal `Caps::detect`/`query` guesses
     /// wrong about. An unrecognised name is ignored, not rejected.
     pub caps: HashMap<String, bool>,
+    /// `[tui.status_line]` (T46.1): a user command whose first output line
+    /// is one row above the built-in status line.
+    pub status_line: StatusLineConfig,
 }
+
+/// `[tui.status_line]` (P46, A77): the user's status command. It runs under
+/// the sandbox, read-only and without network, and its output passes
+/// `cox_sanitize::sanitize`. A project config cannot set `command` (the
+/// guard in `cox-config`'s `load.rs`): a cloned repository must not choose
+/// a program cox runs on every TUI start.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct StatusLineConfig {
+    /// A `/bin/sh -c` command fed the status JSON on stdin; empty is off.
+    pub command: String,
+    /// Re-run the command every this many seconds even when nothing
+    /// changed; 0 is off.
+    #[serde(deserialize_with = "refresh_s")]
+    #[schemars(range(min = 0, max = STATUS_LINE_MAX_REFRESH_S))]
+    pub refresh_s: u32,
+    /// How long one run may take, in milliseconds, before it is killed and
+    /// the row goes blank.
+    #[serde(deserialize_with = "timeout_ms")]
+    #[schemars(range(min = STATUS_LINE_TIMEOUT_MS.0, max = STATUS_LINE_TIMEOUT_MS.1))]
+    pub timeout_ms: u32,
+}
+
+impl Default for StatusLineConfig {
+    fn default() -> Self {
+        Self {
+            command: String::new(),
+            refresh_s: 0,
+            timeout_ms: 2_000,
+        }
+    }
+}
+
+/// The longest `tui.status_line.refresh_s`: one hour.
+pub const STATUS_LINE_MAX_REFRESH_S: u32 = 3_600;
+
+/// The bounds of `tui.status_line.timeout_ms`.
+pub const STATUS_LINE_TIMEOUT_MS: (u32, u32) = (100, 10_000);
 
 impl Default for TuiConfig {
     fn default() -> Self {
@@ -939,6 +1013,7 @@ impl Default for TuiConfig {
             notify: "auto".to_string(),
             motion: "full".to_string(),
             caps: HashMap::new(),
+            status_line: StatusLineConfig::default(),
         }
     }
 }
@@ -1042,6 +1117,128 @@ impl Default for McpConfig {
             deferred: true,
             enabled: true,
             servers: HashMap::new(),
+        }
+    }
+}
+
+/// One `[lsp.servers.<name>]` entry (T41.1): a stdio language server and
+/// the file extensions it covers. The name is the TOML key.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct LspServerConfig {
+    /// Program to spawn; looked up on `PATH` like an MCP stdio `command`.
+    pub command: String,
+    /// Arguments to `command`.
+    pub args: Vec<String>,
+    /// File extensions, without the dot, this server is asked about.
+    pub extensions: Vec<String>,
+}
+
+/// `[lsp]` (P41, A72): the deferred `diagnostics` tool's servers and
+/// timings. A project config cannot set `servers` (the guard in
+/// `cox-config`'s `load.rs`): a repository must not choose a program cox
+/// runs. A `BTreeMap` so every listing of the servers has one order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct LspConfig {
+    /// Whether the `diagnostics` tool is offered at all.
+    pub enabled: bool,
+    /// Deadline for one `diagnostics` request, in seconds.
+    pub timeout_s: u32,
+    /// Quiet period, in milliseconds, after the last pushed
+    /// `publishDiagnostics` before the result is taken as complete.
+    pub quiet_ms: u32,
+    /// `[lsp.servers.<name>]` entries.
+    pub servers: BTreeMap<String, LspServerConfig>,
+}
+
+impl Default for LspConfig {
+    fn default() -> Self {
+        let server = |command: &str, args: &[&str], extensions: &[&str]| LspServerConfig {
+            command: command.to_string(),
+            args: args.iter().map(|a| a.to_string()).collect(),
+            extensions: extensions.iter().map(|e| e.to_string()).collect(),
+        };
+        let servers = [
+            ("rust", server("rust-analyzer", &[], &["rs"])),
+            (
+                "typescript",
+                server(
+                    "typescript-language-server",
+                    &["--stdio"],
+                    &["ts", "tsx", "js", "jsx"],
+                ),
+            ),
+            (
+                "python",
+                server("pyright-langserver", &["--stdio"], &["py"]),
+            ),
+            ("go", server("gopls", &[], &["go"])),
+        ];
+        Self {
+            enabled: true,
+            timeout_s: 30,
+            quiet_ms: 500,
+            servers: servers
+                .into_iter()
+                .map(|(name, s)| (name.to_string(), s))
+                .collect(),
+        }
+    }
+}
+
+/// One `[external_agents.<name>]` entry (T52.2, DT§3.3.1): an ACP agent a
+/// top-level session can be driven by. The name is the TOML key. User
+/// config only: a project config can set none of it (the guards in
+/// `cox-config`'s `load.rs`), because an entry runs a program and widens
+/// where it may write. It always runs under the sandbox wrap, with network
+/// on and file limits kept.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct ExternalAgentConfig {
+    /// Program that speaks ACP on stdio: a name found on `PATH`, or an absolute path.
+    pub command: String,
+    /// Arguments to `command`.
+    pub args: Vec<String>,
+    /// The agent's own key variable, passed through to it by name only.
+    pub key_env: String,
+    /// Extra directories under your home the agent may write, for its own state.
+    pub writable: Vec<PathBuf>,
+}
+
+/// `[voice]` (P54, A123): push-to-talk dictation with local whisper, used
+/// only by a `cox` built with the `voice` feature. User config only: a
+/// project config cannot set any `voice.*` key (the guard in `cox-config`'s
+/// `load.rs`), so a cloned repository can neither switch the microphone on
+/// nor choose the model file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct VoiceConfig {
+    /// Whether the TUI's push-to-talk key records at all.
+    pub enabled: bool,
+    /// Whisper model name from `cox voice model list` (`tiny.en`,
+    /// `base.en`, `small.en`, `tiny`, `base`, `small`).
+    pub model: String,
+    /// ISO-639-1 language code passed to whisper; `auto` lets it detect.
+    pub language: String,
+    /// The push-to-talk key, in the keymap's `modifier+key` form.
+    pub key: String,
+    /// Submit the transcript as `Enter` would, but only when the draft was
+    /// empty before recording.
+    pub auto_submit: bool,
+    /// Longest recording kept, in seconds; audio past it is dropped.
+    pub max_seconds: u32,
+}
+
+impl Default for VoiceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            model: "base.en".to_string(),
+            language: "en".to_string(),
+            key: "alt+v".to_string(),
+            auto_submit: true,
+            max_seconds: 120,
         }
     }
 }
@@ -1166,6 +1363,17 @@ impl Default for MemoryConfig {
     }
 }
 
+/// `[session]` (A113): per-session behaviour that is not a turn's own.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct SessionConfig {
+    /// Whether one `title` job names the session after its first turn.
+    /// `default.toml` turns it on; the Rust default is off so a
+    /// `Config::default()` built by a test or an embedder never makes a
+    /// model call nobody configured.
+    pub auto_title: bool,
+}
+
 /// `[telemetry]` (plan.md §1.6).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
@@ -1187,6 +1395,269 @@ pub struct RecordConfig {
 impl Default for RecordConfig {
     fn default() -> Self {
         Self { redact: true }
+    }
+}
+
+/// `desktop/design/tokens/base.json` `material.frosted.windowOpacity`
+/// (DS§3.5): the frosted window's default opacity. Copied, not read at
+/// runtime, so config loading never depends on the app's design files.
+pub const DESKTOP_DEFAULT_OPACITY: f64 = 0.42;
+/// `desktop/design/tokens/base.json` `material.frosted.blur` (DS§3.5), in pt.
+pub const DESKTOP_DEFAULT_BLUR_PT: f64 = 34.0;
+/// The Appearance popover's "Heavy" end of the blur slider, in pt.
+pub const DESKTOP_MAX_BLUR_PT: f64 = 60.0;
+/// DS§3.4: Depth scales every elevation level by 0…1; 1 draws the
+/// `elevation.*` tokens unscaled, as designed.
+pub const DESKTOP_DEFAULT_DEPTH: f64 = 1.0;
+/// `desktop/design/tokens/base.json` `font.transcript.size` (DS§3.2): the
+/// transcript's prose size in pt at 100 % text size. Copied like the opacity.
+pub const DESKTOP_DEFAULT_TEXT_SIZE_PT: f64 = 13.5;
+/// The transcript text size's bounds in pt; ⌘+/⌘− then scale it 85–150 %.
+pub const DESKTOP_TEXT_SIZE_PT: (f64, f64) = (10.0, 24.0);
+/// `font.transcript.lineHeight` (DS§3.2): prose line height as a multiple of its size.
+pub const DESKTOP_DEFAULT_LINE_HEIGHT: f64 = 1.55;
+/// The transcript line height's bounds, as a multiple of the text size.
+pub const DESKTOP_LINE_HEIGHT: (f64, f64) = (1.0, 2.5);
+
+/// `[desktop]`: the macOS app's own settings (P37, DS§3.5, A67). Only the
+/// app reads them; they live here so they get a schema and provenance like
+/// every other setting.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DesktopConfig {
+    /// Show cox's menu-bar extra: what needs you, what runs, and today's
+    /// spend (T51.14).
+    pub menu_bar: bool,
+    /// `[desktop.appearance]`
+    pub appearance: DesktopAppearanceConfig,
+    /// `[desktop.transcript]`
+    pub transcript: DesktopTranscriptConfig,
+    /// `[desktop.context]`
+    pub context: DesktopContextConfig,
+    /// `[desktop.review]`
+    pub review: DesktopReviewConfig,
+    /// `ssh` host aliases the app connects to at launch, shown as sidebar
+    /// groups (T52.21). User config only: a project config cannot set it,
+    /// since a repository must not choose where the app opens a shell.
+    pub remote_hosts: Vec<String>,
+}
+
+impl Default for DesktopConfig {
+    fn default() -> Self {
+        Self {
+            menu_bar: true,
+            appearance: DesktopAppearanceConfig::default(),
+            transcript: DesktopTranscriptConfig::default(),
+            context: DesktopContextConfig::default(),
+            review: DesktopReviewConfig::default(),
+            remote_hosts: Vec::new(),
+        }
+    }
+}
+
+/// The window's glass material (DS§3.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Material {
+    /// `glassEffect(.regular)`, heavy blur.
+    #[default]
+    Frosted,
+    /// `glassEffect(.clear)` plus the specular streak, light blur.
+    Glossy,
+    /// Opaque `surface.window`; what Reduce Transparency forces.
+    Solid,
+}
+
+/// `[desktop.appearance]` (DS§3.5): what the Appearance popover and
+/// Settings › Appearance edit.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DesktopAppearanceConfig {
+    /// `frosted` | `glossy` | `solid`.
+    pub material: Material,
+    /// Window and pane background opacity, 0 (clear) to 1 (opaque). Text
+    /// panels never drop below `material.readableFloor`, whatever this is.
+    #[serde(deserialize_with = "unit_interval")]
+    #[schemars(range(min = 0.0, max = 1.0))]
+    pub opacity: f64,
+    /// Background blur in pt, 0 to 60 (frosted); glossy reads it as reflection.
+    #[serde(deserialize_with = "blur_pt")]
+    #[schemars(range(min = 0.0, max = DESKTOP_MAX_BLUR_PT))]
+    pub blur: f64,
+    /// Elevation scale, 0 (flat) to 1 (full shadows and highlights).
+    #[serde(deserialize_with = "unit_interval")]
+    #[schemars(range(min = 0.0, max = 1.0))]
+    pub depth: f64,
+    /// Tint the glass from the wallpaper.
+    pub tint: bool,
+    /// `none` | `subtle`: the top-edge highlight in dark mode (A109).
+    pub dark_highlight: DarkHighlight,
+    /// `controls` | `all`: the elevation levels `dark_highlight` applies to (A109).
+    pub dark_highlight_scope: DarkHighlightScope,
+}
+
+/// The top-edge highlight lifted things draw in dark mode (A109, DS§3.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DarkHighlight {
+    /// No highlight: the dark mockup's look.
+    #[default]
+    None,
+    /// White at a tenth of the light highlight's strength.
+    Subtle,
+}
+
+/// Which elevation levels `dark_highlight` applies to (A109); the others
+/// keep the light highlight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DarkHighlightScope {
+    /// Controls only: e1 (chips, capsules, buttons, knobs).
+    #[default]
+    Controls,
+    /// Every level, e1 to e4, the transcript's user bubble included.
+    All,
+}
+
+impl Default for DesktopAppearanceConfig {
+    fn default() -> Self {
+        Self {
+            material: Material::Frosted,
+            opacity: DESKTOP_DEFAULT_OPACITY,
+            blur: DESKTOP_DEFAULT_BLUR_PT,
+            depth: DESKTOP_DEFAULT_DEPTH,
+            tint: true,
+            dark_highlight: DarkHighlight::None,
+            dark_highlight_scope: DarkHighlightScope::Controls,
+        }
+    }
+}
+
+/// `[desktop.transcript]` (A67, A93).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DesktopTranscriptConfig {
+    /// Whether a text selection runs across blocks like one document;
+    /// `false` clamps it to the block where the drag started.
+    pub cross_block_selection: bool,
+    /// The transcript's prose size in pt at 100 % text size, 10 to 24;
+    /// code, headings and thoughts keep their size relative to it.
+    #[serde(deserialize_with = "text_size_pt")]
+    #[schemars(range(min = DESKTOP_TEXT_SIZE_PT.0, max = DESKTOP_TEXT_SIZE_PT.1))]
+    pub text_size: f64,
+    /// The prose line height as a multiple of the text size, 1 to 2.5.
+    #[serde(deserialize_with = "line_height")]
+    #[schemars(range(min = DESKTOP_LINE_HEIGHT.0, max = DESKTOP_LINE_HEIGHT.1))]
+    pub line_height: f64,
+}
+
+impl Default for DesktopTranscriptConfig {
+    fn default() -> Self {
+        Self {
+            cross_block_selection: true,
+            text_size: DESKTOP_DEFAULT_TEXT_SIZE_PT,
+            line_height: DESKTOP_DEFAULT_LINE_HEIGHT,
+        }
+    }
+}
+
+/// Which cache hit the Context tab shows (A104).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CacheHitScope {
+    /// The last turn's cache reads over what it sent: what the last
+    /// requests reused.
+    #[default]
+    Turn,
+    /// Every call's so far: whether the cache-stable prefix pays off.
+    Session,
+}
+
+/// `[desktop.context]` (A104): the inspector's Context & Cost tab.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DesktopContextConfig {
+    /// `turn` | `session`: the cache hit the tab shows.
+    pub cache_hit: CacheHitScope,
+}
+
+/// When the Review pane's "Send to agent" posts its comments (A108).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewSend {
+    /// Behind the running turn, as the composer queues a prompt; at once
+    /// when no turn runs.
+    #[default]
+    Queue,
+    /// At once, even while a turn runs.
+    Now,
+}
+
+/// `[desktop.review]` (A108): the Review pane.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct DesktopReviewConfig {
+    /// `queue` | `now`: when "Send to agent" posts while a turn runs.
+    pub send: ReviewSend,
+}
+
+/// A value in `0.0..=1.0`, or a load error naming the key (figment adds it).
+fn unit_interval<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    in_range(d, 0.0, 1.0)
+}
+
+/// A blur radius in `0.0..=DESKTOP_MAX_BLUR_PT`.
+fn blur_pt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    in_range(d, 0.0, DESKTOP_MAX_BLUR_PT)
+}
+
+/// A transcript text size in `DESKTOP_TEXT_SIZE_PT`.
+fn text_size_pt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    in_range(d, DESKTOP_TEXT_SIZE_PT.0, DESKTOP_TEXT_SIZE_PT.1)
+}
+
+/// A transcript line height in `DESKTOP_LINE_HEIGHT`.
+fn line_height<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    in_range(d, DESKTOP_LINE_HEIGHT.0, DESKTOP_LINE_HEIGHT.1)
+}
+
+/// A `tui.status_line.refresh_s` in `0..=STATUS_LINE_MAX_REFRESH_S`.
+fn refresh_s<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    u32_in_range(d, 0, STATUS_LINE_MAX_REFRESH_S)
+}
+
+/// A `tui.status_line.timeout_ms` in `STATUS_LINE_TIMEOUT_MS`.
+fn timeout_ms<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
+    u32_in_range(d, STATUS_LINE_TIMEOUT_MS.0, STATUS_LINE_TIMEOUT_MS.1)
+}
+
+/// [`in_range`] for a whole number, with the same error text.
+fn u32_in_range<'de, D: serde::Deserializer<'de>>(
+    d: D,
+    min: u32,
+    max: u32,
+) -> Result<u32, D::Error> {
+    let value = u32::deserialize(d)?;
+    if (min..=max).contains(&value) {
+        Ok(value)
+    } else {
+        Err(serde::de::Error::custom(format!(
+            "{value} is out of range {min}..={max}"
+        )))
+    }
+}
+
+/// Serde, not the loader, rejects an out-of-range number, so the error
+/// surfaces through the same `CoreError::Config { key, .. }` as a bad type
+/// or an unknown key. NaN fails `contains` and is rejected too.
+fn in_range<'de, D: serde::Deserializer<'de>>(d: D, min: f64, max: f64) -> Result<f64, D::Error> {
+    let value = f64::deserialize(d)?;
+    if (min..=max).contains(&value) {
+        Ok(value)
+    } else {
+        Err(serde::de::Error::custom(format!(
+            "{value} is out of range {min}..={max}"
+        )))
     }
 }
 
@@ -1227,10 +1698,52 @@ fn generate_config_docs(toml: &str) -> String {
             None => out.push_str(&format!("- `{key}` = `{value}`\n")),
         }
     }
+    out.push_str(EXTERNAL_AGENTS_DOCS);
     out.push_str(KEYBINDINGS_DOCS);
     out.push_str(ACCESSIBILITY_DOCS);
+    out.push_str(STATUS_LINE_DOCS);
+    out.push_str(THEME_EDITOR_DOCS);
     out
 }
+
+/// T52.2: `[external_agents.<name>]` has no default entry, so the scan of
+/// `default.toml` has nothing to list; the table, its guard and examples.
+#[cfg(test)]
+const EXTERNAL_AGENTS_DOCS: &str = "## `[external_agents.<name>]`
+
+An ACP agent a new session can be driven by instead of cox's own loop (T52.2, DT§3.3.1). None by default. **User config only**: a project `.cox/config.toml` cannot add, change or widen an entry, because an entry runs a program; the loader reverts it with a warning. cox never installs the agent: you install it, and cox runs the installed program.
+
+- `command` — the program that speaks ACP on stdio: a name found on `PATH`, or an absolute path
+- `args` — arguments to `command`
+- `key_env` — the agent's own API-key variable. Only this one variable is passed through, by name, next to the child allowlist (`PATH`, `HOME`, `LANG`, `LC_*`, `TERM`, `TMPDIR`, `USER`, `SHELL`); cox's own provider keys stay behind. A key that does not resolve (env var, then keychain) leaves the agent out with one warning
+- `writable` — extra directories under your home the agent may write, for its own state (for example `~/.claude`). Each must resolve inside your home, never to your home itself; one that does not refuses the entry with a warning. A project config cannot set it
+
+An external agent always runs under the sandbox wrap. Its file limits are the session's `[sandbox]` ones plus `writable`, but it always has network access, whatever `sandbox.network` says: it has to reach its vendor's API. The agent's model, cost and context are its own: cox writes no usage row for it and shows its cost as \"—\".
+
+Examples (install the program first; these are not defaults):
+
+```toml
+[external_agents.claude]            # \"Claude Agent\": npm install -g @agentclientprotocol/claude-agent-acp
+command = \"claude-agent-acp\"
+args = [\"--hide-claude-auth\"]       # API key only, never a claude.ai login
+key_env = \"ANTHROPIC_API_KEY\"
+writable = [\"~/.claude\"]
+
+[external_agents.codex]             # \"Codex\": npm install -g @agentclientprotocol/codex-acp
+command = \"codex-acp\"
+key_env = \"CODEX_API_KEY\"
+writable = [\"~/.codex\"]
+
+[external_agents.gemini]            # \"Gemini CLI\": npm install -g @google/gemini-cli
+command = \"gemini\"
+args = [\"--acp\"]
+key_env = \"GEMINI_API_KEY\"
+writable = [\"~/.gemini\"]
+```
+
+Cursor (`agent acp`, `CURSOR_API_KEY`) comes from the granted Cursor plugin's `[[external_agents]]` entry (`plugins/cursor`), not from this table.
+
+";
 
 /// T29.2: the switches that make cox usable without sight, motion or
 /// red/green, gathered in one place; they live in three tables and a flag.
@@ -1248,6 +1761,60 @@ Every state also keeps its glyph (`✓`, `✗`, `+`, `−`), so colour is never 
 `/theme` previews both.
 - `NO_COLOR` (set and non-empty, while `tui.color` is `\"auto\"`), or `tui.color = \"none\"`, \
 prints no colour at all and leaves the terminal's own.
+";
+
+/// T46.4: what `[tui.status_line]`'s three keys cannot say in a comment
+/// each — the stdin fields, the triggers and the guards around the command.
+#[cfg(test)]
+const STATUS_LINE_DOCS: &str = "
+## Status line command
+
+`[tui.status_line]` (T46.4) runs your own command and draws the first line it prints as one \
+row above the built-in status line; the built-in segments stay. An empty `command` is off.
+
+- stdin is one JSON object with Claude Code's statusline field names, so an existing script \
+runs unchanged: `session_id`, `cwd`, `workspace.current_dir`, `workspace.project_dir`, \
+`model.id`, `model.display_name`, `cost.total_cost_usd`, `context_window.used_percentage`, \
+`context_window.context_window_size` and `version`. cox adds `permission_mode`, `sandbox_mode`, \
+`git.branch` and `busy`. `COLUMNS` is the terminal width.
+- It runs 300 ms after any of those or the width changes, a newer change kills a run still \
+going, and with `refresh_s` set it also re-runs on that period.
+- A run longer than `timeout_ms`, a non-zero exit or empty output blanks the row; it is never \
+fatal.
+- It runs under the sandbox, read-only and without network (the session's own policy only \
+under `danger-full-access`), with the environment cleared to the child allowlist plus \
+`COLUMNS`. A host with no sandbox backend gets one warning and no row; the command never runs \
+bare.
+- Its output is untrusted: every escape sequence is stripped, so colours and links are \
+dropped, and the row is drawn dim.
+- A project `.cox/config.toml` cannot set `command`: it would run on every start in a cloned \
+repository, so the value is reverted with a warning, like the other guarded keys.
+";
+
+/// T46.7: the `/theme` editor and the file it writes; `Ctrl+E` has a
+/// keymap row, but the `-custom` rule and the file shape need prose.
+#[cfg(test)]
+const THEME_EDITOR_DOCS: &str = "
+## Theme editor
+
+`Ctrl+E` on a colour row of the `/theme` picker (T46.7) opens that theme's 17 tokens with a \
+swatch and the current value. `Up`/`Down` (or `Tab`) move, typing edits the selected value, \
+and every colour that parses is drawn at once; one that does not is marked `invalid colour` \
+and not applied. `Esc` puts back what was drawn before `/theme` opened.
+
+- `Enter` (or `Ctrl+S`) writes `~/.cox/themes/<stem>.toml`, selects it as `tui.theme` and \
+lists it in `/theme` without a restart. It edits each token's half for the background in use \
+(`dark` or `light`).
+- A built-in is never overwritten: its edits go to `<name>-custom.toml`, which starts as a \
+copy of the built-in's own file. A user theme is edited in place, keeping its comments and \
+every other key.
+- A stem must match `[a-z0-9][a-z0-9._-]{0,63}` with no `..`; any other is refused with a \
+warning, and a failed write is a warning too.
+- The file: optional `variant = \"dark\"` (or `\"light\"`) and `syntax = \"<.tmTheme name>\"`, \
+then `[tokens]` with `<token> = { dark = \"<colour>\", light = \"<colour>\" }`. A colour is \
+`#rrggbb`, an ANSI index `0`-`255` or one of the sixteen ANSI names. The tokens are text, dim, \
+accent, user, agent, tool, ok, warn, error, diff_add, diff_del, diff_hunk, border, selection, \
+mode_plan, mode_auto and mode_bypass.
 ";
 
 /// `~/.cox/keybindings.toml` (T25.5) is its own file, not a `default.toml`
@@ -1269,7 +1836,7 @@ mode.cycle = \"shift+tab\"
 ```
 
 - Actions: `send`, `newline`, `send.now`, `interrupt`, `mode.cycle`, `transcript`, `help`, \
-`thinking`, `expand`, `diff`, `plugin.leader`, `background`, `unqueue`, `quit`, `copy`, `copy.all`. \
+`thinking`, `expand`, `diff`, `plugin.leader`, `background`, `unqueue`, `quit`, `copy`, `copy.all`, `voice`. \
 `@`, `/`, `Ctrl+R` and the keys inside a picker or overlay are fixed; so is `Ctrl+C`.
 - `plugin.leader` (default `ctrl+k`) rebinds the leader itself; a plugin's own keys, reachable \
 only as `<leader> <key>`, come from the plugin's manifest, not from here — a clash between two \
@@ -1336,6 +1903,58 @@ mod tests {
         assert!(cfg.mcp.servers.is_empty());
     }
 
+    /// P43: the repo map stays off until the T43.6 bench picks a budget,
+    /// in the hand-written default and in `default.toml` alike.
+    #[test]
+    fn repomap_budget_defaults_to_off() {
+        use figment::providers::Format as _;
+        assert_eq!(ContextConfig::default().repomap_budget_tokens, 0);
+        let from_toml: Config =
+            figment::Figment::from(figment::providers::Toml::string(DEFAULT_CONFIG_TOML))
+                .extract()
+                .expect("default.toml parses");
+        assert_eq!(from_toml.context, ContextConfig::default());
+    }
+
+    /// T41.1: the hand-written `LspConfig::default()` and the `[lsp]` rows
+    /// of `default.toml` carry the same matrix, so a layer that omits a
+    /// server table or key falls back to what the docs say.
+    #[test]
+    fn lsp_defaults_parse() {
+        use figment::providers::Format as _;
+        let from_toml: Config =
+            figment::Figment::from(figment::providers::Toml::string(DEFAULT_CONFIG_TOML))
+                .extract()
+                .expect("default.toml parses");
+        let lsp = LspConfig::default();
+        assert_eq!(from_toml.lsp, lsp);
+        assert!(lsp.enabled);
+        assert_eq!((lsp.timeout_s, lsp.quiet_ms), (30, 500));
+        let server = |name: &str| {
+            let s = &lsp.servers[name];
+            (s.command.as_str(), s.args.clone(), s.extensions.clone())
+        };
+        assert_eq!(server("rust"), ("rust-analyzer", vec![], vec!["rs".into()]));
+        assert_eq!(
+            server("typescript"),
+            (
+                "typescript-language-server",
+                vec!["--stdio".into()],
+                vec!["ts".into(), "tsx".into(), "js".into(), "jsx".into()]
+            )
+        );
+        assert_eq!(
+            server("python"),
+            (
+                "pyright-langserver",
+                vec!["--stdio".into()],
+                vec!["py".into()]
+            )
+        );
+        assert_eq!(server("go"), ("gopls", vec![], vec!["go".into()]));
+        assert_eq!(lsp.servers.len(), 4);
+    }
+
     #[test]
     fn config_json_roundtrip() {
         let cfg = Config::default();
@@ -1345,8 +1964,35 @@ mod tests {
     }
 
     #[test]
+    fn provider_model_images_round_trips() {
+        // T40.9: `images = false` survives TOML → struct → JSON → struct,
+        // and an unset flag stays absent rather than serializing as null.
+        use figment::providers::Format as _;
+        let toml = r#"
+            [providers.local]
+            models = [
+                { id = "qwen3-coder", images = false },
+                { id = "llava", images = true },
+                { id = "phi" },
+            ]
+        "#;
+        let cfg: Config = figment::Figment::from(figment::providers::Toml::string(toml))
+            .extract()
+            .expect("models with images parse");
+        let models = &cfg.providers.local.models;
+        assert_eq!(models[0].images, Some(false));
+        assert_eq!(models[1].images, Some(true));
+        assert_eq!(models[2].images, None);
+        let json = serde_json::to_value(models).expect("serialize");
+        assert_eq!(json[0]["images"], false);
+        assert!(json[2].get("images").is_none());
+        let back: Vec<ProviderModel> = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(&back, models);
+    }
+
+    #[test]
     fn config_default_toml_carries_compatible_providers_with_models() {
-        // `DEFAULT_CONFIG_TOML` must parse into the new shape: the four
+        // `DEFAULT_CONFIG_TOML` must parse into the new shape: the five
         // Type-2 sections land in `custom` (not rejected as unknown fields),
         // each with a models list the router can clamp efforts against.
         use figment::providers::Format as _;
@@ -1354,11 +2000,24 @@ mod tests {
             figment::Figment::from(figment::providers::Toml::string(DEFAULT_CONFIG_TOML))
                 .extract()
                 .expect("default.toml parses");
-        for name in ["deepseek", "openrouter", "moonshot", "z-ai"] {
+        for name in ["deepseek", "openrouter", "moonshot", "z-ai", "gemini"] {
             let section = cfg.providers.custom.get(name).expect("section present");
             assert_eq!(section.api, "chat");
             assert!(!section.models.is_empty(), "{name} lists models");
         }
+        let gemini = cfg.providers.custom["gemini"].transport();
+        assert_eq!(gemini.api_key_env, "GEMINI_API_KEY");
+        assert_eq!(
+            gemini.base_url,
+            "https://generativelanguage.googleapis.com/v1beta/openai"
+        );
+        // Every Gemini 3 model always reasons, so each one takes the field.
+        assert!(
+            cfg.providers
+                .models_for("gemini")
+                .iter()
+                .all(|m| m.reasoning_effort == Some(true))
+        );
         let deepseek = &cfg.providers.custom["deepseek"];
         assert_eq!(deepseek.model, "deepseek-v4-pro");
         // `models_for` resolves native sections and custom entries alike;

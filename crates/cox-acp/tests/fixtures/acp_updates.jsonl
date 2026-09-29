@@ -1,0 +1,18 @@
+{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"review","description":"Review the current diff"},{"name":"init","description":"Write an AGENTS.md"}]}
+{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"The failing test reads a fixture"}}
+{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":" from a path that moved."}}
+{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"I'll point the test at the new path"}}
+{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" and run it."}}
+{"sessionUpdate":"plan","entries":[{"content":"Read the test","priority":"high","status":"in_progress"},{"content":"Fix the fixture path","priority":"high","status":"pending"},{"content":"Run cargo test","priority":"medium","status":"pending"}]}
+{"sessionUpdate":"tool_call","toolCallId":"call_1","title":"Read tests/load.rs","kind":"read","status":"pending","locations":[{"path":"/w/tests/load.rs"}],"rawInput":{"path":"/w/tests/load.rs"}}
+{"sessionUpdate":"tool_call_update","toolCallId":"call_1","status":"completed","content":[{"type":"content","content":{"type":"text","text":"let data = read(\"fixtures/old.json\");\n"}}]}
+{"sessionUpdate":"tool_call","toolCallId":"call_2","title":"Edit tests/load.rs","kind":"edit","status":"in_progress","locations":[{"path":"/w/tests/load.rs"}]}
+{"sessionUpdate":"tool_call_update","toolCallId":"call_2","status":"completed","content":[{"type":"diff","path":"/w/tests/load.rs","oldText":"let data = read(\"fixtures/old.json\");\n","newText":"let data = read(\"fixtures/new.json\");\n"}]}
+{"sessionUpdate":"tool_call","toolCallId":"call_3","title":"cargo test","kind":"execute","status":"in_progress","rawInput":{"command":"cargo test"}}
+{"sessionUpdate":"tool_call_update","toolCallId":"call_3","content":[{"type":"content","content":{"type":"text","text":"running 3 tests\n"}}]}
+{"sessionUpdate":"tool_call_update","toolCallId":"call_3","status":"completed","content":[{"type":"content","content":{"type":"text","text":"running 3 tests\ntest result: ok. 3 passed\n"}}]}
+{"sessionUpdate":"plan","entries":[{"content":"Read the test","priority":"high","status":"completed"},{"content":"Fix the fixture path","priority":"high","status":"completed"},{"content":"Run cargo test","priority":"medium","status":"completed"}]}
+{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Fixed: the test reads fixtures/new.json and passes."}}
+{"sessionUpdate":"session_info_update","title":"Fix the stale fixture path"}
+{"sessionUpdate":"usage_update","used":48210,"size":200000}
+{"sessionUpdate":"current_mode_update","currentModeId":"default"}

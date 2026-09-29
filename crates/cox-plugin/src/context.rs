@@ -238,6 +238,7 @@ mod tests {
                 bytes: visible.len() as u64,
                 duration_ms: 1,
                 diff: None,
+                structured: None,
             },
         }
     }

@@ -350,6 +350,52 @@ pub struct CheckpointFile {
     pub kind: CheckpointKind,
 }
 
+/// A file a code rewind left as it is (`Event::Rewound`), and why (A101).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct SkippedFile {
+    /// The confined absolute path.
+    pub path: PathBuf,
+    /// Why it was not restored.
+    pub reason: SkipReason,
+}
+
+impl<'de> Deserialize<'de> for SkippedFile {
+    /// Also reads a bare path: rollouts written before A101 carried no
+    /// reason, and an unreadable line in the middle fails the whole resume.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Wire {
+            Path(PathBuf),
+            File { path: PathBuf, reason: SkipReason },
+        }
+        Ok(match Wire::deserialize(deserializer)? {
+            Wire::Path(path) => Self {
+                path,
+                reason: SkipReason::Failed {
+                    error: "no reason recorded".into(),
+                },
+            },
+            Wire::File { path, reason } => Self { path, reason },
+        })
+    }
+}
+
+/// Why a rewind could not restore a file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SkipReason {
+    /// Its pre-image was over the size cap, so no bytes were kept.
+    TooLarge,
+    /// The path no longer confines to the workspace roots.
+    OutsideRoots,
+    /// Reading the pre-image or writing the file failed.
+    Failed {
+        /// The error, as shown to the user.
+        error: String,
+    },
+}
+
 /// `permissions.mode` (plan.md §1.6/§1.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -362,6 +408,19 @@ pub enum PermissionMode {
     Auto,
     /// Everything is allowed; flag-only, banner shown.
     Bypass,
+}
+
+/// `core.mode` / `--mode` / `/mode` (P42, A73): a named preset over the
+/// permission mode and the main tier only. It never filters tools, so the
+/// cache prefix stays byte-stable, and it only narrows `permissions.mode`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    /// The configured permission mode and main tier, unchanged.
+    #[default]
+    Editor,
+    /// `Plan` (read-only tools only) and the `think` main tier, confirmed.
+    Architect,
 }
 
 /// `permissions.approval` (plan.md §1.6/§1.8 step 8).
@@ -392,6 +451,19 @@ pub enum CompactReason {
     Manual,
     /// The provider rejected a request as too long; the call retries once.
     ContextTooLong,
+}
+
+/// Why `Event::RepoMapBuilt` happened (P43): the only three moments the
+/// repo map in system[2] is built.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RepoMapReason {
+    /// Before the first request of a session.
+    SessionStart,
+    /// `/repomap refresh` produced different bytes.
+    Refresh,
+    /// Compaction rebuilt it with the prefix it already restarts.
+    Compaction,
 }
 
 /// `sandbox.mode` (plan.md §1.6/D7).
@@ -573,6 +645,43 @@ pub struct ToolResult {
     pub duration_ms: u64,
     /// A unified diff, for edit-shaped tools.
     pub diff: Option<Diff>,
+    /// The tool's machine-readable payload (`ToolOutput.structured`), so a
+    /// surface reads data instead of re-parsing `visible` (DT G3). Absent
+    /// from rollouts written before it existed. Boxed: it is rare, and every
+    /// `Event::ToolCallDone` would otherwise carry its full width.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structured: Option<Box<Value>>,
+}
+
+impl ToolResult {
+    /// The list a `todo` result carries in `structured`, or `None` when the
+    /// payload is not one.
+    pub fn todo_list(&self) -> Option<Vec<TodoItem>> {
+        Vec::<TodoItem>::deserialize(self.structured.as_deref()?).ok()
+    }
+}
+
+/// One row of the `todo` tool's list, the shape of its `structured` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TodoItem {
+    /// Unique within the list.
+    pub id: String,
+    /// What the step is.
+    pub text: String,
+    /// Where the step stands.
+    pub state: TodoState,
+}
+
+/// Where a todo step stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TodoState {
+    /// Not started.
+    Pending,
+    /// Being worked on.
+    InProgress,
+    /// Finished.
+    Done,
 }
 
 /// An approval decision, for both `Submission::Approve` and `ApprovalDecided`.
@@ -713,6 +822,29 @@ impl Usage {
     }
 }
 
+/// Where the context of the request about to be sent goes (A98): the
+/// model's window and the request's estimated tokens split into the four
+/// parts both surfaces draw. Emitted before the reply, so it cannot ride on
+/// `Usage`, which only exists after it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ContextBreakdown {
+    /// The model's context window in tokens; `None` when neither the model
+    /// catalog nor the provider knows it.
+    pub window: Option<u32>,
+    /// The request's estimated tokens; the four parts sum to it exactly.
+    pub total: u32,
+    /// The system prompt and the volatile environment block.
+    pub system: u32,
+    /// The tool schemas.
+    pub tools: u32,
+    /// Instruction files and the skills index.
+    pub instructions: u32,
+    /// The conversation: verbatim turns, archive pointers and summaries.
+    pub history: u32,
+    /// Tokens the last call served from cache, as its usage reported.
+    pub cached: u32,
+}
+
 /// A parsed `.claude/commands/*.md`-style slash command the surface could
 /// not resolve to a built-in `Submission` variant, forwarded to `cox-ext`
 /// for execution.
@@ -844,7 +976,9 @@ pub enum Submission {
         text: String,
         /// Attached files/images.
         attachments: Vec<Attachment>,
-        /// Required to be `true` for the turn to route to `Tier::Think` (plan.md invariant #9).
+        /// `true` runs this one turn on `Tier::Think` (`/think`, the think
+        /// toggle, `--deep`), confirming its gate (plan.md invariant #9); the
+        /// next turn without it goes back to the session's tier (D5, A103).
         confirm_think: bool,
     },
     /// Answer a pending `ApprovalRequired`.
@@ -853,6 +987,13 @@ pub enum Submission {
         call_id: CallId,
         /// The decision.
         decision: Decision,
+    },
+    /// The person's reply to a `QuestionAsked` (DT G4).
+    Answer {
+        /// The `ask_user` call being answered.
+        call_id: CallId,
+        /// The answer; `None` dismisses the question unanswered.
+        text: Option<String>,
     },
     /// Cancel the running turn; tools get the shared cancellation token.
     Interrupt,
@@ -880,6 +1021,15 @@ pub enum Submission {
         /// The new mode.
         mode: PermissionMode,
     },
+    /// Revoke an `AllowForSession` grant (T37.45.3): the next call it
+    /// covered goes back through the rules and asks. The core answers with
+    /// `GrantRevoked`, which resume replays, so the grant stays gone.
+    RevokeGrant {
+        /// The grant's tool, as `grants_for` recorded it.
+        tool: String,
+        /// The grant's subject prefix.
+        subject: String,
+    },
     /// A slash command the surface parsed but did not resolve itself.
     Command {
         /// The parsed command.
@@ -905,6 +1055,33 @@ pub enum Submission {
     /// `/redo` (T26.4): put back the files the last rewind restored, when
     /// nothing has happened since it. One step; a warning otherwise.
     Redo,
+    /// Revert one file (T37.28.3, A101): write back its pre-image from
+    /// before `to_turn` first touched it, checkpointing its current bytes
+    /// first so the revert can itself be undone. Nothing else changes.
+    RevertFile {
+        /// Relative to the session's cwd or absolute; confined to the
+        /// workspace roots like a tool's path.
+        path: String,
+        /// The turn to go back before.
+        to_turn: u32,
+    },
+    /// Put one of Review's hunks back (T51.19, A101): hunk `hunk` of the
+    /// file's net diff, from its first pre-image since `to_turn` to its
+    /// bytes on disk, written back to the pre-image's lines alone. The
+    /// current bytes are checkpointed first so the revert can itself be
+    /// undone; a file whose [`content_digest`] is no longer `now_digest` is
+    /// left as it is, with a Notice.
+    RevertHunk {
+        /// Relative to the session's cwd or absolute; confined to the
+        /// workspace roots like a tool's path.
+        path: String,
+        /// The turn whose pre-image the diff starts from.
+        to_turn: u32,
+        /// The hunk's index in Review's diff, from 0.
+        hunk: u32,
+        /// [`content_digest`] of the bytes Review diffed.
+        now_digest: String,
+    },
     /// `Ctrl+B` (T27.1): detach a running `bash` or `agent` call into a
     /// background task; the model gets a pointer result and the turn goes on.
     Background {
@@ -921,8 +1098,25 @@ pub enum Submission {
         /// `!!`: append the output to history for the model.
         share: bool,
     },
+    /// A composer `@name task` line (T45.5): runs subagent `name` through the
+    /// `agent` tool on the model's own path (hooks, permission engine,
+    /// budget, agent slots). The line and the answer join history at its
+    /// tail, so the next model turn sees them.
+    UserAgent {
+        /// A preset, agent definition or external agent name.
+        name: String,
+        /// What the subagent is asked to do.
+        task: String,
+    },
     /// Wind down the session cleanly.
     Shutdown,
+    /// `/rename`, or a rename in the app (A113, T37.22.9): the session's
+    /// title, set by the user. The core answers with a `TitleSet` marked
+    /// `by_user`, which a generated title never replaces.
+    Rename {
+        /// The new title; the core keeps its first line, sanitized.
+        title: String,
+    },
     /// A follow-up for a background task, addressed by `TaskId` (T34.4,
     /// SM§1). Only ever submitted to the **parent** session: `from: None`
     /// is the parent/user, `Some(id)` a sibling relayed through the parent
@@ -992,6 +1186,15 @@ pub enum Event {
         /// The next chunk of thinking text.
         text: String,
     },
+    /// A streamed `Thinking` item stopped growing (A91): how long the model
+    /// thought, from its first to its last reasoning delta. Kept in the
+    /// rollout, so a replay shows the duration the live run measured.
+    ThinkingDone {
+        /// The `Thinking` item that ended.
+        item: ItemId,
+        /// Milliseconds from the first to the last delta.
+        duration_ms: u64,
+    },
     /// The model requested a tool call.
     ToolCallRequested {
         /// The requested call.
@@ -1008,6 +1211,20 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source: Option<Source>,
     },
+    /// `ask_user` waits for the person (DT G4); a `Submission::Answer`
+    /// with the same `call_id` resumes it.
+    QuestionAsked {
+        /// The `ask_user` call asking.
+        call_id: CallId,
+        /// The question text.
+        question: String,
+        /// Suggested answers, possibly empty.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        options: Vec<String>,
+        /// The subagent asking; `None` for the session the person talks to.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<Source>,
+    },
     /// A pending approval was decided.
     ApprovalDecided {
         /// The call that was decided.
@@ -1016,6 +1233,13 @@ pub enum Event {
         decision: Decision,
         /// Who/what decided it.
         by: DecidedBy,
+    },
+    /// An `AllowForSession` grant was revoked (`Submission::RevokeGrant`).
+    GrantRevoked {
+        /// The grant's tool.
+        tool: String,
+        /// The grant's subject prefix.
+        subject: String,
     },
     /// Streamed stdout/stderr from a running tool, already sanitised for display.
     ToolCallOutput {
@@ -1043,6 +1267,14 @@ pub enum Event {
         /// The recorded usage.
         usage: Usage,
     },
+    /// A request was assembled and is about to be sent (A98): the window
+    /// and how the request fills it. Output only; the request is unchanged.
+    ContextBreakdown {
+        /// The turn the request belongs to.
+        turn: TurnId,
+        /// The window and the split.
+        breakdown: ContextBreakdown,
+    },
     /// Compaction ran and replaced older items with a summary.
     Compacted {
         /// The new summary item's id.
@@ -1057,6 +1289,17 @@ pub enum Event {
         /// existed read as `post-turn`.
         #[serde(default)]
         reason: CompactReason,
+    },
+    /// The repo map now in system[2] (P43). Its text is archived before
+    /// this is emitted; resume reads the last one back instead of
+    /// rebuilding, so the replayed request carries the same bytes.
+    RepoMapBuilt {
+        /// The archived map text.
+        archive: ArchiveId,
+        /// Its size in bytes.
+        bytes: u64,
+        /// What built it.
+        reason: RepoMapReason,
     },
     /// Pre-images of the files a tool call changed are archived and
     /// retrievable (T26.1). Emitted after the `checkpoints` rows exist, so a
@@ -1082,8 +1325,8 @@ pub enum Event {
         conversation: bool,
         /// Paths written back or removed.
         restored: Vec<PathBuf>,
-        /// Paths whose pre-image was too large to keep, left as they are.
-        skipped: Vec<PathBuf>,
+        /// Paths left as they are, each with why.
+        skipped: Vec<SkippedFile>,
     },
     /// A background task (subagent or detached `bash`) was created.
     TaskCreated {
@@ -1117,6 +1360,37 @@ pub enum Event {
         from: ModelId,
         /// The new model.
         to: ModelId,
+    },
+    /// The session's permission mode or effort override changed
+    /// (`SetPermissionMode`, `SetEffort`); carries both, as they now stand,
+    /// so a surface sets its state from the event instead of echoing its
+    /// own request (DT G5). Also recorded when a top-level session opens
+    /// (T50.4), so resume and a woken subagent rebuild the mode the session
+    /// last ran under instead of falling back to `Default` (T50.2).
+    StateChanged {
+        /// The permission mode now in force.
+        mode: PermissionMode,
+        /// The effort override; `None` means each tier's default.
+        effort: Option<Effort>,
+    },
+    /// The session's mode changed (`/mode`, P42), or a top-level session
+    /// opened under a non-default one; carries the permission mode the
+    /// preset left in force so a surface needs no second event.
+    ModeChanged {
+        /// The mode now in force.
+        mode: Mode,
+        /// The permission mode now in force, after the preset narrowed it.
+        permission_mode: PermissionMode,
+    },
+    /// The session got a title (DT G6), for the sessions list and a window
+    /// or tab title.
+    TitleSet {
+        /// The title, one line.
+        title: String,
+        /// Set by `Submission::Rename`: the store keeps it over any later
+        /// generated title (A113). Absent in rollouts before T37.22.9.
+        #[serde(default)]
+        by_user: bool,
     },
     /// A decision plugin answered a decision point (PL§4, T33.20). Recorded
     /// for every answer, used or not, so replay and `cox stats` see which
@@ -1336,6 +1610,13 @@ pub enum ProviderEvent {
         /// The tool name.
         name: String,
     },
+    /// The current tool-use block's thought signature (Gemini over the Chat
+    /// wire). Opaque: cox never reads it, and it is replayed only to the wire
+    /// that produced it. Follows its call's `ToolUseStart`, before `ToolUseEnd`.
+    ToolUseSignature {
+        /// The signature, byte-for-byte as received.
+        signature: String,
+    },
     /// The next chunk of a tool-use block's JSON input.
     ToolUseInputDelta {
         /// The raw JSON chunk (accumulate and parse once `ToolUseEnd` arrives).
@@ -1413,6 +1694,18 @@ pub struct ToolOutput {
     pub structured: Option<Value>,
 }
 
+/// The digest a hunk revert carries (T51.19): Review takes it of the bytes
+/// it diffed and the core of the file on disk, so a hunk is never put back
+/// into bytes the person did not see. Both sides run in one binary, so the
+/// standard hasher, fixed within a build though unspecified across Rust
+/// releases, is enough; 16 hex digits.
+pub fn content_digest(bytes: &[u8]) -> String {
+    use std::hash::{DefaultHasher, Hash as _, Hasher as _};
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1474,18 +1767,26 @@ mod tests {
     #[case::item_started(Event::ItemStarted { item: ItemId::new(), kind: ItemKind::UserMessage { text: "hi".into(), attachments: vec![] } })]
     #[case::text_delta(Event::TextDelta { item: ItemId::new(), text: "chunk".into() })]
     #[case::thinking_delta(Event::ThinkingDelta { item: ItemId::new(), text: "chunk".into() })]
+    #[case::thinking_done(Event::ThinkingDone { item: ItemId::new(), duration_ms: 12_000 })]
     #[case::tool_call_requested(Event::ToolCallRequested { call: ToolCall { id: CallId::new(), name: "read".into(), input: serde_json::json!({"path": "a.rs"}), risk: Risk::ReadOnly, subject: "a.rs".into(), segments: None } })]
     #[case::approval_required(Event::ApprovalRequired { call: ToolCall { id: CallId::new(), name: "bash".into(), input: Value::Null, risk: Risk::Exec, subject: "ls".into(), segments: None }, why: Why::Risk { risk: Risk::Exec }, source: Some(Source { session: SessionId::new(), agent: Some("explore-2".into()), preset: Some("explore".into()) }) })]
     #[case::approval_decided(Event::ApprovalDecided { call_id: CallId::new(), decision: Decision::Allow, by: DecidedBy::User })]
+    #[case::grant_revoked(Event::GrantRevoked { tool: "bash".into(), subject: "git push".into() })]
     #[case::tool_call_output(Event::ToolCallOutput { call_id: CallId::new(), delta: "stdout line".into() })]
-    #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "done".into(), archive: None, bytes: 4, duration_ms: 10, diff: None } })]
+    #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "done".into(), archive: None, bytes: 4, duration_ms: 10, diff: None, structured: None } })]
     #[case::item_done(Event::ItemDone { item: ItemId::new() })]
     #[case::usage(Event::Usage { turn: TurnId::new(), usage: sample_usage() })]
+    #[case::context_breakdown(Event::ContextBreakdown { turn: TurnId::new(), breakdown: ContextBreakdown { window: Some(200_000), total: 900, system: 100, tools: 500, instructions: 200, history: 100, cached: 0 } })]
     #[case::compacted(Event::Compacted { summary: ItemId::new(), dropped: vec![ItemId::new()], before_tokens: 1000, after_tokens: 200, reason: CompactReason::PreCall })]
     #[case::checkpoint(Event::Checkpoint { turn: TurnId::new(), call: Some(CallId::new()), files: vec![CheckpointFile { path: PathBuf::from("/w/a.rs"), kind: CheckpointKind::Pre }] })]
     #[case::task_created(Event::TaskCreated { task: TaskId::new(), label: "explore".into(), tier: Tier::Cheap })]
     #[case::task_completed(Event::TaskCompleted { task: TaskId::new(), result_item: ItemId::new(), cost_usd: 0.002, exit_code: Some(0), archive: Some(ArchiveId::new()) })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Code, from: ModelId("claude-sonnet-5".into()), to: ModelId("claude-opus-5".into()) })]
+    #[case::state_changed(Event::StateChanged { mode: PermissionMode::Plan, effort: Some(Effort::Low) })]
+    #[case::mode_changed(Event::ModeChanged { mode: Mode::Architect, permission_mode: PermissionMode::Plan })]
+    #[case::question_asked(Event::QuestionAsked { call_id: CallId::new(), question: "which?".into(), options: vec!["a".into()], source: None })]
+    #[case::title_set(Event::TitleSet { title: "Fix the ledger".into(), by_user: false })]
+    #[case::title_set_by_user(Event::TitleSet { title: "Mine".into(), by_user: true })]
     #[case::advised(Event::Advised { point: crate::plugin::DecidePoint::Route, plugin: "jev".into(), advice: crate::plugin::Advice { answer: crate::plugin::Answer::Choice { order: vec![0] }, confidence: Some(0.9), note: None }, applied: true })]
     #[case::notice(Event::Notice { level: Level::Warn, text: "hook skipped".into() })]
     #[case::turn_done(Event::TurnDone { turn: TurnId::new(), stop: StopReason::EndTurn })]
@@ -1494,6 +1795,16 @@ mod tests {
     fn event_json_roundtrip(#[case] event: Event) {
         let json = serde_json::to_string(&event).expect("serialize");
         let back: Event = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(event, back);
+    }
+
+    #[rstest]
+    #[case::tool_use_start(ProviderEvent::ToolUseStart { id: CallId::new(), name: "read".into() })]
+    #[case::tool_use_signature(ProviderEvent::ToolUseSignature { signature: "sig-opaque".into() })]
+    #[case::tool_use_end(ProviderEvent::ToolUseEnd)]
+    fn provider_event_json_roundtrip(#[case] event: ProviderEvent) {
+        let json = serde_json::to_string(&event).expect("serialize");
+        let back: ProviderEvent = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(event, back);
     }
 
@@ -1511,20 +1822,48 @@ mod tests {
         assert!(matches!(event, Event::TurnStarted { seq: 0, .. }));
     }
 
+    #[test]
+    fn a_skipped_path_without_a_reason_still_loads() {
+        let json = serde_json::json!({
+            "type": "rewound", "to_turn": 1, "code": true, "conversation": false,
+            "restored": [], "skipped": ["big.bin"]
+        });
+        let event: Event = serde_json::from_value(json).expect("old rollout line");
+        let Event::Rewound { skipped, .. } = event else {
+            panic!("not a rewind: {event:?}");
+        };
+        assert_eq!(skipped[0].path, PathBuf::from("big.bin"));
+        assert!(matches!(skipped[0].reason, SkipReason::Failed { .. }));
+        let now = SkippedFile {
+            path: "a.rs".into(),
+            reason: SkipReason::OutsideRoots,
+        };
+        let back: SkippedFile =
+            serde_json::from_value(serde_json::to_value(&now).expect("ser")).expect("de");
+        assert_eq!(back, now);
+    }
+
     #[rstest]
     #[case::user_turn(Submission::UserTurn { text: "fix the bug".into(), attachments: vec![], confirm_think: false })]
     #[case::approve(Submission::Approve { call_id: CallId::new(), decision: Decision::Deny { reason: "no".into() } })]
+    #[case::answer(Submission::Answer { call_id: CallId::new(), text: Some("yes".into()) })]
+    #[case::answer_dismissed(Submission::Answer { call_id: CallId::new(), text: None })]
     #[case::interrupt(Submission::Interrupt)]
     #[case::compact(Submission::Compact { focus: Some("auth flow".into()) })]
     #[case::switch_model(Submission::SwitchModel { tier: Tier::Code, model: Some(ModelId("claude-opus-5".into())) })]
     #[case::set_effort(Submission::SetEffort { effort: Some(Effort::Xhigh) })]
     #[case::set_permission_mode(Submission::SetPermissionMode { mode: PermissionMode::Plan })]
+    #[case::revoke_grant(Submission::RevokeGrant { tool: "bash".into(), subject: "git push".into() })]
     #[case::command(Submission::Command { command: SlashCommand { name: "compact".into(), args: vec![] } })]
     #[case::hook_result(Submission::HookResult { hook_id: "pre-tool-use".into(), outcome: HookOutcome::Continue })]
+    #[case::revert_file(Submission::RevertFile { path: "src/a.rs".into(), to_turn: 2 })]
+    #[case::revert_hunk(Submission::RevertHunk { path: "src/a.rs".into(), to_turn: 2, hunk: 1, now_digest: content_digest(b"now") })]
     #[case::background(Submission::Background { call_id: CallId::new() })]
     #[case::user_shell(Submission::UserShell { command: "ls".into(), share: true })]
+    #[case::user_agent(Submission::UserAgent { name: "explore".into(), task: "find the router".into() })]
     #[case::redo(Submission::Redo)]
     #[case::shutdown(Submission::Shutdown)]
+    #[case::rename(Submission::Rename { title: "Fix the ledger".into() })]
     #[case::task_message(Submission::TaskMessage { task: TaskId::new(), from: None, hop: 0, text: "follow up".into() })]
     fn submission_json_roundtrip(#[case] submission: Submission) {
         let json = serde_json::to_string(&submission).expect("serialize");
@@ -1564,8 +1903,12 @@ mod tests {
     #[case::session_started(Event::SessionStarted { session: SessionId::new(), config_digest: "d".into(), cwd: PathBuf::from(".") })]
     #[case::turn_started(Event::TurnStarted { turn: TurnId::new(), seq: 1, job: Job::Main, tier: Tier::Code, model: ModelId("m".into()) })]
     #[case::rewound(Event::Rewound { to_turn: 2, code: true, conversation: false, restored: vec![PathBuf::from("a.rs")], skipped: vec![] })]
-    #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "ok".into(), archive: None, bytes: 0, duration_ms: 0, diff: None } })]
+    #[case::tool_call_done(Event::ToolCallDone { call_id: CallId::new(), result: ToolResult { ok: true, visible: "ok".into(), archive: None, bytes: 0, duration_ms: 0, diff: None, structured: None } })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Cheap, from: ModelId("a".into()), to: ModelId("b".into()) })]
+    #[case::state_changed(Event::StateChanged { mode: PermissionMode::Default, effort: None })]
+    #[case::mode_changed(Event::ModeChanged { mode: Mode::Editor, permission_mode: PermissionMode::Default })]
+    #[case::question_asked(Event::QuestionAsked { call_id: CallId::new(), question: "q".into(), options: vec![], source: None })]
+    #[case::title_set(Event::TitleSet { title: "t".into(), by_user: true })]
     fn event_tags_are_snake_case(#[case] event: Event) {
         let json = serde_json::to_value(&event).expect("serialize");
         let tag = json
@@ -1599,5 +1942,53 @@ mod tests {
         };
         assert_eq!(spec.input_schema, schema_value);
         assert!(schema_value.get("properties").is_some());
+    }
+
+    #[test]
+    fn tool_result_from_an_old_rollout_loads_without_structured() {
+        let old = serde_json::json!({
+            "ok": true, "visible": "[ ] 1: a", "archive": null,
+            "bytes": 8, "duration_ms": 0, "diff": null
+        });
+        let result: ToolResult = serde_json::from_value(old).expect("old shape loads");
+        assert_eq!(result.structured, None);
+        assert_eq!(result.todo_list(), None);
+    }
+
+    #[test]
+    fn todo_list_reads_the_structured_payload() {
+        let result = ToolResult {
+            ok: true,
+            visible: String::new(),
+            archive: None,
+            bytes: 0,
+            duration_ms: 0,
+            diff: None,
+            structured: Some(Box::new(serde_json::json!([
+                {"id": "1", "text": "a", "state": "in_progress"}
+            ]))),
+        };
+        assert_eq!(
+            result.todo_list(),
+            Some(vec![TodoItem {
+                id: "1".into(),
+                text: "a".into(),
+                state: TodoState::InProgress,
+            }])
+        );
+    }
+
+    /// A113: a `TitleSet` written before T37.22.9 has no `by_user` and
+    /// reads as a generated title.
+    #[test]
+    fn title_set_without_by_user_reads_as_generated() {
+        let old = r#"{"type":"title_set","title":"Fix the ledger"}"#;
+        assert_eq!(
+            serde_json::from_str::<Event>(old).expect("old rollout line"),
+            Event::TitleSet {
+                title: "Fix the ledger".into(),
+                by_user: false
+            }
+        );
     }
 }

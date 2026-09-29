@@ -47,6 +47,8 @@ actions! {
     Copy = "copy",
     // `Shift+Y` (T23.4): the whole transcript still held.
     CopyAll = "copy.all",
+    // T54.6: push-to-talk; `[voice] key` rebinds it.
+    Voice = "voice",
 }
 
 impl Action {

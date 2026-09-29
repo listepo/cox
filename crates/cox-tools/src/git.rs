@@ -17,7 +17,8 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use cox_protocol::errors::WorktreeError;
-use cox_protocol::traits::{Worktree, Worktrees};
+use cox_protocol::traits::{FileStat, Worktree, WorktreeInfo, Worktrees};
+use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
 /// Branch and working-tree line counts, as the status line shows them.
@@ -66,6 +67,54 @@ pub async fn branches(dir: &Path) -> Vec<String> {
     .await
     .unwrap_or_default();
     out.lines().map(str::to_string).collect()
+}
+
+/// Files under `dir` most recently touched, relative to `dir`: uncommitted
+/// ones (`status`, untracked included) first, then those named by the last
+/// `commits` commits in `log` order, each once. The repo map's ranking
+/// (P43). Git prints both lists relative to the repository root, so the
+/// `--show-prefix` of `dir` is stripped and anything outside `dir` dropped.
+/// Empty outside a repository — the map then falls back to path order.
+pub async fn recent_changes(dir: &Path, commits: usize) -> Vec<String> {
+    let Some(prefix) = git(dir, &["rev-parse", "--show-prefix"]).await else {
+        return Vec::new();
+    };
+    let prefix = prefix.trim_end_matches('\n');
+    let status = git(
+        dir,
+        &["status", "--porcelain", "-z", "--untracked-files=all"],
+    )
+    .await
+    .unwrap_or_default();
+    let n = commits.to_string();
+    let log = git(dir, &["log", "-z", "-n", &n, "--name-only", "--format="])
+        .await
+        .unwrap_or_default();
+    let mut seen = std::collections::HashSet::new();
+    porcelain_paths(&status)
+        .into_iter()
+        .chain(log.split(['\0', '\n']).filter(|p| !p.is_empty()))
+        .filter_map(|p| p.strip_prefix(prefix))
+        .filter(|p| seen.insert(*p))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The paths of `status --porcelain -z`: each record is `XY path`; a rename
+/// or copy is followed by one more record holding the old path, skipped.
+fn porcelain_paths(out: &str) -> Vec<&str> {
+    let mut paths = Vec::new();
+    let mut records = out.split('\0');
+    while let Some(record) = records.next() {
+        let Some(path) = record.get(3..).filter(|p| !p.is_empty()) else {
+            continue;
+        };
+        if record.get(..2).is_some_and(|xy| xy.contains(['R', 'C'])) {
+            records.next();
+        }
+        paths.push(path);
+    }
+    paths
 }
 
 /// Sums `git diff --numstat` columns. A binary file reports `-` for both,
@@ -193,6 +242,18 @@ fn resolve_worktrees_root(
 /// list, a lock that does not start with `owner`, and a tree with
 /// uncommitted or untracked files — never with `--force`.
 pub async fn worktree_remove(path: &Path, owner: &str) -> Result<(), WorktreeError> {
+    remove(path, owner, false).await
+}
+
+/// [`worktree_remove`] that also removes a tree with uncommitted or
+/// untracked files, with `--force` (T52.10). Only for a removal the person
+/// confirmed a second time after being told those changes go; every other
+/// refusal stands.
+pub async fn worktree_discard(path: &Path, owner: &str) -> Result<(), WorktreeError> {
+    remove(path, owner, true).await
+}
+
+async fn remove(path: &Path, owner: &str, discard: bool) -> Result<(), WorktreeError> {
     let main = main_checkout(path).await?;
     let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     if path == main {
@@ -204,13 +265,67 @@ pub async fn worktree_remove(path: &Path, owner: &str) -> Result<(), WorktreeErr
     if let Some(reason) = record.locked.filter(|r| !r.starts_with(owner)) {
         return Err(WorktreeError::LockedByOther { path, reason });
     }
-    if !is_clean(&path).await.unwrap_or(false) {
+    if !discard && !is_clean(&path).await.unwrap_or(false) {
         return Err(WorktreeError::Dirty { path });
     }
     let path_s = path.display().to_string();
     let _ = git(&main, &["worktree", "unlock", &path_s]).await;
-    git_or_err(&main, &["worktree", "remove", &path_s]).await?;
+    let mut args = vec!["worktree", "remove"];
+    if discard {
+        args.push("--force");
+    }
+    args.push(&path_s);
+    git_or_err(&main, &args).await?;
     Ok(())
+}
+
+/// What the worktree at `dir` changed against the commit it was cut from —
+/// its merge base with the ref [`worktree_add`] cuts from — committed or
+/// not, with each untracked file counted as all added (T52.10).
+pub async fn worktree_diffstat(dir: &Path) -> Result<Vec<FileStat>, WorktreeError> {
+    let main = main_checkout(dir).await?;
+    let base = base_ref(&main).await;
+    let from = git(dir, &["merge-base", "HEAD", &base])
+        .await
+        .map_or_else(|| "HEAD".to_string(), |out| out.trim().to_string());
+    let tracked = git_or_err(dir, &["diff", "--numstat", &from]).await?;
+    let mut stats = file_stats(&tracked);
+    let untracked = git(dir, &["ls-files", "--others", "--exclude-standard", "-z"])
+        .await
+        .unwrap_or_default();
+    for path in untracked.split('\0').filter(|p| !p.is_empty()) {
+        let added = std::fs::read(dir.join(path)).map_or(0, |bytes| lines(&bytes));
+        stats.push(FileStat {
+            path: PathBuf::from(path),
+            added,
+            removed: 0,
+        });
+    }
+    Ok(stats)
+}
+
+/// `git diff --numstat`, one row per file; a binary file's `-` counts as 0.
+fn file_stats(out: &str) -> Vec<FileStat> {
+    out.lines()
+        .filter_map(|line| {
+            let mut cols = line.splitn(3, '\t');
+            let count = |c: Option<&str>| c.and_then(|c| c.parse::<u32>().ok()).unwrap_or(0);
+            let (added, removed) = (count(cols.next()), count(cols.next()));
+            let path = cols.next().filter(|p| !p.is_empty())?;
+            Some(FileStat {
+                path: PathBuf::from(path),
+                added,
+                removed,
+            })
+        })
+        .collect()
+}
+
+/// Lines in a new file, a last line without a newline included.
+fn lines(bytes: &[u8]) -> u32 {
+    let newlines = bytes.iter().filter(|b| **b == b'\n').count();
+    let partial = usize::from(bytes.last().is_some_and(|b| *b != b'\n'));
+    u32::try_from(newlines + partial).unwrap_or(u32::MAX)
 }
 
 /// `Some(true)` when `git status --porcelain` prints nothing; `None`
@@ -228,6 +343,18 @@ pub struct GitWorktrees;
 impl Worktrees for GitWorktrees {
     async fn add(&self, from: &Path, name: &str, owner: &str) -> Result<Worktree, WorktreeError> {
         worktree_add(from, name, owner).await
+    }
+
+    async fn list(&self, from: &Path) -> Result<Vec<WorktreeInfo>, WorktreeError> {
+        worktree_list(from).await
+    }
+
+    async fn diffstat(&self, path: &Path) -> Result<Vec<FileStat>, WorktreeError> {
+        worktree_diffstat(path).await
+    }
+
+    async fn remove(&self, path: &Path, owner: &str, discard: bool) -> Result<(), WorktreeError> {
+        remove(path, owner, discard).await
     }
 }
 
@@ -285,40 +412,154 @@ async fn base_ref(main: &Path) -> String {
 
 /// One record of `git worktree list --porcelain`.
 struct Record {
+    /// Canonical when the directory still exists.
+    path: PathBuf,
     branch: Option<String>,
     /// The lock reason; `Some("")` when locked without one.
     locked: Option<String>,
+    prunable: bool,
 }
 
-/// The record for `path`, matched on canonical paths because git prints
-/// the path as it was given at `add` time.
-async fn worktree_record(main: &Path, path: &Path) -> Result<Option<Record>, WorktreeError> {
+/// Every record of `git worktree list --porcelain`, main checkout first.
+async fn worktree_records(main: &Path) -> Result<Vec<Record>, WorktreeError> {
     let out = git_or_err(main, &["worktree", "list", "--porcelain"]).await?;
-    let want = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut records = Vec::new();
     for block in out.split("\n\n") {
         let mut lines = block.lines();
         let Some(head) = lines.next().and_then(|l| l.strip_prefix("worktree ")) else {
             continue;
         };
         let listed = PathBuf::from(head);
-        let listed = std::fs::canonicalize(&listed).unwrap_or(listed);
-        if listed != want {
-            continue;
-        }
         let mut record = Record {
+            path: std::fs::canonicalize(&listed).unwrap_or(listed),
             branch: None,
             locked: None,
+            prunable: false,
         };
         for line in lines {
             if let Some(b) = line.strip_prefix("branch ") {
                 record.branch = Some(b.strip_prefix("refs/heads/").unwrap_or(b).to_string());
             } else if let Some(r) = line.strip_prefix("locked") {
                 record.locked = Some(r.trim().to_string());
+            } else if line.starts_with("prunable") {
+                record.prunable = true;
             }
         }
-        return Ok(Some(record));
+        records.push(record);
     }
-    Ok(None)
+    Ok(records)
+}
+
+/// The record for `path`, matched on canonical paths because git prints
+/// the path as it was given at `add` time.
+async fn worktree_record(main: &Path, path: &Path) -> Result<Option<Record>, WorktreeError> {
+    let want = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    Ok(worktree_records(main)
+        .await?
+        .into_iter()
+        .find(|r| r.path == want))
+}
+
+/// Every checkout of the repository around `from` with its disk size and
+/// whether its branch is merged into the main checkout's `HEAD` (T37.10).
+/// The size walk runs on the blocking pool, never on the async runtime.
+pub async fn worktree_list(from: &Path) -> Result<Vec<WorktreeInfo>, WorktreeError> {
+    let main = main_checkout(from).await?;
+    let merged = git(
+        &main,
+        &["branch", "--merged", "HEAD", "--format=%(refname:short)"],
+    )
+    .await
+    .unwrap_or_default();
+    let merged: Vec<&str> = merged.lines().collect();
+    let mut rows = Vec::new();
+    for r in worktree_records(&main).await? {
+        let dir = r.path.clone();
+        let bytes = tokio::task::spawn_blocking(move || dir_size(&dir))
+            .await
+            .unwrap_or(0);
+        let is_main = r.path == main;
+        rows.push(WorktreeInfo {
+            merged: !is_main && r.branch.as_deref().is_some_and(|b| merged.contains(&b)),
+            main: is_main,
+            path: r.path,
+            branch: r.branch,
+            locked: r.locked,
+            stale: r.prunable,
+            bytes,
+        });
+    }
+    Ok(rows)
+}
+
+/// The linked worktree a session runs in, as the desktop Changes tab shows
+/// it (T37.29.1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Linked {
+    pub path: PathBuf,
+    /// `None` when detached.
+    pub branch: Option<String>,
+    /// What the branch is compared with: `origin/<default>`, else the main
+    /// checkout's branch; `None` when git cannot say.
+    pub base: Option<String>,
+    /// The short merge-base of `HEAD` and `base`.
+    pub commit: Option<String>,
+    pub bytes: u64,
+}
+
+/// The linked worktree `dir` is in, with where its branch left the main
+/// checkout and its disk size; `None` in the main checkout or outside git.
+pub async fn linked(dir: &Path) -> Option<Linked> {
+    let main = main_checkout(dir).await.ok()?;
+    let top = git(dir, &["rev-parse", "--show-toplevel"]).await?;
+    let record = worktree_record(&main, Path::new(top.trim())).await.ok()??;
+    if record.path == main {
+        return None;
+    }
+    let mut base = Some(base_ref(&main).await);
+    if base.as_deref() == Some("HEAD") {
+        let branch = git(&main, &["rev-parse", "--abbrev-ref", "HEAD"]).await;
+        base = branch.map(|b| b.trim().to_string());
+    }
+    let commit = match &base {
+        Some(base) => match git(dir, &["merge-base", "HEAD", base]).await {
+            Some(full) => git(dir, &["rev-parse", "--short", full.trim()]).await,
+            None => None,
+        },
+        None => None,
+    };
+    let path = record.path.clone();
+    let bytes = tokio::task::spawn_blocking(move || dir_size(&path))
+        .await
+        .unwrap_or(0);
+    Some(Linked {
+        path: record.path,
+        branch: record.branch,
+        commit: commit.map(|c| c.trim().to_string()),
+        base,
+        bytes,
+    })
+}
+
+/// Best-effort recursive byte total of `dir`; an unreadable entry is
+/// skipped rather than failing the whole count, and symlinks are not
+/// followed. Blocking: async callers run it on the blocking pool.
+pub fn dir_size(dir: &Path) -> u64 {
+    let mut total = 0u64;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            match entry.metadata() {
+                Ok(meta) if meta.is_dir() => stack.push(entry.path()),
+                Ok(meta) => total += meta.len(),
+                _ => {}
+            }
+        }
+    }
+    total
 }
 
 /// `YYYY-MM-DD` of today in UTC, for the lock reason; the civil-date
@@ -391,6 +632,13 @@ mod tests {
             (13, 1)
         );
         assert_eq!(numstat(""), (0, 0));
+    }
+
+    #[test]
+    fn porcelain_paths_skip_the_old_name_of_a_rename() {
+        let out = " M src/a.rs\0R  new.rs\0old.rs\0?? notes.md\0";
+        assert_eq!(porcelain_paths(out), ["src/a.rs", "new.rs", "notes.md"]);
+        assert!(porcelain_paths("").is_empty());
     }
 
     #[test]
@@ -472,6 +720,48 @@ mod tests {
     /// A worktree is created once under `<parent>/_worktrees/`, on its own
     /// lower-case branch, locked for its cox owner; asking again returns
     /// the same one, and another owner's lock is refused.
+    #[tokio::test]
+    async fn worktree_list_reports_size_merge_and_lock() {
+        let Some((_dir, main)) = nested().await else {
+            return;
+        };
+        let wt = worktree_add(&main, "t7", "cox / s1").await.expect("add");
+        let rows = worktree_list(&wt.path).await.expect("list");
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        assert!(rows[0].main && rows[0].path == main && !rows[0].merged);
+        let row = &rows[1];
+        assert_eq!(row.path, wt.path);
+        assert_eq!(row.branch.as_deref(), Some("t7"));
+        assert!(row.merged, "a fresh branch has nothing unmerged");
+        assert!(!row.stale);
+        assert!(
+            row.locked
+                .as_deref()
+                .is_some_and(|r| r.starts_with("cox / s1"))
+        );
+        assert!(row.bytes >= 8, "a.txt is on disk: {}", row.bytes);
+    }
+
+    #[tokio::test]
+    async fn linked_names_the_branch_and_where_it_left_the_main_checkout() {
+        let Some((_dir, main)) = nested().await else {
+            return;
+        };
+        let head = git(&main, &["rev-parse", "--short", "HEAD"]).await;
+        let wt = worktree_add(&main, "t9", "cox / s1").await.expect("add");
+        let got = linked(&wt.path).await.expect("a linked worktree");
+        assert_eq!(got.path, wt.path);
+        assert_eq!(got.branch.as_deref(), Some("t9"));
+        assert_eq!(
+            got.base.as_deref(),
+            Some("trunk"),
+            "no remote: main's branch"
+        );
+        assert_eq!(got.commit, head.map(|h| h.trim().to_string()));
+        assert!(got.bytes >= 8, "a.txt is on disk: {}", got.bytes);
+        assert_eq!(linked(&main).await, None, "the main checkout is not linked");
+    }
+
     #[tokio::test]
     async fn worktree_add_is_idempotent() {
         let Some((_dir, main)) = nested().await else {
@@ -582,6 +872,57 @@ mod tests {
             worktree_remove(&wt.path, OWNER_PREFIX).await,
             Err(WorktreeError::NotRegistered { .. } | WorktreeError::NotARepository { .. })
         ));
+    }
+
+    #[test]
+    fn file_stats_reads_each_numstat_row_and_counts_binary_as_zero() {
+        let out = "3\t1\tsrc/a.rs\n-\t-\tlogo.png\n0\t4\tdocs/old.md\n";
+        let rows: Vec<(String, u32, u32)> = file_stats(out)
+            .into_iter()
+            .map(|s| (s.path.display().to_string(), s.added, s.removed))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("src/a.rs".to_string(), 3, 1),
+                ("logo.png".to_string(), 0, 0),
+                ("docs/old.md".to_string(), 0, 4),
+            ]
+        );
+    }
+
+    #[test]
+    fn lines_counts_a_last_line_without_a_newline() {
+        assert_eq!(lines(b""), 0);
+        assert_eq!(lines(b"a\nb\n"), 2);
+        assert_eq!(lines(b"a\nb"), 2);
+    }
+
+    /// A dirty tree the plain removal refuses goes with `discard` (T52.10),
+    /// and the diffstat saw its untracked file first.
+    #[tokio::test]
+    async fn worktree_discard_removes_a_dirty_tree_it_owns() {
+        let Some((_dir, main)) = nested().await else {
+            return;
+        };
+        let wt = worktree_add(&main, "t52", "cox / best-of-x")
+            .await
+            .expect("add");
+        std::fs::write(wt.path.join("new.txt"), "one\ntwo\n").expect("write");
+        let stats = worktree_diffstat(&wt.path).await.expect("diffstat");
+        assert!(
+            stats
+                .iter()
+                .any(|s| s.path == Path::new("new.txt") && s.added == 2)
+        );
+        assert!(matches!(
+            worktree_remove(&wt.path, OWNER_PREFIX).await,
+            Err(WorktreeError::Dirty { .. })
+        ));
+        worktree_discard(&wt.path, OWNER_PREFIX)
+            .await
+            .expect("discard");
+        assert!(!wt.path.exists());
     }
 
     #[test]

@@ -69,6 +69,24 @@ pub fn turn_entry(seq: u32, files: usize, text: &str) -> String {
     format!("T{seq} · {files} files · \"{short}\"")
 }
 
+/// What marks an agent row in the `@` picker (T45.6).
+const AGENT_TAG: &str = " · agent";
+
+/// The `@` picker's rows (T45.6): each dispatchable agent name tagged
+/// `agent`, then the workspace files.
+pub fn at_candidates(agents: &[String], files: &[String]) -> Vec<String> {
+    agents
+        .iter()
+        .map(|name| format!("{name}{AGENT_TAG}"))
+        .chain(files.iter().cloned())
+        .collect()
+}
+
+/// A picked `@` row without its `agent` tag: what the composer gets.
+pub fn untag(row: &str) -> &str {
+    row.strip_suffix(AGENT_TAG).unwrap_or(row)
+}
+
 /// The turn a `turn_entry` row names.
 pub fn turn_of_entry(row: &str) -> Option<u32> {
     row.strip_prefix('T')?.split(' ').next()?.parse().ok()
@@ -426,6 +444,24 @@ mod tests {
                 "syntax: Solarized (dark)".into(),
             ],
         );
+        let lines = picker.lines(&Glyphs::default(), &Theme::dark());
+        let area = ratatui::layout::Rect::new(0, 0, 40, lines.len() as u16);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
+        ratatui::widgets::Widget::render(ratatui::widgets::Paragraph::new(lines), area, &mut buf);
+        insta::assert_snapshot!(crate::view::buffer_to_string(&buf));
+    }
+
+    /// T45.6: the `@` picker lists dispatchable agents first, tagged
+    /// `agent`, then files; a picked agent row loses its tag.
+    #[test]
+    fn at_picker_lists_agents_first() {
+        let rows = at_candidates(
+            &["explore".into(), "reviewer".into()],
+            &["src/main.rs".into(), "README.md".into()],
+        );
+        assert_eq!(untag(&rows[1]), "reviewer");
+        assert_eq!(untag(&rows[2]), "src/main.rs");
+        let picker = Picker::open(Kind::Files, rows);
         let lines = picker.lines(&Glyphs::default(), &Theme::dark());
         let area = ratatui::layout::Rect::new(0, 0, 40, lines.len() as u16);
         let mut buf = ratatui::buffer::Buffer::empty(area);

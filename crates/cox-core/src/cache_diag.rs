@@ -8,6 +8,8 @@ use std::hash::{Hash, Hasher};
 
 use cox_protocol::types::Usage;
 
+use crate::context::repomap_bytes;
+
 /// Share of this call served from cache: `read / (input + read + write)`.
 pub fn ratio_of(usage: &Usage) -> f64 {
     ratio(
@@ -93,9 +95,16 @@ impl CacheTracker {
             if old_h != new_h {
                 let old = self.prev_texts.get(i).map(String::as_str).unwrap_or("");
                 let new = texts.get(i).map(String::as_str).unwrap_or("");
+                // P43: a `/repomap refresh` changes the end of system[2],
+                // so a miss there names the map as a suspect.
+                let with_map = i == 2 && (repomap_bytes(old) > 0 || repomap_bytes(new) > 0);
+                let name = if with_map {
+                    "system[2] instructions + repo map".to_string()
+                } else {
+                    block_name(i, system_len)
+                };
                 return Some(format!(
-                    "cache miss: {} changed at byte {}",
-                    block_name(i, system_len),
+                    "cache miss: {name} changed at byte {}",
                     first_byte_diff(old, new)
                 ));
             }
@@ -168,5 +177,32 @@ mod tests {
         let notice = t.observe(&changed, &usage(100, 0, 0)).expect("miss");
         assert!(notice.contains("system[3] volatile"), "{notice}");
         assert!(notice.contains("byte 5"), "{notice}");
+    }
+
+    /// P43: a refreshed map breaks the prefix at the end of system[2]; the
+    /// miss names the map so it is not blamed on the instruction files.
+    #[test]
+    fn cache_diag_names_the_repo_map_in_system_two() {
+        let mut t = CacheTracker::new();
+        let sys = |map: &str| {
+            vec![
+                "t".into(),
+                "p".into(),
+                format!("i\n<repo_map>\n{map}\n</repo_map>"),
+                "v".into(),
+            ]
+        };
+        assert_eq!(t.observe(&sys("a.rs"), &usage(5, 95, 0)), None);
+        let notice = t.observe(&sys("b.rs"), &usage(100, 0, 0)).expect("miss");
+        assert!(
+            notice.contains("system[2] instructions + repo map"),
+            "{notice}"
+        );
+        let mut plain = CacheTracker::new();
+        let base = vec!["t".into(), "p".into(), "i".into(), "v".into()];
+        plain.observe(&base, &usage(5, 95, 0));
+        let changed = vec!["t".into(), "p".into(), "j".into(), "v".into()];
+        let notice = plain.observe(&changed, &usage(100, 0, 0)).expect("miss");
+        assert!(notice.contains("system[2] instruction files"), "{notice}");
     }
 }

@@ -101,7 +101,7 @@ impl cox_protocol::Tool for GrepTool {
                 text: "no matches".into(),
                 is_error: false,
                 diff: None,
-                structured: None,
+                structured: Some(matches(0)),
             });
         }
 
@@ -111,7 +111,7 @@ impl cox_protocol::Tool for GrepTool {
                 text,
                 is_error: false,
                 diff: None,
-                structured: None,
+                structured: Some(matches(total_matches)),
             });
         }
 
@@ -157,9 +157,15 @@ impl cox_protocol::Tool for GrepTool {
             text,
             is_error: false,
             diff: None,
-            structured: None,
+            structured: Some(matches(total_matches)),
         })
     }
+}
+
+/// The match count as data (DT G3), including those past the cap, so a
+/// summary never counts lines of a possibly truncated text.
+fn matches(n: usize) -> Value {
+    serde_json::json!({ "matches": n })
 }
 
 fn join(lines: &[Line]) -> String {
@@ -362,6 +368,11 @@ mod tests {
             .filter(|l| l.contains(":TODO") || l.contains("TODO"))
             .count();
         assert!(match_lines >= 1);
+        let total = out.structured.as_ref().and_then(|s| s["matches"].as_u64());
+        assert!(
+            total > Some(1),
+            "the count covers matches past the cap: {total:?}"
+        );
     }
 
     #[tokio::test]
