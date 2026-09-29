@@ -1,7 +1,8 @@
 // Review (T37.28.2, DT§5.4): cox-app's `Changes` as the files grouped by the turn that changed
 // each last, the checkpoints Review's timeline rewinds to, and the open file's net diff from
 // `SessionClient.review` (A101). Here, not in CoxUI, because these decide what the pane shows
-// (DS§1); the app copies them into `ReviewPane.State`. The grouping reads `changes::build`'s turn.
+// (DS§1); the app copies them into `ReviewPane.State`. The grouping is the core's `turns`
+// (T58.4.25, `cox_app::changes`).
 
 import CoxClient
 import Foundation
@@ -29,14 +30,9 @@ public struct ReviewState: Equatable, Sendable {
     locale: Locale = .current, timeZone: TimeZone = .current
   ) {
     let tab = ChangesTabState(changes, locale: locale, timeZone: timeZone)
-    for (file, row) in zip(changes.files, tab.files) {
-      if let index = turns.firstIndex(where: { $0.turn == file.turn }) {
-        turns[index].files.append(row)
-      } else {
-        turns.append(Turn(turn: file.turn, files: [row]))
-      }
+    turns = changes.turns.map {
+      Turn(turn: $0.turn, files: $0.files.map(ChangesTabState.File.init))
     }
-    turns.sort { $0.turn < $1.turn }
     (checkpoints, self.selection, self.diff) = (tab.checkpoints, selection, diff)
   }
 }

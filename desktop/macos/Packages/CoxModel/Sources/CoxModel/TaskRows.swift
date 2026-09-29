@@ -8,7 +8,8 @@ import CoxClient
 import Foundation
 
 public struct TaskRow: Identifiable, Equatable, Sendable {
-  public enum State: Equatable, Sendable { case running, succeeded, failed }
+  /// The core's reading of the task (T58.4.25); the task card reads the same value.
+  public typealias State = TaskState
 
   /// The core's task id, which opening the task's transcript names.
   public let id: String
@@ -27,13 +28,9 @@ extension SessionStore {
   public var tasks: [TaskRow] {
     blocks.values.compactMap { block in
       guard
-        case .task(
-          let task, let label, let tier, let done, let costUsd, let exitCode, _, let kind) =
+        case .task(let task, let label, let tier, let done, let costUsd, _, let state, let kind) =
           block.kind
       else { return nil }
-      // As the task card reads it: no exit code (a subagent) is a success.
-      let state: TaskRow.State =
-        !done ? .running : (exitCode ?? 0) == 0 ? .succeeded : .failed
       return TaskRow(
         id: task, label: label, tier: tier.rawValue, kind: kind, state: state,
         cost: done ? usd(costUsd) : nil)

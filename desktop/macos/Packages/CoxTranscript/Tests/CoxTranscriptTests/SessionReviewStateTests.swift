@@ -9,12 +9,15 @@ import Testing
 
 @testable import CoxTranscript
 
+private let notesFile = ChangedFile(
+  path: "notes.md", change: .edited, added: 1, removed: 1, call: "c1", turn: 1)
+private let newFile = ChangedFile(
+  path: "new.rs", change: .created, added: 1, removed: 0, call: "c2", turn: 2)
+
 private let changes = Changes(
-  files: [
-    ChangedFile(path: "notes.md", change: .edited, added: 1, removed: 1, call: "c1", turn: 1),
-    ChangedFile(path: "new.rs", change: .created, added: 1, removed: 0, call: "c2", turn: 2),
-  ],
-  checkpoints: [Checkpoint(turn: 1, label: "Turn 1 · before notes.md", time: "")])
+  files: [notesFile, newFile],
+  checkpoints: [Checkpoint(turn: 1, label: "Turn 1 · before notes.md", time: "")],
+  turns: [TurnFiles(turn: 1, files: [notesFile]), TurnFiles(turn: 2, files: [newFile])])
 
 private let notes = DiffModel(
   path: "notes.md",

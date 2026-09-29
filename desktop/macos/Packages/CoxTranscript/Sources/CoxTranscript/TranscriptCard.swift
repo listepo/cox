@@ -39,8 +39,13 @@ extension ToolCard.Content {
         tile: Icon.search.tile, symbol: Icon.search.symbol, verb: summary, subject: "",
         state: state.header)
       self.init(header: header)
-    case .task(_, let label, let tier, let done, _, let exitCode, _, _):
-      let state: ToolState = !done ? .running : exitCode.map { $0 == 0 } ?? true ? .done : .failed
+    case .task(_, let label, let tier, _, _, _, let task, _):
+      let state: ToolState =
+        switch task {
+        case .running: .running
+        case .succeeded: .done
+        case .failed: .failed
+        }
       let header = ToolHeader.Item(
         tile: Icon.agent.tile, symbol: Icon.agent.symbol, verb: label, subject: "",
         detail: tier.rawValue, state: state.header)

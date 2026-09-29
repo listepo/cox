@@ -1,21 +1,25 @@
-// Review's state (T37.28.2): the changed files grouped by the turn that changed each last, and
-// the open file's diff read through SessionStore from the fixture session.
+// Review's state (T37.28.2): the core's turns (the grouping itself is `cox_app::changes`'s
+// test, T58.4.20) and the open file's diff read through SessionStore from the fixture session.
 
 import CoxClient
 import Testing
 
 @testable import CoxModel
 
+private let retry = ChangedFile(
+  path: "src/retry.rs", change: .edited, added: 18, removed: 4, call: "c3", turn: 2)
+private let notesFile = ChangedFile(
+  path: "notes.md", change: .edited, added: 1, removed: 1, call: "c1", turn: 1)
+private let newFile = ChangedFile(
+  path: "new.rs", change: .created, added: 1, removed: 0, call: "c2", turn: 2)
+
 private let changes = Changes(
-  files: [
-    ChangedFile(path: "src/retry.rs", change: .edited, added: 18, removed: 4, call: "c3", turn: 2),
-    ChangedFile(path: "notes.md", change: .edited, added: 1, removed: 1, call: "c1", turn: 1),
-    ChangedFile(path: "new.rs", change: .created, added: 1, removed: 0, call: "c2", turn: 2),
-  ],
+  files: [retry, notesFile, newFile],
   checkpoints: [
     Checkpoint(turn: 1, label: "Turn 1 · before notes.md", time: ""),
     Checkpoint(turn: 2, label: "Turn 2 · before retry.rs and 1 more", time: ""),
-  ])
+  ],
+  turns: [TurnFiles(turn: 1, files: [notesFile]), TurnFiles(turn: 2, files: [retry, newFile])])
 
 private let notes = DiffModel(
   path: "notes.md",
@@ -28,7 +32,7 @@ private let notes = DiffModel(
       ])
   ])
 
-@Test func filesGroupUnderTheTurnThatChangedThemLastOldestFirst() {
+@Test func reviewListsTheCoresTurnsAsTheyArrive() {
   let review = ReviewState(changes)
   #expect(review.turns.map(\.turn) == [1, 2])
   #expect(review.turns.map { $0.files.map(\.path) } == [["notes.md"], ["src/retry.rs", "new.rs"]])

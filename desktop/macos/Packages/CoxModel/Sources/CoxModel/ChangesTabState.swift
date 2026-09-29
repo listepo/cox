@@ -37,9 +37,7 @@ public struct ChangesTabState: Equatable, Sendable {
 
   /// `locale` and `timeZone` format a checkpoint's time and the worktree's size.
   public init(_ changes: Changes, locale: Locale = .current, timeZone: TimeZone = .current) {
-    files = changes.files.map {
-      File(path: $0.path, change: $0.change, added: Int($0.added), removed: Int($0.removed))
-    }
+    files = changes.files.map(File.init)
     let clock = Date.FormatStyle(
       date: .omitted, time: .shortened, locale: locale, timeZone: timeZone)
     checkpoints = changes.checkpoints.map {
@@ -59,6 +57,14 @@ public struct ChangesTabState: Equatable, Sendable {
   static func date(_ text: String) -> Date? {
     let withFraction = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
     return (try? withFraction.parse(text)) ?? (try? Date.ISO8601FormatStyle().parse(text))
+  }
+}
+
+extension ChangesTabState.File {
+  /// A changed file as a row; Review's turns list the same rows.
+  init(_ file: ChangedFile) {
+    self.init(
+      path: file.path, change: file.change, added: Int(file.added), removed: Int(file.removed))
   }
 }
 
