@@ -11,10 +11,18 @@ public struct Dropped: Identifiable, Equatable, Sendable {
   /// What is in effect instead.
   public var kept: String
   public var reason: String
+  /// The page it is listed on.
+  public var group: SettingsGroup
+  /// `999 → 5`: what the project set, then what holds.
+  public var change: String
 
   public var id: String { key }
 
-  public init(key: String, value: String, kept: String, reason: String) {
+  public init(
+    key: String, value: String, kept: String, reason: String, group: SettingsGroup,
+    change: String
+  ) {
     (self.key, self.value, self.kept, self.reason) = (key, value, kept, reason)
+    (self.group, self.change) = (group, change)
   }
 }

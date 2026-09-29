@@ -9,10 +9,8 @@ import CoxClient
 import Foundation
 import Observation
 
-/// The sidebar groups DT§5.7 names, by a key's top-level table.
-public enum SettingsGroup: String, CaseIterable, Sendable {
-  case general, models, permissions, sandbox, budget, mcp, plugins, appearance, advanced
-
+extension SettingsGroup {
+  /// A key's top-level table → its page.
   public init(key: String) {
     switch key.prefix(while: { $0 != "." }) {
     case "core": self = .general
@@ -32,40 +30,6 @@ public struct SettingsSection: Identifiable, Equatable, Sendable {
   public let group: SettingsGroup
   public let settings: [Setting]
   public var id: SettingsGroup { group }
-}
-
-/// A typed edit, sent to Rust as JSON.
-public enum SettingValue: Equatable, Sendable, Encodable {
-  case bool(Bool)
-  case integer(Int64)
-  case number(Double)
-  case text(String)
-  case list([String])
-
-  public func encode(to encoder: any Encoder) throws {
-    var container = encoder.singleValueContainer()
-    switch self {
-    case .bool(let value): try container.encode(value)
-    case .integer(let value): try container.encode(value)
-    case .number(let value): try container.encode(value)
-    case .text(let value): try container.encode(value)
-    case .list(let value): try container.encode(value)
-    }
-  }
-
-  /// Throws for a number JSON cannot carry (NaN, infinity).
-  func json() throws -> String {
-    guard let text = String(bytes: try JSONEncoder().encode(self), encoding: .utf8) else {
-      throw EncodingError.invalidValue(self, .init(codingPath: [], debugDescription: "not UTF-8"))
-    }
-    return text
-  }
-}
-
-public enum KeyError: Error, Equatable {
-  case empty
-  /// Not a `[providers.<name>]` table in the current view.
-  case unknownProvider(String)
 }
 
 @Observable

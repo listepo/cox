@@ -12,7 +12,11 @@ import Testing
     let reason = "A project may not raise a budget above your own"
     let view = SettingsView(
       settings: [], userFile: "/u/config.toml", projectFile: "/p/.cox/config.toml",
-      dropped: [Dropped(key: "budget.session_usd", value: "999", kept: "5", reason: reason)])
+      dropped: [
+        Dropped(
+          key: "budget.session_usd", value: "999", kept: "5", reason: reason, group: .budget,
+          change: "999 → 5")
+      ])
     let store = SettingsStore(
       client: FixtureSettingsClient(view: view), secrets: MemorySecretStore(), cwd: "/p")
     await store.load()

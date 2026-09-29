@@ -12,7 +12,7 @@ extension CoxClient.SettingsView {
       projectFile: view.projectFile, mcp: view.mcp.map { CoxClient.McpServer($0) },
       dropped: view.dropped.map { CoxClient.Dropped($0) },
       rules: view.rules.map { CoxClient.PermissionRule($0) },
-      grants: view.grants.map { CoxClient.SessionGrant($0) })
+      grants: view.grants.map { CoxClient.SessionGrant($0) }, providers: view.providers)
   }
 }
 
@@ -58,7 +58,9 @@ extension CoxFFIBindings.SessionGrant {
 
 extension CoxClient.Dropped {
   init(_ dropped: CoxFFIBindings.Dropped) {
-    self.init(key: dropped.key, value: dropped.value, kept: dropped.kept, reason: dropped.reason)
+    self.init(
+      key: dropped.key, value: dropped.value, kept: dropped.kept, reason: dropped.reason,
+      group: .init(dropped.group), change: dropped.change)
   }
 }
 
@@ -98,7 +100,62 @@ extension CoxClient.Setting {
   init(_ setting: CoxFFIBindings.Setting) {
     self.init(
       key: setting.key, value: setting.value, layer: .init(setting.layer),
-      editable: setting.editable, kind: .init(setting.kind), description: setting.description)
+      editable: setting.editable, kind: .init(setting.kind), description: setting.description,
+      group: .init(setting.group), title: setting.title, table: setting.table,
+      provider: setting.provider, detail: setting.detail, control: .init(setting.control))
+  }
+}
+
+extension CoxClient.SettingsGroup {
+  init(_ group: CoxFFIBindings.SettingsGroup) {
+    switch group {
+    case .general: self = .general
+    case .models: self = .models
+    case .permissions: self = .permissions
+    case .sandbox: self = .sandbox
+    case .budget: self = .budget
+    case .mcp: self = .mcp
+    case .plugins: self = .plugins
+    case .appearance: self = .appearance
+    case .advanced: self = .advanced
+    }
+  }
+}
+
+extension CoxClient.Setting.Control {
+  /// Rust sends a slider only with `min` below `max`, so the range is well formed.
+  init(_ control: CoxFFIBindings.SettingControl) {
+    switch control {
+    case .toggle(let isOn): self = .toggle(isOn)
+    case .slider(let value, let min, let max, let text):
+      self = .slider(value, range: min...max, text: text)
+    case .choice(let value, let options): self = .choice(value, options: options)
+    case .menu(let value, let options):
+      self = .menu(value, options: options.map { .init(value: $0.value, title: $0.title) })
+    case .field(let text): self = .field(text)
+    case .json(let text): self = .json(text)
+    }
+  }
+}
+
+extension CoxFFIBindings.SettingInput {
+  init(_ value: CoxClient.SettingValue) {
+    switch value {
+    case .bool(let value): self = .bool(value: value)
+    case .integer(let value): self = .integer(value: value)
+    case .number(let value): self = .number(value: value)
+    case .text(let value): self = .text(value: value)
+    case .list(let values): self = .list(values: values)
+    }
+  }
+}
+
+extension CoxClient.KeyError {
+  init(_ error: CoxFFIBindings.KeyError) {
+    switch error {
+    case .Empty: self = .empty
+    case .UnknownProvider(let provider): self = .unknownProvider(provider)
+    }
   }
 }
 
