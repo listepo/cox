@@ -72,10 +72,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T58.4.6 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T58.4.14 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
 | T58.4.15 | in progress | P2 | 1 | 0% | Claude Code / opus-5.5 |
-| T58.4.16 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
-| T58.4.17 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
-| T58.4.18 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
-| T58.4.19 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T58.4.20 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T58.4.21 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
 | T58.4.22 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
@@ -1816,30 +1812,6 @@ Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter Compo
 Depends: T58.4.6 · Size: ~50 · Files: `CoxModel/Sources/CoxClient/Meter.swift`, `CoxCore/Sources/CoxCore/Convert+Meter.swift`, `CoxModel/Sources/CoxModel/ToolbarState.swift`
 Goal: the meter value gains `contextPercent`, `contextFill` and `cost`; `ToolbarState.init` copies them instead of splitting `contextShare` and summing the parts.
 Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter ToolbarStateTests`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter ConvertTests`.
-
-#### T58.4.16 Completion token and pick in `cox-app`
-
-Depends: — · Size: ~150 · Files: `crates/cox-app/src/complete.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`
-Goal: `typed_token(text, caret, selection, shell)` names the token that asks for rows (`@` anywhere, `/` only as the first word, none inside a word, with a selection or in shell mode) and `pick(text, token, insert)` splices the insert with one space and returns the new text and caret; `mentions(text, picked)` keeps the `@` files still in the text (audit items 19–20). Offsets are UTF-16 units, which both clients' strings use. Forwarders are one expression.
-Check: `mise exec -- cargo nextest run -p cox-app complete` passes `a_slash_counts_only_as_the_first_word`, `no_token_inside_a_word`, `a_pick_leaves_one_space_and_the_caret_after_it`, `offsets_are_utf16_units`; `mise exec -- cargo nextest run -p cox-ffi` passes.
-
-#### T58.4.17 A draft becomes its intent in `cox-app`
-
-Depends: — · Size: ~120 · Files: `crates/cox-app/src/intent.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`
-Goal: `draft_intent(text, shell, attachments, running, when)` decides a shell line, a `/` command line or a turn, whether it is queued behind a running turn (and for review, `[desktop.review] send`), whether it can be sent, and what the draft keeps after it (audit items 21–22); a leading `!` asks for shell mode.
-Check: `mise exec -- cargo nextest run -p cox-app intent` passes `a_draft_is_queued_while_a_turn_runs`, `a_bang_enters_shell_mode`, `attachments_clear_only_after_a_send_or_queue`, `review_send_now_skips_the_queue`; `mise exec -- cargo nextest run -p cox-ffi` passes.
-
-#### T58.4.18 Composer rules reach the session clients
-
-Depends: T58.4.16, T58.4.17 · Size: ~100 · Files: `CoxModel/Sources/CoxClient/CoreClient.swift`, `CoxCore/Sources/CoxCore/LiveCoreClient.swift`, `CoxCore/Sources/CoxCore/RemoteClient.swift`
-Goal: `SessionClient` gains `typedToken`, `pick`, `mentions` and `draftIntent`, forwarded by the live and remote clients; the fixture client has stand-ins enough to drive a test, as for `reviewMessage` and `palette`.
-Check: `swift test --package-path desktop/macos/Packages/CoxModel`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore`.
-
-#### T58.4.19 ComposerStore and Review send through the core's rules
-
-Depends: T58.4.18 · Size: ~120 · Files: `CoxModel/Sources/CoxModel/ComposerStore.swift`, `CoxModel/Sources/CoxModel/ReviewDraft.swift`
-Goal: `typedToken`, `caret`, `pick`, `append`, the mention pruning, the `!` switch, `canSend`, `draftIntent`, `submit`, `submitNow` and `sendReview` call the session client; `recall`, `moveSelection`, `selectedRange`, `dismissCompletion` and `attach` stay.
-Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter "ComposerStoreTests|ReviewDraftTests"`; `swift test --package-path desktop/macos/Packages/CoxTranscript --filter ComposerFlowTests`.
 
 #### T58.4.20 Inspector facts and Review's turns in `cox-app`
 

@@ -8959,3 +8959,59 @@ Deviations: the app screenshot came from this branch's build on the scripted pro
 Check (2026-09-29): `render.sh 24-terminal-pane-m2` ok; `npm run diff` (threshold 0.3, crop 80,80,2880,1800) 3.23% (3.95% in round 4); the composer lines up within a few points, the rest is content; the well is opaque dark. Commit 32483f10.
 
 Not done: nothing.
+
+#### T58.4.16 Completion token and pick in `cox-app`
+
+Depends: — · Size: ~150 · Files: `crates/cox-app/src/complete.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`
+Goal: `typed_token(text, caret, selection, shell)` names the token that asks for rows (`@` anywhere, `/` only as the first word, none inside a word, with a selection or in shell mode) and `pick(text, token, insert)` splices the insert with one space and returns the new text and caret; `mentions(text, picked)` keeps the `@` files still in the text (audit items 19–20). Offsets are UTF-16 units, which both clients' strings use. Forwarders are one expression.
+Check: `mise exec -- cargo nextest run -p cox-app complete` passes `a_slash_counts_only_as_the_first_word`, `no_token_inside_a_word`, `a_pick_leaves_one_space_and_the_caret_after_it`, `offsets_are_utf16_units`; `mise exec -- cargo nextest run -p cox-ffi` passes.
+Status: done 2026-09-29
+Result: `cox-app/src/complete.rs` owns the completion token at the caret (`typed_token`: `@` anywhere, `/` only as the first word, none inside a word, with a selection or in shell mode) and `pick` (splice plus one space, caret after it, picked `@` files, mention pruning); forwarded through `cox-ffi`.
+
+Deviations: none.
+
+Check: cox-p51 at p37-desktop: `cargo nextest run -p cox-app -p cox-ffi` 212 passed; clippy -D warnings clean; CoxModel `swift test` 128 tests in 6 suites passed; `just desktop-app` built (2026-09-29). Commit 4569845d.
+
+Not done: nothing.
+
+#### T58.4.17 A draft becomes its intent in `cox-app`
+
+Depends: — · Size: ~120 · Files: `crates/cox-app/src/intent.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`
+Goal: `draft_intent(text, shell, attachments, running, when)` decides a shell line, a `/` command line or a turn, whether it is queued behind a running turn (and for review, `[desktop.review] send`), whether it can be sent, and what the draft keeps after it (audit items 21–22); a leading `!` asks for shell mode.
+Check: `mise exec -- cargo nextest run -p cox-app intent` passes `a_draft_is_queued_while_a_turn_runs`, `a_bang_enters_shell_mode`, `attachments_clear_only_after_a_send_or_queue`, `review_send_now_skips_the_queue`; `mise exec -- cargo nextest run -p cox-ffi` passes.
+Status: done 2026-09-29
+Result: `cox-app/src/intent.rs` `draft_intent`: a draft becomes a shell line, a `/` command line or a turn, queued while a turn runs, and what the draft keeps after a send; forwarded through `cox-ffi`.
+
+Deviations: none.
+
+Check: cox-p51 at p37-desktop: `cargo nextest run -p cox-app -p cox-ffi` 212 passed; clippy -D warnings clean; CoxModel `swift test` 128 tests in 6 suites passed; `just desktop-app` built (2026-09-29). Commit 99a94d31.
+
+Not done: nothing.
+
+#### T58.4.18 Composer rules reach the session clients
+
+Depends: T58.4.16, T58.4.17 · Size: ~100 · Files: `CoxModel/Sources/CoxClient/CoreClient.swift`, `CoxCore/Sources/CoxCore/LiveCoreClient.swift`, `CoxCore/Sources/CoxCore/RemoteClient.swift`
+Goal: `SessionClient` gains `typedToken`, `pick`, `mentions` and `draftIntent`, forwarded by the live and remote clients; the fixture client has stand-ins enough to drive a test, as for `reviewMessage` and `palette`.
+Check: `swift test --package-path desktop/macos/Packages/CoxModel`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore`.
+Status: done 2026-09-29
+Result: `CoxClient/ComposerRules.swift` and `CoreClient` expose the rules; `LiveCoreClient` forwards to the FFI, `RemoteClient` mirrors them for a remote session.
+
+Deviations: none.
+
+Check: cox-p51 at p37-desktop: `cargo nextest run -p cox-app -p cox-ffi` 212 passed; clippy -D warnings clean; CoxModel `swift test` 128 tests in 6 suites passed; `just desktop-app` built (2026-09-29). Commit 78b6d4bc.
+
+Not done: nothing.
+
+#### T58.4.19 ComposerStore and Review send through the core's rules
+
+Depends: T58.4.18 · Size: ~120 · Files: `CoxModel/Sources/CoxModel/ComposerStore.swift`, `CoxModel/Sources/CoxModel/ReviewDraft.swift`
+Goal: `typedToken`, `caret`, `pick`, `append`, the mention pruning, the `!` switch, `canSend`, `draftIntent`, `submit`, `submitNow` and `sendReview` call the session client; `recall`, `moveSelection`, `selectedRange`, `dismissCompletion` and `attach` stay.
+Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter "ComposerStoreTests|ReviewDraftTests"`; `swift test --package-path desktop/macos/Packages/CoxTranscript --filter ComposerFlowTests`.
+Status: done 2026-09-29
+Result: `ComposerStore` (`typedToken`, `pick`, `edit`, `canSend`, `submit`) and `ReviewDraft`'s send call the core's rules instead of their own copies (net −11 lines).
+
+Deviations: none.
+
+Check: cox-p51 at p37-desktop: `cargo nextest run -p cox-app -p cox-ffi` 212 passed; clippy -D warnings clean; CoxModel `swift test` 128 tests in 6 suites passed; `just desktop-app` built (2026-09-29). Commit 467acfee.
+
+Not done: nothing.
