@@ -20,6 +20,41 @@ test *args:
 check-all: && dunnage
     mise exec -- cargo nextest run --workspace
 
+# The crates that build for Windows (P57, T57.1): the one list `just
+# windows-check` and CI's `windows` job use. Each P57 card adds the crates it
+# ports; T57.11 replaces the list with the whole workspace.
+windows_crates := "cox-plugin-api cox-protocol cox-sanitize cox-models cox-permission cox-config cox-tokens cox-patch cox-search cox-syntax cox-web cox-sandbox cox-render cox-telemetry cox-provider-http cox-provider-testkit cox-provider-anthropic cox-provider-openai cox-provider cox-store cox-plugin cox-core cox-tui cox-tools cox-acp"
+
+# `cargo check` and clippy over `windows_crates` for x64 and ARM64 Windows
+# (A128 (4)), library targets only (tests join in T57.11). On Windows cargo
+# runs natively (CI's `windows` job, whose rust action already made the
+# mise.toml pin the active toolchain). Elsewhere through cargo-xwin
+# (mise.toml) and its `clang` backend: clang-cl's `/imsvc` flags reach
+# ring's aarch64 assembly, which plain clang builds, and fail it. The
+# backend fetches a Windows sysroot into its cache on first use (several
+# GB); the Windows std comes from `rustup target add`, run here rather than
+# pinned in mise.toml so macOS and Linux CI never download it.
+[script("bash")]
+windows-check:
+    set -euo pipefail
+    targets=(x86_64-pc-windows-msvc aarch64-pc-windows-msvc)
+    args=()
+    for target in "${targets[@]}"; do args+=(--target "$target"); done
+    for crate in {{windows_crates}}; do args+=(-p "$crate"); done
+    if [ "{{os()}}" = windows ]; then
+        run=(env) cargo=(cargo)
+    else
+        # mise exec puts each pin on PATH itself; its shims directory can
+        # only add an inactive `clang` shim another project pinned, which
+        # cargo-xwin would take as the compiler.
+        PATH=$(printf %s "$PATH" | tr ':' '\n' | grep -v '/mise/shims$' | paste -sd: -)
+        export XWIN_CROSS_COMPILER=clang
+        run=(mise exec --) cargo=(mise exec -- cargo xwin)
+    fi
+    "${run[@]}" rustup target add "${targets[@]}"
+    "${cargo[@]}" check "${args[@]}"
+    "${cargo[@]}" clippy "${args[@]}" -- -D warnings
+
 # The guest workspace (plugins/, PL§9): pure/host-target tests only — no
 # wasm32 build here, that is CI's separate step (T33.40.2).
 plugin-test:
