@@ -45,13 +45,13 @@ pub use best_of::{
     Launched, Picked,
 };
 pub use browser::{Browser, BrowserError, PageText};
-pub use changes::{ChangedFile, Changes, Checkpoint, FileChange};
+pub use changes::{ChangedFile, Changes, Checkpoint, FileChange, TurnFiles};
 pub use complete::{Completer, Completion};
 pub use controller::Controller;
 pub use costs::{CostRow, DaySummary, TurnCosts};
 pub use external::AgentChoice;
 pub use inbox::{Activity, Inbox, InboxItem, InboxStatus, Need};
-pub use info::{ConfigSource, Info};
+pub use info::{ConfigSource, Fact, Info};
 pub use intent::{AgentDispatch, Dispatch, Intent, IntentError, agent_dispatch, dispatch};
 pub use mcp_login::{LoginAction, McpLogin, McpServer};
 pub use mcp_status::McpStatus;
@@ -59,7 +59,7 @@ pub use meter_text::{ContextPart, MeterRow, MeterText};
 pub use models::{MenuModel, ModelChoice, ModelSection};
 pub use onboarding::{CheckId, CheckRow, CheckStatus};
 pub use palette::{PaletteHit, PaletteItem, PaletteKind};
-pub use patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
+pub use patch::{Block, BlockId, BlockKind, Status, TaskState, TimelinePatch, ToolState};
 pub use permissions::{PermissionRule, RuleKind, SessionGrant};
 pub use plugin_ui::{KeyValueRow, PluginKey, PluginSlot, SpanView, WidgetView};
 pub use settings::{Dropped, Layer, Setting, SettingKind, SettingsError, SettingsView};

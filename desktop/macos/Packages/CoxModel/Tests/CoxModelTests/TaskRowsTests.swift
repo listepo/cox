@@ -15,18 +15,18 @@ import Testing
         id: "task:a", turn: 1,
         kind: .task(
           task: "a", label: "reviewer", tier: .cheap, done: false, costUsd: 0, exitCode: nil,
-          kind: .agent)),
+          state: .running, kind: .agent)),
       Block(id: "notice:1", turn: 1, kind: .notice(level: .info, text: "hi")),
       Block(
         id: "task:b", turn: 1,
         kind: .task(
           task: "b", label: "test-writer", tier: .code, done: true, costUsd: 0.071, exitCode: nil,
-          kind: .agent)),
+          state: .succeeded, kind: .agent)),
       Block(
         id: "task:c", turn: 2,
         kind: .task(
           task: "c", label: "bash: cargo test", tier: .cheap, done: true, costUsd: 0,
-          exitCode: 101, kind: .shell)),
+          exitCode: 101, state: .failed, kind: .shell)),
     ]
     let store = SessionStore(session: FixtureSession(fixture: Fixture(batches: [], snapshot: [])))
     store.apply([.reset(blocks: blocks)])

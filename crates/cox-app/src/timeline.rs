@@ -12,7 +12,7 @@ use cox_render::diffmodel;
 use cox_render::glyph::UNICODE;
 use cox_render::markdown;
 
-use crate::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState, tail};
+use crate::patch::{Block, BlockId, BlockKind, TaskState, TimelinePatch, ToolState, tail};
 use crate::summary::{self, Explore, one_line};
 use crate::tasks::TaskKind;
 use crate::usage::add_to;
@@ -329,6 +329,7 @@ impl Timeline {
                     done: false,
                     cost_usd: 0.0,
                     exit_code: None,
+                    state: TaskState::Running,
                     kind: TaskKind::of(label),
                 };
                 self.insert(key("task", task), kind)
@@ -344,11 +345,13 @@ impl Timeline {
                     done,
                     cost_usd,
                     exit_code,
+                    state,
                     kind,
                     ..
                 } = k
                 {
                     (*done, *cost_usd, *exit_code) = (true, *c, *e);
+                    *state = TaskState::ended(*e);
                     *kind = kind.ended(*e, *archive);
                 }
             }),
@@ -535,7 +538,7 @@ impl Timeline {
 
 #[cfg(test)]
 mod tests {
-    use cox_protocol::ids::TurnId;
+    use cox_protocol::ids::{TaskId, TurnId};
     use cox_protocol::types::{
         CompactReason, Diff, Job, ModelId, Risk, Segments, Tier, TodoState, ToolResult, Why,
     };
@@ -894,5 +897,41 @@ mod tests {
             "{:?}",
             timeline.blocks()
         );
+    }
+
+    #[test]
+    fn a_subagent_without_an_exit_code_succeeded() {
+        let mut timeline = Timeline::new("base16-ocean.dark");
+        started(&mut timeline, 1);
+        let (agent, shell) = (TaskId::new(), TaskId::new());
+        let states = |timeline: &Timeline| -> Vec<TaskState> {
+            timeline
+                .blocks()
+                .iter()
+                .filter_map(|b| match b.kind {
+                    BlockKind::Task { state, .. } => Some(state),
+                    _ => None,
+                })
+                .collect()
+        };
+        for (task, label) in [(agent, "explore: find it"), (shell, "cargo test")] {
+            timeline.apply(&Event::TaskCreated {
+                task,
+                label: label.into(),
+                tier: Tier::Code,
+            });
+        }
+        assert_eq!(states(&timeline), [TaskState::Running, TaskState::Running]);
+        for (task, exit_code) in [(agent, None), (shell, Some(101))] {
+            timeline.apply(&Event::TaskCompleted {
+                task,
+                result_item: ItemId::new(),
+                cost_usd: 0.0,
+                exit_code,
+                archive: None,
+            });
+        }
+        assert_eq!(states(&timeline), [TaskState::Succeeded, TaskState::Failed]);
+        assert_eq!(TaskState::ended(Some(0)), TaskState::Succeeded);
     }
 }

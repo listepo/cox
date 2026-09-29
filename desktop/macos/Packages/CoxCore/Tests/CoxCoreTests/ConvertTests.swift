@@ -73,12 +73,34 @@ import Testing
   let live = CoxFFIBindings.Changes(
     files: [.init(path: "a.rs", change: .created, added: 3, removed: 0, call: "c1", turn: 2)],
     checkpoints: [.init(turn: 2, label: "Turn 2 · before a.rs", time: "2026-09-28T14:02:00.000Z")],
-    worktree: .init(path: "/w", branch: "t1", base: "main", commit: "4273daa", bytes: 9))
+    worktree: .init(path: "/w", branch: "t1", base: "main", commit: "4273daa", bytes: 9),
+    worktreeFacts: [.init(label: "Branch", value: "t1", detail: false)],
+    turns: [
+      .init(
+        turn: 2,
+        files: [.init(path: "a.rs", change: .created, added: 3, removed: 0, call: "c1", turn: 2)])
+    ])
   let want = CoxClient.Changes(
     files: [.init(path: "a.rs", change: .created, added: 3, removed: 0, call: "c1", turn: 2)],
     checkpoints: [.init(turn: 2, label: "Turn 2 · before a.rs", time: "2026-09-28T14:02:00.000Z")],
-    worktree: .init(path: "/w", branch: "t1", base: "main", commit: "4273daa", bytes: 9))
+    worktree: .init(path: "/w", branch: "t1", base: "main", commit: "4273daa", bytes: 9),
+    worktreeFacts: [.init(label: "Branch", value: "t1")],
+    turns: [
+      .init(
+        turn: 2,
+        files: [.init(path: "a.rs", change: .created, added: 3, removed: 0, call: "c1", turn: 2)])
+    ])
   #expect(CoxClient.Changes(live) == want)
+}
+
+@Test func anInfoRecordCarriesItsFacts() {
+  let live = CoxFFIBindings.Info(
+    session: "s", cwd: "/w", worktree: nil, config: [], rollout: "/r.jsonl",
+    facts: [.init(label: "Branch", value: "detached", detail: true)],
+    configFacts: [.init(label: "~/.cox/config.toml", value: nil, detail: true)])
+  let info = CoxClient.Info(live)
+  #expect(info.facts == [CoxClient.Fact(label: "Branch", value: "detached", detail: true)])
+  #expect(info.configFacts == [CoxClient.Fact(label: "~/.cox/config.toml", detail: true)])
 }
 
 @Test func aTodoItemConvertsWithEachState() {
@@ -132,4 +154,10 @@ import Testing
   let ids = sections.flatMap { $0.models.map(\.id) }
   #expect(!ids.isEmpty)
   #expect(Set(ids).count == ids.count)
+}
+
+/// T58.4.24: a task block's state crosses as the core decided it.
+@Test func aTaskStateConvertsCaseForCase() {
+  let live: [CoxFFIBindings.TaskState] = [.running, .succeeded, .failed]
+  #expect(live.map { CoxClient.TaskState($0) } == [.running, .succeeded, .failed])
 }

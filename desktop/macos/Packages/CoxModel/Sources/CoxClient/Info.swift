@@ -11,14 +11,32 @@ public struct Info: Equatable, Sendable {
   public var config: [ConfigSource]
   /// The session's JSONL rollout.
   public var rollout: String
+  /// Id, folder, worktree and its branch, rollout, as the tab lists them (T58.4.20).
+  public var facts: [Fact]
+  /// A row per layer with its key count, its file under it as a detail row.
+  public var configFacts: [Fact]
 
   public init(
     session: String = "", cwd: String = "", worktree: Linked? = nil, config: [ConfigSource] = [],
-    rollout: String = ""
+    rollout: String = "", facts: [Fact] = [], configFacts: [Fact] = []
   ) {
     (self.session, self.cwd, self.worktree, self.config, self.rollout) = (
       session, cwd, worktree, config, rollout
     )
+    (self.facts, self.configFacts) = (facts, configFacts)
+  }
+}
+
+/// One row of an inspector tab's fact list, in the order it is shown (`cox_app::Fact`).
+public struct Fact: Equatable, Sendable {
+  public var label: String
+  /// `nil` for a row that is only a label (a layer's file).
+  public var value: String?
+  /// Indented under the row above it.
+  public var detail: Bool
+
+  public init(label: String, value: String? = nil, detail: Bool = false) {
+    (self.label, self.value, self.detail) = (label, value, detail)
   }
 }
 

@@ -1,10 +1,9 @@
 // The inspector's Info tab (T37.29.5, DT§5.1): cox-app's `Info` as the rows CoxUI's
-// `InfoTab.State` holds — the session's facts and the config layers it runs with. Here, not in
-// CoxUI, because these decide what the tab shows (DS§1); the app copies them into
-// `InfoTab.State` field for field.
+// `InfoTab.State` holds — the session's facts and the config layers it runs with, listed as the
+// core built them (T58.4.21: `~`, `detached` and the key counts are decided in `cox_app::info`).
+// The app copies them into `InfoTab.State` field for field.
 
 import CoxClient
-import Foundation
 
 public struct InfoTabState: Equatable, Sendable {
   /// `KeyValueGrid.Row`.
@@ -21,27 +20,15 @@ public struct InfoTabState: Equatable, Sendable {
 
   public init() {}
 
-  /// `home` is shortened to `~` in every path.
-  public init(_ info: Info, home: String = NSHomeDirectory()) {
-    let path = { (full: String) in
-      full == home || full.hasPrefix(home + "/") ? "~" + full.dropFirst(home.count) : full
-    }
-    session = [
-      Fact(label: "Session", values: [info.session]),
-      Fact(label: "Folder", values: [path(info.cwd)]),
-    ]
-    if let tree = info.worktree {
-      session.append(Fact(label: "Worktree", values: [path(tree.path)]))
-      session.append(Fact(label: "Branch", values: [tree.branch ?? "detached"], isDetail: true))
-    }
-    session.append(Fact(label: "Rollout", values: [path(info.rollout)]))
-    for source in info.config {
-      let keys = "\(source.keys) \(source.keys == 1 ? "key" : "keys")"
-      config.append(Fact(label: source.layer.rawValue, values: [keys]))
-      if let file = source.file {
-        config.append(Fact(label: path(file), values: [], isDetail: true))
-      }
-    }
+  public init(_ info: Info) {
+    (session, config) = (info.facts.map(Fact.init), info.configFacts.map(Fact.init))
+  }
+}
+
+extension InfoTabState.Fact {
+  /// A core fact as a grid row: its value alone, none for a label-only row.
+  init(_ fact: CoxClient.Fact) {
+    self.init(label: fact.label, values: fact.value.map { [$0] } ?? [], isDetail: fact.detail)
   }
 }
 

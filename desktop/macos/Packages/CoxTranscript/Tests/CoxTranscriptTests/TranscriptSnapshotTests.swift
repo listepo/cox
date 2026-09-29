@@ -51,7 +51,7 @@ private let everyKind: [Block] = [
     id: "t", turn: 1,
     kind: .task(
       task: "t1", label: "Review the fix", tier: .cheap, done: true, costUsd: 0.01, exitCode: 0,
-      kind: .agent)),
+      state: .succeeded, kind: .agent)),
   Block(
     id: "p", turn: 1,
     kind: .approval(

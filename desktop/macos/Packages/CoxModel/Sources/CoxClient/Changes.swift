@@ -9,9 +9,27 @@ public struct Changes: Equatable, Sendable {
   public var checkpoints: [Checkpoint]
   /// `nil` when the session runs outside a linked worktree.
   public var worktree: Linked?
+  /// The worktree's branch and base (T58.4.20); its size is each client's to format.
+  public var worktreeFacts: [Fact]
+  /// `files` grouped by the turn that changed each last, oldest turn first.
+  public var turns: [TurnFiles]
 
-  public init(files: [ChangedFile] = [], checkpoints: [Checkpoint] = [], worktree: Linked? = nil) {
+  public init(
+    files: [ChangedFile] = [], checkpoints: [Checkpoint] = [], worktree: Linked? = nil,
+    worktreeFacts: [Fact] = [], turns: [TurnFiles] = []
+  ) {
     (self.files, self.checkpoints, self.worktree) = (files, checkpoints, worktree)
+    (self.worktreeFacts, self.turns) = (worktreeFacts, turns)
+  }
+}
+
+/// The files one turn changed last (`cox_app::TurnFiles`).
+public struct TurnFiles: Equatable, Sendable {
+  public var turn: UInt32
+  public var files: [ChangedFile]
+
+  public init(turn: UInt32, files: [ChangedFile]) {
+    (self.turn, self.files) = (turn, files)
   }
 }
 

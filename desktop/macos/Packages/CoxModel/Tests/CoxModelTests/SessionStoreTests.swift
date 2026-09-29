@@ -150,3 +150,19 @@ private func paragraph(_ text: String) -> DocBlock {
   #expect(lastLines("1\n2\n3\n4\n5\n6\n") == "2\n3\n4\n5\n6\n")
   #expect(lastLines("1\n2\n3\n4\n5\n6") == "2\n3\n4\n5\n6")
 }
+
+/// T58.4.24: a task block's state is read from the wire as the core decided it, never from its
+/// exit code; no recorded scenario reaches a task yet, so the block is spelled out here.
+@Test func aTaskBlockDecodesTheCoresState() throws {
+  let json = """
+    {"id": "task:#5", "turn": 1, "kind": {"type": "task", "task": "#5", "label": "explore: x",
+    "tier": "cheap", "done": true, "cost_usd": 0.0, "exit_code": null, "state": "succeeded",
+    "kind": "agent"}}
+    """
+  let block = try JSONDecoder().decode(Block.self, from: Data(json.utf8))
+  #expect(
+    block.kind
+      == .task(
+        task: "#5", label: "explore: x", tier: .cheap, done: true, costUsd: 0, exitCode: nil,
+        state: .succeeded, kind: .agent))
+}

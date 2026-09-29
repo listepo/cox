@@ -1,5 +1,6 @@
-// The Info tab's state from cox-app's `Info` (T37.29.5): the session's facts and the config
-// layers fill the tab, read through SessionStore from the fixture session.
+// The Info tab's state from cox-app's `Info` (T37.29.5): the core's facts fill the tab as they
+// arrive, read through SessionStore from the fixture session. What the facts say (`~`,
+// `detached`, the key counts) is `cox_app::info`'s test (T58.4.20).
 
 import CoxClient
 import Testing
@@ -8,13 +9,16 @@ import Testing
 
 private let info = Info(
   session: "01J9ZK4Q", cwd: "/Users/me/GitHub/cox",
-  worktree: Linked(path: "/Users/me/GitHub/_worktrees/cox-t1", branch: "t1", bytes: 0),
-  config: [
-    ConfigSource(layer: .default, keys: 112),
-    ConfigSource(layer: .user, file: "/Users/me/.cox/config.toml", keys: 1),
-    ConfigSource(layer: .env, keys: 2),
+  rollout: "/Users/me/.cox/sessions/01J9ZK4Q.jsonl",
+  facts: [
+    Fact(label: "Session", value: "01J9ZK4Q"),
+    Fact(label: "Worktree", value: "~/GitHub/_worktrees/cox-t1"),
+    Fact(label: "Branch", value: "t1", detail: true),
   ],
-  rollout: "/Users/me/.cox/sessions/01J9ZK4Q.jsonl")
+  configFacts: [
+    Fact(label: "user", value: "1 key"),
+    Fact(label: "~/.cox/config.toml", detail: true),
+  ])
 
 @MainActor
 @Test func theStoreFillsTheInfoTabFromTheSession() async throws {
@@ -23,29 +27,17 @@ private let info = Info(
   #expect(tab == InfoTabState(info))
 }
 
-@Test func theMappingShortensHomeAndPutsEachFileUnderItsLayer() {
-  let tab = InfoTabState(info, home: "/Users/me")
+@Test func theTabListsTheCoreFactsInTheirOrder() {
+  let tab = InfoTabState(info)
   #expect(
     tab.session == [
       .init(label: "Session", values: ["01J9ZK4Q"]),
-      .init(label: "Folder", values: ["~/GitHub/cox"]),
       .init(label: "Worktree", values: ["~/GitHub/_worktrees/cox-t1"]),
       .init(label: "Branch", values: ["t1"], isDetail: true),
-      .init(label: "Rollout", values: ["~/.cox/sessions/01J9ZK4Q.jsonl"]),
     ])
   #expect(
     tab.config == [
-      .init(label: "default", values: ["112 keys"]),
       .init(label: "user", values: ["1 key"]),
       .init(label: "~/.cox/config.toml", values: [], isDetail: true),
-      .init(label: "env", values: ["2 keys"]),
     ])
-}
-
-@Test func outsideAWorktreeAndHomeThePathsStayWhole() {
-  let info = Info(session: "s", cwd: "/Users/meta/x", rollout: "/r.jsonl")
-  let tab = InfoTabState(info, home: "/Users/me")
-  #expect(tab.session.map(\.label) == ["Session", "Folder", "Rollout"])
-  #expect(tab.session[1].values == ["/Users/meta/x"])
-  #expect(tab.config.isEmpty)
 }

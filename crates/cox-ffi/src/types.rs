@@ -22,6 +22,7 @@ use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange}
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind, TextLine};
 use cox_app::intent::{DraftIntent, DraftKind, SendWhen};
 use cox_app::onboarding::{CheckId, CheckRow, CheckStatus};
+use cox_app::patch::TaskState;
 use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 use cox_app::review::LineComment;
 use cox_app::{
@@ -32,6 +33,7 @@ use cox_app::{
     SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind, TaskTarget, TurnCosts,
     TurnUsage, UsageView,
 };
+use cox_app::{Fact, TurnFiles};
 use cox_app::{KeyError, PermissionRule, RuleKind, SessionGrant, SettingsGroup};
 use cox_app::{KeyValueRow, PluginKey, PluginSlot, SpanView, WidgetView};
 use cox_app::{MenuModel, ModelSection};
@@ -358,6 +360,7 @@ pub enum BlockKind {
         done: bool,
         cost_usd: f64,
         exit_code: Option<i32>,
+        state: TaskState,
         kind: TaskKind,
     },
     Compaction {
@@ -389,6 +392,13 @@ pub enum BlockKind {
 pub enum ToolState {
     Running,
     Done,
+    Failed,
+}
+
+#[uniffi::remote(Enum)]
+pub enum TaskState {
+    Running,
+    Succeeded,
     Failed,
 }
 
@@ -717,6 +727,14 @@ pub struct Changes {
     pub files: Vec<ChangedFile>,
     pub checkpoints: Vec<Checkpoint>,
     pub worktree: Option<Linked>,
+    pub worktree_facts: Vec<Fact>,
+    pub turns: Vec<TurnFiles>,
+}
+
+#[uniffi::remote(Record)]
+pub struct TurnFiles {
+    pub turn: u32,
+    pub files: Vec<ChangedFile>,
 }
 
 #[uniffi::remote(Record)]
@@ -764,6 +782,15 @@ pub struct Info {
     pub worktree: Option<Linked>,
     pub config: Vec<ConfigSource>,
     pub rollout: PathBuf,
+    pub facts: Vec<Fact>,
+    pub config_facts: Vec<Fact>,
+}
+
+#[uniffi::remote(Record)]
+pub struct Fact {
+    pub label: String,
+    pub value: Option<String>,
+    pub detail: bool,
 }
 
 #[uniffi::remote(Record)]
