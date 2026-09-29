@@ -66,7 +66,17 @@ extension CoxClient.McpServer {
   init(_ server: CoxFFIBindings.McpServer) {
     self.init(
       name: server.name, source: server.source, login: .init(server.login),
-      status: .init(server.status), log: server.log)
+      detail: server.detail, action: server.action.map { .init($0) }, status: .init(server.status),
+      log: server.log)
+  }
+}
+
+extension CoxClient.McpLoginAction {
+  init(_ action: CoxFFIBindings.LoginAction) {
+    switch action {
+    case .logIn: self = .logIn
+    case .logOut: self = .logOut
+    }
   }
 }
 

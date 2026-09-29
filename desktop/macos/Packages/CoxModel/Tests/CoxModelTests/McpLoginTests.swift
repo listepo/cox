@@ -1,6 +1,7 @@
-// MCP login through SettingsStore (T37.30.3) over the fixture client: a server shows logged
-// out, Log in hands the login page to the host's `open`, and after the scripted callback the
-// server shows logged in with Log out offered. No browser opens and no keychain is read.
+// MCP login through SettingsStore (T37.30.3) over the fixture client: a row shows the core's
+// line and button (T58.4.3; the words are `cox_app::mcp_login`'s tests), Log in hands the login
+// page to the host's `open`, and after the scripted callback the server shows logged in with Log
+// out offered. No browser opens and no keychain is read.
 
 import CoxClient
 import Synchronization
@@ -26,8 +27,12 @@ final class OpenRecorder: PlatformHost {
     let view = SettingsView(
       settings: [], userFile: "/u/config.toml",
       mcp: [
-        McpServer(name: "docs", source: "config", login: .loggedOut),
-        McpServer(name: "local", source: ".mcp.json", login: .stdio),
+        McpServer(
+          name: "docs", source: "config", login: .loggedOut, detail: "Not logged in",
+          action: .logIn),
+        McpServer(
+          name: "local", source: ".mcp.json", login: .stdio,
+          detail: "Runs locally from .mcp.json; no login", action: nil),
       ])
     return SettingsStore(
       client: FixtureSettingsClient(view: view, host: host), secrets: MemorySecretStore(),
@@ -60,7 +65,8 @@ final class OpenRecorder: PlatformHost {
       settings: [], userFile: "/u/config.toml",
       mcp: [
         McpServer(
-          name: "sentry", source: ".mcp.json", login: .stdio, status: .failed,
+          name: "sentry", source: ".mcp.json", login: .stdio, detail: "", action: nil,
+          status: .failed,
           log: ["skipped: spawn uvx: not found"])
       ])
     let store = SettingsStore(

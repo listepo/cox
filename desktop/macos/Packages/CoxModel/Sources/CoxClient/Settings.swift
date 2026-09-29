@@ -144,7 +144,7 @@ public final class FixtureSettingsClient: SettingsClient {
     if login { host?.open(Self.loginPage) }
     state.withLock { state in
       state.sent.append("\(login ? "login" : "logout")=\(server)")
-      state.view.mcp[index].login = login ? .loggedIn(expires: "1h") : .loggedOut
+      state.view.mcp[index].fixtureLogin(login)
     }
   }
 

@@ -67,7 +67,11 @@ func scratch() throws -> (URL, LiveCoreClient) {
     .write(to: home.appending(path: "config.toml"))
 
   let view = try await client.settings(cwd: home.path())
-  #expect(view.mcp.first { $0.name == "cox-local" }?.login == .stdio)
+  let server = try #require(view.mcp.first { $0.name == "cox-local" })
+  #expect(server.login == .stdio)
+  // The core's words arrive converted (T58.4.3).
+  #expect(server.detail == "Runs locally from \(server.source); no login")
+  #expect(server.action == nil)
   await #expect {
     try await client.mcpLogin(cwd: home.path(), server: "cox-local", login: true)
   } throws: { error in
