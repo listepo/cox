@@ -8931,3 +8931,31 @@ Deviations: the window reads `modelMenu(cwd:)` alongside `models(cwd:)` — `App
 Check (2026-09-29): lint clean. Commit 125041af. After the merge with T58.4.8–11 (one import conflict in `cox-ffi/src/types.rs` resolved): `cargo nextest run -p cox-app -p cox-ffi` 203/203, clippy -D warnings clean, CoxModel 128/128, `just desktop-app` builds.
 
 Not done: nothing.
+
+#### T37.44.18 Terminal well token is opaque dark
+
+Depends: — · Size: ~40 · Files: the DTCG token source under `desktop/design/tokens/`, regenerated Swift/CSS via `just desktop-tokens`, CoxUI terminal snapshots
+Goal: A129 (8): `surface.terminal` stays a token but becomes an opaque dark value matching mockup 24 (`#15161a`) in both appearances, with a High Contrast value as the token pipeline requires.
+Check: `just desktop-tokens` leaves `git diff` empty after regeneration; CoxUI `TerminalPaneChromeTests` re-recorded on purpose and passing; swiftlint --strict clean.
+Status: done 2026-09-29
+Result: `surface.terminal` is opaque `#15161a` in light and dark (`color.light.json`, `color.dark.json`), High Contrast regenerated with the same value; `just desktop-tokens` regenerated the xcasset and `tokens.css`; the stale "translucent" comment in `App/SessionTerminal.swift` fixed (A129 (8)).
+
+Deviations: `high-contrast.mjs`: `surface.terminal` left the `GLASS` list (an alpha of 1 cannot be more opaque in High Contrast); the 7:1 terminal-text check still runs. The token also paints the transcript's inset terminal tail, the task output sheet and the MCP log sheet, so those snapshots changed too.
+
+Check (2026-09-29): `just desktop-tokens` 265 High Contrast pairs pass per mode, a second run leaves no diff; CoxUI 39 snapshots re-recorded (TerminalPaneChrome 8, ToolMolecule 12, ToolCard 8, TasksTab 5, Foundations 4, SettingsMcpStatus 2), CoxTranscript 2 (`everyBlockKind` light/dark solid); suites pass (load flakes pass alone); lint clean. Commit 558afda2.
+
+Not done: nothing.
+
+#### T37.44.19 Mockup 24 keeps the composer
+
+Depends: — · Size: ~30 · Files: `desktop/design/mockups/mockups.html`
+Goal: A129 (9): the composer stays above the terminal pane in the app; mockup 24 changes to match, rather than the app moving the composer.
+Check: `render.sh 24-terminal-pane-m2` renders; `npm run diff` against the app screenshot shows the composer aligned.
+Status: done 2026-09-29
+Result: mockup 24 (`desktop/design/mockups/mockups.html`) draws `composer({})` above the terminal pane head (A129 (9)).
+
+Deviations: the app screenshot came from this branch's build on the scripted provider with a scratch `COX_HOME`, `-CoxProject`/`-CoxOnboarded YES` (argument domain only) and a dummy `ANTHROPIC_API_KEY`.
+
+Check (2026-09-29): `render.sh 24-terminal-pane-m2` ok; `npm run diff` (threshold 0.3, crop 80,80,2880,1800) 3.23% (3.95% in round 4); the composer lines up within a few points, the rest is content; the well is opaque dark. Commit 32483f10.
+
+Not done: nothing.

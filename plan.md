@@ -32,11 +32,9 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.44.18 | in progress | P3 | 1 | 0% | Claude Code / opus-5.5 |
-| T37.44.19 | in progress | P3 | 1 | 0% | Claude Code / opus-5.5 |
 | T39.7 | todo | P3 | 2 | 0% | |
 | T43.6 | todo | P3 | 3 | 0% | |
-| T51.23 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
+| T51.23 | in progress | P3 | 2 | 95% | Claude Code / opus-5.5 |
 | T52.23.1 | todo | P3 | 3 | 0% | |
 | T52.23.2 | todo | P3 | 2 | 0% | |
 | T53.5 | todo | P3 | 3 | 0% | |
@@ -1412,18 +1410,6 @@ Confirm the bundle id `io.github.listepo.cox` (T37.32.1 derived it from the repo
 On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
-
-#### T37.44.18 Terminal well token is opaque dark
-
-Depends: — · Size: ~40 · Files: the DTCG token source under `desktop/design/tokens/`, regenerated Swift/CSS via `just desktop-tokens`, CoxUI terminal snapshots
-Goal: A129 (8): `surface.terminal` stays a token but becomes an opaque dark value matching mockup 24 (`#15161a`) in both appearances, with a High Contrast value as the token pipeline requires.
-Check: `just desktop-tokens` leaves `git diff` empty after regeneration; CoxUI `TerminalPaneChromeTests` re-recorded on purpose and passing; swiftlint --strict clean.
-
-#### T37.44.19 Mockup 24 keeps the composer
-
-Depends: — · Size: ~30 · Files: `desktop/design/mockups/mockups.html`
-Goal: A129 (9): the composer stays above the terminal pane in the app; mockup 24 changes to match, rather than the app moving the composer.
-Check: `render.sh 24-terminal-pane-m2` renders; `npm run diff` against the app screenshot shows the composer aligned.
 
 ### P51 — Desktop M2 (goal: the rest of the terminal inside the app — a sandboxed terminal pane, a browser pane the agent can read and screenshot, pop-out windows and tabs, a menu-bar extra with a global hotkey, Spotlight and App Intents, and per-hunk revert — plus the dark glass look; DT§3.2)
 
