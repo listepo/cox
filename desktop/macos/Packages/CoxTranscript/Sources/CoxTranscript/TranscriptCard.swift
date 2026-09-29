@@ -71,10 +71,22 @@ extension ToolCard.Content {
     return .tail(shown, exit: exit)
   }
 
-  /// A duration as `locale` writes seconds, `1.2s`.
+  /// A duration as `locale` writes it: under a second, whole milliseconds (`40ms`); at or
+  /// above a second, at most one decimal, dropped when the rounded value is a whole second
+  /// (`4s`, not `4.0s` or, in a comma-decimal locale, `4,0s` — T37.44.17).
   private static func seconds(_ milliseconds: UInt64, _ locale: Locale) -> String {
-    Duration.milliseconds(milliseconds).formatted(
-      .units(allowed: [.seconds], width: .narrow, fractionalPart: .show(length: 1))
+    guard milliseconds >= 1000 else {
+      return Duration.milliseconds(milliseconds).formatted(
+        .units(allowed: [.milliseconds], width: .narrow).locale(locale))
+    }
+    // Whether the value rounds to a whole second at one decimal's precision — checked on
+    // the rounded tenths, not `milliseconds % 1000`, so 2949ms (-> 2.9s) and 2999ms (-> 3s,
+    // no decimal) both land on the display the formatted seconds value would actually show.
+    let isWholeSecond = (Double(milliseconds) / 100).rounded().truncatingRemainder(dividingBy: 10) == 0
+    let fractionalPart: Duration.UnitsFormatStyle.FractionalPartDisplayStrategy =
+      isWholeSecond ? .hide(rounded: .toNearestOrAwayFromZero) : .show(length: 1)
+    return Duration.milliseconds(milliseconds).formatted(
+      .units(allowed: [.seconds], width: .narrow, fractionalPart: fractionalPart)
         .locale(locale))
   }
 }

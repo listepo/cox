@@ -1526,6 +1526,7 @@ dependencies = [
  "grep-searcher",
  "ignore",
  "nucleo",
+ "tempfile",
  "thiserror 2.0.20",
 ]
 
