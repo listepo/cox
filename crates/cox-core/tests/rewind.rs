@@ -327,8 +327,12 @@ impl Checkpointer for Disk {
         let files = self.files.lock().expect("lock");
         paths
             .iter()
-            // An escape is dropped, as `confine` drops it.
-            .filter(|p| !p.starts_with("..") && !Path::new(p).is_absolute())
+            // An escape is dropped, as `confine` drops it; an absolute path
+            // inside the root (what `/redo` passes back) is kept.
+            .filter(|p| {
+                let path = Path::new(p);
+                !p.starts_with("..") && (!path.is_absolute() || path.starts_with(&roots[0]))
+            })
             .map(|p| {
                 let path = roots[0].join(p);
                 let before = match files.get(&path) {

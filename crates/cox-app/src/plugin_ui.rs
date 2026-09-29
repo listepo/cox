@@ -730,9 +730,11 @@ mod tests {
         ));
     }
 
-    /// A plugin whose `cox_render` never returns.
+    /// A plugin whose `cox_render` never returns (`cox_init`, the one
+    /// required export, answers at once).
     fn spinning() -> PluginHost {
         let wat = r#"(module (memory 1)
+          (func (export "cox_init") (result i32) (i32.const 0))
           (func (export "cox_render") (result i32) (loop $spin (br $spin)) (i32.const 0)))"#;
         // A long call cap, so only the render deadline cuts the spin short.
         let limits = Limits {
