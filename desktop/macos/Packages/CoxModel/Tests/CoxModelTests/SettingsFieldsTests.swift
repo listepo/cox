@@ -1,6 +1,8 @@
-// The Settings screen's fields over the fixture client (T37.30.1): a group's page by table,
-// the project's value read-only with the file that sets it, each kind's control, and a user
-// value edited on the screen round-tripping through the client. Secrets stay in memory (A49).
+// The Settings screen's fields over the fixture client (T37.30.1): a group's page by the table
+// Rust named, the project's value read-only with the detail Rust wrote, each field's control as
+// Rust chose it, and a user value edited on the screen round-tripping through the client. The
+// rules themselves are `cox_app::settings_fields`' tests (T58.4.8–T58.4.9). Secrets stay in
+// memory (A49).
 
 import CoxClient
 import Testing
@@ -46,18 +48,12 @@ func tables(_ store: SettingsStore, _ group: SettingsGroup) throws -> [SettingsT
 @Test func editingAUserValueRoundTripsThroughTheFixtureClient() async throws {
   let (store, client) = await loadedStore()
   await store.edit("desktop.appearance.material", .text("solid"))
-  await store.edit("budget.session_usd", .text(" 7.5 "))
-  await store.edit("budget.session_usd", .text("lots"))
-  #expect(
-    client.sent == [
-      "desktop.appearance.material=\"solid\"", "budget.session_usd=7.5",
-      "budget.session_usd=\"lots\"",
-    ])
-  await store.edit("budget.session_usd", .text("7.5"))
+  await store.edit("budget.session_usd", .number(7.5))
+  #expect(client.sent == ["desktop.appearance.material=\"solid\"", "budget.session_usd=7.5"])
   await store.load()
   let material = try #require(try tables(store, .appearance).first?.fields.first)
-  #expect(material.control == .choice("solid", options: ["frosted", "glossy", "solid"]))
-  #expect(material.setting.layer == .user)
+  #expect(material.setting.value == "\"solid\"" && material.setting.layer == .user)
   let budget = try #require(try tables(store, .budget).first?.fields.first)
-  #expect(budget.control == .field("7.5") && budget.setting.layer == .user)
+  #expect(budget.setting.value == "7.5" && budget.setting.layer == .user)
+  #expect(store.failure == nil)
 }

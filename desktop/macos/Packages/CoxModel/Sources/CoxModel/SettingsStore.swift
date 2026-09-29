@@ -1,30 +1,13 @@
 // The Settings window's state (DT§5.7): the view Rust built from the schema
 // and the config layers, grouped for the sidebar, plus provider keys through
-// a `SecretStore` and each tier's models from the core's catalog. Every
-// decision — the layer, the control, whether a field is read-only, whether a
-// value loads — already came from Rust; this store sends edits and keeps the
+// a `SecretStore`. Every decision — the page, the label, the control, whether
+// a field is read-only, whether a value or a key is taken (T58.4.8–T58.4.9) —
+// already came from Rust; this store searches, sends edits and keeps the
 // answer.
 
 import CoxClient
 import Foundation
 import Observation
-
-extension SettingsGroup {
-  /// A key's top-level table → its page.
-  public init(key: String) {
-    switch key.prefix(while: { $0 != "." }) {
-    case "core": self = .general
-    case "tiers", "jobs", "providers": self = .models
-    case "permissions": self = .permissions
-    case "sandbox": self = .sandbox
-    case "budget": self = .budget
-    case "mcp": self = .mcp
-    case "plugins": self = .plugins
-    case "desktop": self = .appearance
-    default: self = .advanced
-    }
-  }
-}
 
 public struct SettingsSection: Identifiable, Equatable, Sendable {
   public let group: SettingsGroup
@@ -71,6 +54,14 @@ public final class SettingsStore {
     await attempt { try await $0.client.setSetting(cwd: $0.cwd, key: key, json: try value.json()) }
   }
 
+  /// Sends what a control sent; Rust types it by the key's kind (a whole number for an integer,
+  /// text parsed as a number) and its loader says why a value is refused.
+  public func edit(_ key: String, _ input: SettingValue) async {
+    await attempt {
+      try await $0.client.setSettingInput(cwd: $0.cwd, key: key, input: input)
+    }
+  }
+
   /// Logs in to (`login`) or out of an MCP server, then reads its status back.
   public func setLogin(_ server: String, _ login: Bool) async {
     await attempt {
@@ -91,34 +82,28 @@ public final class SettingsStore {
     await attempt(\.ruleFailure) { try await $0.client.revokeGrant(cwd: $0.cwd, grant: grant) }
   }
 
-  /// Non-empty groups in DT§5.7's order, keys sorted within each, narrowed to `filter`.
+  /// Non-empty groups in DT§5.7's order, keys sorted within each, narrowed to `filter`, which
+  /// matches the core's title or the dotted key.
   public var sections: [SettingsSection] {
     let query = filter.trimmingCharacters(in: .whitespaces)
     let shown = (view?.settings ?? []).filter {
       query.isEmpty || $0.key.localizedStandardContains(query)
-        || Self.title(of: $0.key).localizedStandardContains(query)
+        || $0.title.localizedStandardContains(query)
     }
-    let rows = Dictionary(grouping: shown) { SettingsGroup(key: $0.key) }
+    let rows = Dictionary(grouping: shown) { $0.group }
     return SettingsGroup.allCases.compactMap { group in
       rows[group].map { SettingsSection(group: group, settings: $0) }
     }
   }
 
   /// The provider sections a key can be stored for, sorted.
-  public var providers: [String] {
-    let names = (view?.settings ?? []).compactMap { setting -> String? in
-      let parts = setting.key.split(separator: ".")
-      return parts.count > 2 && parts[0] == "providers" ? String(parts[1]) : nil
-    }
-    return Set(names).sorted()
-  }
+  public var providers: [String] { view?.providers ?? [] }
 
   public func hasKey(for section: String) -> Bool { storedKeys.contains(section) }
 
+  /// Stores `secret` as Rust trimmed it; Rust refuses an empty key or an unknown section.
   public func storeKey(_ secret: String, for section: String) throws {
-    let secret = secret.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !secret.isEmpty else { throw KeyError.empty }
-    guard providers.contains(section) else { throw KeyError.unknownProvider(section) }
+    let secret = try client.checkKey(providers: providers, provider: section, secret: secret)
     try secrets.store(secret, for: section)
     readKeys()
   }
