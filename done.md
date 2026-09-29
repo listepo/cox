@@ -7989,3 +7989,63 @@ Deviations: the re-sync also created 65 variables added to the tokens since the 
 Check (2026-09-29): `npm test` in `desktop/design` 12/12 (new `every_text_style_uses_a_stand_in_style_figma_renders_mono_included`); `npm run figma -- --out` scripts run through `use_figma`: text 25, effect 6, `missingFonts` [], `unrenderedFonts` []; a digest of the 328 variables and styles in Figma matches the generator output; `hasMissingFont` 0 of 136 text layers; `get_screenshot` of 4:2 shows every label. Commit f0439723.
 
 Not done: screens other than 28 are still images (out of scope).
+
+### T40.10. `cox-vendor models` fills `images` from models.dev
+
+- Model: haiku
+- Depends: T40.9
+- Size: ~60
+- Priority: P3
+- Complexity: 2
+- Goal: the vendor script sets `images = true/false` on existing `models` rows from models.dev `modalities.input` (whether it contains `"image"`), and regenerates `default.toml`.
+- Files: `scripts/vendor/src/cox_vendor/models.py`, `scripts/vendor/tests/test_models.py`. Data: `crates/cox-protocol/default.toml`.
+- Steps:
+  1. Map the field in `build_default_toml` for existing ids only (the script never adds ids).
+  2. Add a pytest for a text-only and an image-capable row.
+  3. Re-run the script.
+- Check:
+  ```bash
+  cd scripts/vendor && mise exec -- uv run pytest -q && cd ../..
+  mise exec -- cargo nextest run -p cox-protocol
+  ```
+- Done when: DeepSeek rows carry `images = false` if models.dev says so, and the Rust config tests are green.
+- Out of scope: the built-in Anthropic and OpenAI catalog rows in `cox-models`.
+
+---
+Status: done 2026-09-29
+Result: `scripts/vendor/src/cox_vendor/models.py` sets `images = true/false` on every existing `[providers.*].models` row from models.dev's `modalities.input` (true when it lists `"image"`); a row without that list keeps its value, no ids are added; the `display_name` insert helper writes `images` in the file's compact style. The live re-run changed only `images` (false: DeepSeek V4 Pro, `deepseek/deepseek-v4-pro`, `qwen/qwen3-coder-plus`, `glm-5.2`, `glm-5.3`; true: every other row); `crates/cox-protocol/default.toml` and `docs/config.md` regenerated.
+
+Deviations: `docs/config.md` is a 4th file (its drift test requires it).
+
+Check (2026-09-29): `uv run pytest -q` in `scripts/vendor` 58 passed (new `test_images_follows_models_dev_input_modalities`); `cox-vendor models --check` up to date; `cargo nextest run -p cox-protocol -p cox-models` 135/135; `-p cox-provider-openai -p cox-config` 85/85. Commit 207a4f8d.
+
+Not done: nothing.
+
+### T41.9. Optional: live check with real rust-analyzer
+
+- Model: haiku
+- Depends: T41.8
+- Size: ~60
+- Priority: P3
+- Complexity: 2
+- Goal: an ignored-by-default test runs `diagnostics` against a scratch crate with one type error under the real sandbox, and records the latency and whether push or pull was used. This confirms that the Seatbelt/bwrap profile lets rust-analyzer read `~/.cargo` and the toolchain.
+- Files: `crates/cox/tests/lsp.rs` (one `#[ignore]` test)
+- Steps:
+  1. Skip with a message if `rust-analyzer` is not on PATH.
+  2. Write the result (sandbox backend, time to first diagnostic) into research.md with the date.
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox --test lsp --run-ignored only
+  ```
+- Done when: the result is in research.md. A sandbox denial becomes a new card, not a policy change here.
+- Out of scope: other languages.
+
+---
+Status: done 2026-09-29
+Result: opt-in `#[ignore]` test `real_rust_analyzer_reports_a_type_error_under_the_sandbox` in `crates/cox/tests/lsp.rs` (skips when rust-analyzer is not on PATH; CI never runs it). research.md §4.8 records the macOS/Seatbelt run with rust-analyzer 1.98.1: no sandbox denial (crate, std and `cargo check` all load), the server uses pull diagnostics, a first call on a fresh server returns "no diagnostics" in 0.3–1.2 s because the crate is not loaded yet, the server is ready after 5–8 s, and a later call returns `src/a.rs:2:5: error: expected u32, found &'static str [rust-analyzer E0308]` in 3–5 ms.
+
+Deviations: the test is ~115 lines (its own scenario and an output copy to read pull/push back); `HOME` stays real in it because the rustup proxy needs it.
+
+Check (2026-09-29): `cargo nextest run -p cox --test lsp --run-ignored only` 1 passed (twice); `--test lsp` 2 passed; `clippy -p cox --all-targets -D warnings` clean; fmt clean; two real-binary runs with `COX_HOME=/tmp/cox-t41-9`. Commit ad5f6876.
+
+Not done: Linux/bwrap run; `report.html`. The empty first result is a defect, carded as T41.10.

@@ -34,8 +34,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.33 | todo | P1 | 3 | 0% | |
 | T37.44.11 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T39.7 | todo | P3 | 2 | 0% | |
-| T40.10 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
-| T41.9 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
+| T41.10 | todo | P2 | 2 | 0% | |
 | T43.6 | todo | P3 | 3 | 0% | |
 | T51.2 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T51.3 | in progress | P2 | 4 | 0% | Claude Code / opus-5.5 |
@@ -1196,29 +1195,6 @@ Every card in this phase: same four bullets as P39.
 
 **Blockers:** T40.1 blocks everything. T40.5 lands before T40.6 (the strip filter is a no-op until tool images exist, so the order never breaks invariant 6).
 
-### T40.10. `cox-vendor models` fills `images` from models.dev
-
-- Model: haiku
-- Depends: T40.9
-- Size: ~60
-- Priority: P3
-- Complexity: 2
-- Goal: the vendor script sets `images = true/false` on existing `models` rows from models.dev `modalities.input` (whether it contains `"image"`), and regenerates `default.toml`.
-- Files: `scripts/vendor/src/cox_vendor/models.py`, `scripts/vendor/tests/test_models.py`. Data: `crates/cox-protocol/default.toml`.
-- Steps:
-  1. Map the field in `build_default_toml` for existing ids only (the script never adds ids).
-  2. Add a pytest for a text-only and an image-capable row.
-  3. Re-run the script.
-- Check:
-  ```bash
-  cd scripts/vendor && mise exec -- uv run pytest -q && cd ../..
-  mise exec -- cargo nextest run -p cox-protocol
-  ```
-- Done when: DeepSeek rows carry `images = false` if models.dev says so, and the Rust config tests are green.
-- Out of scope: the built-in Anthropic and OpenAI catalog rows in `cox-models`.
-
----
-
 ### P41 — LSP diagnostics (goal: a deferred ReadOnly `diagnostics` tool returns file:line:col diagnostics from one sandboxed stdio LSP server per language per session, killed when the session ends)
 
 Rationale in §6 A72.
@@ -1252,27 +1228,6 @@ Every card in this phase: same four bullets as P39.
 
 **Blockers:** T41.1, T41.2 and T41.5 can run in parallel. Then T41.3 → T41.4 → T41.6 → T41.7 → T41.8.
 
-### T41.9. Optional: live check with real rust-analyzer
-
-- Model: haiku
-- Depends: T41.8
-- Size: ~60
-- Priority: P3
-- Complexity: 2
-- Goal: an ignored-by-default test runs `diagnostics` against a scratch crate with one type error under the real sandbox, and records the latency and whether push or pull was used. This confirms that the Seatbelt/bwrap profile lets rust-analyzer read `~/.cargo` and the toolchain.
-- Files: `crates/cox/tests/lsp.rs` (one `#[ignore]` test)
-- Steps:
-  1. Skip with a message if `rust-analyzer` is not on PATH.
-  2. Write the result (sandbox backend, time to first diagnostic) into research.md with the date.
-- Check:
-  ```bash
-  mise exec -- cargo nextest run -p cox --test lsp --run-ignored only
-  ```
-- Done when: the result is in research.md. A sandbox denial becomes a new card, not a policy change here.
-- Out of scope: other languages.
-
----
-
 ### P42 — Architect/editor modes (goal: `/mode architect|editor` and `--mode` switch a named preset over permission mode and main tier, with no second loop and no change to the cache prefix)
 
 Rationale in §6 A73.
@@ -1286,6 +1241,12 @@ Rationale in §6 A74.
 Creator's decision (2026-09-28): built ONCE at session start; ranked by recent git changes, not prompts; in the byte-stable cache prefix; refreshed only by an explicit `/repomap refresh` (a deliberate, announced prefix change) or at compaction (which already restarts the cache); never rebuilt automatically mid-session.
 
 Prerequisite finding: system[2] today is the stub `INSTRUCTIONS` constant (`context.rs`, "stub until T7.1") and the core passes an empty skills index; instruction files never reach the request. T43.3 adds the first real system[2] content path; open question 8 asks whether instruction files/skills get their own card on the same path.
+
+### T41.10. `diagnostics` waits for a fresh server instead of reporting none
+
+Depends: — · Size: ~80 · Files: `crates/cox-tools/src/lsp/*` (the client), its tests
+Goal: T41.9's live run (research.md §4.8) found that the first `diagnostics` call on a freshly started rust-analyzer returns "no diagnostics" for a file with a type error: cox pulls once before the server has loaded the crate, does not advertise `window.workDoneProgress` (so the server sends no progress to wait on), and answers `workspace/diagnostic/refresh` with "method not found" instead of pulling again. Fix: advertise the capability and wait (bounded) for the server's indexing progress to end before the first pull, and re-pull on `workspace/diagnostic/refresh`; a server that never reports progress keeps today's behaviour.
+Check: a fake-LSP test where the server answers the first pull empty, then sends progress end (or a refresh), and `diagnostics` returns the error; `cargo nextest run -p cox --test lsp --run-ignored only` shows the first call already reports the E0308.
 
 ### T43.6. Bench the map on and off
 

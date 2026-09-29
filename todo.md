@@ -28,8 +28,6 @@
 - T37.33. Performance budget suite
 - T37.44.11. The running app matches the mockups end to end
 - T39.7. Optional: live check against the real Gemini endpoint (needs the creator's key)
-- T40.10. `cox-vendor models` fills `images` from models.dev
-- T41.9. Optional: live check with real rust-analyzer
 - T43.6. Bench the map on and off
 - T51.2. One sandbox argv for `sh -c` commands and interactive programs
 - T51.3. `cox-app` terminal: the login shell in a PTY, in the session cwd, under the session's sandbox
@@ -89,3 +87,4 @@
 - T56.9. Docs: cloud agents for users and in EA
 - T56.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T51.22. CoxUI draws glass from the `glass.*` tokens
+- T41.10. `diagnostics` waits for a fresh server instead of reporting none
