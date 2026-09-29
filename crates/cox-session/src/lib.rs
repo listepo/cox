@@ -599,8 +599,7 @@ mod tests {
                 .collect();
             assert!(
                 matches!(ours.as_slice(), [Warning::Skill(_)]),
-                "{:?}",
-                opened.warnings
+                "expected exactly one skill warning for skills/bad/SKILL.md"
             );
             assert_eq!(
                 opened.config.core.workspace_roots,
