@@ -19,7 +19,9 @@ ignores in favour of the base rate, per docs/design/providers.md) and
 "values": [...]}"` and/or `{"type": "toggle"}`; some rows instead carry
 `{"type": "budget_tokens", ...}` or an empty/absent list. `name` is the
 model's display name (`Claude Sonnet 5`), written as `display_name` next to
-the id in `default.toml` (A111). Checked
+the id in `default.toml` (A111). `modalities.input` lists what the model
+takes (`["text", "image", "pdf"]`); whether it holds `"image"` is written as
+`images = true/false` (T40.10). Checked
 2026-09-25: `curl -s https://models.dev/api.json | python3 -c
 "import json,sys; d=json.load(sys.stdin); print(len(d))"` returned 223
 providers.
@@ -273,16 +275,32 @@ def _set_display_name(entry: Any, dev_row: dict) -> None:
     name = dev_row.get("name")
     if not isinstance(name, str) or not name.strip():
         return
-    name = name.strip()
-    if "display_name" in entry:
-        entry["display_name"] = name
+    _set_compact(entry, "display_name", name.strip(), after="id")
+
+
+def _set_images(entry: Any, dev_row: dict) -> None:
+    """Write `images` from whether models.dev's `modalities.input` lists
+    `"image"` (T40.9 reads it on a Chat section). A row with no such list
+    keeps whatever it has: unset means "not declared", never a guess."""
+    modalities = dev_row.get("modalities")
+    inputs = modalities.get("input") if isinstance(modalities, dict) else None
+    if not isinstance(inputs, list):
         return
-    item = tomlkit.item(name)
+    _set_compact(entry, "images", "image" in inputs, after=list(entry.keys())[-1])
+
+
+def _set_compact(entry: Any, key: str, value: Any, *, after: str) -> None:
+    """Set `key` in an inline-table entry, inserting a new key right after
+    `after` in the file's compact `key=value` style."""
+    if key in entry:
+        entry[key] = value
+        return
+    item = tomlkit.item(value)
     item.trivia.indent = " "
     # tomlkit has no public insert-at-position for an inline table; its
     # container's `_insert_after` is what `Table` uses internally (pinned in
     # uv.lock), and appending instead renders `,display_name = "..."`.
-    entry.value._insert_after("id", SingleKey("display_name", sep="="), item)
+    entry.value._insert_after(after, SingleKey(key, sep="="), item)
 
 
 def build_default_toml(text: str, registry: dict, *, report: list[str], names_only: bool = False) -> str:
@@ -327,6 +345,7 @@ def build_default_toml(text: str, registry: dict, *, report: list[str], names_on
                 )
             else:
                 entry["efforts"] = efforts
+            _set_images(entry, dev_row)
     return tomlkit.dumps(doc)
 
 

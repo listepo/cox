@@ -354,3 +354,31 @@ def test_a_google_row_fills_the_gemini_section_and_its_price():
     assert (price["input"], price["output"], price["cache_write"], price["cache_read"]) == (0.5, 3.0, 0.0, 0.05)
     assert price["verified_on"] == TODAY
     assert report == []
+
+
+def test_images_follows_models_dev_input_modalities():
+    # T40.10: `images` is whether `modalities.input` lists "image"; a row
+    # models.dev gives no modalities for keeps what it has (unset stays unset).
+    registry = {
+        "deepseek": {
+            "models": {
+                "deepseek-v4-pro": {"modalities": {"input": ["text"], "output": ["text"]}},
+                "deepseek-v4-flash": {"modalities": {"input": ["text", "image"], "output": ["text"]}},
+                "deepseek-v4-lite": {"name": "DeepSeek V4 Lite"},
+            }
+        }
+    }
+    default_text = (
+        "[providers.deepseek]\n"
+        'models = [{id="deepseek-v4-pro", efforts=["high"]}, '
+        '{id="deepseek-v4-flash", efforts=["high"], images=false}, '
+        '{id="deepseek-v4-lite", efforts=["high"]}]   # comment\n'
+    )
+    report: list[str] = []
+    text = models.build_default_toml(default_text, registry, report=report)
+    assert '{id="deepseek-v4-pro", efforts=["high"], images=false}' in text
+    assert '{id="deepseek-v4-flash", efforts=["high"], images=true}' in text
+    rows = {m["id"]: m for m in tomlkit.parse(text)["providers"]["deepseek"]["models"]}
+    assert "images" not in rows["deepseek-v4-lite"]
+    # A second pass has nothing left to change.
+    assert models.build_default_toml(text, registry, report=report) == text

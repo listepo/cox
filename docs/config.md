@@ -54,7 +54,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `fallbacks` = `true` — fallbacks: "default" + beta header
 - `timeout_s` = `120`
 - `max_retries` = `4`
-- `models` = `[{id="claude-haiku-4-5", display_name="Claude Haiku 4.5 (latest)", context_window=200000, efforts=["low"]}, {id="claude-sonnet-5", display_name="Claude Sonnet 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"]}, {id="claude-opus-5", display_name="Claude Opus 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"]}, {id="claude-fable-5-1", display_name="Claude Fable 5.1", context_window=1000000, efforts=["low", "medium", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
+- `models` = `[{id="claude-haiku-4-5", display_name="Claude Haiku 4.5 (latest)", context_window=200000, efforts=["low"], images=true}, {id="claude-sonnet-5", display_name="Claude Sonnet 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"], images=true}, {id="claude-opus-5", display_name="Claude Opus 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"], images=true}, {id="claude-fable-5-1", display_name="Claude Fable 5.1", context_window=1000000, efforts=["low", "medium", "high", "xhigh"], images=true}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.openai]`
 
 - `base_url` = `"https://api.openai.com/v1"`
@@ -62,7 +62,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `api` = `"responses"` — "responses" | "chat"
 - `timeout_s` = `120`
 - `max_retries` = `4`
-- `models` = `[{id="gpt-5.1", display_name="GPT-5.1", context_window=400000, efforts=["low", "medium", "high"]}, {id="gpt-5.5", display_name="GPT-5.5", context_window=1050000, efforts=["low", "medium", "high", "xhigh"]}, {id="gpt-5.6-sol", display_name="GPT-5.6 Sol", context_window=1050000, efforts=["low", "medium", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
+- `models` = `[{id="gpt-5.1", display_name="GPT-5.1", context_window=400000, efforts=["low", "medium", "high"], images=true}, {id="gpt-5.5", display_name="GPT-5.5", context_window=1050000, efforts=["low", "medium", "high", "xhigh"], images=true}, {id="gpt-5.6-sol", display_name="GPT-5.6 Sol", context_window=1050000, efforts=["low", "medium", "high", "xhigh"], images=true}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.local]`
 
 - `base_url` = `"http://localhost:11434/v1"`
@@ -99,7 +99,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `context_window` = `1000000`
 - `timeout_s` = `120`
 - `max_retries` = `4`
-- `models` = `[{id="deepseek-v4-flash", display_name="DeepSeek V4 Flash", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek-v4-pro", display_name="DeepSeek V4 Pro", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek-v4-flash-vision-exp", display_name="DeepSeek V4 Flash Vision Exp", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model (effort values from models.dev)
+- `models` = `[{id="deepseek-v4-flash", display_name="DeepSeek V4 Flash", context_window=1000000, efforts=["low", "high", "xhigh"], images=true}, {id="deepseek-v4-pro", display_name="DeepSeek V4 Pro", context_window=1000000, efforts=["low", "high", "xhigh"], images=false}, {id="deepseek-v4-flash-vision-exp", display_name="DeepSeek V4 Flash Vision Exp", context_window=1000000, efforts=["low", "high", "xhigh"], images=true}]` — id, context window, efforts per model (effort values from models.dev)
 ## `[providers.openrouter]`
 
 - `base_url` = `"https://openrouter.ai/api/v1"`
@@ -109,7 +109,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `context_window` = `1000000`
 - `timeout_s` = `120`
 - `max_retries` = `4`
-- `models` = `[{id="anthropic/claude-sonnet-5", display_name="Claude Sonnet 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"]}, {id="anthropic/claude-opus-5", display_name="Claude Opus 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"]}, {id="deepseek/deepseek-v4-pro", display_name="DeepSeek V4 Pro", context_window=1048576, efforts=["high", "xhigh"]}, {id="qwen/qwen3-coder-plus", display_name="Qwen3 Coder Plus", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="x-ai/grok-4.3", display_name="Grok 4.3", context_window=1000000, efforts=["low", "medium", "high"]}]` — curated coding subset; the full 359-model list lives in models.dev
+- `models` = `[{id="anthropic/claude-sonnet-5", display_name="Claude Sonnet 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"], images=true}, {id="anthropic/claude-opus-5", display_name="Claude Opus 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"], images=true}, {id="deepseek/deepseek-v4-pro", display_name="DeepSeek V4 Pro", context_window=1048576, efforts=["high", "xhigh"], images=false}, {id="qwen/qwen3-coder-plus", display_name="Qwen3 Coder Plus", context_window=1000000, efforts=["low", "high", "xhigh"], images=false}, {id="x-ai/grok-4.3", display_name="Grok 4.3", context_window=1000000, efforts=["low", "medium", "high"], images=true}]` — curated coding subset; the full 359-model list lives in models.dev
 ## `[providers.moonshot]`
 
 - `base_url` = `"https://api.moonshot.ai/v1"`
@@ -119,7 +119,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `context_window` = `262144`
 - `timeout_s` = `120`
 - `max_retries` = `4`
-- `models` = `[{id="kimi-k2.6", display_name="Kimi K2.6", context_window=262144, efforts=["low", "medium", "high", "xhigh"]}, {id="kimi-k2.7-code", display_name="Kimi K2.7 Code", context_window=262144, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
+- `models` = `[{id="kimi-k2.6", display_name="Kimi K2.6", context_window=262144, efforts=["low", "medium", "high", "xhigh"], images=true}, {id="kimi-k2.7-code", display_name="Kimi K2.7 Code", context_window=262144, efforts=["low", "high", "xhigh"], images=true}]` — id, context window, efforts per model
 ## `[providers.z-ai]`
 
 - `base_url` = `"https://api.z.ai/api/paas/v4"`
@@ -129,7 +129,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `context_window` = `1000000`
 - `timeout_s` = `120`
 - `max_retries` = `4`
-- `models` = `[{id="glm-5.2", display_name="GLM-5.2", context_window=1000000, efforts=["high", "xhigh"]}, {id="glm-5.3", display_name="GLM-5.3", context_window=1000000, efforts=["low", "high", "xhigh"]}]` — id, context window, efforts per model
+- `models` = `[{id="glm-5.2", display_name="GLM-5.2", context_window=1000000, efforts=["high", "xhigh"], images=false}, {id="glm-5.3", display_name="GLM-5.3", context_window=1000000, efforts=["low", "high", "xhigh"], images=false}]` — id, context window, efforts per model
 ## `[providers.gemini]`
 
 - `base_url` = `"https://generativelanguage.googleapis.com/v1beta/openai"` — client appends /chat/completions
@@ -138,7 +138,7 @@ Generated from `config/default.toml` by a test in `cox-protocol/src/config.rs`; 
 - `model` = `"gemini-3.8-flash"`
 - `timeout_s` = `120`
 - `max_retries` = `4`
-- `models` = `[{id="gemini-3.8-flash", display_name="Gemini 3.8 Flash", context_window=1048576, efforts=["low", "medium", "high"], reasoning_effort=true}, {id="gemini-3.1-pro-preview", display_name="Gemini 3.1 Pro Preview", context_window=1048576, efforts=["low", "medium", "high"], reasoning_effort=true}, {id="gemini-3.5-flash-lite", display_name="Gemini 3.5 Flash Lite", context_window=1048576, efforts=["low", "medium", "high"], reasoning_effort=true}]`
+- `models` = `[{id="gemini-3.8-flash", display_name="Gemini 3.8 Flash", context_window=1048576, efforts=["low", "medium", "high"], reasoning_effort=true, images=true}, {id="gemini-3.1-pro-preview", display_name="Gemini 3.1 Pro Preview", context_window=1048576, efforts=["low", "medium", "high"], reasoning_effort=true, images=true}, {id="gemini-3.5-flash-lite", display_name="Gemini 3.5 Flash Lite", context_window=1048576, efforts=["low", "medium", "high"], reasoning_effort=true, images=true}]`
 ## `[context]`
 
 - `compact_at` = `0.75` — fraction of max_context
