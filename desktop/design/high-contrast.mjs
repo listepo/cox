@@ -9,8 +9,9 @@
 // transparency — `material.highContrast.glassKeep` in `tokens/base.json`, the number CoxUI's
 // `Appearance` applies to the window and pane opacity (A100), read here so both follow one token.
 // A colour that already passes is kept; one that fails moves the least distance towards black or
-// white (away from its surface) that passes. The specular sweep and the window's own opacity are
-// `material.*` numbers, not colours, so no palette file can switch them.
+// white (away from its surface) that passes. The specular sweep's strength and the window's own
+// opacity are `material.*` numbers, not colours, so no palette file can switch them; the sweep's
+// colour, `glass.specular`, is kept, and `Appearance` drops the sweep under Increase Contrast.
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,8 +24,10 @@ const STEP = 0.005;
 
 // Glass: translucent surfaces. Each sits over the opaque window fill of its palette, as the palette
 // describes them; what shows through the window itself is the material's opacity, not a colour.
-const GLASS = ['surface.sidebar', 'surface.capsule', 'surface.popover', 'surface.terminal', 'glass.fill'];
-const PAGE = ['surface.window', 'surface.code', ...GLASS.filter((s) => s !== 'surface.terminal')];
+// `surface.terminal` is opaque (A129 (8)), so it is no glass and keeps its value; text is still
+// checked on it below. It is no page either: only terminal text sits on it.
+const GLASS = ['surface.sidebar', 'surface.capsule', 'surface.popover', 'glass.fill'];
+const PAGE = ['surface.window', 'surface.code', ...GLASS];
 const WORDS = [
   'text.primary', 'text.secondary', 'text.tertiary', 'text.placeholder', 'accent', 'status.success',
   'status.warning', 'status.danger', 'status.plan', 'meter.sent', 'meter.received',
@@ -62,7 +65,7 @@ const RULES = [
   ...PAGES.map((p) => ({ fg: [`tile.settings.${p}.glyph`], bg: ['top', 'bottom'].map((e) => `tile.settings.${p}.${e}`), min: GRAPHIC })),
 ];
 // Tints and depth with nothing to read on them; A89 sets no ratio, so they keep their value.
-const KEPT = ['fill.secondary', 'status.successSoft', 'shadow.tint', 'shadow.scrim', 'glass.highlight'];
+const KEPT = ['fill.secondary', 'status.successSoft', 'shadow.tint', 'shadow.scrim', 'glass.highlight', 'glass.specular'];
 
 const fail = (msg) => {
   throw new Error(`high contrast: ${msg}`);

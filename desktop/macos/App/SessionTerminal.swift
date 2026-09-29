@@ -85,7 +85,7 @@ struct SessionTerminal: View {
   }
 
   /// The terminal's own background is `surface.terminal` at no opacity: the chrome's well already
-  /// lays that translucent colour once, margin included, and a second coat inside the margin
+  /// lays that colour once, margin included, and a second coat inside the margin
   /// drew a lighter frame round a darker terminal. The colour stays for inverse video.
   /// Lines keep the token's pitch (`font.mono.terminal`, 1.5), not the font's tighter own.
   private var style: TerminalStyle {

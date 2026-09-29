@@ -97,6 +97,15 @@ private let everyMaterial = [ColorScheme.light, .dark].flatMap { scheme in
         == 1 - (1 - MaterialToken.readableFloorWindowOpacity) * MaterialToken.highContrastGlassKeep)
   }
 
+  /// T51.23: a tint carries its own alpha, and its High Contrast value is in the palette, so
+  /// neither the window opacity nor Increase Contrast scales it again.
+  @Test func aTintIsDrawnAsItsTokenHasIt() {
+    let clear = Appearance(material: .frosted, windowOpacity: 0)
+    #expect(clear.backgroundOpacity(.tint) == 1)
+    let contrast = clear.effective(reduceTransparency: false, increaseContrast: true)
+    #expect(contrast.backgroundOpacity(.tint) == 1)
+  }
+
   @Test func reduceTransparencyStillWinsOverIncreaseContrast() {
     let forced = Appearance(material: .frosted)
       .effective(reduceTransparency: true, increaseContrast: true)

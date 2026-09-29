@@ -88,14 +88,13 @@
         "$value": {
           "colorSpace": "srgb",
           "components": [
-            0.0941,
-            0.1059,
-            0.1569
+            0.0824,
+            0.0863,
+            0.102
           ],
-          "hex": "#181b28",
-          "alpha": 0.88
+          "hex": "#15161a"
         },
-        "$description": "Inset terminal tail"
+        "$description": "Terminal well: the terminal pane and the inset terminal tail; opaque dark in both appearances, as mockup 24 draws it (A129)"
       }
     },
     "glass": {
@@ -140,6 +139,19 @@
           "alpha": 0.95
         },
         "$description": "The 1 pt top-edge highlight of lifted glass at full strength: mockup 28's --hl"
+      },
+      "specular": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            1,
+            1,
+            1
+          ],
+          "hex": "#ffffff"
+        },
+        "$description": "The light the specular sweep and streak lay on glass, at `material.*Specular` strength: the mockups' .glass .window:after"
       }
     },
     "fill": {

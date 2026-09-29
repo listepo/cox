@@ -34,6 +34,9 @@ enum SurfaceRole: Sendable {
   case chrome
   /// Messages, code, diffs, terminal, popovers, the composer: never below the floor.
   case readable
+  /// A glass token that carries its own alpha (`glass.fill`, the panes over the window): drawn
+  /// as the token has it, since its High Contrast value is already in the palette (A89).
+  case tint
 }
 
 /// The `[desktop.appearance]` values the Foundations draw with.
@@ -88,11 +91,11 @@ public struct Appearance: Sendable, Equatable {
   func backgroundOpacity(_ role: SurfaceRole) -> Double {
     let opacity =
       switch (material, role) {
-      case (.solid, _): MaterialToken.solidWindowOpacity
+      case (.solid, _), (_, .tint): MaterialToken.solidWindowOpacity
       case (_, .chrome): windowOpacity
       case (_, .readable): max(windowOpacity, MaterialToken.readableFloorWindowOpacity)
       }
-    guard increaseContrast else { return opacity }
+    guard increaseContrast, role != .tint else { return opacity }
     return 1 - (1 - opacity) * MaterialToken.highContrastGlassKeep
   }
 

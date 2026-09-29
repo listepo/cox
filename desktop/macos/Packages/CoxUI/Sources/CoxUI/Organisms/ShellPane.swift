@@ -13,6 +13,7 @@ import SwiftUI
 struct ShellPane<Content: View>: View {
   let kind: ShellPaneKind
   let content: Content
+  @EffectiveAppearance private var appearance
 
   init(_ kind: ShellPaneKind, @ViewBuilder content: () -> Content) {
     self.kind = kind
@@ -27,8 +28,8 @@ struct ShellPane<Content: View>: View {
       content
     }
     .clipShape(shape)
-    .glassPane(shape, surface: kind.surface, frosts: false)
-    .hairline(in: shape)
+    .glassPane(shape, surface: kind.fill(appearance), role: kind.role(appearance), frosts: false)
+    .hairline(in: shape, color: kind.rim(appearance))
     .elevation(kind.elevation, cornerRadius: kind.radius)
   }
 }
@@ -62,11 +63,26 @@ enum ShellPaneKind: CaseIterable, Sendable {
     }
   }
 
-  var surface: Color {
-    switch self {
-    case .sidebar: Color(.surfaceSidebar)
-    case .window, .column, .inspector: Color(.surfaceWindow)
+  /// DS§3.5: on glass the panes take `glass.fill` over the window's own `surface.window` tint,
+  /// as mockups 28, 31 and 32 draw them; in Solid (and under Reduce Transparency) every layer is
+  /// its plain surface.
+  func fill(_ appearance: Appearance) -> Color {
+    switch (self, appearance.material) {
+    case (.sidebar, .solid): Color(.surfaceSidebar)
+    case (.window, _), (_, .solid): Color(.surfaceWindow)
+    case (.sidebar, _), (.column, _), (.inspector, _): Color(.glassFill)
     }
+  }
+
+  /// `glass.fill` carries its own alpha, and its High Contrast value is in the palette, so the
+  /// window opacity does not scale it again; every other fill follows the window opacity.
+  func role(_ appearance: Appearance) -> SurfaceRole {
+    self != .window && appearance.material != .solid ? .tint : .chrome
+  }
+
+  /// The rim: `glass.border` round every glass layer, the window's too; a hairline in Solid.
+  func rim(_ appearance: Appearance) -> Color {
+    appearance.material == .solid ? Color(.separator) : Color(.glassBorder)
   }
 }
 
