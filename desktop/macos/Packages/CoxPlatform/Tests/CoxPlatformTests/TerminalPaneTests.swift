@@ -117,3 +117,13 @@ private final class Links {
   #expect(text.contains("printed while hidden"))
   surface.end()
 }
+
+/// The style's line height reaches SwiftTerm, so rows sit at the token's pitch rather than the
+/// font's tighter own.
+@MainActor @Test func theStylesLineHeightSetsTheRowPitch() {
+  let view = TerminalView(frame: frame, font: font)
+  TerminalStyle(font: font, foreground: .white, background: .black, caret: .white, lineHeight: 18)
+    .apply(to: view)
+  let natural = font.ascender - font.descender + font.leading
+  #expect(abs(view.lineSpacing * natural - 18) < 0.01)
+}
