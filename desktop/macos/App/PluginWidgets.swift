@@ -1,11 +1,12 @@
 // The plugin slots as CoxUI draws them (PL§8, T52.17): CoxClient's `PluginView` mapped onto
-// CoxUI's `PluginWidget`, and which slots the session window shows. Separate because CoxUI
+// CoxUI's `PluginWidget`, which slots the session window shows, and the overlay's sheet. Separate because CoxUI
 // imports no cox package, so the app is the one place the two meet. The trees were sanitized
 // and bounded in `cox_app::plugin_ui` before they crossed the FFI.
 
 import CoxClient
 import CoxModel
 import CoxUI
+import SwiftUI
 
 enum PluginWidgets {
   /// The toolbar's segments: every `status.left`, then every `status.right`.
@@ -27,6 +28,22 @@ enum PluginWidgets {
 
   private static func widget(_ slot: PluginSlot) -> PluginWidget? {
     slot.view.map(PluginWidget.init)
+  }
+}
+
+extension View {
+  /// A plugin overlay as a sheet while the core says it is shown; Esc, which dismisses the sheet,
+  /// hides it in the core too, so the next patch agrees.
+  func pluginOverlaySheet(_ store: SessionStore) -> some View {
+    let isShown = Binding(
+      get: { PluginWidgets.overlay(store) != nil },
+      set: { if !$0 { store.closePluginOverlay() } })
+    return sheet(isPresented: isShown) {
+      if let overlay = PluginWidgets.overlay(store) {
+        ScrollView { PluginWidgetView(overlay).padding(Space.xl) }
+          .frame(minWidth: Size.readingWidth, minHeight: Size.popoverWidth)
+      }
+    }
   }
 }
 
@@ -59,6 +76,8 @@ extension PluginSpan {
 }
 
 extension PluginSpan.Role {
+  // One case per token: a mapping, not branching logic.
+  // swiftlint:disable:next cyclomatic_complexity
   init(_ token: StyleToken) {
     switch token {
     case .text: self = .text

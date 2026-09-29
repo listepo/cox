@@ -193,14 +193,6 @@ struct SessionWindow: View {
     openWindow(value: PopOut(session: session, asTab: asTab))
   }
 
-  /// A plugin overlay shows as a sheet while the core says it is shown; Esc, which dismisses the
-  /// sheet, hides it in the core too, so the next patch agrees.
-  private func pluginOverlay(_ store: SessionStore) -> Binding<Bool> {
-    Binding(
-      get: { PluginWidgets.overlay(store) != nil },
-      set: { if !$0 { store.closePluginOverlay() } })
-  }
-
   private var isRefused: Binding<Bool> {
     Binding(get: { refused != nil }, set: { if !$0 { refused = nil } })
   }
@@ -246,12 +238,7 @@ struct SessionWindow: View {
       }
       // A new view per session, so the transcript's text is rebuilt from the one it shows.
       .id(current)
-      .sheet(isPresented: pluginOverlay(showing.store)) {
-        if let overlay = PluginWidgets.overlay(showing.store) {
-          ScrollView { PluginWidgetView(overlay).padding(Space.xl) }
-            .frame(minWidth: Size.readingWidth, minHeight: Size.popoverWidth)
-        }
-      }
+      .pluginOverlaySheet(showing.store)
     } else if let failure {
       Text(failure).textSelection(.enabled)
     } else {
