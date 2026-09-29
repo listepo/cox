@@ -876,10 +876,10 @@ S['32-main-glass-dark-glossy']=()=>{document.body.classList.add('dark');return g
 
 // ---------- render ----------
 const key=decodeURIComponent(location.hash.slice(1))||'01-main-session-streaming';
-// A fixed dispatch map: only a screen defined above renders; an unknown hash
-// falls back to the first.
-const screens=new Map(Object.entries(S));
-const render=screens.get(key)||screens.get('01-main-session-streaming');
+// Only a screen defined above renders, matched by name rather than looked up
+// with the hash; an unknown hash falls back to the first.
+const found=Object.entries(S).find(([name])=>name===key);
+const render=found?found[1]:S['01-main-session-streaming'];
 if(key==='__list'){document.getElementById('root').textContent=Object.keys(S).join('\n');}
 else{
   document.getElementById('root').innerHTML=render();
