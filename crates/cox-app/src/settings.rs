@@ -16,7 +16,7 @@ use serde_json::Value;
 
 use crate::mcp_login::McpServer;
 use crate::permissions::{PermissionRule, SessionGrant};
-use crate::settings_fields::{self as fields, SettingsGroup};
+use crate::settings_fields::{self as fields, SettingControl, SettingInput, SettingsGroup};
 
 /// The layer a value came from, the badge beside each field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -99,6 +99,8 @@ pub struct Setting {
     pub provider: Option<String>,
     /// `Set in <project file>` for a project value, else the schema's help.
     pub detail: Option<String>,
+    /// What the field shows, from its kind and value.
+    pub control: SettingControl,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -157,6 +159,8 @@ pub enum SettingsError {
     Rule { rule: String, message: String },
     #[error("no rule `{0}`")]
     NoRule(String),
+    #[error("`{0}` takes no number JSON cannot carry")]
+    NotFinite(String),
 }
 
 /// The effective config for a session in `cwd`, loaded as `live.rs` loads
@@ -179,6 +183,7 @@ pub fn view_of(
 ) -> Result<SettingsView, SettingsError> {
     let schema = cox_config::schema()?;
     let project_file = cox_config::load::project_config_path(cwd).filter(|p| p.exists());
+    let models = crate::models::choices(&loaded.config);
     let settings: Vec<Setting> = cox_config::cmd::leaves(loaded)?
         .into_iter()
         .map(|(key, value)| {
@@ -191,6 +196,7 @@ pub fn view_of(
                 table: fields::table(&key),
                 provider: fields::provider(&key),
                 detail: fields::detail(layer, &description, project_file.as_deref()),
+                control: fields::control(&key, &kind, &value, &models),
                 key,
                 value,
                 layer,
@@ -256,6 +262,20 @@ pub fn set(
             Err(rejected)
         }
     }
+}
+
+/// Sets `key` from what its control sent, typed by the key's kind first
+/// (`settings_fields::typed`); the new view.
+pub fn set_input(
+    user_file: &Path,
+    cwd: &Path,
+    key: &str,
+    input: SettingInput,
+) -> Result<SettingsView, SettingsError> {
+    let (kind, _) = describe(&cox_config::schema()?, key);
+    let value =
+        fields::typed(&kind, input).ok_or_else(|| SettingsError::NotFinite(key.to_owned()))?;
+    set(user_file, cwd, key, &value.to_string())
 }
 
 /// The control and help text the schema gives `key`; a key it does not
@@ -391,6 +411,15 @@ mod tests {
         .into_iter()
         .map(|row| Setting {
             detail: row.detail.as_ref().map(|d| d.replace(&tmp, "<tmp>")),
+            // The catalog's rows change with each vendored update; the
+            // project's unlisted model, kept first, is what this pins.
+            control: match &row.control {
+                SettingControl::Menu { value, options } => SettingControl::Menu {
+                    value: value.clone(),
+                    options: options.iter().take(1).cloned().collect(),
+                },
+                other => other.clone(),
+            },
             ..row.clone()
         })
         .collect();
@@ -416,6 +445,20 @@ mod tests {
         assert_eq!(budget.group, SettingsGroup::Budget);
         assert_eq!(budget.change, format!("{} → {}", budget.value, budget.kept));
         assert!(budget.change.starts_with("999"), "{}", budget.change);
+    }
+
+    #[test]
+    fn a_typed_input_is_set_as_its_kinds_json() {
+        let (_dir, user, project) = scratch();
+        let text = |value: &str| SettingInput::Text {
+            value: value.into(),
+        };
+        let after = set_input(&user, &project, "core.max_turns", text(" 12 ")).expect("set");
+        let row = rows(&after, &["core.max_turns"])[0];
+        assert_eq!(row.value, serde_json::json!(12));
+        let nan = SettingInput::Number { value: f64::NAN };
+        let err = set_input(&user, &project, "desktop.appearance.opacity", nan).expect_err("nan");
+        assert!(matches!(err, SettingsError::NotFinite(_)), "{err}");
     }
 
     #[test]

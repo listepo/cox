@@ -242,6 +242,22 @@ impl App {
         )
     }
 
+    /// Sets `key` from what its control sent, typed by the key's kind in
+    /// Rust (T58.4.9); the new view.
+    pub async fn set_setting_input(
+        self: Arc<Self>,
+        cwd: String,
+        key: String,
+        input: cox_app::SettingInput,
+    ) -> Result<SettingsView, AppError> {
+        Ok(on_runtime(async move {
+            (self.owner)
+                .set_setting_input(Path::new(&cwd), &key, input)
+                .await
+        })
+        .await??)
+    }
+
     /// Adds (`old` none), replaces or removes (`new` none) one permission
     /// rule in the user file (T37.45.3); the new view.
     pub async fn set_permission_rule(

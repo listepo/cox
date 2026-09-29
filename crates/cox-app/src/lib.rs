@@ -63,7 +63,7 @@ pub use patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 pub use permissions::{PermissionRule, RuleKind, SessionGrant};
 pub use plugin_ui::{KeyValueRow, PluginKey, PluginSlot, SpanView, WidgetView};
 pub use settings::{Dropped, Layer, Setting, SettingKind, SettingsError, SettingsView};
-pub use settings_fields::{KeyError, SettingsGroup};
+pub use settings_fields::{KeyError, SettingControl, SettingInput, SettingOption, SettingsGroup};
 pub use summary::Icon;
 pub use tasks::{TaskKind, TaskTarget};
 pub use terminal::{TerminalError, TerminalHandle};

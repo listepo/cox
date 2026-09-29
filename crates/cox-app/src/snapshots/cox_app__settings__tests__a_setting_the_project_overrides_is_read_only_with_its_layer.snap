@@ -16,7 +16,17 @@ expression: shown
     "title": "Model",
     "table": "tiers.code",
     "provider": null,
-    "detail": "Set in <tmp>/project/.cox/config.toml"
+    "detail": "Set in <tmp>/project/.cox/config.toml",
+    "control": {
+      "type": "menu",
+      "value": "project-model",
+      "options": [
+        {
+          "value": "project-model",
+          "title": "project-model"
+        }
+      ]
+    }
   },
   {
     "key": "budget.session_usd",
@@ -33,7 +43,11 @@ expression: shown
     "title": "Session usd",
     "table": "budget",
     "provider": null,
-    "detail": "Session spend cap, in USD."
+    "detail": "Session spend cap, in USD.",
+    "control": {
+      "type": "field",
+      "text": "5.0"
+    }
   },
   {
     "key": "desktop.appearance.material",
@@ -53,7 +67,16 @@ expression: shown
     "title": "Material",
     "table": "desktop.appearance",
     "provider": null,
-    "detail": "`frosted` | `glossy` | `solid`."
+    "detail": "`frosted` | `glossy` | `solid`.",
+    "control": {
+      "type": "choice",
+      "value": "glossy",
+      "options": [
+        "frosted",
+        "glossy",
+        "solid"
+      ]
+    }
   },
   {
     "key": "desktop.appearance.opacity",
@@ -70,7 +93,14 @@ expression: shown
     "title": "Opacity",
     "table": "desktop.appearance",
     "provider": null,
-    "detail": "Window and pane background opacity, 0 (clear) to 1 (opaque). Text\npanels never drop below `material.readableFloor`, whatever this is."
+    "detail": "Window and pane background opacity, 0 (clear) to 1 (opaque). Text\npanels never drop below `material.readableFloor`, whatever this is.",
+    "control": {
+      "type": "slider",
+      "value": 0.42,
+      "min": 0.0,
+      "max": 1.0,
+      "text": "0.42"
+    }
   },
   {
     "key": "desktop.appearance.tint",
@@ -85,7 +115,11 @@ expression: shown
     "title": "Tint",
     "table": "desktop.appearance",
     "provider": null,
-    "detail": "Tint the glass from the wallpaper."
+    "detail": "Tint the glass from the wallpaper.",
+    "control": {
+      "type": "toggle",
+      "on": true
+    }
   },
   {
     "key": "core.max_turns",
@@ -102,7 +136,11 @@ expression: shown
     "title": "Max turns",
     "table": "core",
     "provider": null,
-    "detail": "`core.max_turns`: provider calls allowed per `UserTurn`."
+    "detail": "`core.max_turns`: provider calls allowed per `UserTurn`.",
+    "control": {
+      "type": "field",
+      "text": "200"
+    }
   },
   {
     "key": "core.workspace_roots",
@@ -117,6 +155,10 @@ expression: shown
     "title": "Workspace roots",
     "table": "core",
     "provider": null,
-    "detail": "`core.workspace_roots`: empty means \"git root of cwd, else cwd\";\n`--add-dir`/`--cwd` append to this."
+    "detail": "`core.workspace_roots`: empty means \"git root of cwd, else cwd\";\n`--add-dir`/`--cwd` append to this.",
+    "control": {
+      "type": "json",
+      "text": "[]"
+    }
   }
 ]
