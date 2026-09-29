@@ -48,16 +48,14 @@ pub async fn build(
 }
 
 /// `recent` ∩ `files` in `recent`'s order, then the rest of `files` (already
-/// sorted by path), each once. The shared walk shows hidden files, so it
-/// also yields git's own `.git/` store, which is no source and would eat
-/// the budget.
+/// sorted by path), each once. `files` already excludes git's own `.git/`
+/// store — the shared walk skips it (`cox_search::grep::walker`, T37.44.16).
 fn order(recent: &[String], files: &[String]) -> Vec<String> {
     let known: HashSet<&str> = files.iter().map(String::as_str).collect();
     let mut seen = HashSet::new();
     recent
         .iter()
         .chain(files)
-        .filter(|p| !p.starts_with(".git/"))
         .filter(|p| known.contains(p.as_str()) && seen.insert(p.as_str()))
         .cloned()
         .collect()
