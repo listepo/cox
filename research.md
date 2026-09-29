@@ -1088,6 +1088,10 @@ Reading: cox's core economics (archive, dedup, deferred tools, routing, ledger, 
 | 38 | Claude Code matches a `Bash` rule per subcommand: separators `&&`, `||`, `;`, `|`, `|&`, `&` and newlines split the line; an allow rule must match each subcommand; deny and ask rules apply when any subcommand matches, including one nested in a subshell, a command substitution or a loop body; a dangling `&&`/`||` makes the line unparseable, so no allow rule approves it; deny matches past any leading `VAR=` assignment, allow only past known-safe ones; wrappers (`timeout`, `time`, `nice`, `nohup`, `stdbuf`, `command`, `builtin`, `noglob`, bare `xargs`) are stripped before matching; output redirect targets are checked against `Edit` rules; "don't ask again" on a compound line saves one rule per subcommand | confirmed | https://code.claude.com/docs/en/permissions (sections "Compound commands", "Wrappers", "Redirections"), checked 2026-09-26. cox (T36.1, T36.2) follows the split, the any/every rule, the substitution and parse-error cases and the per-command session grant, and (T36.2) now strips the same wrapper list before a deny/ask match and keeps a narrow known-safe assignment allow-list (`LC_ALL`, `LANG`, `TZ`, `NO_COLOR` — see row 39, the docs name no full list to match); cox still differs in being stricter: an output redirect to a path asks instead of consulting `Edit` rules, and (T36.2) a deny/ask rule now looks inside an `eval`/`sh -c`/`bash -c` string by re-parsing it, which Claude Code's own rules do not do (row 39) |
 | 39 | Re-checking the "Wrappers" section for T36.2 (`plan.md` A64): the doc's exact wording is "Claude Code also strips a leading assignment of certain known-safe environment variables, so `Bash(npm test *)` matches `NODE_ENV=test npm test`. An allow rule won't match past an assignment of any other variable." — `NODE_ENV` is the only example given; the full known-safe list is not published, so cox does not try to match it and instead keeps its own short, deliberately narrower list (locale/display variables only, which cannot change what a later command resolves to). The doc also confirms: `command -v` (a query, not a run) and zsh's `nocorrect` are *not* stripped even though they look like wrapper forms; bare `xargs` is stripped only when it carries no flag of its own (`xargs -n1 …` is matched as `xargs`, not the inner command); and exec wrappers `watch`, `setsid`, `ionice`, `flock` are never stripped, so they always prompt in Manual mode. Its own worked table shows a `deny`/`ask` rule for `rm *` stopping `rm -rf build/` and `/bin/rm -rf build/` but explicitly *not* stopping `bash -c 'rm -rf build/'` — Claude Code's compound-command split does not look inside a shell string, unlike cox's `sh -c`/`eval` re-parse (T36.2) | confirmed | https://code.claude.com/docs/en/permissions (sections "Wrappers", "What a Bash rule doesn't match"), checked 2026-09-26 |
 | 40 | Gemini through Chat Completions (P39, T39.5): the OpenAI-compatible endpoint is `https://generativelanguage.googleapis.com/v1beta/openai/` with `Authorization: Bearer $GEMINI_API_KEY`; streaming, tools, `image_url` data URIs and `reasoning_effort` are supported; reasoning cannot be turned off for Gemini 2.5 Pro or Gemini 3 models, so every `[providers.gemini]` model declares `reasoning_effort = true`; Google says OpenAI-library support is still in beta; thought signatures must be sent back exactly as received. models.dev lists the vendor as provider `google` with env `GEMINI_API_KEY`, hence `"gemini": "google"` in `cox_vendor/models.py`. The model ids `gemini-3.8-flash`, `gemini-3.1-pro-preview` and `gemini-3.5-flash-lite` come from the card; their context windows, efforts and prices are filled by `cox-vendor models`, not by hand | confirmed in the P39 gate check; not re-read in T39.5 (no network) | https://ai.google.dev/gemini-api/docs/openai (page "Last updated 2026-09-02 UTC"), https://ai.google.dev/gemini-api/docs/thinking (last updated 2026-09-25), both checked 2026-09-28 (`plan.md` P39); https://models.dev/api.json checked 2026-09-28 |
+| 41 | "Windows App SDK latest stable: v1.8.12 (2026-09-24)" (A127 brief) | corrected | v1.8.12 is the last patch of the 1.8 line, whose servicing ended on 2026-09-24 (Maintenance); the current stable line is 2.x, latest 2.5.1 (2026-09-16, servicing to 2027-04-29) — https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/release-channels (ms.date 2026-09-24, checked 2026-09-29); https://github.com/microsoft/WindowsAppSDK/releases; NuGet `microsoft.windowsappsdk` stable versions end at 2.5.1 (R10.2.5) |
+| 42 | D7 "Windows: no sandbox, loud warning, `on-request` forced" is implemented | refuted (not implemented) | `cox_sandbox::sandbox::backend` returns `None` off macOS/Linux and its doc comment says the surface "turns `None` into a security notice and forces `on-request`", but no caller does: the callers are `cox-session` doctor, external agents, MCP and plugins (which refuse to run unsandboxed), and the TUI status line; no code raises the approval policy (repo at `efd69625`, checked 2026-09-29; R10.1.9) |
+| 43 | uniffi-bindgen-cs supports the uniffi 0.32 that cox-ffi pins | refuted | latest release v0.11.0+v0.31.0 (2026-06-23) and `main` pin uniffi 0.31.0; the 0.32 upgrade is open PR #176 (R10.2.1, R10.2.2) |
+| 44 | Git Bash is required for Claude Code on native Windows | outdated | Git for Windows is optional; without it Claude Code runs commands through its PowerShell tool — https://code.claude.com/docs/en/setup "Set up on Windows" (checked 2026-09-29; R10.5.2) |
 
 ## 9. Desktop clients and the Rust↔Swift stack — survey 2026-09-28 (input for `docs/design/desktop.md`)
 
@@ -1246,3 +1250,86 @@ Scope: what `cox-app` needs to spawn Claude Code's, Codex's, Gemini CLI's and Cu
 
 - Each agent keeps state under the user's home: `~/.claude`, `~/.codex`, `~/.gemini`, `~/.cursor`. The sandbox denies writes outside the workspace (T35.2's check), so an agent may fail to save its session or login state there. **Unverified**: no vendor page or live run was checked for this. T52.4's live check settles it.
 - An unknown `sessionUpdate` tag (a newer agent's kind, or an unstable one cox does not enable) may fail deserialization in the SDK instead of arriving as an unknown value. **Unverified**: T52.3's fixture test settles it.
+
+## 10. Windows core build and desktop client — survey 2026-09-29 (input for P57, P58, A127)
+
+Scope: what stops the workspace from building on Windows today, and the stack the creator chose for the Windows desktop client (A127: WinUI 3 + C# over `cox-ffi`, bindings from uniffi-bindgen-cs, M1 parity, no sandbox per D7). Repository rows are read at `efd69625`. Registry rows come from crates.io, the NuGet flat container (`https://api.nuget.org/v3-flatcontainer/<id>/index.json`) and the .NET release index. Cited below as R10.n.
+
+### 10.1 cox on Windows today (repository at `efd69625`)
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 10.1.1 | CI drops Windows from the shared matrix on purpose: "cox is Unix-only (a pty through nix, std::os::unix in cox-tools; no Windows release target)"; the shared workflow already has a `windows-latest` / `x86_64-pc-windows-msvc` row | `.github/workflows/ci.yml:34`; `listepo/infra/.github/workflows/ci-rust.yml@189816ac` line 128 |
+| 10.1.2 | cargo-dist 0.32.0 builds four targets, none for Windows | `dist-workspace.toml:13` |
+| 10.1.3 | `nix` 0.31 is an unconditional dependency of `cox-app`, `cox-ext`, `cox-session` and `cox-tools`; only `cox-sandbox` already gates it (`cfg(target_os = "linux")`, with landlock and seccompiler) | `Cargo.toml:107`; each crate's `Cargo.toml` |
+| 10.1.4 | `bash` runs on a pty from `nix::pty::openpty`, starts the child with `setsid`, kills with `killpg`, and polls and sets termios through nix; it imports `std::os::unix::process::{CommandExt, ExitStatusExt}` | `crates/cox-tools/src/bash/mod.rs` |
+| 10.1.5 | The shell is looked up only in `SHELL_DIRS` (`/bin`, `/usr/bin`, `/usr/local/bin`, `/opt/homebrew/bin`), not on `PATH`; the `Shell` enum already has a `Pwsh` variant; the risk classifier parses commands with the tree-sitter bash grammar | `crates/cox-tools/src/bash/mod.rs:92`; `crates/cox-tools/src/bash/classify.rs` |
+| 10.1.6 | Process groups (`process_group(0)`, `killpg`) are the kill path in hooks, the login-shell probe, the lsp server, external agents, the app terminal and the status line | `crates/cox-ext/src/hooks.rs:163-183`; `crates/cox-session/src/env.rs`; `crates/cox-tools/src/lsp/server.rs:70`; `crates/cox-session/src/external_agents.rs:199-213`; `crates/cox-app/src/terminal.rs`; `crates/cox/src/status_line.rs:97-113` |
+| 10.1.7 | The login-shell environment defaults to `/bin/zsh` (macOS) or `/bin/sh` and reads the output with `OsStringExt` | `crates/cox-session/src/env.rs:27-29` |
+| 10.1.8 | `cox_home()` is `COX_HOME`, else `home_dir()/.cox`; `home_dir()` reads `HOME`, then `USERPROFILE`, then `.` | `crates/cox-config/src/load.rs:61-68` |
+| 10.1.9 | `cox_sandbox::sandbox::backend` returns `None` off macOS and Linux; its doc says the session surface turns `None` into a notice and forces `on-request`, but no caller does: doctor reports it, the status line errors (`StatusLineError::NoSandbox`), external agents, MCP and plugins refuse to start unsandboxed, and nothing raises the approval policy | `crates/cox-sandbox/src/sandbox/mod.rs:51`; callers of `backend(` across `crates/` |
+| 10.1.10 | Already portable: the session lock uses std `File::try_lock`; `cox-mcp` has Windows branches for opening the browser and the OAuth callback; `self_update.rs:116` and a dozen tests use `PermissionsExt` or `symlink` | `crates/cox-store/src/lock.rs`; `crates/cox-mcp/src/auth.rs:265`, `elicit.rs:658`; `crates/cox/src/self_update.rs:116` |
+| 10.1.11 | Workspace dependencies that already have a Windows backend: keyring 4 (4.2.0 in `Cargo.lock`), portable-pty 0.9 (0.9.0), directories 6 | `Cargo.toml:119-120,186`; `Cargo.lock` |
+
+### 10.2 Bindings, runtime and SDK versions
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 10.2.1 | uniffi-bindgen-cs (NordSecurity, MPL-2.0, not archived): latest release `v0.11.0+v0.31.0` (2026-06-23); its root `Cargo.toml` and `main` (e10ce410eb, 2026-06-23) pin uniffi 0.31.0; install is `cargo install uniffi-bindgen-cs --git https://github.com/NordSecurity/uniffi-bindgen-cs --tag v0.11.0+v0.31.0` | https://github.com/NordSecurity/uniffi-bindgen-cs/releases/tag/v0.11.0%2Bv0.31.0 ; repository `Cargo.toml` and README |
+| 10.2.2 | The upgrade to uniffi 0.32 is open PR #176 (opened 2026-07-10, last updated 2026-09-04, mergeable); issue #183 "Update for 0.32 uniffi" (2026-08-28) is open. cox-ffi pins uniffi 0.32.2 | https://github.com/NordSecurity/uniffi-bindgen-cs/pull/176 ; https://github.com/NordSecurity/uniffi-bindgen-cs/issues/183 ; `Cargo.lock` |
+| 10.2.3 | Issue #165 (open, 2026-02-24): an async callback interface generates synchronous return types instead of `Task<T>`; fix PR #166 is open. cox-ffi's foreign trait `AppHost` has async methods (`browser_load`, `browser_text`, `browser_snapshot`) | https://github.com/NordSecurity/uniffi-bindgen-cs/issues/165 ; https://github.com/NordSecurity/uniffi-bindgen-cs/pull/166 ; `crates/cox-ffi/src/host.rs` |
+| 10.2.4 | Generated C# needs .NET 8+ (or net461) and `AllowUnsafeBlocks`; v0.11.0 generates PascalCase record properties, `LibraryImport` on .NET 8+, and async methods on records and enums | README and `CHANGELOG.md` at `v0.11.0+v0.31.0` |
+| 10.2.5 | Windows App SDK: the 1.8 line is in Maintenance and its servicing ended 2026-09-24 (last patch 1.8.12); the current stable line is 2.x, 2.0 released 2026-04-29 and serviced to 2027-04-29, latest 2.5.1 (2026-09-16) | https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/release-channels (ms.date 2026-09-24); https://github.com/microsoft/WindowsAppSDK/releases ; `https://api.nuget.org/v3-flatcontainer/microsoft.windowsappsdk/index.json` |
+| 10.2.6 | .NET 10 is LTS, latest 10.0.12 (2026-09-08), end of support 2028-11-14; .NET 11 is STS at RC1; .NET 8 LTS ends 2026-11-10 | https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json |
+
+### 10.3 Packaging, notifications, Mica
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 10.3.1 | WinUI 3 apps are packaged (MSIX) by default; package identity is needed for background tasks, push notifications, share targets and more; "packaged with external location" gives identity while keeping your own installer; unpackaged apps have no identity | https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/packaging/ (ms.date 2026-08-29) |
+| 10.3.2 | MSIX apps typically run in a lightweight app container with file-system and registry virtualization, which the manifest can turn off | same page |
+| 10.3.3 | Deployment is self-contained or framework-dependent; `PublishSingleFile` works only for unpackaged + self-contained; `dotnet publish -r win-x64` or `win-arm64 --self-contained` | https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/deploy-overview (ms.date 2026-09-10) |
+| 10.3.4 | App notifications: `AppNotificationBuilder` with `AddButton(new AppNotificationButton(..).AddArgument(..))`, the `AppNotificationManager.Default.NotificationInvoked` event and `Register()`; not supported when the app runs elevated | https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/app-notifications-quickstart (ms.date 2026-09-10) |
+| 10.3.5 | For unpackaged apps `Register()` registers the calling process as the COM server and takes the display name and icon from the shell; `Register(displayName, iconUri)` exists since SDK 1.2 | https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.appnotifications.appnotificationmanager.register (updated 2026-07-28) |
+| 10.3.6 | Mica needs Windows 11 (build 22000+); older builds get a solid fallback; High Contrast replaces it | https://learn.microsoft.com/en-us/windows/apps/design/style/mica (ms.date 2026-07-22) |
+
+### 10.4 Processes, pty, credentials, paths
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 10.4.1 | portable-pty 0.9.0 (MIT, 2025-02-11) uses ConPTY on Windows: `#[cfg(windows)] pub type NativePtySystem = win::conpty::ConPtySystem;` | https://crates.io/crates/portable-pty/0.9.0 ; https://github.com/wezterm/wezterm/blob/main/pty/src/lib.rs |
+| 10.4.2 | Job objects: child processes join the parent's job by default; `TerminateJobObject` ends every process in the job; `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` kills them when the last handle closes; nested jobs since Windows 8 | https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects (ms.date 2025-07-14) |
+| 10.4.3 | process-wrap 10.0.1 (2026-09-23, Apache-2.0 OR MIT, watchexec) wraps `Command` with features `job-object`, `process-group`, `process-session`, `kill-on-drop`, `tokio1`, `std`; it is not in the workspace `rust.md` | https://crates.io/crates/process-wrap/10.0.1 ; https://github.com/watchexec/process-wrap |
+| 10.4.4 | Alternatives: win32job 2.0.3 (2025-05-15, Windows only); windows-sys 0.61.2 / windows 0.62.2 (raw API); command-group 5.0.1 (2023) is superseded by process-wrap | https://crates.io/crates/win32job ; https://crates.io/crates/windows-sys ; https://crates.io/crates/command-group |
+| 10.4.5 | keyring 4.2.0 (2026-08-29): the default `v1` feature pulls `windows-native-keyring-store` 1.1.0 (2026-05-24) on `cfg(target_os = "windows")`, the Windows Credential Manager store | https://crates.io/crates/keyring/4.2.0 ; https://crates.io/crates/windows-native-keyring-store/1.1.0 |
+| 10.4.6 | Windows file names: case-insensitive names and drive letters; reserved names `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, also with an extension; the `\\?\` prefix turns off parsing (so `..` is not resolved); 8.3 short aliases; alternate data streams (`name:stream`) | https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file (ms.date 2024-08-28) |
+
+### 10.5 The shell other agents use on Windows
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 10.5.1 | Codex's default user shell on Windows is PowerShell: `pwsh` first, then Windows PowerShell, with `cmd` as the last fallback | https://github.com/openai/codex/blob/c248f6d48b97/codex-rs/shell-command/src/shell_detect.rs (about lines 262-282, 350-352) |
+| 10.5.2 | Claude Code on native Windows: Git for Windows is optional; with it the Bash tool runs Git Bash (`CLAUDE_CODE_GIT_BASH_PATH` overrides the path); without it commands run through a PowerShell tool, which also exists next to Bash; native Windows sandboxing is not supported, WSL 2 is | https://code.claude.com/docs/en/setup |
+
+### 10.6 Release and CI
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 10.6.1 | cargo-dist supports `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`, `powershell` and `msi` installers; its Windows code signing (SSL.com, Azure) covers x86_64 only | https://axodotdev.github.io/cargo-dist/book/reference/config.html |
+| 10.6.2 | GitHub's `windows-latest` runner is Windows Server 2025 with Visual Studio 2026 | https://github.com/actions/runner-images (README) |
+
+### 10.7 C# test and MVVM packages
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 10.7.1 | Latest stable on NuGet: xunit.v3 4.0.1, Verify.XunitV3 33.1.5, FlaUI.UIA3 5.0.0, MSTest 4.4.1, CommunityToolkit.Mvvm 8.4.2, Microsoft.Windows.CsWinRT 2.3.1 | `https://api.nuget.org/v3-flatcontainer/<id>/index.json` for each id |
+| 10.7.2 | Verify (MIT) was last pushed 2026-09-28; FlaUI (MIT, UI Automation over UIA3) was last pushed 2026-08-13, its 5.0.0 package published 2025-02-25 | https://github.com/VerifyTests/Verify ; https://github.com/FlaUI/FlaUI |
+| 10.7.3 | WinAppDriver's last release is v1.2.99 (2021-07-01): unmaintained, so it is not a candidate | https://github.com/microsoft/WinAppDriver/releases |
+
+### 10.8 Unverified
+
+- A GUI app started from the Start menu gets the user and system `PATH` from the registry, not a login shell, so `cox-session`'s login-shell probe has no Windows counterpart. **Unverified**: no vendor page was checked; T57.5 settles what the Windows session environment is.
+- WinUI 3 controls can be rendered to PNG in a test through `RenderTargetBitmap` for snapshot tests. **Unverified**: not tried; T58.30 is the spike.
+- `AppNotificationBuilder` supports a text box input for "deny with reason" from a notification. **Unverified**: not read in the API reference; T58.24 checks it.
+- A taskbar badge (count of items waiting) is available to an unpackaged app. **Unverified**: T58.24 checks it with the packaging model T58.28 picks.
+- mise and the repository's `.github/actions/rust` composite action run on a Windows runner. **Unverified**: T57.1's first run settles it.

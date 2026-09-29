@@ -56,6 +56,49 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T56.8 | todo | P3 | 3 | 0% | |
 | T56.9 | todo | P3 | 1 | 0% | |
 | T56.10 | todo | P3 | 2 | 0% | |
+| T57.1 | todo | P1 | 2 | 0% | |
+| T57.2 | todo | P1 | 3 | 0% | |
+| T57.3 | todo | P1 | 3 | 0% | |
+| T57.4 | todo | P1 | 4 | 0% | |
+| T57.5 | todo | P1 | 4 | 0% | |
+| T57.6 | todo | P2 | 3 | 0% | |
+| T57.7 | todo | P1 | 2 | 0% | |
+| T57.8 | todo | P1 | 5 | 0% | |
+| T57.9 | todo | P1 | 2 | 0% | |
+| T57.10 | todo | P2 | 2 | 0% | |
+| T57.11 | todo | P2 | 3 | 0% | |
+| T57.12 | todo | P3 | 2 | 0% | |
+| T57.13 | todo | P2 | 3 | 0% | |
+| T58.1 | todo | P1 | 4 | 0% | |
+| T58.2 | todo | P2 | 2 | 0% | |
+| T58.3 | todo | P1 | 3 | 0% | |
+| T58.4 | todo | P1 | 3 | 0% | |
+| T58.5 | todo | P2 | 3 | 0% | |
+| T58.6 | todo | P2 | 3 | 0% | |
+| T58.7 | todo | P2 | 4 | 0% | |
+| T58.8 | todo | P2 | 3 | 0% | |
+| T58.9 | todo | P2 | 3 | 0% | |
+| T58.10 | todo | P2 | 3 | 0% | |
+| T58.11 | todo | P2 | 2 | 0% | |
+| T58.12 | todo | P2 | 4 | 0% | |
+| T58.13 | todo | P2 | 3 | 0% | |
+| T58.14 | todo | P2 | 4 | 0% | |
+| T58.15 | todo | P2 | 3 | 0% | |
+| T58.16 | todo | P3 | 2 | 0% | |
+| T58.17 | todo | P2 | 2 | 0% | |
+| T58.18 | todo | P2 | 4 | 0% | |
+| T58.19 | todo | P3 | 3 | 0% | |
+| T58.20 | todo | P3 | 3 | 0% | |
+| T58.21 | todo | P3 | 3 | 0% | |
+| T58.22 | todo | P2 | 4 | 0% | |
+| T58.23 | todo | P3 | 2 | 0% | |
+| T58.24 | todo | P2 | 3 | 0% | |
+| T58.25 | todo | P2 | 1 | 0% | |
+| T58.26 | todo | P3 | 2 | 0% | |
+| T58.27 | todo | P3 | 2 | 0% | |
+| T58.28 | todo | P2 | 3 | 0% | |
+| T58.29 | todo | P2 | 3 | 0% | |
+| T58.30 | todo | P3 | 3 | 0% | |
 
 ## Reference
 
@@ -114,6 +157,7 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox-app` | the UI-agnostic app core (T37.8–T37.10, T37.38): `Timeline` fold to serde `TimelinePatch`es, tool summaries and `ToolGroup`, the coalescing `Controller`, `Workspace`, `Inbox`, `Intent`/`dispatch`, `Completer`. No terminal toolkit, no CLI crate | tokio (drain task), serde_json; cox-render without `ratatui`; chrono 0.4 (no default features; `clock`, `std`): local midnight and the ISO week start for the Context tab's project totals (T37.29.3.3); portable-pty 0.9.0 (MIT): the terminal pane's PTY (T51.3); nix (MIT; `signal`, `process`): closing a terminal signals its process group (T51.3); url 2.5.8 (MIT OR Apache-2.0): the browser tools pass only http/https (T51.7); async-trait (MIT OR Apache-2.0): the async host traits (P52) |
 | `cox-ffi` | the macOS app's UniFFI surface (T37.14): one tokio runtime, `App` and `SessionHandle` objects, the foreign `AppHost` trait, `#[uniffi::remote]` mirrors of cox-app types, a fixture recorder. `staticlib` + `lib`; the only crate that depends on uniffi | uniffi 0.32.2 (proc-macros, no UDL; default features off); dev: syn 3.0.5 (`full`, `parsing`; T37.39.1: `tests/forward_only.rs` parses the FFI sources); async-trait (MIT OR Apache-2.0): the async `AppHost` methods UniFFI exports (P51, P52) |
 | `desktop/` | the macOS app (P37, not a Cargo crate): Swift packages under `desktop/macos/Packages/`, the design tokens and their generator under `desktop/design/` | node 24.21.0 (mise) with npm `style-dictionary` 5.5.5 (T37.17: DTCG tokens → Swift, asset colours, CSS); SwiftLint 0.65.1 (mise, aqua; T37.18: DS§9 no-literal rules) and SwiftLintPlugins at the same version in each package; `swift-format` from the Xcode toolchain; swift-collections 1.7.1 (T37.16: `OrderedDictionary` timeline store); swift-snapshot-testing 1.19.6 (T37.19: `CoxUI` snapshot tests) |
+| `desktop/windows/` | the Windows app (P58, A127; planned, not a Cargo crate): a WinUI 3 + C# solution over `cox-ffi`'s C# bindings, logic in `cox-app` | planned by A127: .NET SDK 10.0 LTS (10.0.12), Windows App SDK 2.5.1, uniffi-bindgen-cs on uniffi 0.32 (blocked, T58.1); candidates CommunityToolkit.Mvvm 8.4.2, xunit.v3 4.0.1, FlaUI.UIA3 5.0.0, Verify.XunitV3 33.1.5 (`research.md` §10) |
 | `cox-protocol` | `Submission`, `Event`, `Item`, `ToolCall`, `ToolResult`, `Usage`, `Config`, traits `Provider`, `Tool`, `Store`, `Hook` | serde, serde_json, schemars 1, thiserror 2, base64 0.23 (`image`, T40.1) |
 | `cox-core` | `Session` state machine, turn loop, context assembly, cache breakpoints, `Router` (job → tier → model), compaction, budget, subagent spawning | tokio 1, tracing 0.1, base64 0.23 (T37.6: attached text files) |
 | `cox-models` | the model catalog: id → context window, max output, efforts, capabilities, price; built-in rows < config < user `prices.toml` (T30.24). Pure: parses embedded or caller-supplied strings only | serde, thiserror, figment |
@@ -143,6 +187,8 @@ Deferred to **v0.2+** (not rejected): LSP client (diagnostics into context); Gem
 | `cox-plugin-sdk` (`plugins/sdk`, the separate guest workspace, never a `crates/*` member) | the Rust guest SDK (T33.27): typed wrappers for every PL§4 export and `cox:host/v1` host function, the `register!` macro, and the wire (`{"Ok"\|"Err"}` host replies) that other-language guests copy; builds for `wasm32-unknown-unknown` | extism-pdk 1.4.1 (`default-features = false`: no extism `http`, no msgpack), cox-plugin-api (path) |
 | `cox-voice` | push-to-talk dictation (P54, A123): `Transcriber` (whisper.cpp through `whisper-rs`, model loaded once), `Recorder` (default input device, mono, resampled to 16 kHz, capped length), and the `Dictation` impl the TUI receives. Its own crate under D1: a heavy C++ build and platform audio. Behind `crates/cox`'s `voice` feature, off by default; audio never leaves the process | whisper-rs 0.16.0 (Unlicense; whisper.cpp MIT; cmake), cpal 0.18.2 (Apache-2.0), rubato 5.0.0 (MIT OR Apache-2.0) |
 | `cox-cursor-cloud` | the Cursor Cloud Agents API client (P56, A123; planned, blocked on the creator's terms go-ahead): hand-written wire types (A40 step 3, never generated from or copied out of Cursor's unlicensed OpenAPI file), create/run/stream/cancel/usage. The one place a socket to `api.cursor.com` opens; not a `Provider`; the host driver that maps runs to task events lives in `cox-session` | cox-provider-http (reqwest, eventsource-stream), serde; no new dependency |
+
+Planned by A127 (not used yet; `toolchain.md` gets each row when its card lands): `cox-ffi` adds `cdylib` to its crate types for the Windows app (T58.1); process-wrap 10.0.1 (Apache-2.0 OR MIT; job objects on Windows, process groups on Unix) in `cox-ext`, `cox-session`, `cox-tools`, `cox-app` and `crates/cox`, pending the creator's approval (A127 open question 5; T57.5); portable-pty 0.9 (already a workspace dependency) in `cox-tools` for the Windows `bash` (T57.8); the `desktop/windows/` row above.
 
 Dev-deps (workspace): insta 1.48, proptest 1.11, wiremock 0.6, rstest 0.26, assert_cmd 2, predicates 3, assert_fs, tempfile 3, pretty_assertions, trycmd 1.2 (`cox run -p` output fixtures, P48), vt100 0.16, portable-pty 0.9, libfuzzer-sys 0.4 (fuzz crate only); tools: cargo-nextest, cargo-deny, cargo-audit, cargo-insta, cargo-dist, cargo-fuzz (nightly job only).
 
@@ -1568,6 +1614,296 @@ Check: the recorded fixture replays through T56.8's test unchanged; the script's
 Done when: the fixture is committed and the replay passes.
 Out of scope: any automated or scheduled live call.
 
+### P57 — Windows build of the core (goal: the workspace builds and its tests run on Windows, and `cox` runs there under D7's rule — no sandbox, a loud warning, `on-request` forced)
+
+Rationale in §6 A127. Evidence: `research.md` §10 (R10.n). P58's desktop client stands on this phase.
+
+Every card in this phase:
+- leaves Unix behaviour unchanged: Unix code moves behind `cfg(unix)`, the Windows path is `cfg(windows)`, and a Unix test that passed before still passes;
+- adds no Windows sandbox backend: that stays deferred (A123 (2), `docs/design/v0.3-windows-sandbox.md`), and nothing relaxes D7's forced prompts;
+- keeps A49 on Windows: no test reads or writes the Windows Credential Manager;
+- is split at claim time when it exceeds 200 LOC or 3 files;
+- has no benchmark or measurement card: none is planned for P57 or P58.
+
+A new dependency in this phase (process-wrap, T57.5) needs the creator's approval (A127 open question 5) and its §1.1 and `toolchain.md` rows in the same change.
+
+#### T57.1 Windows CI job: `cargo check` over a growing crate list
+
+Depends: — · Size: ~60 · Files: `.github/workflows/ci.yml`, `justfile`
+Goal: a `windows` job on `windows-latest` (Windows Server 2025, R10.6.2) that runs `just windows-check`: `cargo check` for the crates that already build on Windows (R10.1.10), listed once in the `justfile`. Each later P57 card adds its crates to the list in the same change. The job is required for a merge to `main` only when T57.11 lands. Whether mise and `.github/actions/rust` run on a Windows runner is unverified (R10.8); this card settles it or adds the Windows setup step.
+Check: the job is green on the branch; `just windows-check` lists its crates in one place; `mise exec -- cargo check --workspace` on macOS is unchanged.
+
+#### T57.2 The shell for `bash`, `!` and hooks on Windows
+
+Depends: the creator's answer to A127 open question 2 · Size: ~180 · Files: `crates/cox-tools/src/bash/shell.rs` (new), `crates/cox-tools/src/bash/mod.rs`, `crates/cox-tools/src/bash/classify.rs`
+Goal: on Windows, resolve the shell the creator picks. The options, with evidence: (a) Git Bash when present, else PowerShell (Claude Code, R10.5.2); (b) `pwsh`, then Windows PowerShell, then `cmd` (Codex, R10.5.1); (c) Git Bash required, `cox doctor` fails without it. The lookup goes through `PATH` on Windows (today it is `SHELL_DIRS` only, R10.1.5) and is injected in tests. The new module's `//!` header records the choice and its consequences: the `bash` tool description names the shell in use; the risk classifier parses bash with tree-sitter, so a PowerShell or `cmd` command it cannot parse is classified as unknown and asks; `Bash(...)` permission rules match the command text as today. The same resolution serves `!` and hooks.
+Check: `mise exec -- cargo nextest run -p cox-tools windows_shell_resolution_follows_the_chosen_order unparsed_powershell_command_asks` (the resolution test takes an injected lookup, so it runs on every host).
+
+#### T57.3 D7 as code: no sandbox backend forces `on-request` and warns
+
+Depends: — · Size: ~120 · Files: `crates/cox-session/src/sandbox.rs`, `crates/cox-session/src/lib.rs`, `crates/cox-sandbox/src/sandbox/mod.rs` (doc comment)
+Goal: D7's Windows rule exists only as a doc comment on `cox_sandbox::sandbox::backend` today; no caller forces anything (R10.1.9, ledger #42). Add one pure function in `cox-session` that takes the detected backend and the configured `ApprovalPolicy` and returns the effective policy plus a `Level::Security` notice; `open_with_keys` applies it, so the TUI, `run -p`, ACP and the desktop apps all get it. With no backend, `on-failure` (which runs without asking) becomes `on-request`. Whether `untrusted` and `never` (both stricter) stay or also become `on-request` is A127 open question 6; until the creator answers, the card keeps them. The notice is emitted on every session open, not once per install. The same path applies on any host without a backend, so it is tested on macOS and Linux with an injected `None`.
+Check: `mise exec -- cargo nextest run -p cox-session no_backend_forces_on_request no_backend_emits_a_security_notice backend_present_keeps_the_configured_policy`.
+
+#### T57.4 `path::confine` on Windows paths
+
+Depends: T57.1 · Size: ~180 · Files: `crates/cox-sandbox/src/path.rs`
+Goal: `confine` is the only guard between a model's path and the disk on Windows (no sandbox), so it must reject every Windows escape: drive-letter and name case (compare case-insensitively), `\\?\` and `\\.\` prefixes (which turn off `..` resolution), UNC paths, reserved device names (`CON`, `NUL`, `COM1`…, also with an extension), alternate data streams (`file:stream`), 8.3 short names and junctions resolving outside the roots (R10.4.6). Unix behaviour is untouched. Pure string cases are tested on every host; junction and short-name cases run in the Windows job only.
+Check: `mise exec -- cargo nextest run -p cox-sandbox confine_rejects_verbatim_prefix confine_rejects_reserved_device_names confine_rejects_alternate_data_streams confine_is_case_insensitive_on_windows confine_rejects_a_junction_out_of_the_root` (the last two under `cfg(windows)`, run by T57.1's job).
+
+#### T57.5 One kill path for process trees: hooks and the session environment
+
+Depends: T57.1; the creator's approval of process-wrap (A127 open question 5) · Size: ~180 · Files: `crates/cox-ext/src/hooks.rs`, `crates/cox-session/src/env.rs`, `crates/cox-ext/Cargo.toml`
+Goal: today a hook and the login-shell probe start in their own process group and time out with `killpg` (R10.1.6). Replace both with process-wrap 10.0.1 (R10.4.3): a process group on Unix, a job object on Windows (`TerminateJobObject` ends the whole tree, R10.4.2), one helper shared by both call sites and by T57.6. The login-shell probe itself (R10.1.7) becomes `cfg(unix)`; on Windows the session uses the process environment as it is (R10.8 notes this is unverified), and the card records what Windows gives. nix drops out of `cox-ext` and `cox-session` on Windows.
+Check: `mise exec -- cargo nextest run -p cox-ext -p cox-session hook_timeout_kills_the_grandchild login_shell_timeout_kills_the_tree`; both crates join `just windows-check`.
+
+#### T57.6 The same kill path for the lsp server, the status line and external agents
+
+Depends: T57.5 · Size: ~120 · Files: `crates/cox-tools/src/lsp/server.rs`, `crates/cox/src/status_line.rs`, `crates/cox-session/src/external_agents.rs`
+Goal: the three remaining `process_group(0)` spawns (R10.1.6) use T57.5's helper, so a Windows child tree dies with its job. External agents still refuse to start with no sandbox backend, as today (R10.1.9); that refusal is kept and its message names D7.
+Check: `mise exec -- cargo nextest run -p cox-tools -p cox-session -p cox lsp_server_shutdown_kills_the_tree status_line_timeout_kills_the_tree external_agent_refuses_without_a_backend`.
+
+#### T57.7 `cox-tools` compiles on Windows
+
+Depends: — · Size: ~80 · Files: `crates/cox-tools/Cargo.toml`, `crates/cox-tools/src/bash/mod.rs`, `crates/cox-tools/src/lib.rs`
+Goal: nix moves to `[target.'cfg(unix)'.dependencies]` in `cox-tools`; the pty, `setsid`, `killpg`, poll and termios code goes behind `cfg(unix)`; on Windows `bash` returns a typed "not available on Windows yet" error until T57.8. Nothing else changes. `cox-tools` joins `just windows-check`.
+Check: T57.1's job passes with `cox-tools` in the list; `mise exec -- cargo nextest run -p cox-tools` on macOS is unchanged.
+
+#### T57.8 `bash` on Windows: ConPTY inside a job object
+
+Depends: T57.2, T57.5, T57.7 · Size: ~200 · Files: `crates/cox-tools/src/bash/windows.rs` (new), `crates/cox-tools/src/bash/mod.rs`, `crates/cox-tools/Cargo.toml`
+Goal: the `cfg(windows)` `bash` runs the T57.2 shell on a ConPTY through portable-pty 0.9 (already in the workspace; `NativePtySystem` is ConPTY on Windows, R10.4.1), with the child in a job object through T57.5's helper so a timeout or cancel ends the whole tree. Output capture, the byte cap, archiving and background shells keep the shared code paths; only spawning, reading and killing differ. No sandbox is applied (D7); T57.3's forced policy asks first.
+Check: in the Windows job, `cargo nextest run -p cox-tools windows_bash_runs_and_captures_output windows_bash_timeout_kills_the_tree windows_bash_background_shell_is_listed_and_killed`.
+
+#### T57.9 `cox-app` and `crates/cox` compile on Windows
+
+Depends: T57.5 · Size: ~100 · Files: `crates/cox-app/src/terminal.rs`, `crates/cox-app/Cargo.toml`, `crates/cox/src/self_update.rs`
+Goal: `cox-app`'s terminal kill path uses T57.5's helper and nix moves to `cfg(unix)`; `self_update`'s `PermissionsExt` becomes `cfg(unix)`; the Unix-only tests (symlinks, file modes; R10.1.10) are marked `cfg(unix)` in the same change or in a sub-card when they exceed the 3 files. `cox-app` and `cox` join `just windows-check`.
+Check: T57.1's job passes with `cox-app` and `cox` in the list; `mise exec -- cargo nextest run -p cox-app -p cox` on macOS is unchanged.
+
+#### T57.10 Home, config and keys on Windows
+
+Depends: T57.9 · Size: ~80 · Files: `crates/cox-config/src/load.rs`, `crates/cox-session/src/doctor.rs`
+Goal: `cox_home()` resolves to `%USERPROFILE%\.cox` when `HOME` is unset (it falls back to `.` if both are, R10.1.8; that fallback becomes an error on Windows). keyring 4.2.0 already stores keys in the Windows Credential Manager (R10.4.5), so no dependency changes. `cox doctor` names the key store as "Windows Credential Manager" and the sandbox as "none (D7): every command asks". No test touches the Credential Manager (A49).
+Check: `mise exec -- cargo nextest run -p cox-config -p cox-session cox_home_uses_userprofile_without_home doctor_names_credential_manager_on_windows doctor_reports_no_sandbox_under_d7` (the lookups injected, so they run on every host).
+
+#### T57.11 Full workspace on Windows: check, clippy and nextest
+
+Depends: T57.4, T57.6, T57.8, T57.9 · Size: ~60 · Files: `.github/workflows/ci.yml`, `justfile`
+Goal: the Windows job runs `cargo clippy --workspace --all-targets -- -D warnings` and `cargo nextest run --workspace` instead of the crate list, and the "minus Windows" matrix override in `ci.yml` (R10.1.1) is removed. A test that cannot run on Windows is `cfg(unix)` with a one-line why, never ignored.
+Check: the Windows job is green on `main`; `just windows-check` is removed or points at the workspace.
+
+#### T57.12 Windows release target in cargo-dist
+
+Depends: T57.11; the creator's answer to A127 open question 4 (architectures) · Size: ~20 · Files: `dist-workspace.toml`, `.github/workflows/release.yml` (regenerated by `dist init`)
+Goal: add `x86_64-pc-windows-msvc` (and `aarch64-pc-windows-msvc` if the creator wants ARM64) and the `powershell` installer to cargo-dist 0.32.0 (R10.1.2, R10.6.1). Signing, publishing and the release itself stay the creator's steps; cargo-dist's Windows signing covers x86_64 only (R10.6.1).
+Check: `dist plan` lists the Windows artifacts; `dist build --artifacts=local --target x86_64-pc-windows-msvc` succeeds in the Windows job.
+
+#### T57.13 End to end: the real binary on Windows
+
+Depends: T57.8, T57.11 · Size: ~150 · Files: `crates/cox/tests/windows_e2e.rs` (new), `crates/cox/tests/scenarios/windows-*.toml` (data)
+Goal: `cox run -p` against a scratch `COX_HOME` and the scripted provider on the Windows runner: one turn that reads, edits and runs a shell command, asserting the D7 security notice, that the command asked under the forced `on-request`, the rollout on disk and a `usage` row. No network, no key.
+Check: in the Windows job, `cargo nextest run -p cox --test windows_e2e`.
+
+**Order.** T57.1, T57.3 and T57.7 start at once; T57.2 waits on the creator. Then T57.4 and T57.5 (after the process-wrap approval) → T57.6, T57.8, T57.9 → T57.10 and T57.11 → T57.12 and T57.13.
+
+### P58 — Windows desktop client, M1 (goal: a WinUI 3 app over `cox-ffi` with the DT§3.1 feature set — sessions, transcript, approvals, review, settings — with no logic re-implemented in C#, every visual built from the same design tokens, and D7's no-sandbox warning always visible)
+
+Rationale in §6 A127. Evidence: `research.md` §10 (R10.n). The macOS client (P37, `docs/design/desktop.md`, DT§n) is the model: same `cox-app` core, same FFI surface, same fixtures. Scope is M1 only (DT§3.1); M2 and M3 (terminal pane, browser pane, pop-out windows, tray and hotkey, ACP host, best-of-N, plugin panels) are an idea in `ideas.md`, not planned. T58.1 is a gate: no other P58 card is claimed before it passes.
+
+Every card in this phase:
+- keeps business logic in Rust (`cox-session`, `cox-app`); C# renders view state and sends intents. C# never spawns a process, reads or writes `~/.cox` or git, or decides a permission (DT goal 1, DT-3); a decision found missing in `cox-app` is moved there first (T58.4);
+- uses tokens only in XAML and C#: no literal colour, size, font, radius or duration outside the generated resource dictionary (T58.8), mirroring DS§9;
+- builds each visual from one control catalogue (T58.3), adding a style or template there rather than a copy;
+- gives every interactive element an `AutomationProperties.Name` (Narrator and T58.29 both depend on it);
+- leaves a test that fails without it (`insta` in Rust, xUnit in C#; UI automation or snapshot per T58.29 and T58.30);
+- is split at claim time when it exceeds 200 LOC or 3 files (manifests, project files, generated bindings, generated XAML, fixtures and snapshots do not count);
+- names any new package in §1.1 and `toolchain.md` in the same change; candidate versions are in §1.1's A127 note (R10.2, R10.7).
+
+Packaging, signing and a Store listing are the creator's steps; T58.28 prepares, it never publishes.
+
+#### T58.1 Gate: C# bindings for `cox-ffi` generate and round-trip
+
+Depends: a uniffi-bindgen-cs release on uniffi 0.32 (PR #176 open, R10.2.2) with async callback interfaces returning `Task<T>` (issue #165 open, R10.2.3); checked 2026-09-29 · Size: ~120 · Files: `crates/cox-ffi/Cargo.toml`, `scripts/desktop/csharp.sh` (new), `desktop/windows/Cox.Core.Tests/RoundTrip.cs` (new)
+Goal: pattern of T33.43 (A55). `cox-ffi` adds `cdylib` to its crate types (C# loads `cox_ffi.dll` through P/Invoke; D1 names only a static library, see A127); `scripts/desktop/csharp.sh` builds it for `x86_64-pc-windows-msvc` and runs the pinned uniffi-bindgen-cs into `desktop/windows/Cox.Core/Generated/`. The version in use is recorded in §1.1 and `toolchain.md`. A test creates an `App` over the scripted provider, opens a session, sends a prompt, receives patches, and implements `AppHost` in C# including one async method. cox-ffi's uniffi 0.32.2 is not changed. If no such release exists by 2026-12-31, bring it back to the creator with the options of A127 open question 1: (a) keep waiting; (b) move `cox-ffi` to uniffi 0.31 (a version change, the creator's call); (c) a fork under `forks/` carrying PR #176 and #166 until upstream releases.
+Check: in the Windows job, `scripts/desktop/csharp.sh && dotnet test desktop/windows/Cox.Core.Tests` passes `App_opens_a_session_and_streams_patches` and `AppHost_async_method_is_awaited`; the generated sources are reproducible (a second run leaves `git diff` empty).
+
+#### T58.2 Design doc for the Windows client
+
+Depends: T58.1 · Size: ~250 lines of prose · Files: `docs/design/desktop-windows.md` (new), `AGENTS.md`, `docs/design/desktop.md` (§1 pointer only)
+Goal: the Windows counterpart of DT, short where DT already decides: the C# project layout and its dependency rules; threading (`DispatcherQueue` for patches, the FFI runtime owned by Rust); how each DT§3.1 feature maps to WinUI controls; the Fluent mapping of the tokens; notifications and badge; packaging options (T58.28); testing (T58.29, T58.30); trust boundaries (DT§10 plus D7's missing sandbox). It proposes D1's new wording (a C# app loading `cox-ffi` as a DLL) for the creator, and answers or lists A127 open questions 3, 4 and 7. `AGENTS.md` names `desktop/windows/`.
+Check: every R10, DT§ and A-number reference resolves to an existing row or section; the creator approves the doc before T58.10.
+
+#### T58.3 Solution layout under `desktop/windows/`
+
+Depends: T58.1 · Size: ~150 · Files: `desktop/windows/Cox.sln` (new), `desktop/windows/Directory.Packages.props` (new), `desktop/windows/global.json` (new); project files per the list below
+Goal: mirror `desktop/macos/Packages` (DT§6): `App` (WinUI 3 entry, window, resources), `Cox.Core` (generated bindings, T58.1), `Cox.Model` (stores, the counterpart of CoxModel), `Cox.UI` (controls catalogue and views), `Cox.Transcript` (the transcript list), `Cox.Platform` (host bridge, notifications, packaging hooks) and `Cox.Tests`. `global.json` pins the .NET SDK (10.0 LTS, R10.2.6); central package versions in `Directory.Packages.props`; `Cox.Model` references no WinUI assembly so its tests run headless. A `desktop-windows` CI job builds the solution and runs `dotnet test`.
+Check: `dotnet build desktop/windows/Cox.sln -c Debug` and `dotnet test desktop/windows/Cox.Tests` in the Windows job; a test asserts `Cox.Model` has no reference to `Microsoft.WindowsAppSDK`.
+
+#### T58.4 Move the decisions still in CoxModel into `cox-app`
+
+Depends: — · Size: an audit (~40 lines in `docs/design/desktop-windows.md` or this card) plus one sub-card per move · Files: see the sub-cards
+Goal: CoxModel is ~5 000 lines of Swift (stores, settings fields, remote hosts, completion, markdown helpers). Anything there that decides rather than renders (validation, ordering, text built from state, settings field rules) would have to be written a second time in C#. List each such piece with its file, and card its move into `cox-app` (with an FFI forwarder, A90) as T58.4.n; the Swift store then calls the forwarder. Pure view state stays in each client.
+Check: the audit list is in the card; each T58.4.n has a `cox-app` test and the macOS package tests still pass (`swift test` in each package under `desktop/macos/Packages`).
+
+#### T58.5 C# client contract, fixture client and the session store
+
+Depends: T58.3 · Size: ~200 · Files: `desktop/windows/Cox.Model/CoreClient.cs` (new), `desktop/windows/Cox.Model/SessionStore.cs` (new), `desktop/windows/Cox.Tests/SessionStoreTests.cs` (new)
+Goal: the counterpart of `CoreClient.swift`: `ICoreClient` / `ISessionClient` over the generated types, a `FixtureCoreClient` that replays `desktop/macos/Fixtures/*.json` (the same files; they move to a shared `desktop/fixtures/` only if the creator asks), and `SessionStore` applying `TimelinePatch`es into an observable block list (CommunityToolkit.Mvvm candidate, R10.7.1).
+Check: `dotnet test desktop/windows/Cox.Tests --filter SessionStore` passes `Replaying_read_and_reply_yields_the_recorded_blocks` and `Patch_replace_keeps_block_identity`.
+
+#### T58.6 The other stores
+
+Depends: T58.5, T58.4 · Size: split at claim time, one sub-card per store · Files: `desktop/windows/Cox.Model/*Store.cs`, their tests
+Goal: sidebar, composer, settings, inspector tabs, search, onboarding and inbox stores, each the counterpart of the CoxModel store of the same name, holding view state only and sending intents.
+Check: one xUnit test per store over the fixture client.
+
+#### T58.7 Live client: `LiveCoreClient`, dispatcher and host bridge
+
+Depends: T58.5 · Size: ~180 · Files: `desktop/windows/Cox.Model/LiveCoreClient.cs` (new), `desktop/windows/Cox.Platform/HostBridge.cs` (new), `desktop/windows/Cox.Tests/LiveCoreClientTests.cs` (new)
+Goal: the real client over `cox-ffi`: patches arrive on the FFI runtime and are posted to the UI thread through `DispatcherQueue`, coalesced per frame; a consumer that stops reading never stalls a turn (DT§4.5; the Rust test already exists). `HostBridge` implements `AppHost`: `open_url` with the DT§10 confirmation for non-`https` schemes, and secrets written through the one path the CLI reads (keyring, the Windows Credential Manager, R10.4.5). The M2 browser methods return "not available".
+Check: `dotnet test --filter LiveCoreClient` passes `Scripted_turn_reaches_the_ui_thread_in_order` and `Non_https_link_asks_before_opening` with the scripted provider build and a scratch `COX_HOME`.
+
+#### T58.8 Design tokens as a XAML resource dictionary
+
+Depends: T58.3 · Size: ~120 · Files: `desktop/design/style-dictionary.config.mjs`, `desktop/design/xaml/format.mjs` (new), `desktop/design/xaml/format.test.mjs` (new); manifest `desktop/design/package.json` (test glob); generated `desktop/windows/App/Tokens.g.xaml`
+Goal: the same DTCG source (`desktop/design/tokens/*.json`) that produces the Swift tokens and `tokens.css` also produces a `ResourceDictionary` with `ThemeDictionaries` for Light, Dark and HighContrast, mapped onto the Fluent theme resources where a token has a Fluent counterpart (accent, surface, stroke, text) so system controls follow. Whether the accent follows the user's Windows accent colour is A127 open question 7. One source of truth: no token is edited in XAML.
+Check: `npm --prefix desktop/design run build` writes `Tokens.g.xaml` and leaves `git diff` empty on a second run; `npm --prefix desktop/design test` runs the formatter test, which asserts every colour token has Light, Dark and HighContrast values.
+
+#### T58.9 Windows Fluent mockups
+
+Depends: T58.8 · Size: ~200 · Files: `desktop/design/mockups/windows.html` (new), `desktop/design/mockups/render.sh`, `desktop/design/mockups/README.md`
+Goal: as T37.44.x did for macOS: one page, screens selected by hash, drawn from `tokens.css` with Fluent structure (title bar with Mica, `NavigationView` sidebar, command bar, `InfoBar` for D7, content dialogs, Segoe UI Variable), covering every DT§3.1 feature plus the D7 banner, in Light, Dark and High Contrast; `render.sh` gains a page option (today it always loads `mockups.html`) and renders them at 2x. The creator approves the mockups before T58.10–T58.27 start; each visual card is then compared with its screen (T58.30, or by eye until then).
+Check: `desktop/design/mockups/render.sh` with the Windows page and its screen ids writes one PNG per screen and mode; the macOS screens still render unchanged; the README lists the Windows screens.
+
+#### T58.10 App shell: window, Mica, navigation
+
+Depends: T58.7, T58.9 · Size: ~180 · Files: `desktop/windows/App/MainWindow.xaml`, `desktop/windows/App/MainWindow.xaml.cs`, `desktop/windows/App/App.xaml`
+Goal: one window per workspace at 1440×900 clamped to the screen (A126 (3)), Mica backdrop on Windows 11 with the solid fallback elsewhere and in High Contrast (R10.3.6), sidebar and content split, title bar showing project and branch.
+Check: T58.29's smoke test opens the window; its size is clamped on a 1280×720 test display.
+
+#### T58.11 Sidebar: projects and sessions
+
+Depends: T58.10, T58.6 · Size: ~180 · Files: `desktop/windows/Cox.UI/Sidebar.xaml`, `.xaml.cs`, a test
+Goal: DT§3.1 "Projects and sessions sidebar" and "Several live sessions at once": "Needs you" and "Running" on top, projects with sessions newest first, switching never stops a session.
+Check: xUnit over the sidebar store; the smoke test switches sessions while one runs.
+
+#### T58.12 Transcript blocks
+
+Depends: T58.10 · Size: split at claim time, one sub-card per block family · Files: `desktop/windows/Cox.Transcript/*`
+Goal: DT§3.1 "Streaming transcript": user, assistant, thinking, tool calls, approvals, questions, notices, compaction and subagent blocks in an `ItemsRepeater` with stable keys from the patch ids, a truncated output expanding in place (lossless rule). No benchmark card (P57's rules).
+Check: per block family, a fixture renders with the expected automation tree.
+
+#### T58.13 Markdown: `StyledDoc` to `RichTextBlock`
+
+Depends: T58.12 · Size: ~180 · Files: `desktop/windows/Cox.Transcript/StyledDocView.cs` (new), a test
+Goal: render the neutral `StyledDoc` that `cox-render` already produces (headings, lists, code with its highlight spans, links shown with their target) into `RichTextBlock` runs; C# parses no markdown.
+Check: `dotnet test --filter StyledDoc` maps every span kind of a fixture doc.
+
+#### T58.14 Composer
+
+Depends: T58.12 · Size: split at claim time · Files: `desktop/windows/Cox.UI/Composer*`
+Goal: DT§3.1 "Composer": multi-line, `@file` and `/command` completion from `cox-app`'s `Completer`, `!` shell mode, paste and drop of images and files, queue while busy.
+Check: xUnit over the composer store; the smoke test sends a prompt.
+
+#### T58.15 Approvals
+
+Depends: T58.12 · Size: ~180 · Files: `desktop/windows/Cox.UI/ApprovalCard.xaml`, `.xaml.cs`, a test
+Goal: DT§3.1 "Approvals": the inline card plus the pinned copy above the composer; allow once, allow for session showing the grant, deny with reason, edit then run; the reason text comes from `cox-app`.
+Check: the smoke test approves the `approve-write` fixture's write.
+
+#### T58.16 Questions (`ask_user`)
+
+Depends: T58.12 · Size: ~120 · Files: `desktop/windows/Cox.UI/QuestionCard.xaml`, `.xaml.cs`, a test
+Goal: DT§3.1 "Questions": options as buttons plus a free-text field.
+Check: xUnit: choosing an option sends the answer intent.
+
+#### T58.17 Permission mode, model and effort controls
+
+Depends: T58.10 · Size: ~150 · Files: `desktop/windows/Cox.UI/SessionToolbar.xaml`, `.xaml.cs`, a test
+Goal: DT§3.1 "Permission mode and model": command-bar controls whose change is echoed as typed state. With no sandbox the mode control shows the forced `on-request` (T57.3) and cannot select a laxer one.
+Check: xUnit: a `StateChanged` patch updates the control; the laxer policy is disabled when the session reports no sandbox.
+
+#### T58.18 Review
+
+Depends: T58.12 · Size: split at claim time · Files: `desktop/windows/Cox.UI/Review*`
+Goal: DT§3.1 "Review": changed files, unified and side-by-side diff from the `cox-render` diff model, revert a file to a checkpoint, comment on a line to send it to the agent.
+Check: xUnit over the review store; a fixture diff renders both layouts.
+
+#### T58.19 Rewind timeline
+
+Depends: T58.12 · Size: ~150 · Files: `desktop/windows/Cox.UI/RewindGutter.xaml`, `.xaml.cs`, a test
+Goal: DT§3.1 "Rewind timeline": marks per turn; restore code, conversation or both; edit and resend a past prompt.
+Check: xUnit: each choice sends the matching `Rewind` intent.
+
+#### T58.20 Inspector
+
+Depends: T58.10 · Size: split into T58.20.1–T58.20.5 at claim time · Files: `desktop/windows/Cox.UI/Inspector*`
+Goal: DT§3.1 "Inspector" tabs: Changes, Plan, Context & Cost, Tasks, Info, each over the data `cox-app` already exposes for the macOS inspector (T37.29.x).
+Check: per tab, an xUnit test over its store.
+
+#### T58.21 Search and command palette
+
+Depends: T58.10 · Size: ~180 · Files: `desktop/windows/Cox.UI/CommandPalette.xaml`, `.xaml.cs`, a test
+Goal: DT§3.1 "Search": a palette over actions, sessions and files plus full-text over past sessions (`rollout_search`); shortcuts Ctrl+K, Ctrl+N and Ctrl+Shift+R, the Windows counterparts of A126 (2).
+Check: xUnit over the palette store; the smoke test opens it with Ctrl+K.
+
+#### T58.22 Settings and MCP servers
+
+Depends: T58.10, T58.4 · Size: split at claim time · Files: `desktop/windows/Cox.UI/Settings*`
+Goal: DT§3.1 "Settings" and "MCP servers": fields generated from `docs/config.jsonschema` through the same `cox-app` field model the macOS app uses; each field shows its source; API keys are written through `HostBridge` (T58.7); MCP status and OAuth login in the browser.
+Check: xUnit: a field's source label comes from `source_of`; a key write never reaches a file under `COX_HOME`.
+
+#### T58.23 Onboarding and doctor
+
+Depends: T58.10 · Size: ~150 · Files: `desktop/windows/Cox.UI/Onboarding.xaml`, `.xaml.cs`, a test
+Goal: DT§3.1 "Onboarding and doctor": pick a folder; the `cox doctor` checks as a checklist, including T57.10's "Windows Credential Manager" and "sandbox: none (D7)" and T57.2's shell.
+Check: xUnit: a failed doctor check shows its fix text.
+
+#### T58.24 Notifications and badge
+
+Depends: T58.7, T58.28 · Size: ~180 · Files: `desktop/windows/Cox.Platform/Notifications.cs` (new), a test
+Goal: DT§3.1 "Notifications" through `AppNotificationManager` (R10.3.4, R10.3.5): turn done with cost, budget warning, and the approval notification with Allow once, Deny and Open (A126 (4)), its arguments carrying the session and request ids; the taskbar badge counts items waiting. Not available when the app runs elevated (R10.3.4): the app says so once. Whether a text box for "deny with reason" and the badge work for the packaging model T58.28 picks is unverified (R10.8) and checked here.
+Check: xUnit: the builder output for an approval has the three buttons and the ids; activating Allow once sends the decision intent.
+
+#### T58.25 D7 no-sandbox banner
+
+Depends: T57.3, T58.10 · Size: ~80 · Files: `desktop/windows/Cox.UI/NoSandboxBanner.xaml`, `.xaml.cs`, a test
+Goal: an `InfoBar` (severity Warning) on every session with no sandbox, driven by T57.3's `Level::Security` notice, not by a C# platform check: "No sandbox on Windows: every command asks first (D7)". It cannot be dismissed for good; it collapses to a toolbar badge after the first turn.
+Check: xUnit: a session whose notice list holds the D7 notice shows the banner; one without does not.
+
+#### T58.26 Resume, fork and hand off
+
+Depends: T58.11, T58.12 · Size: ~150 · Files: `desktop/windows/Cox.UI/SessionActions.cs` (new), a test
+Goal: DT§3.1 "Resume and fork": open any past session, fork at a turn, hand off with an objective.
+Check: xUnit: each action sends its intent; the smoke test resumes a fixture session.
+
+#### T58.27 New session: in place or a new worktree
+
+Depends: T58.11 · Size: ~120 · Files: `desktop/windows/Cox.UI/NewSessionDialog.xaml`, `.xaml.cs`, a test
+Goal: DT§3.1 "Worktree per session": the choice in a `ContentDialog`; the title bar shows the branch; worktree creation stays in `cox-app`.
+Check: xUnit: "new worktree" sends the worktree intent and no C# git call exists (a test scans `Cox.*` for `Process.Start`).
+
+#### T58.28 Packaging
+
+Depends: T58.10; the creator's answer to A127 open question 3 · Size: ~100 · Files: `desktop/windows/App/App.csproj`, `desktop/windows/App/Package.appxmanifest` (if packaged), `scripts/desktop/windows-package.ps1` (new)
+Goal: build the app in the model the creator picks (R10.3.1–R10.3.3): (a) MSIX, with the container's file-system and registry virtualization turned off so the app sees the real `~/.cox` and repositories; (b) packaged with external location (identity for notifications, own installer); (c) unpackaged, self-contained. The bundled `cox.exe` ships next to the app, as `Cox.app/Contents/Helpers/cox` does on macOS (DT§7). Signing, a Store listing and publishing are the creator's steps.
+Check: the Windows job produces the package; installing it on the runner and launching passes T58.29's smoke test.
+
+#### T58.29 UI automation smoke test
+
+Depends: T58.10 · Size: ~180 · Files: `desktop/windows/Cox.UITests/Smoke.cs` (new), `desktop/windows/Cox.UITests/Cox.UITests.csproj` (new)
+Goal: FlaUI over UIA3 (R10.7.1, R10.7.2; WinAppDriver is unmaintained, R10.7.3) drives the app against the scripted provider and a scratch `COX_HOME`: open a project, send a prompt, see the D7 banner, approve, review, rewind (the XCUITest smoke path of DT§8). Each later card extends it.
+Check: `dotnet test desktop/windows/Cox.UITests` in the Windows job.
+
+#### T58.30 Snapshot spike: WinUI controls to PNG
+
+Depends: T58.12 · Size: ~120 · Files: `desktop/windows/Cox.Tests/Snapshots.cs` (new), `desktop/windows/Cox.Tests/Cox.Tests.csproj`
+Goal: whether a WinUI control can be rendered to PNG in a test through `RenderTargetBitmap` and compared with Verify (R10.7.1; unverified, R10.8), in Light, Dark and High Contrast. If yes, visual cards add snapshots and the diff against T58.9's mockups runs through the existing `npm run diff` (T37.44.4); if no, the card records why and visual checks stay by eye plus T58.29.
+Check: the spike's test passes or the card records the failure with its cause.
+
+**Order.** T58.1 (gate) and T58.4 first; then T58.2, T58.3 → T58.5, T58.8 → T58.7, T58.9 → the creator approves the mockups → T58.10 → the feature cards T58.11–T58.27 in parallel, T58.28 after its open question, T58.29 with T58.10, T58.30 with T58.12.
+
 ## 4. Definition of done for v0.1
 
 1. `cox` runs a multi-turn coding session against Anthropic, OpenAI Responses and a local Ollama model with the same tool set, with the sandbox on, on macOS and Linux.
@@ -1755,6 +2091,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A124 T52.1, P52 — by the creator (2026-09-29), approving DT§3.3.1 as written plus two decisions. (1) An external ACP agent always gets network inside its sandbox, whatever `[sandbox] network` says; file limits stay, and an `[external_agents.<name>]` entry may add writable directories for the agent's own state, which a project config may not set. Why: none of the agents can reach its API otherwise. (2) Claude runs as `claude-agent-acp --hide-claude-auth` with `ANTHROPIC_API_KEY` only and is labelled "Claude Agent", never "Claude Code" and never a claude.ai login. Why: Anthropic's terms and branding rules for third-party clients (`research.md` §9.6). Effect: T52.2's schema gains the writable-directory list and its project-config guard; mockup 27 and the P52 goal say "Claude Agent". No §0 decision changes.
 - A125 T37.44.3 — by the creator (2026-09-29), replacing A118: the Figma file uses stand-in fonts (Inter for SF Pro, Roboto Mono for SF Mono); SF Pro and SF Mono stay in the HTML mockups, CoxUI and DESIGN.md. Why: with both fonts installed locally and Figma and `figma_agent` restarted, five `use_figma` probes found SF Mono absent and SF Pro listed but flagged `hasMissingFont` (115 of 135 text layers on screen 28 drew nothing); shared fonts need an Organization or Enterprise plan (https://help.figma.com/hc/en-us/articles/360039956774, checked 2026-09-29), and the account has Starter and Pro teams only. Effect: T37.44.3 is rewritten; metric comparisons (T37.44.2, T37.44.11) use the HTML renders, not Figma.
 - A126 T37.44.11 follow-ups — by the creator (2026-09-29): (1) the review screen stays as DT§5.4 has it (inspector kept); mockup 08 changes, not the app (T37.44.12). (2) The command palette of mockup 12 and ⌘K, ⌘N, ⌘⇧R are built (T37.44.13). (3) New session windows open at 1440×900, clamped to the screen (T37.44.14). (4) The approval notification has Allow once, Deny and Open as in mockup 23; DT§5.6 changes (T37.44.15). (5) An external ACP agent's question waits 15 minutes (`ASK_WAIT`, T52.5) and is then cancelled. Also carded from the verification passes: the shared walker skips `.git/` (T37.44.16) and durations format per locale (T37.44.17). Why: the running app was compared with the mockups end to end (T37.44.11), and these were the differences only the creator could decide or that were bugs outside that card.
+- A127 §1.1 (planned `cox-ffi` `cdylib`, planned `desktop/windows/` row, the "Planned by A127" note), §3 (new P57: T57.1–T57.13, P58: T58.1–T58.30) — a Windows build of the core and a Windows desktop client, by the creator (2026-09-29). (1) **UI stack: WinUI 3 + C# over the in-process Rust core through `cox-ffi` (UniFFI).** C# bindings are generated by uniffi-bindgen-cs (NordSecurity). All logic stays in Rust (`cox-app`), as in the Swift client (DT goal 1: no logic re-implemented in the UI). (2) **Scope: M1 parity only**, the DT§3.1 feature set. M2 and M3 (terminal pane, browser pane, pop-out windows, tray and hotkey, ACP host, best-of-N, plugin panels) are not in these phases and not in `roadmap.md`; `ideas.md` holds them as one line. (3) **Sandbox: as D7 says.** On Windows there is no sandbox, a loud warning, and `on-request` forced; the Windows sandbox stays deferred (A123 (2), `docs/design/v0.3-windows-sandbox.md`); the UI shows the warning (T58.25). This supersedes DT§1 "Non-goals (v1): Windows/Linux GUI" for Windows (Linux GUI stays a non-goal); `docs/design/desktop.md` §1 carries a pointer. It is also the "Windows release target first, as its own decision" that A123 (2) asked for: T57.12 adds the target, the release stays the creator's step. Facts behind the cards, checked 2026-09-29 (`research.md` §10, ledger #41–#44): uniffi-bindgen-cs's latest release `v0.11.0+v0.31.0` is on uniffi 0.31, cox-ffi pins 0.32.2, the 0.32 upgrade is open PR #176 and async callback interfaces are broken (issue #165), so T58.1 is a gate like T33.43; the current Windows App SDK is 2.5.1 (the 1.8 line's servicing ended 2026-09-24); .NET 10 is the LTS; D7's forced `on-request` is only a doc comment today (T57.3); keyring 4.2.0 and portable-pty 0.9.0 already have Windows backends; `nix` and process groups are the blockers. D1 names one macOS app linking `cox-ffi` as a static library; a C# app loads it as a DLL, so T58.1 adds `cdylib` and T58.2 proposes D1's new wording. Open questions for the creator: (1) **Bindings way out** if T58.1's gate is not met by 2026-12-31: wait, move `cox-ffi` to uniffi 0.31 (a version change), or carry a fork under `forks/`. (2) **Shell on Windows** for `bash`, `!` and hooks (T57.2): Git Bash else PowerShell (Claude Code), `pwsh` → Windows PowerShell → `cmd` (Codex), or Git Bash required. (3) **Packaging** (T58.28): MSIX with virtualization off, packaged with external location, or unpackaged self-contained. (4) **Minimum Windows version and architectures**: Windows 10 or 11 only (Mica needs Windows 11, with a solid fallback), x64 only or also ARM64 (cargo-dist's Windows signing covers x64 only). (5) **process-wrap 10.0.1** as the one kill path for process trees (T57.5; not in `rust.md`; alternatives win32job or raw `windows-sys`). (6) **Which policies the D7 rule forces**: only `on-failure` becomes `on-request`, or also `untrusted` and `never` (T57.3 keeps the stricter two until answered). (7) **Accent colour**: the cox token accent, or the user's Windows accent (T58.8). Why: the creator wants the desktop client on Windows with the same core and no second implementation of its logic. Effect: P57 and P58; no existing card changes; P58's feature cards wait on T58.1 and on the creator's approval of T58.9's mockups.
 
 ## 7. Risk register
 

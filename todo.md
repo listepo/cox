@@ -47,6 +47,49 @@
 - T56.8. Offline end-to-end over hand-written fixtures
 - T56.9. Docs: cloud agents for users and in EA
 - T56.10. Optional: live check against a real Cursor account (needs the creator's key)
+- T57.1. Windows CI job: `cargo check` over a growing crate list
+- T57.2. The shell for `bash`, `!` and hooks on Windows
+- T57.3. D7 as code: no sandbox backend forces `on-request` and warns
+- T57.4. `path::confine` on Windows paths
+- T57.5. One kill path for process trees: hooks and the session environment
+- T57.6. The same kill path for the lsp server, the status line and external agents
+- T57.7. `cox-tools` compiles on Windows
+- T57.8. `bash` on Windows: ConPTY inside a job object
+- T57.9. `cox-app` and `crates/cox` compile on Windows
+- T57.10. Home, config and keys on Windows
+- T57.11. Full workspace on Windows: check, clippy and nextest
+- T57.12. Windows release target in cargo-dist
+- T57.13. End to end: the real binary on Windows
+- T58.1. Gate: C# bindings for `cox-ffi` generate and round-trip
+- T58.2. Design doc for the Windows client
+- T58.3. Solution layout under `desktop/windows/`
+- T58.4. Move the decisions still in CoxModel into `cox-app`
+- T58.5. C# client contract, fixture client and the session store
+- T58.6. The other stores
+- T58.7. Live client: `LiveCoreClient`, dispatcher and host bridge
+- T58.8. Design tokens as a XAML resource dictionary
+- T58.9. Windows Fluent mockups
+- T58.10. App shell: window, Mica, navigation
+- T58.11. Sidebar: projects and sessions
+- T58.12. Transcript blocks
+- T58.13. Markdown: `StyledDoc` to `RichTextBlock`
+- T58.14. Composer
+- T58.15. Approvals
+- T58.16. Questions (`ask_user`)
+- T58.17. Permission mode, model and effort controls
+- T58.18. Review
+- T58.19. Rewind timeline
+- T58.20. Inspector
+- T58.21. Search and command palette
+- T58.22. Settings and MCP servers
+- T58.23. Onboarding and doctor
+- T58.24. Notifications and badge
+- T58.25. D7 no-sandbox banner
+- T58.26. Resume, fork and hand off
+- T58.27. New session: in place or a new worktree
+- T58.28. Packaging
+- T58.29. UI automation smoke test
+- T58.30. Snapshot spike: WinUI controls to PNG
 - T37.44.13. Command palette and its shortcuts
 - T37.44.14. New session windows open at 1440×900
 - T37.44.15. Approval notification: Allow once, Deny, Open

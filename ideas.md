@@ -24,3 +24,4 @@ Not approved yet. Move nothing from here into `plan.md` or `roadmap.md` without 
 - `cox run -p --output-format stream-json` stores the generated title but never prints `TitleSet`, which arrives after `TurnDone`; the run could wait for it or print it when it comes.
 - `subagent::summarize` and `memory_extract` still build their own one-shot requests; they could move onto `Session::side_call`.
 - The UI preview sample data (`PreviewState+ModelPopover.swift`) lists efforts without `medium`.
+- Windows desktop M2/M3 (terminal, browser, tray, ACP, best-of-N, plugin panels)
