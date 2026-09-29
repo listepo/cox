@@ -1,0 +1,19 @@
+[package]
+name = "cox-i18n"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+fluent-bundle = { workspace = true }
+fluent-langneg = { workspace = true }
+unic-langid = { workspace = true }
+sys-locale = { workspace = true }
+# Only the `ftl-export` bin reads the AST; the runtime goes through fluent-bundle.
+fluent-syntax = { workspace = true }
+thiserror = { workspace = true }
+
+[[bin]]
+name = "ftl-export"
+path = "src/bin/ftl-export.rs"

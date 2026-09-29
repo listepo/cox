@@ -64,6 +64,9 @@ Programs the project uses and the direct packages from its manifests.
 | extism | local (default features off) | https://github.com/extism/extism | cox-plugin: the WASM plugin host (A52, T33.3); no ureq, no URL or file module loading |
 | extism-pdk | local, `plugins/` guest workspace (default features off) | https://github.com/extism/rust-pdk | cox-plugin-sdk: the official Rust PDK the guest SDK wraps (exports, `cox:host/v1` imports, extism memory; T33.27) |
 | figment | local | https://crates.io/crates/figment | Config loading |
+| fluent-bundle | local | https://crates.io/crates/fluent-bundle | cox-i18n: Fluent message formatting and CLDR plural rules (`docs/i18n.md`) |
+| fluent-langneg | local | https://crates.io/crates/fluent-langneg | cox-i18n: locale negotiation; 0.13, the version fluent-bundle 0.16 uses |
+| fluent-syntax | local | https://crates.io/crates/fluent-syntax | cox-i18n: the Fluent AST `ftl-export` lowers to `.strings`/`.stringsdict`/`.resw` |
 | futures | local | https://crates.io/crates/futures | Rust dependency |
 | globset | local | https://crates.io/crates/globset | Rust dependency |
 | grep-regex | local | https://crates.io/crates/grep-regex | T3.3: plan.md names "grep-regex + grep-searcher sinks"; grep-regex (the RegexMatcher grep-searcher needs) was missing from this list. |
@@ -102,6 +105,7 @@ Programs the project uses and the direct packages from its manifests.
 | shlex | local | https://crates.io/crates/shlex | Rust dependency |
 | similar | local | https://crates.io/crates/similar | Rust dependency |
 | syntect | local | https://crates.io/crates/syntect | Rust dependency Lives in `cox-render` (T32.2). |
+| sys-locale | local | https://crates.io/crates/sys-locale | cox-i18n: the OS UI languages when the env names none |
 | two-face | local | https://crates.io/crates/two-face | T24.3: extended syntax definitions Lives in `cox-render` (T32.2). |
 | terminal-colorsaurus | local | https://crates.io/crates/terminal-colorsaurus | T22.6: OSC 11 background colour query for `tui.theme = "auto"` Lives in `cox-render` (T32.2). |
 | tempfile | local | https://crates.io/crates/tempfile | Rust dependency |
@@ -123,6 +127,7 @@ Programs the project uses and the direct packages from its manifests.
 | tui-textarea-2 | local | https://crates.io/crates/tui-textarea-2 | Rust dependency |
 | typify | local (build-dependency) | https://github.com/oxidecomputer/typify | cox-provider `build.rs`: Anthropic request and stream types generated from the vendored `schema/anthropic-openapi.json` (T30.10, T30.12) |
 | ulid | local | https://crates.io/crates/ulid | Identifiers |
+| unic-langid | local | https://crates.io/crates/unic-langid | cox-i18n: language identifiers for fluent-bundle and fluent-langneg |
 | unicode-width | local | https://crates.io/crates/unicode-width | Rust dependency |
 | vt100 | local | https://crates.io/crates/vt100 | Rust dependency |
 | wasmtime | local (`anyhow` feature only) | https://github.com/bytecodealliance/wasmtime | cox-plugin: the runtime under extism; declared only to enable the `anyhow` feature extism 1.30.0 needs with its default features off (T33.3) |
