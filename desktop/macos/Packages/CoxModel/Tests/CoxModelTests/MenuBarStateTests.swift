@@ -10,15 +10,16 @@ import Testing
   let approval = InboxItem(
     session: "s1", source: nil,
     need: .approval(call: "c1", tool: "bash", subject: "git push", why: .risk(risk: .exec)),
-    expired: false, seq: 1)
+    expired: false, seq: 1, title: "bash git push", subtitle: "approval waiting", status: .waiting)
   let question = InboxItem(
     session: "s2", source: nil, need: .question(call: "c2", question: "Retry?", options: []),
-    expired: false, seq: 2)
+    expired: false, seq: 2, title: "Retry?", subtitle: "question waiting", status: .waiting)
   let expired = InboxItem(
     session: "s3", source: nil, need: .question(call: "c3", question: "Old?", options: []),
-    expired: true, seq: 3)
+    expired: true, seq: 3, title: "Old?", subtitle: "expired", status: .idle)
   let news = InboxItem(
-    session: "s1", source: nil, need: .failed(text: "boom"), expired: false, seq: 4)
+    session: "s1", source: nil, need: .failed(text: "boom"), expired: false, seq: 4,
+    title: "boom", subtitle: "turn failed", status: .error)
   let state = MenuBarState(
     inbox: [approval, question, expired, news], running: [], today: "$1.00 · 2 sessions"
   ) { $0 == "s1" ? "Migrate auth" : nil }

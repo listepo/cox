@@ -18,7 +18,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3P7BAB0V70XWKGYW8WXEDVK",
+          "id": "turn:01M3P8D2FDCET2GQF7VZBFF2T1",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -41,7 +41,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3P7BAB0SRA6QKWMQGH37GMJ",
+          "id": "item:01M3P8D2FDFG4TJ436CN0DN4ZP",
           "turn": 1,
           "kind": {
             "type": "user",
@@ -49,12 +49,12 @@
             "attachments": []
           }
         },
-        "after": "turn:01M3P7BAB0V70XWKGYW8WXEDVK"
+        "after": "turn:01M3P8D2FDCET2GQF7VZBFF2T1"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3P7BAB6HM8GBFKFVJKTPPPK",
+          "id": "item:01M3P8D2FRD2SHBJSHCGWQ04NG",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -78,7 +78,7 @@
             }
           }
         },
-        "after": "item:01M3P7BAB0SRA6QKWMQGH37GMJ"
+        "after": "item:01M3P8D2FDFG4TJ436CN0DN4ZP"
       },
       {
         "op": "usage",
@@ -94,7 +94,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3P7BAB0V70XWKGYW8WXEDVK",
+            "turn": "01M3P8D2FDCET2GQF7VZBFF2T1",
             "tally": {
               "sent": 3710,
               "received": 16,
@@ -207,7 +207,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3P7BAB6ES78EY6B9SP24CST",
+          "id": "call:01M3P8D2FS1Q5XFMQ1M2D960W6",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -222,48 +222,18 @@
             "duration_ms": 0
           }
         },
-        "after": "item:01M3P7BAB6HM8GBFKFVJKTPPPK"
-      },
-      {
-        "op": "upsert",
-        "block": {
-          "id": "approval:01M3P7BAB6ES78EY6B9SP24CST",
-          "turn": 1,
-          "kind": {
-            "type": "approval",
-            "call": "01M3P7BAB6ES78EY6B9SP24CST",
-            "tool": "write",
-            "summary": "summary.md",
-            "input": {
-              "content": "hello\n",
-              "path": "summary.md"
-            },
-            "grants": [
-              "summary.md"
-            ],
-            "why": {
-              "type": "risk",
-              "risk": "write"
-            },
-            "source": {
-              "session": "01M3P7BA5ZRRGV7SXT7SXPWRWG"
-            },
-            "decision": null,
-            "by": null
-          }
-        },
-        "after": "call:01M3P7BAB6ES78EY6B9SP24CST"
+        "after": "item:01M3P8D2FRD2SHBJSHCGWQ04NG"
       }
     ],
     [
       {
         "op": "upsert",
         "block": {
-          "id": "approval:01M3P7BAB6ES78EY6B9SP24CST",
+          "id": "approval:01M3P8D2FS1Q5XFMQ1M2D960W6",
           "turn": 1,
           "kind": {
             "type": "approval",
-            "call": "01M3P7BAB6ES78EY6B9SP24CST",
+            "call": "01M3P8D2FS1Q5XFMQ1M2D960W6",
             "tool": "write",
             "summary": "summary.md",
             "input": {
@@ -278,7 +248,39 @@
               "risk": "write"
             },
             "source": {
-              "session": "01M3P7BA5ZRRGV7SXT7SXPWRWG"
+              "session": "01M3P8D107HCR0YF56AWHBH8YH"
+            },
+            "decision": null,
+            "by": null
+          }
+        },
+        "after": "call:01M3P8D2FS1Q5XFMQ1M2D960W6"
+      }
+    ],
+    [
+      {
+        "op": "upsert",
+        "block": {
+          "id": "approval:01M3P8D2FS1Q5XFMQ1M2D960W6",
+          "turn": 1,
+          "kind": {
+            "type": "approval",
+            "call": "01M3P8D2FS1Q5XFMQ1M2D960W6",
+            "tool": "write",
+            "summary": "summary.md",
+            "input": {
+              "content": "hello\n",
+              "path": "summary.md"
+            },
+            "grants": [
+              "summary.md"
+            ],
+            "why": {
+              "type": "risk",
+              "risk": "write"
+            },
+            "source": {
+              "session": "01M3P8D107HCR0YF56AWHBH8YH"
             },
             "decision": {
               "type": "allow"
@@ -286,7 +288,7 @@
             "by": "user"
           }
         },
-        "after": "call:01M3P7BAB6ES78EY6B9SP24CST"
+        "after": "call:01M3P8D2FS1Q5XFMQ1M2D960W6"
       },
       {
         "op": "upsert",
@@ -300,12 +302,12 @@
             ]
           }
         },
-        "after": "approval:01M3P7BAB6ES78EY6B9SP24CST"
+        "after": "approval:01M3P8D2FS1Q5XFMQ1M2D960W6"
       },
       {
         "op": "upsert",
         "block": {
-          "id": "call:01M3P7BAB6ES78EY6B9SP24CST",
+          "id": "call:01M3P8D2FS1Q5XFMQ1M2D960W6",
           "turn": 1,
           "kind": {
             "type": "tool",
@@ -316,21 +318,21 @@
             "state": "done",
             "tail": "wrote /project/summary.md (6 bytes)",
             "archive": {
-              "id": "01M3P7BABP7XRP5F39E4BQABNB",
+              "id": "01M3P8D2GQWD1DAQ0N803W0TM8",
               "bytes": 102
             },
             "diff": null,
-            "duration_ms": 1
+            "duration_ms": 4
           }
         },
-        "after": "item:01M3P7BAB6HM8GBFKFVJKTPPPK"
+        "after": "item:01M3P8D2FRD2SHBJSHCGWQ04NG"
       }
     ],
     [
       {
         "op": "upsert",
         "block": {
-          "id": "item:01M3P7BAC4XEP0V622XDZJ1DCJ",
+          "id": "item:01M3P8D2H9PMP0A6RBHRW36JVR",
           "turn": 1,
           "kind": {
             "type": "assistant",
@@ -366,7 +368,7 @@
       {
         "op": "upsert",
         "block": {
-          "id": "turn:01M3P7BAB0V70XWKGYW8WXEDVK",
+          "id": "turn:01M3P8D2FDCET2GQF7VZBFF2T1",
           "turn": 1,
           "kind": {
             "type": "turn_meta",
@@ -402,7 +404,7 @@
             "estimated": true
           },
           "turn": {
-            "turn": "01M3P7BAB0V70XWKGYW8WXEDVK",
+            "turn": "01M3P8D2FDCET2GQF7VZBFF2T1",
             "tally": {
               "sent": 7465,
               "received": 21,
@@ -518,14 +520,14 @@
     {
       "batch": 1,
       "item": {
-        "session": "01M3P7BA5ZRRGV7SXT7SXPWRWG",
+        "session": "01M3P8D107HCR0YF56AWHBH8YH",
         "source": {
-          "session": "01M3P7BA5ZRRGV7SXT7SXPWRWG"
+          "session": "01M3P8D107HCR0YF56AWHBH8YH"
         },
         "need": {
           "type": "approval",
           "call": {
-            "id": "01M3P7BAB6ES78EY6B9SP24CST",
+            "id": "01M3P8D2FS1Q5XFMQ1M2D960W6",
             "name": "write",
             "input": {
               "content": "hello\n",
@@ -540,14 +542,17 @@
           }
         },
         "expired": false,
-        "seq": 1
+        "seq": 1,
+        "title": "write summary.md",
+        "subtitle": "approval waiting",
+        "status": "waiting"
       },
       "badge": 1
     }
   ],
   "snapshot": [
     {
-      "id": "turn:01M3P7BAB0V70XWKGYW8WXEDVK",
+      "id": "turn:01M3P8D2FDCET2GQF7VZBFF2T1",
       "turn": 1,
       "kind": {
         "type": "turn_meta",
@@ -568,7 +573,7 @@
       }
     },
     {
-      "id": "item:01M3P7BAB0SRA6QKWMQGH37GMJ",
+      "id": "item:01M3P8D2FDFG4TJ436CN0DN4ZP",
       "turn": 1,
       "kind": {
         "type": "user",
@@ -577,7 +582,7 @@
       }
     },
     {
-      "id": "item:01M3P7BAB6HM8GBFKFVJKTPPPK",
+      "id": "item:01M3P8D2FRD2SHBJSHCGWQ04NG",
       "turn": 1,
       "kind": {
         "type": "assistant",
@@ -602,7 +607,7 @@
       }
     },
     {
-      "id": "call:01M3P7BAB6ES78EY6B9SP24CST",
+      "id": "call:01M3P8D2FS1Q5XFMQ1M2D960W6",
       "turn": 1,
       "kind": {
         "type": "tool",
@@ -613,19 +618,19 @@
         "state": "done",
         "tail": "wrote /project/summary.md (6 bytes)",
         "archive": {
-          "id": "01M3P7BABP7XRP5F39E4BQABNB",
+          "id": "01M3P8D2GQWD1DAQ0N803W0TM8",
           "bytes": 102
         },
         "diff": null,
-        "duration_ms": 1
+        "duration_ms": 4
       }
     },
     {
-      "id": "approval:01M3P7BAB6ES78EY6B9SP24CST",
+      "id": "approval:01M3P8D2FS1Q5XFMQ1M2D960W6",
       "turn": 1,
       "kind": {
         "type": "approval",
-        "call": "01M3P7BAB6ES78EY6B9SP24CST",
+        "call": "01M3P8D2FS1Q5XFMQ1M2D960W6",
         "tool": "write",
         "summary": "summary.md",
         "input": {
@@ -640,7 +645,7 @@
           "risk": "write"
         },
         "source": {
-          "session": "01M3P7BA5ZRRGV7SXT7SXPWRWG"
+          "session": "01M3P8D107HCR0YF56AWHBH8YH"
         },
         "decision": {
           "type": "allow"
@@ -659,7 +664,7 @@
       }
     },
     {
-      "id": "item:01M3P7BAC4XEP0V622XDZJ1DCJ",
+      "id": "item:01M3P8D2H9PMP0A6RBHRW36JVR",
       "turn": 1,
       "kind": {
         "type": "assistant",

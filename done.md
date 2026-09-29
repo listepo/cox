@@ -8847,3 +8847,87 @@ Deviations: a pop-up's option titles still go through `ModelName.short` until T5
 Check (2026-09-29): CoxModel filter `SettingsStoreTests|SettingsFieldsTests|SettingsFilterTests|SettingsKeysAndMenusTests|DroppedValuesTests|PermissionRulesTests` 18/18, full CoxModel 128/128; lint clean; `just desktop-app` builds. Commit 2c90965f.
 
 Not done: `SettingsStore.models` and its `catalog:` parameter are unused (kept for the store's shape; can go with T58.4.14).
+
+#### T58.4.1 Inbox and MCP login words in `cox-app`
+
+Depends: — · Size: ~140 · Files: `crates/cox-app/src/inbox.rs`, `crates/cox-app/src/mcp_login.rs`, `crates/cox-ffi/src/types.rs`
+Goal: an `InboxItem` carries `title` (the notification line: `tool subject`, the tool alone, the question, the error, the task label), `subtitle` (`agent · approval waiting` … `task failed`, `expired`) and `status` (waiting, idle, error), and an MCP server's status carries its `detail` line and its `action` (log in, log out, none), so no client builds them (audit items 1–3). The `#[uniffi::remote]` records in `types.rs` gain the same fields.
+Check: `mise exec -- cargo nextest run -p cox-app inbox mcp_login` passes `an_approval_names_its_tool_and_subject`, `an_expired_item_reads_expired`, `a_logged_out_server_offers_log_in`; `mise exec -- cargo nextest run -p cox-ffi` passes.
+Status: done 2026-09-29
+Result: `InboxItem` carries `title`, `subtitle`, `status` (new `InboxStatus`: Waiting, Idle, Error), set on add and again on expiry; `McpServer` carries `detail` and `action: Option<LoginAction>` (LogIn, LogOut); the cox-ffi remote records gain the fields.
+
+Deviations: `Option<LoginAction>` instead of a `None` variant (maps to Swift `Action?`, C# nullable); `cox-app/src/lib.rs` re-exports as a fourth file.
+
+Check (2026-09-29): card tests plus `an_approval_without_a_subject_names_the_tool_and_its_agent`, `each_need_has_its_words`, `each_login_has_its_line_and_button` pass (`terminal_close_kills_the_process_group` flaked once under load, passes alone); fmt clean. Commit f594cce2. After the merge with T58.4.8–11 (one import conflict in `cox-ffi/src/types.rs` resolved): `cargo nextest run -p cox-app -p cox-ffi` 203/203, clippy -D warnings clean, CoxModel 128/128, `just desktop-app` builds.
+
+Not done: nothing.
+
+#### T58.4.2 Inbox rows and notifications read the core's words
+
+Depends: T58.4.1 · Size: ~80 · Files: `CoxModel/Sources/CoxClient/Inbox.swift`, `CoxCore/Sources/CoxCore/HostBridge.swift`, `CoxModel/Sources/CoxModel/InboxStore.swift`
+Goal: `InboxItem` gains the three fields, `HostBridge` converts them, `HostNote.init(_:badge:)` and `InboxRow.init` copy them instead of choosing words; the fixture inbox JSON is re-recorded with the fields. `InboxStoreTests`' word cases move to T58.4.1's tests.
+Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter "InboxStoreTests|FixtureInboxTests"`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter HostBridgeTests`.
+Status: done 2026-09-29
+Result: Swift `InboxItem` has `title`, `subtitle`, `status` (CoxClient `InboxStatus`); `HostBridge` converts; `HostNote.init` picks only the kind and copies `title`; `InboxRow` copies the fields, `InboxRow.Status` is a typealias; `approve-write.json` re-recorded with `cargo run -p cox-ffi --example record`; word cases moved to Rust, Swift tests check the copy.
+
+Deviations: `MenuBarStateTests` and `HostBridgeTests` changed for the new init fields.
+
+Check (2026-09-29): CoxModel 128, CoxCore 16, CoxPlatform 31 pass; CoxTranscript timing tests pass alone; swiftlint/swift-format strict clean. Commit 713f3095. After the merge with T58.4.8–11 (one import conflict in `cox-ffi/src/types.rs` resolved): `cargo nextest run -p cox-app -p cox-ffi` 203/203, clippy -D warnings clean, CoxModel 128/128, `just desktop-app` builds.
+
+Not done: nothing.
+
+#### T58.4.3 MCP login rows read the core's words
+
+Depends: T58.4.1 · Size: ~50 · Files: `CoxModel/Sources/CoxClient/McpLogin.swift`, `CoxCore/Sources/CoxCore/SettingsConvert.swift`, `CoxModel/Sources/CoxModel/McpLogins.swift`
+Goal: `McpServer` gains `detail` and `action`; `SettingsStore.logins` shows them as they arrive.
+Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter McpLoginTests`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter SettingsTests`.
+Status: done 2026-09-29
+Result: `McpServer` has `detail` and `action: McpLoginAction?` (SettingsConvert); `SettingsStore.logins` copies them; `McpLoginRow.Action` is a typealias.
+
+Deviations: enum named `McpLoginAction` (CoxUI already has a public `LoginAction`); fixture helper `McpServer.fixtureLogin` (one line in `CoxClient/Settings.swift`); a live CoxCore check that the stdio server's detail and action arrive.
+
+Check (2026-09-29): CoxCore `SettingsTests` 4 pass; lint clean. Commit 20324547. After the merge with T58.4.8–11 (one import conflict in `cox-ffi/src/types.rs` resolved): `cargo nextest run -p cox-app -p cox-ffi` 203/203, clippy -D warnings clean, CoxModel 128/128, `just desktop-app` builds.
+
+Not done: nothing.
+
+#### T58.4.7 The model menu in `cox-app`
+
+Depends: T58.4.6 · Size: ~130 · Files: `crates/cox-app/src/models.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`
+Goal: `App::model_menu(cwd)` returns one section per tier in first-listed order with its title, each model once across tiers with its efforts line joined by ` · ` (audit item 10); which model runs is left to the client to mark. One-expression forwarder.
+Check: `mise exec -- cargo nextest run -p cox-app models` passes `a_model_is_listed_once_across_tiers`, `tiers_keep_their_first_listed_order`; `mise exec -- cargo nextest run -p cox-ffi` passes.
+Status: done 2026-09-29
+Result: `App::model_menu(cwd)` returns one `ModelSection { tier, title, models: Vec<MenuModel { id, display_name, efforts } > }` per tier in first-listed order, each model once across tiers; cox-ffi forwards it in one expression.
+
+Deviations: `display_name` arrives unshortened until T58.4.6; Swift keeps `ModelName.short` until T58.4.14, so the visible text is unchanged.
+
+Check (2026-09-29): `a_model_is_listed_once_across_tiers`, `tiers_keep_their_first_listed_order` pass; fmt clean. Commit f62b3e0f. After the merge with T58.4.8–11 (one import conflict in `cox-ffi/src/types.rs` resolved): `cargo nextest run -p cox-app -p cox-ffi` 203/203, clippy -D warnings clean, CoxModel 128/128, `just desktop-app` builds.
+
+Not done: nothing.
+
+#### T58.4.12 Model menu sections reach Swift
+
+Depends: T58.4.7 · Size: ~60 · Files: `CoxModel/Sources/CoxClient/Models.swift`, `CoxCore/Sources/CoxCore/WorkspaceConvert.swift`
+Goal: `ModelsClient.modelMenu(cwd:)` and its section value, converted from `App::model_menu`; the fixture client builds one section per tier.
+Check: `swift test --package-path desktop/macos/Packages/CoxModel`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter ConvertTests`.
+Status: done 2026-09-29
+Result: `ModelsClient.modelMenu(cwd:)` with `ModelSection`/`MenuModel` (WorkspaceConvert.swift); `FixtureModels` groups one section per tier (without dropping repeats).
+
+Deviations: a CoxCore test `theModelMenuConvertsTheCoresSections` (live core: code tier first, no repeat).
+
+Check (2026-09-29): CoxCore 17 pass after the xcframework rebuild; lint clean. Commit 1e5cc2f4. After the merge with T58.4.8–11 (one import conflict in `cox-ffi/src/types.rs` resolved): `cargo nextest run -p cox-app -p cox-ffi` 203/203, clippy -D warnings clean, CoxModel 128/128, `just desktop-app` builds.
+
+Not done: nothing.
+
+#### T58.4.13 The model popover shows the core's sections
+
+Depends: T58.4.12 · Size: ~80 · Files: `CoxModel/Sources/CoxModel/ModelMenu.swift`, `desktop/macos/App/ShellState.swift`, `desktop/macos/App/SessionWindow.swift`
+Goal: `ModelMenu.init` takes the core's sections and marks the running model only; the window reads `modelMenu(cwd:)` where it read `models(cwd:)`.
+Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter ModelMenuTests`; `just desktop-app` succeeds.
+Status: done 2026-09-29
+Result: `ModelMenu.init(sections:status:)` maps the core's sections and marks the running model; `OpenedSession.modelSections`; `ModelMenuTests` rewritten over sections.
+
+Deviations: the window reads `modelMenu(cwd:)` alongside `models(cwd:)` — `App/BestOf.swift` still needs `models` for its code-tier options (best-of is M2, T52.11).
+
+Check (2026-09-29): lint clean. Commit 125041af. After the merge with T58.4.8–11 (one import conflict in `cox-ffi/src/types.rs` resolved): `cargo nextest run -p cox-app -p cox-ffi` 203/203, clippy -D warnings clean, CoxModel 128/128, `just desktop-app` builds.
+
+Not done: nothing.

@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
+use cox_app::ModelSection;
 use cox_app::WorkspaceError;
 use cox_app::app::{App as Owner, AppError as OwnerError};
 use cox_app::best_of::{BestOfId, BestOfRequest, CandidateView, Picked};
@@ -309,6 +310,11 @@ impl App {
     /// The toolbar's model popover for a session in `cwd` (T37.22.6).
     pub fn models(&self, cwd: String) -> Result<Vec<ModelChoice>, AppError> {
         Ok(self.owner.models(Path::new(&cwd))?)
+    }
+
+    /// The model popover's sections for a session in `cwd` (T58.4.7).
+    pub fn model_menu(&self, cwd: String) -> Result<Vec<ModelSection>, AppError> {
+        Ok(self.owner.model_menu(Path::new(&cwd))?)
     }
 
     /// The providers a turn in `cwd` could run on now (A110); it probes

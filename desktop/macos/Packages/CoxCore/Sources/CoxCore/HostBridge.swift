@@ -78,6 +78,18 @@ extension CoxClient.InboxItem {
     self.init(
       session: item.session,
       source: item.source.map { .init(session: $0.session, agent: $0.agent, preset: $0.preset) },
-      need: need, expired: item.expired, seq: item.seq)
+      need: need, expired: item.expired, seq: item.seq, title: item.title,
+      subtitle: item.subtitle, status: .init(item.status))
+  }
+}
+
+extension CoxClient.InboxStatus {
+  init(_ status: CoxFFIBindings.InboxStatus) {
+    self =
+      switch status {
+      case .waiting: .waiting
+      case .idle: .idle
+      case .error: .error
+      }
   }
 }

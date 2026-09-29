@@ -3,6 +3,7 @@
 
 import CoxClient
 import CoxFFIBindings
+import Foundation
 import Testing
 
 @testable import CoxCore
@@ -131,4 +132,17 @@ import Testing
   #expect(hits.map(\.item.id) == ["review", "s1"])
   #expect(hits.map(\.matched) == [[0, 1, 2], [0, 1, 2]])
   #expect(hits.last?.item == items[0])
+}
+
+/// T58.4.12: the core's popover sections reach Swift in its order, the code tier first, with
+/// each model once.
+@Test func theModelMenuConvertsTheCoresSections() throws {
+  let (home, client) = try scratch()
+  defer { try? FileManager.default.removeItem(at: home) }
+  let sections = try client.modelMenu(cwd: home.path())
+  #expect(sections.first?.tier == .code)
+  #expect(sections.first?.title == "Code")
+  let ids = sections.flatMap { $0.models.map(\.id) }
+  #expect(!ids.isEmpty)
+  #expect(Set(ids).count == ids.count)
 }

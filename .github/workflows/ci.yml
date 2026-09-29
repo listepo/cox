@@ -82,7 +82,10 @@ jobs:
   # crates that build there, listed once in the justfile (`windows_crates`);
   # each P57 card adds its crates. Not in revert-on-failure's `needs`: it is
   # required for a merge only once T57.11 builds the whole workspace.
+  # Off until the Windows work is built and tested on a Windows host (creator,
+  # 2026-09-29); CI comes after that.
   windows:
+    if: false
     runs-on: windows-latest
     defaults:
       run:

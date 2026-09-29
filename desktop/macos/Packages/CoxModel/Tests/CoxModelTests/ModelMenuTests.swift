@@ -1,24 +1,24 @@
-// The toolbar's model popover (T37.22.6): each tier's models under its name with the running one
-// marked, each by its short name (T37.22.7), a model listed once across tiers, and a pick sends
-// the TUI's `/model <tier> <id>` switch.
+// The toolbar's model popover (T37.22.6): the core's sections as they come (T58.4.13; which
+// tiers and models they list is `cox_app::models`' tests), the running one marked, each by its
+// short name (T37.22.7), and a pick sends the TUI's `/model <tier> <id>` switch.
 
 import CoxClient
 import Testing
 
 @testable import CoxModel
 
-private let catalog = [
-  ModelChoice(
-    tier: .code, provider: "anthropic", id: "claude-sonnet-5", displayName: "Claude Sonnet 5",
-    efforts: [.low, .high]),
-  ModelChoice(tier: .code, provider: "anthropic", id: "claude-haiku-4-5"),
-  ModelChoice(tier: .think, provider: "anthropic", id: "claude-fable-5-1"),
-  ModelChoice(tier: .think, provider: "anthropic", id: "claude-sonnet-5"),
-  ModelChoice(tier: .cheap, provider: "anthropic", id: "claude-haiku-4-5"),
+private let sections = [
+  ModelSection(
+    tier: .code, title: "Code",
+    models: [
+      MenuModel(id: "claude-sonnet-5", displayName: "Claude Sonnet 5", efforts: "low · high"),
+      MenuModel(id: "claude-haiku-4-5"),
+    ]),
+  ModelSection(tier: .think, title: "Think", models: [MenuModel(id: "claude-fable-5-1")]),
 ]
 
-@Test func eachTierListsItsModelsOnceWithTheRunningOneMarked() {
-  let menu = ModelMenu(choices: catalog, status: Status(model: "claude-sonnet-5", effort: .high))
+@Test func theCoresSectionsShowWithTheRunningOneMarked() {
+  let menu = ModelMenu(sections: sections, status: Status(model: "claude-sonnet-5", effort: .high))
   #expect(menu.sections.map(\.title) == ["Code", "Think"])
   #expect(menu.sections[0].rows.map(\.model) == ["claude-sonnet-5", "claude-haiku-4-5"])
   // The catalog's name without its vendor prefix, else the id (A111).
@@ -29,7 +29,7 @@ private let catalog = [
 }
 
 @Test func aPickSwitchesTheRowsTierToItsModel() {
-  let menu = ModelMenu(choices: catalog, status: Status())
+  let menu = ModelMenu(sections: sections, status: Status())
   let fable = menu.sections[1].rows[0]
   #expect(menu.pick(fable.id) == .switchModel(tier: .think, model: "claude-fable-5-1"))
   #expect(menu.pick("code/nope") == nil)

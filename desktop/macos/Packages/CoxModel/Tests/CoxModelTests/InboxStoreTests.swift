@@ -1,6 +1,6 @@
 // The "Needs you" store's check (T37.27.7): with the `approve-write` fixture it lists one row,
-// which clears once the card is answered; and each kind of item as its row, an expired one
-// read-only.
+// which clears once the card is answered; and a row copies the core's words (T58.4.2; the words
+// themselves are `cox_app::inbox`'s tests), an expired one read-only.
 
 import CoxClient
 import Foundation
@@ -40,33 +40,16 @@ import Testing
   #expect(inbox.count == nil)
 }
 
-@Test func eachItemBecomesItsRowAndAnExpiredOneIsReadOnly() {
-  func row(_ need: Need, expired: Bool = false, agent: String? = nil) -> InboxRow {
-    let source = agent.map { Source(session: "child", agent: $0, preset: nil) }
-    return InboxRow(InboxItem(session: "s", source: source, need: need, expired: expired, seq: 7))
+@Test func aRowCopiesTheCoresWordsAndAnExpiredOneIsReadOnly() {
+  func item(expired: Bool) -> InboxItem {
+    InboxItem(
+      session: "s", source: Source(session: "child", agent: "reviewer", preset: nil),
+      need: .question(call: "c2", question: "Which branch?", options: []), expired: expired,
+      seq: 7, title: "core title", subtitle: "core subtitle", status: .error)
   }
-  func expected(
-    _ status: InboxRow.Status, _ title: String, _ subtitle: String, readOnly: Bool = false
-  ) -> InboxRow {
-    InboxRow(
-      id: "s#7", session: "s", status: status, title: title, subtitle: subtitle,
-      isReadOnly: readOnly)
-  }
-  let approval = Need.approval(
-    call: "c1", tool: "bash", subject: "git push", why: .risk(risk: .exec))
-  #expect(row(approval) == expected(.waiting, "bash git push", "approval waiting"))
-  #expect(
-    row(.question(call: "c2", question: "Which branch?", options: []), agent: "reviewer")
-      == expected(.waiting, "Which branch?", "reviewer · question waiting"))
-  #expect(row(.failed(text: "boom")) == expected(.error, "boom", "turn failed"))
-  #expect(
-    row(.taskDone(task: "t", label: "tests", succeeded: true))
-      == expected(.idle, "tests", "task done"))
-  #expect(
-    row(.taskDone(task: "t", label: "tests", succeeded: false))
-      == expected(.error, "tests", "task failed"))
-  #expect(
-    row(approval, expired: true)
-      == expected(
-        .idle, "bash git push", "expired", readOnly: true))
+  let expected = InboxRow(
+    id: "s#7", session: "s", status: .error, title: "core title", subtitle: "core subtitle",
+    isReadOnly: false)
+  #expect(InboxRow(item(expired: false)) == expected)
+  #expect(InboxRow(item(expired: true)).isReadOnly)
 }
