@@ -1017,8 +1017,10 @@ mod tests {
     #[tokio::test]
     async fn tool_image_follows_tool_results() {
         let (session, provider) = shot_turn().await;
-        let seen = provider.seen.lock().unwrap_or_else(|e| e.into_inner());
-        let last = seen[1].0.messages.last().expect("results message");
+        let last = {
+            let seen = provider.seen.lock().unwrap_or_else(|e| e.into_inner());
+            seen[1].0.messages.last().expect("results message").clone()
+        };
         let [
             Content::ToolResult { content, .. },
             Content::Image {
@@ -1033,7 +1035,7 @@ mod tests {
         assert!(content.contains("visible to the model in this turn only"));
         assert_eq!(media_type, "image/png");
         assert_eq!(*data_b64, STANDARD.encode(PNG));
-        assert_eq!(session.history().await[2], last.clone());
+        assert_eq!(session.history().await[2], last);
     }
 
     /// A91: reasoning streams into its own `Thinking` item, which closes

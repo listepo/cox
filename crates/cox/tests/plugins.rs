@@ -193,16 +193,16 @@ fn agent_package(root: &Path) -> (String, String) {
     (path(&pkg), path(&scenario))
 }
 
-/// The headless run's events and its one `agent` call's result.
-fn agent_run(home: &Path, cwd: &Path, scenario: &str) -> (Vec<Value>, Value) {
-    let out = stdout(cox(home, cwd).env("COX_SCENARIO", scenario).args([
-        "run",
-        "-p",
-        "go",
-        "--output-format",
-        "stream-json",
-    ]));
-    let events: Vec<Value> = String::from_utf8(out)
+/// The headless run's events, its one `agent` call's result and its
+/// stderr, where session warnings go. The exit code is not asserted: a
+/// denied call ends a headless run with 2.
+fn agent_run(home: &Path, cwd: &Path, scenario: &str) -> (Vec<Value>, Value, String) {
+    let out = cox(home, cwd)
+        .env("COX_SCENARIO", scenario)
+        .args(["run", "-p", "go", "--output-format", "stream-json"])
+        .output()
+        .unwrap();
+    let events: Vec<Value> = String::from_utf8(out.stdout)
         .unwrap()
         .lines()
         .map(|l| serde_json::from_str(l).unwrap())
@@ -212,7 +212,7 @@ fn agent_run(home: &Path, cwd: &Path, scenario: &str) -> (Vec<Value>, Value) {
         .find(|e| e["type"] == "tool_call_done")
         .map(|e| e["result"].clone())
         .expect("the agent call finished");
-    (events, result)
+    (events, result, String::from_utf8(out.stderr).unwrap())
 }
 
 #[test]
@@ -226,7 +226,7 @@ fn granted_plugin_agent_is_dispatchable() {
     let (pkg, scenario) = agent_package(root.path());
     stdout(cox(home, cwd).args(["plugin", "install", &pkg, "--yes"]));
 
-    let (_, result) = agent_run(home, cwd, &scenario);
+    let (_, result, _) = agent_run(home, cwd, &scenario);
     assert_eq!(result["ok"], true, "{result}");
     let tools = result["visible"].as_str().unwrap();
     assert!(tools.contains("grep") && !tools.contains("glob"), "{tools}");
@@ -248,7 +248,7 @@ fn ungranted_plugin_agent_is_not_loaded() {
         .assert()
         .success();
 
-    let (events, result) = agent_run(home, cwd, &scenario);
+    let (events, result, _) = agent_run(home, cwd, &scenario);
     assert_eq!(result["ok"], false, "{result}");
     assert!(
         events.iter().any(|e| e["type"] == "notice"
@@ -277,14 +277,13 @@ fn local_agent_wins_over_plugin_agent() {
     )
     .unwrap();
 
-    let (events, result) = agent_run(home, cwd, &scenario);
+    let (_, result, stderr) = agent_run(home, cwd, &scenario);
     let tools = result["visible"].as_str().unwrap();
     assert!(tools.contains("glob") && !tools.contains("grep"), "{tools}");
+    // The skip is a session warning (`Warning::Agent`), like every other
+    // agent-definition caveat, so the headless run prints it on stderr.
     assert!(
-        events.iter().any(|e| e["type"] == "notice"
-            && e["text"]
-                .as_str()
-                .is_some_and(|t| t.contains("plugin review-kit: agent reviewer skipped"))),
-        "{events:#?}"
+        stderr.contains("cox: warning: plugin review-kit: agent reviewer skipped"),
+        "{stderr}"
     );
 }

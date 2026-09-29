@@ -1,6 +1,5 @@
 ---
 source: crates/cox-tui/src/view.rs
-assertion_line: 352
 expression: "buffer_to_string(&render(&state, 80, 15))"
 ---
  keys · Esc or ? closes
@@ -13,7 +12,7 @@ expression: "buffer_to_string(&render(&state, 80, 15))"
    Esc interrupt · Ctrl+C interrupt · Ctrl+B background · Ctrl+O transcript
    Alt+Enter send now · Ctrl+Enter send now · Ctrl+U unqueue
  modal
-   Enter choose · Esc close · Up previous · Down next
+   Enter choose · Esc close · Up previous · Down next · Ctrl+E theme edit
  overlay
    Esc close · ? close · PageUp scroll up · PageDown scroll down
 > Esc close · PageUp scroll up · PageDown scroll down
