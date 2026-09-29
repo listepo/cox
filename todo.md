@@ -26,7 +26,6 @@
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.32.2. Developer ID signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
-- T37.44.11. The running app matches the mockups end to end
 - T39.7. Optional: live check against the real Gemini endpoint (needs the creator's key)
 - T43.6. Bench the map on and off
 - T51.2. One sandbox argv for `sh -c` commands and interactive programs

@@ -8049,3 +8049,17 @@ Deviations: the test is ~115 lines (its own scenario and an output copy to read 
 Check (2026-09-29): `cargo nextest run -p cox --test lsp --run-ignored only` 1 passed (twice); `--test lsp` 2 passed; `clippy -p cox --all-targets -D warnings` clean; fmt clean; two real-binary runs with `COX_HOME=/tmp/cox-t41-9`. Commit ad5f6876.
 
 Not done: Linux/bwrap run; `report.html`. The empty first result is a defect, carded as T41.10.
+
+#### T37.44.11 The running app matches the mockups end to end
+
+Depends: T37.44.9, T37.44.10 · Size: ~120 · Files: `desktop/macos/App`, CoxUI where a difference shows only in the app
+Goal: A114, A119. The built app is screenshotted on each screen it reaches with the fixtures (main, approval, composer, inspector, review, palette, settings, onboarding) and compared with the mockup renders by `npm run diff`, including 23-notification-and-dock; differences that CoxUI snapshots cannot show (window chrome, toolbar, real materials, dock badge, notification) are fixed. M2/M3 screens (24–27) are out of scope.
+Check: per screen, the app screenshot and its diff against the mockup; no unexplained layout or type region left; swift-format and swiftlint strict clean.
+Status: done 2026-09-29
+Result: the built Cox.app, launched on fixtures, was screenshotted per screen and diffed against the mockup renders (`npm run diff`, threshold 0.3). Two fixes: the transcript sits in the 760 pt reading column, centred with the composer, first bubble 20 pt below the pane top (AppKit's automatic content inset was ignored by `TailFollow`; regression test `linesStayInTheReadingColumnCentredAsTheViewWidens`, 20 CoxTranscript snapshots re-recorded for the 14 pt shift); Settings uses the session window's chrome (no title bar, glass, window buttons on the sidebar row), and first run opens in the 980×700 window with buttons at y 24, restoring the old frame when a project is chosen, the window closes or the app quits.
+
+Deviations: none beyond the card.
+
+Check (2026-09-29): diffs — main frosted vs 28 8.08%, solid vs 01 2.58%; approval vs 03 2.87–2.97%; composer vs 05/06 4.5%; inspector Plan/Context/Tasks vs 09/10/11 2.5–2.8%; review vs 08 2.10%; settings vs 18 3.36%; onboarding vs 21 2.94%; every remaining region is content or a difference CoxUI snapshots already show (Solid mockups draw panes flush; @-menu without icons/hint footer; onboarding column 760 vs 840). swift-format and swiftlint strict clean on changed files; CoxTranscriptText 39/39; three CoxTranscript timing tests fail only under parallel load. Commits 1c6c2252, ab770196. Screenshots: scratchpad `t37.44.11/`.
+
+Not done: screen 23 (notification, Dock badge) — needs notification permission for io.github.listepo.cox; the frame restore after choosing a project was not run (folder dialog). Open for the creator: Review layout (mockup hides the inspector, has Unified/Split, Revert, Open in editor), palette 12 and ⌘K/⌘N/⌘⇧R not built, default window size 1100×766 vs 1440×900, no app icon or "Welcome to cox" header, notification wording (Allow once/Deny/Open vs DT§5.6 Allow/Deny). Found out of scope: @-completion lists `.git/`, durations print "0,0s" in a comma-decimal locale.

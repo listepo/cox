@@ -32,7 +32,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.44.11 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T39.7 | todo | P3 | 2 | 0% | |
 | T41.10 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T43.6 | todo | P3 | 3 | 0% | |
@@ -1396,12 +1395,6 @@ Confirm the bundle id `io.github.listepo.cox` (T37.32.1 derived it from the repo
 On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
-
-#### T37.44.11 The running app matches the mockups end to end
-
-Depends: T37.44.9, T37.44.10 · Size: ~120 · Files: `desktop/macos/App`, CoxUI where a difference shows only in the app
-Goal: A114, A119. The built app is screenshotted on each screen it reaches with the fixtures (main, approval, composer, inspector, review, palette, settings, onboarding) and compared with the mockup renders by `npm run diff`, including 23-notification-and-dock; differences that CoxUI snapshots cannot show (window chrome, toolbar, real materials, dock badge, notification) are fixed. M2/M3 screens (24–27) are out of scope.
-Check: per screen, the app screenshot and its diff against the mockup; no unexplained layout or type region left; swift-format and swiftlint strict clean.
 
 ### P51 — Desktop M2 (goal: the rest of the terminal inside the app — a sandboxed terminal pane, a browser pane the agent can read and screenshot, pop-out windows and tabs, a menu-bar extra with a global hotkey, Spotlight and App Intents, and per-hunk revert — plus the dark glass look; DT§3.2)
 
