@@ -155,3 +155,9 @@ import Testing
   #expect(!ids.isEmpty)
   #expect(Set(ids).count == ids.count)
 }
+
+/// T58.4.24: a task block's state crosses as the core decided it.
+@Test func aTaskStateConvertsCaseForCase() {
+  let live: [CoxFFIBindings.TaskState] = [.running, .succeeded, .failed]
+  #expect(live.map { CoxClient.TaskState($0) } == [.running, .succeeded, .failed])
+}

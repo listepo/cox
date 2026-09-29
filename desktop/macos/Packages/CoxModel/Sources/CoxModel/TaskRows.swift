@@ -27,7 +27,8 @@ extension SessionStore {
   public var tasks: [TaskRow] {
     blocks.values.compactMap { block in
       guard
-        case .task(let task, let label, let tier, let done, let costUsd, let exitCode, let kind) =
+        case .task(
+          let task, let label, let tier, let done, let costUsd, let exitCode, _, let kind) =
           block.kind
       else { return nil }
       // As the task card reads it: no exit code (a subagent) is a success.

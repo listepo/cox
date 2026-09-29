@@ -64,7 +64,8 @@ extension BlockKind: Decodable {
     case "task":
       self = try .task(
         task: keys("task"), label: keys("label"), tier: keys("tier"), done: keys("done"),
-        costUsd: keys("cost_usd"), exitCode: keys.optional("exit_code"), kind: keys("kind"))
+        costUsd: keys("cost_usd"), exitCode: keys.optional("exit_code"), state: keys("state"),
+        kind: keys("kind"))
     case "compaction":
       self = try .compaction(
         beforeTokens: keys("before_tokens"), afterTokens: keys("after_tokens"),

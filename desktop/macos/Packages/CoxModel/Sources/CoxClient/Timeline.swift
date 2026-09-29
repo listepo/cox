@@ -38,9 +38,10 @@ public enum BlockKind: Equatable, Sendable {
     // swiftlint:disable:next identifier_name
     by: DecidedBy?)
   case question(call: String, question: String, options: [String], answer: String?)
+  /// `state` is the core's reading of `done` and `exitCode` (T58.4.23); a view reads it alone.
   case task(
     task: String, label: String, tier: Tier, done: Bool, costUsd: Double, exitCode: Int32?,
-    kind: TaskKind)
+    state: TaskState, kind: TaskKind)
   case compaction(
     beforeTokens: UInt32, afterTokens: UInt32, reason: CompactReason, summary: String?)
   case checkpoint(files: [String])
@@ -110,6 +111,9 @@ public enum Tier: String, Equatable, Sendable, Decodable { case cheap, code, thi
 /// What a task runs (`cox_app::TaskKind`): a subagent opens its transcript, a background shell
 /// its output.
 public enum TaskKind: String, Equatable, Sendable, Decodable { case agent, shell }
+
+/// Where a task stands: a finished task with no exit code (a subagent) succeeded.
+public enum TaskState: String, Equatable, Sendable, Decodable { case running, succeeded, failed }
 
 public enum Level: String, Equatable, Sendable, Decodable { case info, warn, budget, security }
 
