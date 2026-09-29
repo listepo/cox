@@ -8791,3 +8791,59 @@ Deviations: the `tool:`/`item:` renderers moved to T52.23.1/T52.23.2 (A129 (10))
 Check (2026-09-29, verify round 3): CoxModel slot-patch test (a slot patch updates only its slot) and CoxUI panel and status-segment snapshots pass; `just desktop-app` builds; nextest 1897/1897, clippy, fmt, swiftlint --strict clean.
 
 Not done: the renderers (T52.23).
+
+#### T58.4.8 Settings page fields in `cox-app`
+
+Depends: — · Size: ~180 · Files: `crates/cox-app/src/settings.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`
+Goal: each `Setting` carries its `group` (the page in DT§5.7's order), `title` (`base_url` → `Base url`), `table` (its box, the rule lists left out), `provider` for a `providers.<name>` key and `detail` (`Set in <file>` or the schema's help); a `Dropped` value carries its group and its change text (`999 → 5`); `SettingsView.providers` lists the provider sections; `check_key(view, provider, secret)` refuses an empty key or an unknown provider (audit items 11–15).
+Check: `mise exec -- cargo nextest run -p cox-app settings` passes `settings_fall_into_dt_5_7_groups`, `rule_lists_have_no_box`, `a_dropped_value_says_what_replaced_it`, `a_key_for_an_unknown_provider_is_refused`; `mise exec -- cargo nextest run -p cox-ffi` passes.
+Status: done 2026-09-29
+Result: settings field rules in a new `crates/cox-app/src/settings_fields.rs` (`settings.rs` stays loader/editor): `Setting` gains `group`, `title`, `table` (none for a rule list), `provider`, `detail`; `Dropped` gains `group` and `change` (`999 → 5`); `SettingsView` gains `providers`; `check_key` returns the trimmed key or `KeyError` (`Empty`, `UnknownProvider`); cox-ffi remote `SettingsGroup`, `KeyError` and a one-expression `check_key` forwarder.
+
+Deviations: `check_key` takes `(providers, provider, secret)` rather than the whole view (Swift passes `view.providers`); the snapshot `a_setting_the_project_overrides_is_read_only_with_its_layer` gained the new fields and redacts the temp path in `detail` as `<tmp>`.
+
+Check (2026-09-29): `cargo nextest run -p cox-app -p cox-ffi` 190/190 (`settings_fall_into_dt_5_7_groups`, `rule_lists_have_no_box`, `a_dropped_value_says_what_replaced_it`, `a_key_for_an_unknown_provider_is_refused`, cox-ffi `forward_only`); clippy -D warnings and fmt clean. Commit 81ca20c2.
+
+Not done: nothing.
+
+#### T58.4.9 Settings controls and typed edits in `cox-app`
+
+Depends: T58.4.6, T58.4.8 · Size: ~180 · Files: `crates/cox-app/src/settings.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`
+Goal: each `Setting` carries its `control`: a toggle, a slider only for a number bounded on both ends with min below max, a segmented choice or a pop-up above 3 options (not for `permissions.mode`), a tier's model menu from the catalog with an unlisted value kept first, text, or JSON for lists and open shapes (audit items 16–17); `set_setting_input(cwd, key, input)` types the input by the key's kind (an integer rounded, text parsed as a number, else text) and sets it (audit item 18).
+Check: `mise exec -- cargo nextest run -p cox-app settings` passes `a_slider_needs_both_bounds`, `permissions_mode_stays_segmented`, `an_unlisted_model_is_kept_first`, `a_slider_value_is_rounded_for_an_integer_key`; `mise exec -- cargo nextest run -p cox-ffi` passes.
+Status: done 2026-09-29
+Result: `Setting.control` (Toggle; Slider only for a number with both bounds and min < max; Choice; Menu — a choice with more than 3 options except `permissions.mode`; Field; Json); a tier's model menu from `models::choices` with an unlisted value first; `typed()` plus `settings::set_input`, `App::set_setting_input` and an FFI forwarder (an integer key rounds, text parses as a number, else text; a number JSON cannot carry is refused with `SettingsError::NotFinite`).
+
+Deviations: model option titles are the catalog's full name until T58.4.6; the snapshot keeps only a model menu's first option so catalog updates do not churn it.
+
+Check (2026-09-29): nextest 195/195 (`a_slider_needs_both_bounds`, `permissions_mode_stays_segmented`, `an_unlisted_model_is_kept_first`, `a_slider_value_is_rounded_for_an_integer_key`, `a_typed_input_is_set_as_its_kinds_json`); clippy and fmt clean. Commit 128b1504.
+
+Not done: nothing.
+
+#### T58.4.10 Settings values carry the core's layout and controls
+
+Depends: T58.4.9 · Size: ~120 · Files: `CoxModel/Sources/CoxClient/Settings.swift`, `CoxModel/Sources/CoxClient/Dropped.swift`, `CoxCore/Sources/CoxCore/SettingsConvert.swift`
+Goal: the Swift `Setting`, `Dropped` and `SettingsView` values gain the fields of T58.4.8–T58.4.9 (`Setting.Control`, `Setting.Option`, a `SettingsGroup` enum with the same raw values) and `SettingsClient` gains `setSettingInput` and `checkKey`, converted in CoxCore; the fixture client fills them for its few keys. No store changes yet.
+Check: `swift test --package-path desktop/macos/Packages/CoxModel`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter SettingsTests`.
+Status: done 2026-09-29
+Result: CoxClient `Setting` carries the new fields plus `Setting.Control`/`Setting.Option` (defaults keep other tests compiling); `Dropped` `group`/`change`; `SettingsView.providers`; `SettingsClient.setSettingInput` and `checkKey` (fixture sends the input's JSON as-is); CoxCore conversions in `SettingsConvert.swift`.
+
+Deviations: `SettingsGroup`, `SettingValue` and `KeyError` moved from CoxModel to CoxClient under the same names (both would be ambiguous where both modules are imported); a fourth file, `LiveCoreClient.swift`, for the two conformance methods.
+
+Check (2026-09-29): CoxModel `swift test` 128 passed; `just desktop-xcframework` then CoxCore `--filter SettingsTests` 5/5 (new `aTypedInputAndAProviderKeyAreCheckedInRust` through the real core); swiftlint --strict and swift-format --strict clean. Commit a65eb2c3.
+
+Not done: nothing.
+
+#### T58.4.11 SettingsStore pages from the core's fields
+
+Depends: T58.4.10 · Size: ~160 · Files: `CoxModel/Sources/CoxModel/SettingsStore.swift`, `CoxModel/Sources/CoxModel/SettingsFields.swift`, `CoxModel/Sources/CoxModel/DroppedValues.swift`
+Goal: `sections`, `providers`, `storeKey`, `tables(in:)`, `detail(of:)`, `control(of:)`, `modelMenu`, `edit` and `dropped(in:)` read the core's fields; `SettingControl` and `SettingsGroup` become typealiases of the CoxClient types, so the app compiles unchanged. The search stays here, over the core's `title` and the key. The moved rules' Swift tests go.
+Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter "SettingsStoreTests|SettingsFieldsTests|SettingsFilterTests|SettingsKeysAndMenusTests|DroppedValuesTests"`.
+Status: done 2026-09-29
+Result: `SettingsStore` pages from the core: `sections` group by `setting.group` and search the core's `title` plus the key; `providers` from `view.providers`; `storeKey` through `client.checkKey`; `tables(in:)` uses the core's table, title, detail, control, provider; `edit` calls `setSettingInput`; `dropped(in:)` uses the core's group and change; `SettingControl`/`SettingOption` are typealiases (the app compiles unchanged). Tests of the moved rules became pass-through checks (the rules are tested in Rust).
+
+Deviations: a pop-up's option titles still go through `ModelName.short` until T58.4.6/T58.4.14.
+
+Check (2026-09-29): CoxModel filter `SettingsStoreTests|SettingsFieldsTests|SettingsFilterTests|SettingsKeysAndMenusTests|DroppedValuesTests|PermissionRulesTests` 18/18, full CoxModel 128/128; lint clean; `just desktop-app` builds. Commit 2c90965f.
+
+Not done: `SettingsStore.models` and its `catalog:` parameter are unused (kept for the store's shape; can go with T58.4.14).

@@ -76,10 +76,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T58.4.5 | todo | P1 | 3 | 0% | |
 | T58.4.6 | todo | P1 | 2 | 0% | |
 | T58.4.7 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
-| T58.4.8 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
-| T58.4.9 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
-| T58.4.10 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
-| T58.4.11 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T58.4.12 | in progress | P1 | 1 | 0% | Claude Code / opus-5.5 |
 | T58.4.13 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T58.4.14 | todo | P1 | 1 | 0% | |
@@ -1850,30 +1846,6 @@ Check: `mise exec -- cargo nextest run -p cox-app status meter_text` passes `a_s
 Depends: T58.4.6 · Size: ~130 · Files: `crates/cox-app/src/models.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`
 Goal: `App::model_menu(cwd)` returns one section per tier in first-listed order with its title, each model once across tiers with its efforts line joined by ` · ` (audit item 10); which model runs is left to the client to mark. One-expression forwarder.
 Check: `mise exec -- cargo nextest run -p cox-app models` passes `a_model_is_listed_once_across_tiers`, `tiers_keep_their_first_listed_order`; `mise exec -- cargo nextest run -p cox-ffi` passes.
-
-#### T58.4.8 Settings page fields in `cox-app`
-
-Depends: — · Size: ~180 · Files: `crates/cox-app/src/settings.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`
-Goal: each `Setting` carries its `group` (the page in DT§5.7's order), `title` (`base_url` → `Base url`), `table` (its box, the rule lists left out), `provider` for a `providers.<name>` key and `detail` (`Set in <file>` or the schema's help); a `Dropped` value carries its group and its change text (`999 → 5`); `SettingsView.providers` lists the provider sections; `check_key(view, provider, secret)` refuses an empty key or an unknown provider (audit items 11–15).
-Check: `mise exec -- cargo nextest run -p cox-app settings` passes `settings_fall_into_dt_5_7_groups`, `rule_lists_have_no_box`, `a_dropped_value_says_what_replaced_it`, `a_key_for_an_unknown_provider_is_refused`; `mise exec -- cargo nextest run -p cox-ffi` passes.
-
-#### T58.4.9 Settings controls and typed edits in `cox-app`
-
-Depends: T58.4.6, T58.4.8 · Size: ~180 · Files: `crates/cox-app/src/settings.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`
-Goal: each `Setting` carries its `control`: a toggle, a slider only for a number bounded on both ends with min below max, a segmented choice or a pop-up above 3 options (not for `permissions.mode`), a tier's model menu from the catalog with an unlisted value kept first, text, or JSON for lists and open shapes (audit items 16–17); `set_setting_input(cwd, key, input)` types the input by the key's kind (an integer rounded, text parsed as a number, else text) and sets it (audit item 18).
-Check: `mise exec -- cargo nextest run -p cox-app settings` passes `a_slider_needs_both_bounds`, `permissions_mode_stays_segmented`, `an_unlisted_model_is_kept_first`, `a_slider_value_is_rounded_for_an_integer_key`; `mise exec -- cargo nextest run -p cox-ffi` passes.
-
-#### T58.4.10 Settings values carry the core's layout and controls
-
-Depends: T58.4.9 · Size: ~120 · Files: `CoxModel/Sources/CoxClient/Settings.swift`, `CoxModel/Sources/CoxClient/Dropped.swift`, `CoxCore/Sources/CoxCore/SettingsConvert.swift`
-Goal: the Swift `Setting`, `Dropped` and `SettingsView` values gain the fields of T58.4.8–T58.4.9 (`Setting.Control`, `Setting.Option`, a `SettingsGroup` enum with the same raw values) and `SettingsClient` gains `setSettingInput` and `checkKey`, converted in CoxCore; the fixture client fills them for its few keys. No store changes yet.
-Check: `swift test --package-path desktop/macos/Packages/CoxModel`; `just desktop-xcframework && swift test --package-path desktop/macos/Packages/CoxCore --filter SettingsTests`.
-
-#### T58.4.11 SettingsStore pages from the core's fields
-
-Depends: T58.4.10 · Size: ~160 · Files: `CoxModel/Sources/CoxModel/SettingsStore.swift`, `CoxModel/Sources/CoxModel/SettingsFields.swift`, `CoxModel/Sources/CoxModel/DroppedValues.swift`
-Goal: `sections`, `providers`, `storeKey`, `tables(in:)`, `detail(of:)`, `control(of:)`, `modelMenu`, `edit` and `dropped(in:)` read the core's fields; `SettingControl` and `SettingsGroup` become typealiases of the CoxClient types, so the app compiles unchanged. The search stays here, over the core's `title` and the key. The moved rules' Swift tests go.
-Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter "SettingsStoreTests|SettingsFieldsTests|SettingsFilterTests|SettingsKeysAndMenusTests|DroppedValuesTests"`.
 
 #### T58.4.12 Model menu sections reach Swift
 
