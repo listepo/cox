@@ -36,6 +36,40 @@ pub enum Need {
     },
 }
 
+impl Need {
+    /// The line a row and a notification show: the tool and its subject
+    /// (the tool alone without one), the question, the error, the task.
+    fn title(&self) -> String {
+        match self {
+            Need::Approval { call, .. } if call.subject.is_empty() => call.name.clone(),
+            Need::Approval { call, .. } => format!("{} {}", call.name, call.subject),
+            Need::Question { question, .. } => question.clone(),
+            Need::Failed { text } => text.clone(),
+            Need::TaskDone { label, .. } => label.clone(),
+        }
+    }
+
+    /// The row's status dot and what it waits for.
+    fn wait(&self) -> (InboxStatus, &'static str) {
+        match self {
+            Need::Approval { .. } => (InboxStatus::Waiting, "approval waiting"),
+            Need::Question { .. } => (InboxStatus::Waiting, "question waiting"),
+            Need::Failed { .. } => (InboxStatus::Error, "turn failed"),
+            Need::TaskDone { ok: true, .. } => (InboxStatus::Idle, "task done"),
+            Need::TaskDone { ok: false, .. } => (InboxStatus::Error, "task failed"),
+        }
+    }
+}
+
+/// An inbox row's status dot, named as the clients' status glyph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InboxStatus {
+    Waiting,
+    Idle,
+    Error,
+}
+
 /// One inbox row.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InboxItem {
@@ -49,9 +83,46 @@ pub struct InboxItem {
     pub expired: bool,
     /// Arrival order across all sessions: "oldest first" within a rank.
     pub seq: u64,
+    /// The row's line and the notification's text, built here so no client
+    /// words it (T58.4.1).
+    pub title: String,
+    /// What it waits for after the subagent that asked
+    /// (`explore-2 · approval waiting`), `expired` once expired.
+    pub subtitle: String,
+    pub status: InboxStatus,
 }
 
 impl InboxItem {
+    fn new(session: SessionId, source: Option<Source>, need: Need, seq: u64) -> Self {
+        let mut item = InboxItem {
+            session,
+            source,
+            title: need.title(),
+            need,
+            expired: false,
+            seq,
+            subtitle: String::new(),
+            status: InboxStatus::Idle,
+        };
+        item.word();
+        item
+    }
+
+    /// Sets `status` and `subtitle` from the need and whether it expired.
+    fn word(&mut self) {
+        let (status, wait) = if self.expired {
+            (InboxStatus::Idle, "expired")
+        } else {
+            self.need.wait()
+        };
+        let agent = self.source.as_ref().and_then(|s| s.agent.as_deref());
+        self.status = status;
+        self.subtitle = match agent {
+            Some(agent) => format!("{agent} · {wait}"),
+            None => wait.to_string(),
+        };
+    }
+
     /// 0 blocks a turn (approval, question), 1 a failed turn, 2 news.
     pub fn urgency(&self) -> u8 {
         match self.need {
@@ -198,18 +269,13 @@ impl Inbox {
     pub fn expire(&mut self, session: SessionId) {
         for item in self.items.iter_mut().filter(|i| i.session == session) {
             item.expired = true;
+            item.word();
         }
     }
 
     fn push(&mut self, session: SessionId, source: Option<Source>, need: Need) {
         self.next += 1;
-        let item = InboxItem {
-            session,
-            source,
-            need,
-            expired: false,
-            seq: self.next,
-        };
+        let item = InboxItem::new(session, source, need, self.next);
         if item.urgency() == 0 {
             self.activity.insert(session, Activity::WaitingOnYou);
         }
@@ -420,5 +486,107 @@ mod tests {
             1,
             "a blocking item is answered, not dismissed"
         );
+    }
+
+    #[test]
+    fn an_approval_names_its_tool_and_subject() {
+        let mut inbox = Inbox::default();
+        inbox.apply(SessionId::new(), &approval(CallId::new()));
+        let item = inbox.items()[0].clone();
+        assert_eq!(item.title, "bash rm -rf target");
+        assert_eq!(item.subtitle, "approval waiting");
+        assert_eq!(item.status, InboxStatus::Waiting);
+    }
+
+    #[test]
+    fn an_approval_without_a_subject_names_the_tool_and_its_agent() {
+        let s = SessionId::new();
+        let mut inbox = Inbox::default();
+        let Event::ApprovalRequired { mut call, why, .. } = approval(CallId::new()) else {
+            unreachable!("approval() builds an approval")
+        };
+        call.subject.clear();
+        let source = Source {
+            session: s,
+            agent: Some("explore-2".into()),
+            preset: None,
+        };
+        let event = Event::ApprovalRequired {
+            call,
+            why,
+            source: Some(source),
+        };
+        inbox.apply(s, &event);
+        let item = inbox.items()[0].clone();
+        assert_eq!(item.title, "bash");
+        assert_eq!(item.subtitle, "explore-2 · approval waiting");
+    }
+
+    #[test]
+    fn each_need_has_its_words() {
+        let s = SessionId::new();
+        let (ok, bad) = (TaskId::new(), TaskId::new());
+        let mut inbox = Inbox::default();
+        inbox.apply(s, &question(CallId::new()));
+        for (task, code) in [(ok, 0), (bad, 2)] {
+            let label = if code == 0 { "build" } else { "tests" };
+            inbox.apply(
+                s,
+                &Event::TaskCreated {
+                    task,
+                    label: label.into(),
+                    tier: Tier::Cheap,
+                },
+            );
+            inbox.apply(
+                s,
+                &Event::TaskCompleted {
+                    task,
+                    result_item: ItemId::new(),
+                    cost_usd: 0.0,
+                    exit_code: Some(code),
+                    archive: None,
+                },
+            );
+        }
+        inbox.apply(
+            s,
+            &done(StopReason::Refusal {
+                detail: "no".into(),
+            }),
+        );
+        let words: Vec<(String, String, InboxStatus)> = inbox
+            .items()
+            .iter()
+            .map(|i| (i.title.clone(), i.subtitle.clone(), i.status))
+            .collect();
+        let row = |t: &str, w: &str, s| (t.to_string(), w.to_string(), s);
+        assert_eq!(
+            words,
+            vec![
+                row("no", "turn failed", InboxStatus::Error),
+                row("build", "task done", InboxStatus::Idle),
+                row("tests", "task failed", InboxStatus::Error),
+            ],
+            "the question left with the turn that asked it"
+        );
+        inbox.apply(s, &started());
+        inbox.apply(s, &question(CallId::new()));
+        let asked = inbox.items()[0].clone();
+        assert_eq!(asked.title, "which branch?");
+        assert_eq!(asked.subtitle, "question waiting");
+        assert_eq!(asked.status, InboxStatus::Waiting);
+    }
+
+    #[test]
+    fn an_expired_item_reads_expired() {
+        let s = SessionId::new();
+        let mut inbox = Inbox::default();
+        inbox.apply(s, &approval(CallId::new()));
+        inbox.expire(s);
+        let item = inbox.items()[0].clone();
+        assert_eq!(item.subtitle, "expired");
+        assert_eq!(item.status, InboxStatus::Idle);
+        assert_eq!(item.title, "bash rm -rf target", "the line stays");
     }
 }

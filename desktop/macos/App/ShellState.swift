@@ -19,8 +19,10 @@ struct OpenedSession {
   let composer: ComposerStore
   /// What it reported after it showed; nil until then.
   var info: Info?
-  /// The models its cwd's config offers; empty until read.
+  /// The models its cwd's config offers, for best-of's options; empty until read.
   var models: [ModelChoice] = []
+  /// The model popover's sections the core built for its cwd (T58.4.13); empty until read.
+  var modelSections: [ModelSection] = []
   /// Who can drive a session in its cwd (T52.8): the Info tab's Agents list and what the UI
   /// calls the session's own agent. Empty until read.
   var agents: [AgentChoice] = []
@@ -33,7 +35,7 @@ struct OpenedSession {
   let terminals = TerminalSurfaces()
 
   /// The toolbar's model menu for what the session runs on now.
-  var menu: ModelMenu { ModelMenu(choices: models, status: store.status) }
+  var menu: ModelMenu { ModelMenu(sections: modelSections, status: store.status) }
 
   init(_ shared: AppStore.Shared) {
     (store, composer) = (shared.store, shared.composer)

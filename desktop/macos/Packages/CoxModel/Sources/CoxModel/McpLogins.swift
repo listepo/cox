@@ -1,12 +1,12 @@
 // The MCP page's logins (T37.30.3, DT§5.7): per server, the line saying whether cox can reach
-// it and the button that changes that, with its status badge and log (T37.45.4). Here, not in
-// CoxUI, because these decide what the screen shows (DS§1); the app copies them into CoxUI's
-// `SettingsScreen.Login` field for field.
+// it and the button that changes that, both worded by `cox_app` (T58.4.1), with its status badge
+// and log (T37.45.4). Here, not in CoxUI, because the store owns what the screen shows (DS§1);
+// the app copies them into CoxUI's `SettingsScreen.Login` field for field.
 
 import CoxClient
 
 public struct McpLoginRow: Identifiable, Equatable, Sendable {
-  public enum Action: Equatable, Sendable { case logIn, logOut }
+  public typealias Action = McpLoginAction
 
   public let server: String
   public let detail: String
@@ -23,17 +23,9 @@ extension SettingsStore {
   /// One row per MCP server in effect, in name order.
   public var logins: [McpLoginRow] {
     (view?.mcp ?? []).map { server in
-      let (detail, action): (String, McpLoginRow.Action?) =
-        switch server.login {
-        case .stdio: ("Runs locally from \(server.source); no login", nil)
-        case .loggedOut: ("Not logged in", .logIn)
-        case .loggedIn(let expires?): ("Logged in, expires in \(expires)", .logOut)
-        case .loggedIn(nil): ("Logged in", .logOut)
-        case .expired: ("Login expired", .logIn)
-        case .unreadable(let error): ("Token store unreadable: \(error)", .logIn)
-        }
-      return McpLoginRow(
-        server: server.name, detail: detail, action: action, status: server.status, log: server.log)
+      McpLoginRow(
+        server: server.name, detail: server.detail, action: server.action, status: server.status,
+        log: server.log)
     }
   }
 }

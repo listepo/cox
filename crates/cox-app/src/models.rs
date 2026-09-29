@@ -1,6 +1,7 @@
 //! What the toolbar's model popover offers (DT§5.1 "model chip", T37.22.6):
-//! each tier's provider's models by the id `/model` takes, and which
-//! providers can answer at all (A110). Separate
+//! each tier's provider's models by the id `/model` takes, grouped into the
+//! popover's sections (T58.4.7), and which providers can answer at all
+//! (A110). Separate
 //! from Settings, which edits the config, because these only read it to
 //! choose where the next turn goes.
 
@@ -69,6 +70,66 @@ pub fn choices(config: &Config) -> Vec<ModelChoice> {
         );
     }
     out
+}
+
+/// One section of the model popover: a tier's models not listed earlier.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModelSection {
+    pub tier: Tier,
+    /// `Code`, `Think`, `Cheap`.
+    pub title: String,
+    pub models: Vec<MenuModel>,
+}
+
+/// A popover row; which one the session runs on is the client's to mark.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MenuModel {
+    /// The id the switch sends.
+    pub id: String,
+    /// What the catalog calls it; `None` when it has no name.
+    pub display_name: Option<String>,
+    /// `low · high`: the efforts it takes; empty when it takes any.
+    pub efforts: String,
+}
+
+/// The popover's sections: one per tier in first-listed order, a model a
+/// tier already lists left out of a later one's, so with every tier on one
+/// provider the menu is one list.
+pub fn menu(choices: Vec<ModelChoice>) -> Vec<ModelSection> {
+    let mut listed = std::collections::HashSet::new();
+    let mut out: Vec<ModelSection> = Vec::new();
+    for choice in choices {
+        if !listed.insert(choice.id.clone()) {
+            continue;
+        }
+        let model = MenuModel {
+            efforts: choice
+                .efforts
+                .iter()
+                .map(|e| e.name())
+                .collect::<Vec<_>>()
+                .join(" · "),
+            id: choice.id,
+            display_name: choice.display_name,
+        };
+        match out.iter_mut().find(|s| s.tier == choice.tier) {
+            Some(section) => section.models.push(model),
+            None => out.push(ModelSection {
+                tier: choice.tier,
+                title: title(choice.tier).to_owned(),
+                models: vec![model],
+            }),
+        }
+    }
+    out
+}
+
+fn title(tier: Tier) -> &'static str {
+    match tier {
+        Tier::Code => "Code",
+        Tier::Think => "Think",
+        Tier::Cheap => "Cheap",
+    }
 }
 
 /// Every `[providers.<name>]` section with its transport, by name.
@@ -181,6 +242,11 @@ impl App {
         Ok(choices(&self.config(cwd)?))
     }
 
+    /// The model popover's sections for a session in `cwd` (T58.4.7).
+    pub fn model_menu(&self, cwd: &Path) -> Result<Vec<ModelSection>, AppError> {
+        Ok(menu(choices(&self.config(cwd)?)))
+    }
+
     /// The providers a turn in `cwd` could run on now (A110), each key
     /// looked up as the checklist does; probes local servers, so call it
     /// off the main thread.
@@ -227,6 +293,66 @@ mod tests {
         );
         let tiers: Vec<Tier> = choices(&config).iter().map(|c| c.tier).collect();
         assert_eq!(tiers.first(), Some(&Tier::Code));
+    }
+
+    fn choice(tier: Tier, id: &str, efforts: Vec<Effort>) -> ModelChoice {
+        ModelChoice {
+            tier,
+            provider: "anthropic".into(),
+            id: id.into(),
+            display_name: None,
+            efforts,
+            context_window: None,
+        }
+    }
+
+    fn ids(sections: &[ModelSection]) -> Vec<(String, Vec<String>)> {
+        sections
+            .iter()
+            .map(|s| {
+                (
+                    s.title.clone(),
+                    s.models.iter().map(|m| m.id.clone()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_model_is_listed_once_across_tiers() {
+        let sections = menu(vec![
+            choice(Tier::Code, "sonnet", vec![Effort::Low, Effort::High]),
+            choice(Tier::Code, "opus", vec![]),
+            choice(Tier::Think, "opus", vec![]),
+            choice(Tier::Think, "fable", vec![]),
+            choice(Tier::Cheap, "sonnet", vec![]),
+        ]);
+        assert_eq!(
+            ids(&sections),
+            [
+                ("Code".into(), vec!["sonnet".into(), "opus".into()]),
+                ("Think".into(), vec!["fable".into()]),
+            ],
+            "a tier whose models are all listed earlier has no section"
+        );
+        assert_eq!(sections[0].models[0].efforts, "low · high");
+        assert_eq!(sections[0].models[1].efforts, "", "empty takes any");
+    }
+
+    #[test]
+    fn tiers_keep_their_first_listed_order() {
+        let sections = menu(vec![
+            choice(Tier::Cheap, "haiku", vec![]),
+            choice(Tier::Code, "sonnet", vec![]),
+            choice(Tier::Cheap, "mini", vec![]),
+        ]);
+        assert_eq!(
+            ids(&sections),
+            [
+                ("Cheap".into(), vec!["haiku".into(), "mini".into()]),
+                ("Code".into(), vec!["sonnet".into()]),
+            ]
+        );
     }
 
     #[test]

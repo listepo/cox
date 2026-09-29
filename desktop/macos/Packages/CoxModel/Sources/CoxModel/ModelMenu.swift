@@ -1,7 +1,7 @@
-// The toolbar's model popover (DT§5.1 "model chip", T37.22.6): each tier's models from the core's
-// catalog under the tier's name, by the catalog's name without its vendor prefix (A111), the one
-// the session runs on marked. A pick is `/model <tier> <id>`, the TUI's switch. Here, not in CoxUI,
-// because these decide what the menu offers (DS§1); the app copies it into `ModelPopover.State`.
+// The toolbar's model popover (DT§5.1 "model chip", T37.22.6): the core's sections (T58.4.7), each
+// row by the catalog's name without its vendor prefix (A111), the one the session runs on marked.
+// A pick is `/model <tier> <id>`, the TUI's switch. Here, not in CoxUI, because the store owns
+// what the menu shows (DS§1); the app copies it into `ModelPopover.State`.
 
 import CoxClient
 
@@ -29,22 +29,18 @@ public struct ModelMenu: Equatable, Sendable {
 
   public init() {}
 
-  /// A model a tier's section already lists is left out of a later tier's: with every tier on
-  /// one provider, the menu is one list.
-  public init(choices: [ModelChoice], status: Status) {
-    var listed: Set<String> = []
-    var order: [Tier] = []
-    var rows: [Tier: [Row]] = [:]
-    for choice in choices where listed.insert(choice.id).inserted {
-      if rows[choice.tier] == nil { order.append(choice.tier) }
-      rows[choice.tier, default: []].append(
-        Row(
-          tier: choice.tier, model: choice.id,
-          name: ModelName.short(choice.displayName, id: choice.id),
-          detail: choice.efforts.map(\.rawValue).joined(separator: " · "),
-          isSelected: choice.id == status.model))
+  /// The core's sections as they are (`App.modelMenu`), the running model marked.
+  public init(sections: [ModelSection], status: Status) {
+    self.sections = sections.map { section in
+      Section(
+        title: section.title,
+        rows: section.models.map { model in
+          Row(
+            tier: section.tier, model: model.id,
+            name: ModelName.short(model.displayName, id: model.id), detail: model.efforts,
+            isSelected: model.id == status.model)
+        })
     }
-    sections = order.map { Section(title: $0.rawValue.capitalized, rows: rows[$0] ?? []) }
   }
 
   /// The switch a row's click sends; `nil` for a row the menu does not list.

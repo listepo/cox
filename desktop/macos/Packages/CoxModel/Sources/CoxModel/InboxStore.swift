@@ -1,14 +1,15 @@
 // The sidebar's "Needs you" section (T37.27.7, DT§4.3 Inbox, DS§6.4 `Sidebar`): the app inbox as
-// one row per item, an expired one read-only. Here, not in CoxUI, because these decide what the
-// section shows (DS§1); the app copies each row into CoxUI's `Sidebar.Session` field for field
-// and re-reads the inbox whenever the host hears of a new item or a lower badge.
+// one row per item, an expired one read-only, in the core's words (T58.4.1). Here, not in CoxUI,
+// because the store owns what the section shows (DS§1); the app copies each row into CoxUI's
+// `Sidebar.Session` field for field and re-reads the inbox whenever the host hears of a new item
+// or a lower badge.
 
 import CoxClient
 import Observation
 
 public struct InboxRow: Identifiable, Equatable, Sendable {
   /// The sidebar's status glyph, named as CoxUI's `StatusDot.Status`.
-  public enum Status: Equatable, Sendable { case waiting, idle, error }
+  public typealias Status = InboxStatus
 
   /// The item's own id, as one session can wait on several.
   public let id: String
@@ -25,20 +26,11 @@ public struct InboxRow: Identifiable, Equatable, Sendable {
 
 extension InboxRow {
   public init(_ item: InboxItem) {
-    var (status, wait): (Status, String) =
-      switch item.need {
-      case .approval: (.waiting, "approval waiting")
-      case .question: (.waiting, "question waiting")
-      case .failed: (.error, "turn failed")
-      case .taskDone(_, _, true): (.idle, "task done")
-      case .taskDone(_, _, false): (.error, "task failed")
-      }
-    if item.expired { (status, wait) = (.idle, "expired") }
     id = "\(item.session)#\(item.seq)"
     session = item.session
-    self.status = status
-    title = HostNote(item, badge: 0).text
-    subtitle = [item.source?.agent, wait].compactMap { $0 }.joined(separator: " · ")
+    status = item.status
+    title = item.title
+    subtitle = item.subtitle
     isReadOnly = item.expired
   }
 }
