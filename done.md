@@ -8497,3 +8497,31 @@ Deviations: none.
 Check (2026-09-29): new `DurationFormattingTests` (en_US and ru_RU) 3/3, all fail without the fix; `CoxTranscript` 55 tests pass in isolation (the two known key-event races fail only under the full parallel run); `TranscriptSnapshotTests` and `TranscriptTextSizeTests` still pass. Commit 267d7aa1.
 
 Not done: nothing.
+
+#### T51.22 CoxUI draws glass from the `glass.*` tokens
+
+Depends: T51.1 · Size: ~60 · Files: CoxUI elevation/material code, its snapshot tests, `desktop/design/DESIGN.md` §3.5
+Goal: T51.1 gave glass its own tokens (`glass.fill`, `glass.border`, `glass.highlight`, light, dark and High Contrast), approved by the creator on 2026-09-29, but CoxUI still draws the dark top-edge highlight at the light 0.95. CoxUI's glass surfaces read the generated `glass.*` tokens, so the dark glass in the app matches screens 31/32.
+Check: `swift test --package-path desktop/macos/Packages/CoxUI` passes with the dark-glass snapshots re-recorded on purpose and compared against renders 31/32; no colour literal outside the token files.
+Status: done 2026-09-29
+Result: CoxUI's top-edge highlight on lifted things comes from `glass.highlight`: `ElevationToken.layers(at:)` scales the light highlight by that token's alpha in the drawn appearance (light, dark, High Contrast), read from the colour asset (`Foundations/Elevation.swift`, `Appearance.glassHighlightShare`), so the value lives only in the token files. Light and High Contrast unchanged; dark 0.95 → 0.22. DESIGN.md §3.4/§3.5 say the dark "subtle" share is a share of `glass.highlight`.
+
+Deviations: `layers(at:)` is `@MainActor` (colour-asset lookup; both callers already are). The highlight is material-independent, so dark-solid snapshots and the transcript's AppKit bubble and cards changed too: 53 CoxUI and 4 CoxTranscript snapshots re-recorded, all dark; no light snapshot changed.
+
+Check (2026-09-29): CoxUI `swift test` 233/233 (new `theTopEdgeHighlightIsTheGlassHighlightTokenInEachScheme`); CoxTranscript snapshots pass (1–3 timing expectations flake per full run at load average 42 — `PinnedDecisionTests`, `ComposerFlowTests`, `TranscriptBenchmarkTests` — and pass alone); swiftlint --strict and swift format lint --strict clean. Dark-frosted inspector/sidebar compared with render 31: the white rim is gone, the top edge faint as in 31/32. Commit 1548934d.
+
+Not done: pane fill and rim still use `surface.*`/`separator` (dark panes bluer than the near-black tint in 31/32); adopting `glass.fill`/`glass.border` changes light snapshots too — creator's call. The white literal in the specular sweep (`Specular.swift`, `TranscriptView.swift`) has no token yet.
+
+#### T37.44.12 Mockup 08 keeps the inspector in review
+
+Depends: — · Size: ~40 · Files: `desktop/design/mockups/` (screen 08 and its render)
+Goal: A126 (1). The review screen follows DT§5.4, as the app already does: the inspector stays on the right. Mockup 08 is redrawn with it; the toolbar title and the review controls stay only where DT§5.4 has them. Unified/Split, Revert and Open in editor are not added.
+Check: `render.sh 08-…` ok; `npm run diff` of the app's review screen against the new 08 shows content-only regions.
+Status: done 2026-09-29
+Result: mockup 08 (`desktop/design/mockups/mockups.html`) uses the shared shell: the review replaces only the transcript column, the inspector stays on the right on the Changes tab, and the toolbar shows the session title instead of "Review · …" (A126 (1), DT§5.4).
+
+Deviations: the narrower column shows the unified diff; the Unified/Split toggle, Revert and Open in Zed (already in DT§5.4) moved onto their own row.
+
+Check (2026-09-29): `render.sh 08-review-diff` OK and inspected; `npm run diff` of the app's `review.png` against the render (window crop, threshold 0.3) 2.20% pixels differ — layout lines up (sidebar, file list, diff, inspector); the rest is content, the controls row and draft comments the app does not draw. Commit dbff29c8.
+
+Not done: nothing.

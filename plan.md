@@ -32,7 +32,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.44.12 | in progress | P2 | 1 | 0% | Claude Code / opus-5.5 |
 | T37.44.13 | todo | P2 | 4 | 0% | |
 | T37.44.14 | todo | P2 | 2 | 0% | |
 | T37.44.15 | todo | P2 | 2 | 0% | |
@@ -47,7 +46,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T51.15 | todo | P3 | 2 | 0% | |
 | T51.16 | todo | P3 | 3 | 0% | |
 | T51.17 | todo | P3 | 3 | 0% | |
-| T51.22 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
 | T52.8 | todo | P2 | 3 | 0% | |
 | T52.12 | todo | P3 | 3 | 0% | |
 | T52.17 | todo | P3 | 3 | 0% | |
@@ -1365,12 +1363,6 @@ On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
 
-#### T37.44.12 Mockup 08 keeps the inspector in review
-
-Depends: — · Size: ~40 · Files: `desktop/design/mockups/` (screen 08 and its render)
-Goal: A126 (1). The review screen follows DT§5.4, as the app already does: the inspector stays on the right. Mockup 08 is redrawn with it; the toolbar title and the review controls stay only where DT§5.4 has them. Unified/Split, Revert and Open in editor are not added.
-Check: `render.sh 08-…` ok; `npm run diff` of the app's review screen against the new 08 shows content-only regions.
-
 #### T37.44.13 Command palette and its shortcuts
 
 Depends: — · Size: ~200 · Files: `desktop/macos/App` (palette window and menu commands), CoxUI palette organism and snapshots, `cox-app` `Completer` if the command list is not there yet
@@ -1464,12 +1456,6 @@ Every card keeps the P51 rules, and:
 - an external agent's usage is its own billing: no `usage` row is invented for it, and the cost pill shows "—" as the mockup does;
 - a remote session never sends API keys or the Keychain's secrets over the wire and never forwards the ssh agent;
 - plugin widgets reach the screen only through `cox_sanitize::sanitize` and PL§8's limits, as in the TUI.
-
-#### T51.22 CoxUI draws glass from the `glass.*` tokens
-
-Depends: T51.1 · Size: ~60 · Files: CoxUI elevation/material code, its snapshot tests, `desktop/design/DESIGN.md` §3.5
-Goal: T51.1 gave glass its own tokens (`glass.fill`, `glass.border`, `glass.highlight`, light, dark and High Contrast), approved by the creator on 2026-09-29, but CoxUI still draws the dark top-edge highlight at the light 0.95. CoxUI's glass surfaces read the generated `glass.*` tokens, so the dark glass in the app matches screens 31/32.
-Check: `swift test --package-path desktop/macos/Packages/CoxUI` passes with the dark-glass snapshots re-recorded on purpose and compared against renders 31/32; no colour literal outside the token files.
 
 #### T52.8 CoxUI and app: agent picker, ACP banner, Agents list (mockup 27)
 
