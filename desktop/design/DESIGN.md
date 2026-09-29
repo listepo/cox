@@ -176,7 +176,8 @@ tok/s, timers) are always tabular (`.monospacedDigit()`).
   ring 1.5), count badge 16, hairline 0.5, quote bar 3; composer chip `chipHeight` 26, Send
   `sendButton` 30, the composer's text area at least `composerTextMinHeight` 46 with its insets,
   completion list `completionWidth` 470, Review's file list `reviewFileListWidth` 260, and the
-  first-run window `windowSmallWidth` 980 (the mockup's `.window.small`).
+  first-run window `windowSmallWidth` 980 (the mockup's `.window.small`), and a new session window
+  `windowDefaultWidth` × `windowDefaultHeight` 1440 × 900 (the mockups' window, A126).
 
 ### 3.4 Elevation (depth)
 
@@ -300,6 +301,8 @@ names map one-to-one:
 - While the session is in Bypass mode a 3 pt `status.danger` strip runs under the toolbar, along the
   panes below it, for as long as the mode is on (§3.1).
 - The reading column is `size.readingWidth` wide and centred; the composer shares its width.
+- A new session window opens at `size.windowDefaultWidth` × `size.windowDefaultHeight`, each side cut
+  to the screen's visible frame (`Size.defaultWindow`, T37.44.14); a restored window keeps its frame.
 - Minimum window `size.windowMinWidth` × `size.windowMinHeight`. Below 1280 pt of window width the
   inspector floats over the transcript column, `size.paneGap` in from its edges, instead of taking width
   from it: the column keeps the width it has with the inspector hidden.

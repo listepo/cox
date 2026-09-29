@@ -46,6 +46,8 @@
   --size-quoteBar: 3px;
   --size-windowMinWidth: 1100px;
   --size-windowMinHeight: 700px;
+  --size-windowDefaultWidth: 1440px;
+  --size-windowDefaultHeight: 900px;
   --size-popoverWidth: 340px;
   --size-tokenPopoverWidth: 360px;
   --size-windowSmallWidth: 980px;

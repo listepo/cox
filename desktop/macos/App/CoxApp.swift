@@ -5,13 +5,14 @@
 // Settings opens from the app menu (⌘,); the menu-bar extra shows what needs you (T51.14);
 // two recorded global hotkeys open that menu and a new session (T51.15); session titles are
 // in Spotlight, and a result opens its session (T51.16); App Intents ask cox in a project and
-// open a session (T51.17).
+// open a session (T51.17); a new session window opens at 1440×900, cut to the screen (T37.44.14).
 
 import AppKit
 import CoxClient
 import CoxCore
 import CoxModel
 import CoxPlatform
+import CoxUI
 import SwiftUI
 import UserNotifications
 
@@ -28,11 +29,20 @@ struct CoxApp: App {
     Binding(get: { model.settings?.showsMenuBar ?? true }, set: { _ in })
   }
 
+  /// A new session window opens at the mockups' 1440×900, cut to the screen (T37.44.14); a
+  /// restored window keeps the frame it was left at, as the system restores it over this.
+  private static func placement(
+    _ content: WindowLayoutRoot, _ context: WindowPlacementContext
+  ) -> WindowPlacement {
+    WindowPlacement(size: Size.defaultWindow(fitting: context.defaultDisplay.visibleRect.size))
+  }
+
   var body: some Scene {
     WindowGroup("Cox", id: Self.mainWindow) {
       SessionWindow(model: model).lendsOpenWindow(to: model).opensSpotlightResults()
     }
     .windowStyle(.hiddenTitleBar)
+    .defaultWindowPlacement(Self.placement)
     .commands { ShellCommands() }
     // What needs you and what runs, from the menu bar, while `desktop.menu_bar` is on (T51.14).
     MenuBarExtra(isInserted: showsMenuBar) {
@@ -47,6 +57,7 @@ struct CoxApp: App {
       if let popOut { SessionWindow(model: model, popOut: popOut) }
     }
     .windowStyle(.hiddenTitleBar)
+    .defaultWindowPlacement(Self.placement)
     Settings {
       SettingsWindow(model: model)
     }

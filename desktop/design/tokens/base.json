@@ -330,6 +330,22 @@
         "unit": "px"
       }
     },
+    "windowDefaultWidth": {
+      "$type": "dimension",
+      "$description": "A new session window's width: the mockups' 1440×900 window, clamped to the screen",
+      "$value": {
+        "value": 1440,
+        "unit": "px"
+      }
+    },
+    "windowDefaultHeight": {
+      "$type": "dimension",
+      "$description": "A new session window's height: the mockups' 1440×900 window, clamped to the screen",
+      "$value": {
+        "value": 900,
+        "unit": "px"
+      }
+    },
     "popoverWidth": {
       "$type": "dimension",
       "$value": {

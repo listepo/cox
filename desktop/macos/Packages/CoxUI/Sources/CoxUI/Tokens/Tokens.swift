@@ -91,6 +91,10 @@ public enum Size {
     public static let quoteBar: CGFloat = 3
     public static let windowMinWidth: CGFloat = 1100
     public static let windowMinHeight: CGFloat = 700
+    /// A new session window's width: the mockups' 1440×900 window, clamped to the screen
+    public static let windowDefaultWidth: CGFloat = 1440
+    /// A new session window's height: the mockups' 1440×900 window, clamped to the screen
+    public static let windowDefaultHeight: CGFloat = 900
     public static let popoverWidth: CGFloat = 340
     public static let tokenPopoverWidth: CGFloat = 360
     /// The first-run window: the mockup's .window.small, 980px wide
