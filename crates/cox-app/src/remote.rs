@@ -21,9 +21,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use cox_protocol::ids::{ArchiveId, SessionId};
 use cox_protocol::types::TodoItem;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{Notify, oneshot};
 
 use crate::app::{App, Host};
+use crate::coalesce;
 use crate::wire::{self, Call, Line, Outcome, Reply, Request, ServerEvent, WireError};
 use crate::{Block, Changes, Completion, Intent, Project, SearchHit, SessionEntry, TimelinePatch};
 
@@ -87,10 +88,17 @@ pub fn ssh_command(ssh: &Path, host: &str) -> Result<tokio::process::Command, Re
 }
 
 /// A session's patches, created by whichever comes first: the reader
-/// seeing its first batch, or the caller that opened it.
+/// seeing its first batch, or the caller that opened it. Batches fold
+/// through `coalesce::push` as the local controller's queue does, so a UI
+/// that stops pulling costs memory per changed block, not per batch the
+/// remote sends.
 struct Stream {
-    tx: mpsc::UnboundedSender<Vec<TimelinePatch>>,
-    rx: Option<mpsc::UnboundedReceiver<Vec<TimelinePatch>>>,
+    queue: Mutex<Vec<TimelinePatch>>,
+    /// Signalled whenever patches are queued or the stream ends.
+    ready: Notify,
+    closed: AtomicBool,
+    /// A handle holds it; a second one gets a closed stream instead.
+    taken: AtomicBool,
 }
 
 /// One ssh connection: the writer half, the calls waiting for an answer,
@@ -100,7 +108,7 @@ struct Link {
     writer: tokio::sync::Mutex<Box<dyn AsyncWrite + Send + Unpin>>,
     next_id: AtomicU64,
     pending: Mutex<HashMap<u64, oneshot::Sender<Outcome>>>,
-    streams: Mutex<HashMap<SessionId, Stream>>,
+    streams: Mutex<HashMap<SessionId, Arc<Stream>>>,
     connected: AtomicBool,
     /// Killed when the link goes (`kill_on_drop`).
     _child: Mutex<Option<tokio::process::Child>>,
@@ -168,22 +176,32 @@ impl Link {
         RemoteError::Disconnected(self.host.clone())
     }
 
-    /// The receiving end of `session`'s stream, once.
-    fn take_stream(&self, session: SessionId) -> mpsc::UnboundedReceiver<Vec<TimelinePatch>> {
+    /// `session`'s stream, once.
+    fn take_stream(&self, session: SessionId) -> Arc<Stream> {
         let mut streams = lock(&self.streams);
         let stream = streams.entry(session).or_insert_with(Stream::new);
-        match stream.rx.take() {
-            Some(rx) => rx,
+        if stream.taken.swap(true, Ordering::AcqRel) {
             // Taken already: a second handle on the session gets an empty,
             // closed stream instead of stealing the first one's batches.
-            None => mpsc::unbounded_channel().1,
+            let closed = Stream::new();
+            closed.close();
+            return closed;
         }
+        Arc::clone(stream)
     }
 
     fn patches(&self, session: SessionId, patches: Vec<TimelinePatch>) {
-        let mut streams = lock(&self.streams);
-        let stream = streams.entry(session).or_insert_with(Stream::new);
-        let _ = stream.tx.send(patches);
+        let stream = {
+            let mut streams = lock(&self.streams);
+            Arc::clone(streams.entry(session).or_insert_with(Stream::new))
+        };
+        stream.push(patches);
+    }
+
+    fn end(&self, session: SessionId) {
+        if let Some(stream) = lock(&self.streams).remove(&session) {
+            stream.close();
+        }
     }
 
     /// The connection is gone: every waiting call fails and every stream
@@ -191,14 +209,55 @@ impl Link {
     fn drop_all(&self) {
         self.connected.store(false, Ordering::Release);
         lock(&self.pending).clear();
-        lock(&self.streams).clear();
+        for (_, stream) in lock(&self.streams).drain() {
+            stream.close();
+        }
     }
 }
 
 impl Stream {
-    fn new() -> Self {
-        let (tx, rx) = mpsc::unbounded_channel();
-        Self { tx, rx: Some(rx) }
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            queue: Mutex::new(Vec::new()),
+            ready: Notify::new(),
+            closed: AtomicBool::new(false),
+            taken: AtomicBool::new(false),
+        })
+    }
+
+    fn push(&self, patches: Vec<TimelinePatch>) {
+        {
+            let mut queue = lock(&self.queue);
+            for patch in patches {
+                coalesce::push(&mut queue, patch);
+            }
+        }
+        self.ready.notify_one();
+    }
+
+    fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+        self.ready.notify_one();
+    }
+
+    /// Everything queued, waiting until there is some; `None` once the
+    /// stream ended and everything was pulled.
+    async fn next(&self) -> Option<Vec<TimelinePatch>> {
+        loop {
+            // Created before the check: a `notify_one` in between leaves a
+            // permit, so no wake-up is lost.
+            let ready = self.ready.notified();
+            {
+                let mut queue = lock(&self.queue);
+                if !queue.is_empty() {
+                    return Some(std::mem::take(&mut *queue));
+                }
+                if self.closed.load(Ordering::Acquire) {
+                    return None;
+                }
+            }
+            ready.await;
+        }
     }
 }
 
@@ -219,9 +278,7 @@ async fn read(link: Arc<Link>, reader: impl AsyncRead + Unpin, local: Arc<dyn Ho
             }
             Line::Notification(note) => match note.event {
                 ServerEvent::Patches { session, patches } => link.patches(session, patches),
-                ServerEvent::Ended { session } => {
-                    lock(&link.streams).remove(&session);
-                }
+                ServerEvent::Ended { session } => link.end(session),
                 ServerEvent::Inbox { item, badge } => local.notify(*item, badge),
                 // The badge counts this machine's sessions; a remote count
                 // would overwrite it.
@@ -356,12 +413,12 @@ pub struct RemoteSession {
     link: Arc<Link>,
     opened: Vec<Block>,
     warnings: Vec<String>,
-    patches: tokio::sync::Mutex<mpsc::UnboundedReceiver<Vec<TimelinePatch>>>,
+    patches: Arc<Stream>,
 }
 
 impl RemoteSession {
     fn new(link: Arc<Link>, id: SessionId, opened: Vec<Block>, warnings: Vec<String>) -> Arc<Self> {
-        let patches = tokio::sync::Mutex::new(link.take_stream(id));
+        let patches = link.take_stream(id);
         Arc::new(Self {
             id,
             link,
@@ -392,7 +449,7 @@ impl RemoteSession {
 
     /// The next batch; `None` once closed or disconnected.
     pub async fn next_patches(&self) -> Option<Vec<TimelinePatch>> {
-        self.patches.lock().await.recv().await
+        self.patches.next().await
     }
 
     pub async fn snapshot(&self) -> Result<Vec<Block>, RemoteError> {
@@ -551,6 +608,31 @@ mod tests {
         }
         // EOF: the link reads every line, then drops.
         drop(server);
+        until_dropped(&link).await;
+        assert!(lock(&links.opened).is_empty(), "opened without asking");
+        assert_eq!(
+            *lock(&links.asked),
+            [("devbox".to_owned(), "https://example.com/login".to_owned())]
+        );
+    }
+
+    fn append(block: &str, text: &str) -> TimelinePatch {
+        TimelinePatch::AppendText {
+            id: crate::patch::BlockId(block.into()),
+            text: text.into(),
+        }
+    }
+
+    fn patches_line(session: SessionId, patches: Vec<TimelinePatch>) -> String {
+        let line = Line::Notification(wire::Notification {
+            v: wire::VERSION,
+            event: ServerEvent::Patches { session, patches },
+        });
+        wire::encode(&line).expect("encodes")
+    }
+
+    /// Waits until the link has read everything the fake remote wrote.
+    async fn until_dropped(link: &Link) {
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             while link.connected.load(Ordering::Acquire) {
                 tokio::task::yield_now().await;
@@ -558,11 +640,47 @@ mod tests {
         })
         .await
         .expect("the link ends at EOF");
-        assert!(lock(&links.opened).is_empty(), "opened without asking");
+    }
+
+    #[tokio::test]
+    async fn remote_patches_fold_while_the_ui_does_not_pull() {
+        let (client, mut server) = tokio::io::duplex(1 << 16);
+        let (reader, writer) = tokio::io::split(client);
+        let local = Arc::new(Links::default()) as Arc<dyn Host>;
+        let link = Link::start("devbox", reader, writer, None, local);
+        let session = SessionId::new();
+        let stream = link.take_stream(session);
+        for n in 0..500 {
+            let text = patches_line(session, vec![append("a", &n.to_string())]);
+            server.write_all(text.as_bytes()).await.expect("write");
+        }
+        let text = patches_line(session, vec![append("b", "x")]);
+        server.write_all(text.as_bytes()).await.expect("write");
+        drop(server);
+        until_dropped(&link).await;
+        // 501 batches from a stalled UI's point of view: one patch per block.
+        assert_eq!(lock(&stream.queue).len(), 2);
+        let all: String = (0..500).map(|n| n.to_string()).collect();
         assert_eq!(
-            *lock(&links.asked),
-            [("devbox".to_owned(), "https://example.com/login".to_owned())]
+            stream.next().await,
+            Some(vec![append("a", &all), append("b", "x")])
         );
+        // The connection dropped, so the stream ends once drained.
+        assert_eq!(stream.next().await, None);
+    }
+
+    #[tokio::test]
+    async fn a_second_handle_on_a_remote_session_gets_a_closed_stream() {
+        let (client, _server) = tokio::io::duplex(4096);
+        let (reader, writer) = tokio::io::split(client);
+        let local = Arc::new(Links::default()) as Arc<dyn Host>;
+        let link = Link::start("devbox", reader, writer, None, local);
+        let session = SessionId::new();
+        let first = link.take_stream(session);
+        let second = link.take_stream(session);
+        link.patches(session, vec![append("a", "1")]);
+        assert_eq!(second.next().await, None);
+        assert_eq!(first.next().await, Some(vec![append("a", "1")]));
     }
 
     #[test]
