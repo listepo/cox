@@ -3,7 +3,7 @@
 // in-memory stand-in for the Plugin API calls the scripts make.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COLOR_MODES, FIGMA_FONT, chunks, collections, loadTokens, styles, walk } from './variables.mjs';
+import { COLOR_MODES, FIGMA_FONT, chunks, collections, loadTokens, sizeScope, styles, walk } from './variables.mjs';
 
 const tokens = await loadTokens();
 const AsyncFunction = (async () => {}).constructor;
@@ -86,6 +86,16 @@ const run = async (figma) => {
   for (const code of chunks(tokens)) reports.push(...(await new AsyncFunction('figma', code)(figma)));
   return reports;
 };
+
+test('a_size_scope_anchors_hairline_quoteBar_and_Ring', () => {
+  assert.deepEqual(sizeScope('hairline'), ['STROKE_FLOAT', 'WIDTH_HEIGHT']);
+  assert.deepEqual(sizeScope('quoteBar'), ['STROKE_FLOAT', 'WIDTH_HEIGHT']);
+  assert.deepEqual(sizeScope('statusDotRing'), ['STROKE_FLOAT', 'WIDTH_HEIGHT']);
+  assert.deepEqual(sizeScope('paneGap'), ['GAP']);
+  // The unanchored pattern treated any name containing "hairline" as a stroke.
+  assert.deepEqual(sizeScope('hairlineWidth'), ['WIDTH_HEIGHT']);
+  assert.deepEqual(sizeScope('quoteBarInner'), ['WIDTH_HEIGHT']);
+});
 
 test('every_token_becomes_a_variable_or_style_and_every_colour_has_all_four_modes', () => {
   const vars = new Map(collections(tokens).flatMap((c) => c.variables.map((v) => [v.name, { ...v, modes: c.modes }])));

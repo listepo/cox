@@ -21,13 +21,20 @@ export const LIMIT = 45000;
 // Figma mode name per `color.<mode>.json`, in the order the modes are created (Light is the default).
 export const COLOR_MODES = { light: 'Light', dark: 'Dark', 'light-hc': 'Light HC', 'dark-hc': 'Dark HC' };
 // Collection per base group; the Swift type is the iOS code syntax prefix (DS§2).
+// Every alternative is anchored: `hairline` inside a longer name is not a stroke.
+export function sizeScope(name) {
+  if (/(?:hairline|quoteBar|Ring)$/.test(name)) return ['STROKE_FLOAT', 'WIDTH_HEIGHT'];
+  if (name === 'paneGap') return ['GAP'];
+  return ['WIDTH_HEIGHT'];
+}
+
 const BASE_GROUPS = {
   space: { collection: 'Spacing', swift: 'Space', scopes: () => ['GAP'] },
   radius: { collection: 'Radius', swift: 'Radius', scopes: () => ['CORNER_RADIUS'] },
   size: {
     collection: 'Size',
     swift: 'Size',
-    scopes: (name) => (/(?:hairline|quoteBar|Ring)$/.test(name) ? ['STROKE_FLOAT', 'WIDTH_HEIGHT'] : name === 'paneGap' ? ['GAP'] : ['WIDTH_HEIGHT']),
+    scopes: sizeScope,
   },
   material: { collection: 'Material', swift: 'MaterialToken', scopes: (name) => (/blur/i.test(name) ? ['EFFECT_FLOAT'] : []) },
   motion: { collection: 'Motion', swift: 'Motion', scopes: () => [] },

@@ -217,12 +217,8 @@ mod tests {
         let result = check_api_keys_with(&config, |_, _| {
             panic!("an unknown provider must fail before any key is resolved")
         });
-        assert_eq!(result.status, "fail", "{}", result.detail);
-        assert!(
-            result.detail.contains("[providers.nosuch]"),
-            "{}",
-            result.detail
-        );
+        assert_eq!(result.status, "fail");
+        assert!(result.detail.contains("[providers.nosuch]"));
     }
 
     #[test]
@@ -243,14 +239,12 @@ mod tests {
         let result = check_api_keys_with(&config, |_, _| {
             Err(cox_protocol::errors::ProviderError::Auth)
         });
-        assert_eq!(result.status, "warn", "{}", result.detail);
+        assert_eq!(result.status, "warn");
         // The keyring hint names service `cox`, account `<section>` — the
-        // order `keyring::Entry::new("cox", section)` reads.
-        assert!(
-            result.fix.contains(&format!("-s cox -a {section}")),
-            "{:?}",
-            result.fix
-        );
+        // order `keyring::Entry::new("cox", section)` reads. The fix text
+        // stays out of the assertion message: it is the failure output
+        // CodeQL treats as a log, and a key check's text is sensitive.
+        assert!(result.fix.contains(&format!("-s cox -a {section}")));
     }
 
     #[test]
@@ -264,10 +258,9 @@ mod tests {
         assert_eq!(check_api_keys_in(&config, &stored).status, "ok");
         let result = check_api_keys_in(&config, &|_| None);
         assert_eq!(
-            result.status,
-            "fail",
+            result.status, "fail",
             "expected fail status when no stored key is available"
         );
-        assert!(result.detail.contains("cox/anthropic"), "{}", result.detail);
+        assert!(result.detail.contains("cox/anthropic"));
     }
 }

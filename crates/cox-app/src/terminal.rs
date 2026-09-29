@@ -483,12 +483,7 @@ mod tests {
             .expect("write");
         let (found, seen) = read_until(&term, "=\r").await;
         assert!(found, "{seen}");
-        let pid: i32 = seen
-            .split("JOB=")
-            .filter_map(|rest| rest.split('=').next()?.parse().ok())
-            .next()
-            .expect("the job's pid");
-        let pid = Pid::from_raw(pid);
+        let pid = Pid::from_raw(background_pid(&seen));
         assert!(nix::sys::signal::kill(pid, None).is_ok(), "the job runs");
         term.close();
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -501,6 +496,36 @@ mod tests {
         );
         assert!(term.exit_status().is_some(), "the shell was reaped");
         assert!(term.next_output_after_close_ends().await);
+    }
+
+    /// The shell ignores SIGHUP, so it cannot forward it. The job is its own
+    /// process group and still has to die with the pane.
+    #[tokio::test]
+    async fn terminal_close_kills_a_background_job_the_shell_does_not_signal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let term = open(&spec(dir.path(), SandboxMode::DangerFullAccess)).expect("open");
+        term.write(b"trap '' HUP; sleep 300 & echo \"JOB=$!=\"\n")
+            .expect("write");
+        let (found, seen) = read_until(&term, "=\r").await;
+        assert!(found, "{seen}");
+        let pid = Pid::from_raw(background_pid(&seen));
+        assert!(nix::sys::signal::kill(pid, None).is_ok(), "the job runs");
+        term.close();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while nix::sys::signal::kill(pid, None).is_ok() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            nix::sys::signal::kill(pid, None).is_err(),
+            "the job outlived close"
+        );
+    }
+
+    fn background_pid(seen: &str) -> i32 {
+        seen.split("JOB=")
+            .filter_map(|rest| rest.split('=').next()?.parse().ok())
+            .next()
+            .expect("the job's pid")
     }
 
     #[tokio::test]
