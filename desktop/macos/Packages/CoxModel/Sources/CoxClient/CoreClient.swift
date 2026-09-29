@@ -38,6 +38,10 @@ public protocol SessionClient: AnyObject, Sendable {
   /// Rows for the composer's token, `@que…` or `/que…`, best first, at most `limit`
   /// (`cox_app::Completer`, DT§5.3).
   func complete(_ token: String, limit: UInt32) -> [Completion]
+  /// The command palette's rows for `query`: `items` (the window's actions and sessions) and this
+  /// session's `/` commands and `@` files, best first, at most `limit` of each kind
+  /// (`cox_app::Completer::palette`, T37.44.13).
+  func palette(_ query: String, items: [PaletteItem], limit: UInt32) -> [PaletteHit]
   /// This session's earlier prompts, newest first, at most `limit`: what ↑ walks in an empty
   /// composer (`cox_app::live::LiveSession::history`).
   func history(limit: UInt32) throws -> [String]

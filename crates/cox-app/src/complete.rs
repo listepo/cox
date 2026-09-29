@@ -12,6 +12,8 @@ use cox_protocol::commands::COMMANDS;
 use cox_search::glob::{Candidate, rank_by_query, workspace_files};
 use serde::{Deserialize, Serialize};
 
+use crate::palette::{PaletteHit, PaletteItem, PaletteKind, rank};
+
 /// One completion row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Completion {
@@ -26,6 +28,8 @@ pub struct Completion {
 pub struct Completer {
     commands: Vec<Completion>,
     files: Vec<String>,
+    /// The project's directory name, a file's detail in the palette.
+    project: String,
 }
 
 impl Completer {
@@ -51,9 +55,14 @@ impl Completer {
                 detail: c.description.unwrap_or_default(),
             });
         }
+        let project = root
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         Self {
             commands,
             files: workspace_files(cwd),
+            project,
         }
     }
 
@@ -110,6 +119,32 @@ impl Completer {
             .filter_map(|f| by_name.remove(&f.display))
             .collect()
     }
+
+    /// The command palette's rows for `query` (T37.44.13): the caller's
+    /// actions and sessions, then, once something is typed, this session's
+    /// `/` commands and `@` files, ranked by [`rank`].
+    pub fn palette(
+        &self,
+        query: &str,
+        mut items: Vec<PaletteItem>,
+        per_kind: usize,
+    ) -> Vec<PaletteHit> {
+        if !query.trim().is_empty() {
+            items.extend(self.commands.iter().map(|c| PaletteItem {
+                kind: PaletteKind::Command,
+                id: c.insert.clone(),
+                title: c.insert.clone(),
+                detail: c.detail.clone(),
+            }));
+            items.extend(self.files.iter().map(|f| PaletteItem {
+                kind: PaletteKind::File,
+                id: format!("@{f}"),
+                title: f.clone(),
+                detail: self.project.clone(),
+            }));
+        }
+        rank(query, items, per_kind)
+    }
 }
 
 #[cfg(test)]
@@ -143,5 +178,27 @@ mod tests {
         assert_eq!(c.complete("/compact", 1)[0].insert, "/compact");
         assert_eq!(c.complete("@lib", 3)[0].insert, "@src/lib.rs");
         assert!(c.complete("plain", 3).is_empty());
+    }
+
+    #[test]
+    fn palette_adds_commands_and_files_only_once_something_is_typed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cwd = dir.path().join("project");
+        std::fs::create_dir_all(cwd.join("docs")).expect("docs");
+        std::fs::write(cwd.join("docs/review.md"), "").expect("review");
+        let c = Completer::load(&cwd, &dir.path().join("h"), &dir.path().join("claude"));
+        let action = PaletteItem {
+            kind: PaletteKind::Action,
+            id: "review".into(),
+            title: "Review changes".into(),
+            detail: "⌘⇧R".into(),
+        };
+
+        assert_eq!(c.palette("", vec![action.clone()], 5).len(), 1);
+        let hits = c.palette("review", vec![action], 5);
+        assert_eq!(hits[0].item.kind, PaletteKind::Action);
+        let file = hits.iter().find(|h| h.item.kind == PaletteKind::File);
+        let file = file.map(|h| (h.item.id.as_str(), h.item.detail.as_str()));
+        assert_eq!(file, Some(("@docs/review.md", "project")));
     }
 }

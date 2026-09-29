@@ -1,8 +1,9 @@
-// Actionable notifications (DT§5.6, T37.27): an approval posts with Allow and Deny, a question
-// with a typed answer, and an action on either comes back as the session and the `Intent` to
-// send it. Separate from `MacHost` so the note-to-content and action-to-intent mappings are
-// plain functions a test checks without posting a notification; `NotificationResponder` is
-// the thin delegate the app installs, and the only part that needs the notification centre.
+// Actionable notifications (DT§5.6, T37.27, T37.44.15): an approval posts with Allow once, Deny
+// and Open, a question with a typed answer, and an action on either comes back as the session and
+// the `Intent` to send it, or as the session to bring forward. Separate from `MacHost` so the
+// note-to-content and action-to-intent mappings are plain functions a test checks without posting
+// a notification; `NotificationResponder` is the thin delegate the app installs, and the only
+// part that needs the notification centre.
 
 import CoxClient
 import Foundation
@@ -24,23 +25,25 @@ public enum NotificationActions {
   static let question = "cox.question"
   static let allow = "cox.allow"
   static let deny = "cox.deny"
+  static let open = "cox.open"
   static let answer = "cox.answer"
   static let sessionKey = "session"
   static let callKey = "call"
 
-  /// Allow and Deny on an approval — allow for session and edit need the app, by design
-  /// (DT§5.6) — and a typed answer on a question. Allow asks for the unlocked Mac: it runs a
-  /// command.
+  /// Allow once, Deny and Open on an approval (mockup 23) — allow for session and edit need the
+  /// app, by design (DT§5.6) — and a typed answer on a question. Allow once asks for the unlocked
+  /// Mac: it runs a command. Open brings cox forward on the session.
   public static var categories: Set<UNNotificationCategory> {
     let allow = UNNotificationAction(
-      identifier: Self.allow, title: "Allow", options: [.authenticationRequired])
+      identifier: Self.allow, title: "Allow once", options: [.authenticationRequired])
     let deny = UNNotificationAction(identifier: Self.deny, title: "Deny", options: [])
+    let open = UNNotificationAction(identifier: Self.open, title: "Open", options: [.foreground])
     let answer = UNTextInputNotificationAction(
       identifier: Self.answer, title: "Answer", options: [.authenticationRequired],
       textInputButtonTitle: "Send", textInputPlaceholder: "Your answer")
     return [
       UNNotificationCategory(
-        identifier: approval, actions: [allow, deny], intentIdentifiers: [], options: []),
+        identifier: approval, actions: [allow, deny, open], intentIdentifiers: [], options: []),
       UNNotificationCategory(
         identifier: question, actions: [answer], intentIdentifiers: [], options: []),
     ]
@@ -65,7 +68,8 @@ public enum NotificationActions {
     return content
   }
 
-  /// The intent an action sends; `nil` for a plain click, an unknown action or an empty answer.
+  /// The intent an action sends; `nil` for Open, a plain click, an unknown action or an empty
+  /// answer. Allow once is the one-call approval, never a standing rule.
   public static func route(
     action: String, userInfo: [AnyHashable: Any], text: String?
   ) -> NotificationRoute? {
@@ -82,6 +86,13 @@ public enum NotificationActions {
     default: return nil
     }
     return NotificationRoute(session: session, intent: intent)
+  }
+
+  /// The session Open or a plain click on the notification brings forward; `nil` for an action
+  /// that answers instead, or a note that names no session.
+  public static func shows(action: String, userInfo: [AnyHashable: Any]) -> String? {
+    guard action == open || action == UNNotificationDefaultActionIdentifier else { return nil }
+    return userInfo[sessionKey] as? String
   }
 
   /// Allow or Deny from the menu bar (T51.14): the same route a notification's Allow or Deny
@@ -103,8 +114,8 @@ public enum NotificationActions {
 }
 
 /// The notification centre's delegate: an action on a cox notification goes to `handle`, which
-/// the app points at the session's store, and a click on the notification itself goes to `show`
-/// with its session. The app keeps it alive and sets it as
+/// the app points at the session's store, and Open or a click on the notification itself goes to
+/// `show` with its session. The app keeps it alive and sets it as
 /// `UNUserNotificationCenter.current().delegate` at launch.
 public final class NotificationResponder: NSObject, UNUserNotificationCenterDelegate, Sendable {
   private let handle: @Sendable (NotificationRoute) -> Void
@@ -124,11 +135,11 @@ public final class NotificationResponder: NSObject, UNUserNotificationCenterDele
     let userInfo = response.notification.request.content.userInfo
     let route = NotificationActions.route(
       action: response.actionIdentifier, userInfo: userInfo, text: text)
-    let session = userInfo[NotificationActions.sessionKey] as? String
+    let shown = NotificationActions.shows(action: response.actionIdentifier, userInfo: userInfo)
     if let route {
       handle(route)
-    } else if response.actionIdentifier == UNNotificationDefaultActionIdentifier, let session {
-      show(session)
+    } else if let shown {
+      show(shown)
     }
   }
 

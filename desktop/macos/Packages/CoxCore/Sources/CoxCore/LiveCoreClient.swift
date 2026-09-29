@@ -53,6 +53,13 @@ final class LiveSession: SessionClient {
     }
   }
 
+  func palette(
+    _ query: String, items: [CoxClient.PaletteItem], limit: UInt32
+  ) -> [CoxClient.PaletteHit] {
+    handle.palette(query: query, items: items.map { .init($0) }, limit: limit)
+      .map { CoxClient.PaletteHit($0) }
+  }
+
   func history(limit: UInt32) throws -> [String] { try handle.history(limit: limit) }
 
   func changes() async throws -> CoxClient.Changes {

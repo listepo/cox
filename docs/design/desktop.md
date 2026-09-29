@@ -676,7 +676,13 @@ turn in the list. Per-hunk revert is M2.
 ### 5.5 Command palette and keyboard
 
 ⌘K opens one palette over actions, sessions (fuzzy on title), files in the
-current project and slash commands. The whole app is keyboard-drivable:
+current project and slash commands (mockup 12, T37.44.13). `cox_app::palette::rank`
+orders it: actions, then sessions, then commands and files, best match first
+within each group and at most five of each, with the matched characters for the
+row to draw bold; commands and files join only once something is typed. ⏎ runs
+the selected row: an action runs, a session shows in the window, a command or
+file lands at the end of the composer's draft. Esc or a click on the scrim
+closes it. The whole app is keyboard-drivable:
 
 | Key | Action |
 | --- | --- |
@@ -700,12 +706,15 @@ current project and slash commands. The whole app is keyboard-drivable:
 
 Notifications only when the app is not frontmost or the session is not
 visible: "Turn finished · $0.18", "Approval needed: `git push`" with
-**Allow** and **Deny** actions (allow-for-session and edit need the app, by
-design), "Budget reached". A question takes a typed **Answer**. CoxPlatform's
+**Allow once**, **Deny** and **Open** actions (mockup 23, A126): Allow once is
+the one-call approval, never a standing rule; allow-for-session and edit need
+the app, by design; Open, like a click on the notification, brings cox
+forward on the session's window, where the pending approval waits (T37.44.15).
+"Budget reached". A question takes a typed **Answer**. CoxPlatform's
 `NotificationActions` maps a note to its content and an action back to the
-session and `Intent` as plain functions, tested without posting; the app sets
-`NotificationResponder` as the centre's delegate and sends the intent to that
-session (T37.27). Dock badge = pending approvals + questions across
+session and `Intent`, or Open to the session it shows, as plain functions,
+tested without posting; the app sets `NotificationResponder` as the centre's
+delegate and sends the intent to that session (T37.27). Dock badge = pending approvals + questions across
 all sessions. The M2 menu-bar extra lists running sessions and the inbox.
 
 ### 5.7 Settings

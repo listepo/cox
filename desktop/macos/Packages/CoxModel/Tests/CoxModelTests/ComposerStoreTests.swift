@@ -84,6 +84,35 @@ private func composer() -> (ComposerStore, FixtureSession) {
   #expect(!store.isShell)
 }
 
+/// T37.44.13: a command or file picked in the palette lands at the end of the draft, a file as a
+/// mention, with nothing offered after it.
+@MainActor
+@Test func aPaletteCommandOrFileIsAppendedToTheDraft() {
+  let (store, _) = composer()
+  store.append("/compact")
+  #expect(store.text == "/compact ")
+  store.edit(store.text + "about")
+  store.append("@src/lib.rs")
+  #expect(store.text == "/compact about @src/lib.rs ")
+  #expect(store.mentions == ["@src/lib.rs"])
+  #expect(store.completions.isEmpty)
+}
+
+/// T37.44.13: without the core's ranking a session still offers the window's rows whose title
+/// holds the query, then its commands and files for it.
+@MainActor
+@Test func theDefaultPaletteKeepsMatchingRowsAndAddsCommandsAndFiles() {
+  let (_, session) = composer()
+  let items = [
+    PaletteItem(kind: .action, id: "review", title: "Review changes"),
+    PaletteItem(kind: .action, id: "new", title: "New session"),
+  ]
+  #expect(session.palette("", items: items, limit: 5).map(\.item.id) == ["review", "new"])
+  #expect(session.palette("rev", items: items, limit: 5).map(\.matched) == [[0, 1, 2]])
+  let hits = session.palette("ma", items: items, limit: 5)
+  #expect(hits.map(\.item.kind) == [.command, .file])
+}
+
 @MainActor
 @Test func removingAMentionTakesItOutOfTheDraft() {
   let (store, _) = composer()

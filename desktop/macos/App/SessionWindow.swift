@@ -12,8 +12,8 @@
 // overlay shows as a sheet (T52.17), File › Connect to Host… lists a remote host's sessions in
 // the sidebar and opens one through that host (T52.21), New session asks which agent drives it
 // and an external agent's transcript opens with its ACP banner (T52.8), the composer offers
-// best of n and its compare sheet (T52.12), and the Appearance popover writes
-// `[desktop.appearance]`.
+// best of n and its compare sheet (T52.12), the Appearance popover writes
+// `[desktop.appearance]`, and ⌘K lays the command palette over the window (T37.44.13).
 // A popped-out window (T51.11) is the same view on one session with no sidebar; every window
 // on a session shares its stores through `AppStore`.
 
@@ -53,12 +53,14 @@ struct SessionWindow: View {
   /// Why the core refused the last intent; shown until dismissed.
   @State var refused: String?
   /// The terminal pane shows under the column; its height is the user's drag, UI-only.
-  @State private var isTerminalVisible = false
+  @State var isTerminalVisible = false
   @State private var terminalHeight = SessionTerminal.defaultHeight
   /// The browser pane shows beside the column; UI-only, like the terminal's.
-  @State private var isBrowserVisible = false
+  @State var isBrowserVisible = false
+  /// ⌘K's palette, while it shows (T37.44.13).
+  @State var palette: SessionPalette?
   /// The Connect to Host sheet, while it shows (T52.21).
-  @State private var connecting: ConnectHostSheet.State?
+  @State var connecting: ConnectHostSheet.State?
   /// The New-session sheet's agents, while it shows (T52.8).
   @State private var picking: AgentPicker?
   /// The composer's best-of-n candidates and the group the compare sheet shows (T52.12).
@@ -118,8 +120,11 @@ struct SessionWindow: View {
           toggleInspector: { screen.isInspectorVisible.toggle() },
           toggleTerminal: { toggleTerminal() }, toggleBrowser: { isBrowserVisible.toggle() },
           popOut: current.map { session -> (Bool) -> Void in { openPopOut(session, asTab: $0) } },
-          connectHost: model.remotes.canConnect ? { connecting = ConnectHostSheet.State() } : nil)
+          connectHost: model.remotes.canConnect ? { connecting = ConnectHostSheet.State() } : nil,
+          newSession: { Task { await newSession() } }, review: showing.map { _ in toggleReview },
+          palette: showing.map { _ in togglePalette })
       )
+      .commandPalette(palette?.state, send: handle)
       .task { if current == nil { await open(resume: popOut?.session) } }
       .task { await watch() }
       .task { if popOut == nil { await model.remotes.watch() } }
@@ -145,24 +150,8 @@ struct SessionWindow: View {
   private var isFirstRun: Bool { !onboarded && !model.launch.isFixture }
 
   /// The pane shows while it is toggled on and the session has a terminal left open.
-  private var isTerminalShown: Bool {
+  var isTerminalShown: Bool {
     isTerminalVisible && showing?.store.terminals.isEmpty == false
-  }
-
-  /// ⌃`: shows or hides the terminal pane; showing it with no terminal open opens the session's
-  /// shell first.
-  private func toggleTerminal() {
-    guard let store = showing?.store else { return }
-    let isShown = isTerminalShown
-    if !isShown && store.terminals.isEmpty {
-      do {
-        try store.openTerminal()
-      } catch {
-        refused = String(describing: error)
-        return
-      }
-    }
-    isTerminalVisible = !isShown
   }
 
   /// A popped-out window has no sidebar to show.

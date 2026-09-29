@@ -63,6 +63,22 @@ extension SessionWindow {
     }
   }
 
+  /// ⌃`: shows or hides the terminal pane; showing it with no terminal open opens the session's
+  /// shell first.
+  func toggleTerminal() {
+    guard let store = showing?.store else { return }
+    let isShown = isTerminalShown
+    if !isShown && store.terminals.isEmpty {
+      do {
+        try store.openTerminal()
+      } catch {
+        refused = String(describing: error)
+        return
+      }
+    }
+    isTerminalVisible = !isShown
+  }
+
   /// A host group's Reconnect (T52.21).
   func reconnect(_ group: String) {
     guard let host = RemoteHosts.host(section: group) else { return }

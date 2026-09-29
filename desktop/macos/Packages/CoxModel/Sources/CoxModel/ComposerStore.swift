@@ -85,6 +85,15 @@ public final class ComposerStore {
     if typedToken != before { complete() }
   }
 
+  /// Adds `insert`, a command palette's `/command` or `@file` (T37.44.13), at the end of the
+  /// draft and then one space, as a picked row would stand.
+  public func append(_ insert: String) {
+    let head = text.isEmpty || text.hasSuffix(" ") ? text : text + " "
+    edit(head + insert + " ")
+    if insert.hasPrefix("@"), !mentions.contains(insert) { mentions.append(insert) }
+    completions = []
+  }
+
   /// Puts row `index`'s insert in place of the token at the caret, then one space, and leaves
   /// the caret after it.
   public func pick(_ index: Int) {

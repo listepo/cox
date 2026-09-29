@@ -105,3 +105,17 @@ import Testing
         total: CoxClient.CostRow(label: "Session", values: ["9.8k", "0.03"]),
         project: "Project cox today: $0.03"))
 }
+
+/// T37.44.13: a remote session's palette goes through the core's ranking and back: actions before
+/// sessions, with the matched characters.
+@Test func aRemoteSessionsPaletteIsRankedByTheCore() {
+  let items = [
+    CoxClient.PaletteItem(kind: .session, id: "s1", title: "Revert sitemap", detail: "acme"),
+    CoxClient.PaletteItem(kind: .action, id: "review", title: "Review changes"),
+    CoxClient.PaletteItem(kind: .action, id: "new", title: "New session"),
+  ]
+  let hits = CoxClient.PaletteHit.ranked("rev", items, limit: 5)
+  #expect(hits.map(\.item.id) == ["review", "s1"])
+  #expect(hits.map(\.matched) == [[0, 1, 2], [0, 1, 2]])
+  #expect(hits.last?.item == items[0])
+}

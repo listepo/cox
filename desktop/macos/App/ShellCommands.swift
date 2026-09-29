@@ -6,7 +6,9 @@
 // terminal pane under the column (DT§5.5, T51.6); Show/Hide Browser on ⌘⇧B puts the browser pane
 // beside it (DT§5.5, T51.10). The Window menu's Open in New Window and Open in New Tab pop the
 // shown session out (T51.11). File › Connect to Host… opens the focused window's sheet for an ssh
-// host alias (T52.21).
+// host alias (T52.21). File › New Session (⌘N) opens a session in the focused window, New Window
+// a main window of its own, Command Palette… (⌘K) the palette over it and Review Changes (⌘⇧R)
+// shows or hides Review (DT§5.5, T37.44.13); they replace the system's New Window item.
 
 import CoxUI
 import SwiftUI
@@ -25,6 +27,12 @@ struct ShellActions {
   var popOut: ((Bool) -> Void)?
   /// Shows the Connect to Host sheet; `nil` for a launch that cannot connect (a fixture).
   var connectHost: (() -> Void)?
+  /// Opens a new session in this window, asking for its agent first when one is configured.
+  var newSession: () -> Void
+  /// Shows or hides Review; `nil` with no session shown.
+  var review: (() -> Void)?
+  /// Opens or closes the command palette; `nil` with no session shown.
+  var palette: (() -> Void)?
 }
 
 extension FocusedValues {
@@ -33,8 +41,23 @@ extension FocusedValues {
 
 struct ShellCommands: Commands {
   @FocusedValue(\.shell) private var shell
+  @Environment(\.openWindow) private var openWindow
 
   var body: some Commands {
+    CommandGroup(replacing: .newItem) {
+      // With no session window focused, a new main window opens its first session.
+      Button("New Session") {
+        if let shell { shell.newSession() } else { openWindow(id: CoxApp.mainWindow) }
+      }
+      .keyboardShortcut(ShellShortcut.newSession.key)
+      Button("New Window") { openWindow(id: CoxApp.mainWindow) }
+      Button("Command Palette…") { shell?.palette?() }
+        .keyboardShortcut(ShellShortcut.palette.key)
+        .disabled(shell?.palette == nil)
+      Button("Review Changes") { shell?.review?() }
+        .keyboardShortcut(ShellShortcut.review.key)
+        .disabled(shell?.review == nil)
+    }
     CommandGroup(after: .newItem) {
       Button("Connect to Host…") { shell?.connectHost?() }
         .disabled(shell?.connectHost == nil)

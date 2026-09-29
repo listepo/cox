@@ -15,8 +15,8 @@ use cox_app::onboarding::CheckRow;
 use cox_app::remote::RemoteError;
 use cox_app::terminal::TerminalError;
 use cox_app::{
-    Activity, AgentChoice, DaySummary, Holder, InboxItem, ModelChoice, Project, SearchHit,
-    SessionEntry,
+    Activity, AgentChoice, DaySummary, Holder, InboxItem, ModelChoice, PaletteHit, PaletteItem,
+    Project, SearchHit, SessionEntry,
 };
 use cox_app::{RuleKind, SessionGrant, SettingsView};
 use cox_protocol::ids::SessionId;
@@ -132,6 +132,14 @@ pub async fn load_login_env() -> Result<Option<String>, AppError> {
 #[uniffi::export]
 pub fn review_message(comments: Vec<cox_app::review::LineComment>) -> Option<String> {
     cox_app::review::message(&comments)
+}
+
+/// The command palette's rows for a session without a completer of its own
+/// (a remote one): `items` ranked for `query`, at most `limit` of each kind
+/// (T37.44.13).
+#[uniffi::export]
+pub fn palette(query: String, items: Vec<PaletteItem>, limit: u32) -> Vec<PaletteHit> {
+    cox_app::palette::rank(&query, items, usize::try_from(limit).unwrap_or(usize::MAX))
 }
 
 /// T51.10: the browser pane's typed address as the URL to load, or `None`

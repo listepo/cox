@@ -110,7 +110,7 @@ extension ChangesTab {
 
 extension ShellShortcut {
   /// Review's key (DT§5.4). The app's menu command answers it, so the tab's button only names it.
-  static let review = Self(key: .init("r", modifiers: [.command, .shift]), glyphs: "⌘⇧R")
+  public static let review = Self(key: .init("r", modifiers: [.command, .shift]), glyphs: "⌘⇧R")
 }
 
 /// One block of an inspector tab (the mockup's `.ih` over its rows): a `SectionHeader` with an
