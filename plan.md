@@ -32,9 +32,14 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
+| T37.44.18 | todo | P3 | 1 | 0% | |
+| T37.44.19 | todo | P3 | 1 | 0% | |
 | T39.7 | todo | P3 | 2 | 0% | |
 | T43.6 | todo | P3 | 3 | 0% | |
+| T51.23 | todo | P3 | 2 | 0% | |
 | T52.17 | todo | P3 | 3 | 0% | |
+| T52.23.1 | todo | P3 | 3 | 0% | |
+| T52.23.2 | todo | P3 | 2 | 0% | |
 | T53.5 | todo | P3 | 3 | 0% | |
 | T53.6 | todo | P3 | 2 | 0% | |
 | T53.7 | todo | P3 | 2 | 0% | |
@@ -1419,6 +1424,18 @@ On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
 
+#### T37.44.18 Terminal well token is opaque dark
+
+Depends: — · Size: ~40 · Files: the DTCG token source under `desktop/design/tokens/`, regenerated Swift/CSS via `just desktop-tokens`, CoxUI terminal snapshots
+Goal: A129 (8): `surface.terminal` stays a token but becomes an opaque dark value matching mockup 24 (`#15161a`) in both appearances, with a High Contrast value as the token pipeline requires.
+Check: `just desktop-tokens` leaves `git diff` empty after regeneration; CoxUI `TerminalPaneChromeTests` re-recorded on purpose and passing; swiftlint --strict clean.
+
+#### T37.44.19 Mockup 24 keeps the composer
+
+Depends: — · Size: ~30 · Files: `desktop/design/mockups/mockups.html`
+Goal: A129 (9): the composer stays above the terminal pane in the app; mockup 24 changes to match, rather than the app moving the composer.
+Check: `render.sh 24-terminal-pane-m2` renders; `npm run diff` against the app screenshot shows the composer aligned.
+
 ### P51 — Desktop M2 (goal: the rest of the terminal inside the app — a sandboxed terminal pane, a browser pane the agent can read and screenshot, pop-out windows and tabs, a menu-bar extra with a global hotkey, Spotlight and App Intents, and per-hunk revert — plus the dark glass look; DT§3.2)
 
 Plan (A121): one agent implements P51's cards in table order on branch `p51-roadmap`, one commit per card, without building or running tests (the creator's instruction); T51.1 waits for the creator's approval of the dark renders. A verification pass builds and tests each commit before the branch merges into `p37-desktop`.
@@ -1430,6 +1447,12 @@ Every card in this phase keeps the P37 rules (business logic in `cox-app`, `cox-
 - every model- or page-originated string passes `cox_sanitize::sanitize` in Rust before it becomes a block or reaches the model (DT§10);
 - a Swift card that draws an M2 screen compares it with its mockup by `npm run diff` in `desktop/design`;
 - a new dependency is named in its card and gets its §1.1 and `toolchain.md` rows in the same commit.
+
+#### T51.23 Panes draw from `glass.fill` and `glass.border`
+
+Depends: T51.22 · Size: ~90 · Files: CoxUI pane/rim code, its snapshot tests, `desktop/design/DESIGN.md` §3.4/§3.5
+Goal: A129 (11): T51.22 left pane fill and rim on `surface.*`/`separator`, drawing dark panes bluer than the near-black tint of renders 31/32; CoxUI's pane fill and rim read `glass.fill`/`glass.border` instead, and the specular sweep's white literal (`Specular.swift`, `TranscriptView.swift`) gets a token in the same change.
+Check: CoxUI `swift test` passes with light and dark snapshots re-recorded on purpose; dark frosted panes compared against renders 31/32; swiftlint --strict clean.
 
 ### P52 — Desktop M3 (goal: beyond a single agent — Claude Agent, Codex, Gemini CLI and Cursor sessions in the same sidebar over ACP, best-of-n across models in worktrees, plugin panels drawn natively from the `Widget` tree, and remote sessions over SSH through `cox app-server`; DT§3.3)
 
@@ -1444,8 +1467,20 @@ Every card keeps the P51 rules, and:
 #### T52.17 Plugin panels, status segments, overlays and commands in the app
 
 Depends: T52.16 · Size: ~150 · Files: `desktop/macos/App` session scene, CoxModel `SessionStore` plugin state, CoxUI toolbar status area
-Goal: a `panel` slot above the composer (≤ 8 rows, toggled by its command), `status.left`/`status.right` segments in the toolbar status area (dropped first when narrow), `overlay` as a sheet (Esc closes), renderer widgets inside tool cards, `/<id>:<name>` in the palette.
+Goal: a `panel` slot above the composer (≤ 8 rows, toggled by its command), `status.left`/`status.right` segments in the toolbar status area (dropped first when narrow), `overlay` as a sheet (Esc closes), `/<id>:<name>` in the palette. The `tool:`/`item:` renderer-widgets-inside-tool-cards part moves to T52.23 (A129): this card closes on the panel, status-segment, overlay and command parts only.
 Check: a CoxModel test that a slot patch updates only its slot; CoxUI snapshots of a panel and a status segment; `just desktop-app` builds.
+
+#### T52.23.1 Rust: plugin `tool:`/`item:` render path
+
+Depends: T52.17 · Size: ~150 · Files: `crates/cox-app/src/plugin` (serve/live), a new `Block` field for the renderer's output, `crates/cox-ffi/src/types.rs`
+Goal: A129 (10): T52.17 left out of scope that `cox-app` has no `cox_render_item` path for a plugin's `tool:`/`item:` renderers; `cox-app` grows that path — a plugin's PL§8 `Widget` tree rendered into a tool card's block field — so a plugin can draw its own tool result instead of the generic card. `cox-ffi` forwards the new field in one expression (A90).
+Check: a `cox-app` test that a `tool:`/`item:` renderer's widget tree lands in the block's new field; `mise exec -- cargo nextest run -p cox-ffi` passes.
+
+#### T52.23.2 Swift: the tool card draws a plugin renderer
+
+Depends: T52.23.1 · Size: ~100 · Files: CoxModel `SessionStore` plugin state, CoxUI tool card
+Goal: A129 (10): the CoxModel plugin-view state and the CoxUI tool card read the new block field and draw the plugin's `tool:`/`item:` renderer in place of the generic card, following T52.17's slot-keeping pattern.
+Check: a CoxModel test that the tool card's plugin view state updates from the new field; a CoxUI snapshot of a tool card drawn with a plugin renderer.
 
 ### P53 — Plugin distribution (goal: a plugin installs from git or a URL through the same validation and per-digest grant as a local folder, and the plugin API, the Rust SDK and the Go SDK are ready to publish once `api = 1` is frozen)
 
@@ -1697,7 +1732,7 @@ Packaging, signing and a Store listing are the creator's steps; T58.28 prepares,
 #### T58.1 Gate: C# bindings for `cox-ffi` generate and round-trip
 
 Depends: a uniffi-bindgen-cs release on uniffi 0.32 (PR #176 open, R10.2.2) with async callback interfaces returning `Task<T>` (issue #165 open, R10.2.3); checked 2026-09-29 · Size: ~120 · Files: `crates/cox-ffi/Cargo.toml`, `scripts/desktop/csharp.sh` (new), `desktop/windows/Cox.Core.Tests/RoundTrip.cs` (new)
-Goal: pattern of T33.43 (A55). `cox-ffi` adds `cdylib` to its crate types (C# loads `cox_ffi.dll` through P/Invoke; D1 names only a static library, see A127); `scripts/desktop/csharp.sh` builds it for `x86_64-pc-windows-msvc` and runs the pinned uniffi-bindgen-cs into `desktop/windows/Cox.Core/Generated/`. The version in use is recorded in §1.1 and `toolchain.md`. A test creates an `App` over the scripted provider, opens a session, sends a prompt, receives patches, and implements `AppHost` in C# including one async method. cox-ffi's uniffi 0.32.2 is not changed. If no such release exists by 2026-12-31, bring it back to the creator with the options of A127 open question 1: (a) keep waiting; (b) move `cox-ffi` to uniffi 0.31 (a version change, the creator's call); (c) a fork under `forks/` carrying PR #176 and #166 until upstream releases.
+Goal: pattern of T33.43 (A55). `cox-ffi` adds `cdylib` to its crate types (C# loads `cox_ffi.dll` through P/Invoke; D1 names only a static library, see A127); `scripts/desktop/csharp.sh` builds it for `x86_64-pc-windows-msvc` and runs the pinned uniffi-bindgen-cs into `desktop/windows/Cox.Core/Generated/`. The version in use is recorded in §1.1 and `toolchain.md`. A test creates an `App` over the scripted provider, opens a session, sends a prompt, receives patches, and implements `AppHost` in C# including one async method. cox-ffi's uniffi 0.32.2 is not changed. If no such release exists by 2026-12-31, `cox-ffi` does not move back to uniffi 0.31; it keeps waiting for upstream and carries a fork under `forks/` with PR #176 applied until a release ships (A127 open question 1, resolved by A129).
 Check: in the Windows job, `scripts/desktop/csharp.sh && dotnet test desktop/windows/Cox.Core.Tests` passes `App_opens_a_session_and_streams_patches` and `AppHost_async_method_is_awaited`; the generated sources are reproducible (a second run leaves `git diff` empty).
 
 #### T58.2 Design doc for the Windows client
@@ -1802,7 +1837,7 @@ Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter McpLo
 #### T58.4.4 Sidebar sections and rows in `cox-app`
 
 Depends: T58.4.1 · Size: ~190 · Files: `crates/cox-app/src/workspace.rs`, `crates/cox-ffi/src/lib.rs`, `crates/cox-ffi/src/types.rs`
-Goal: `App::sidebar(filter, folded)` returns the sidebar's sections (audit items 4–7): "Needs you" from the inbox, "Running" lifted out of the projects, then each project, hidden while filtering when nothing matched and open while filtering even when folded. A row carries its status, title (`SessionEntry.name`, `Untitled session` until titled), cost only above zero, and its subtitle as parts: text parts plus one `age` part holding `updated_at`, which each client localizes. The filter matches the title and the text parts, case-insensitively. `cox-ffi` forwards it in one expression (A90).
+Goal: `App::sidebar(filter, folded)` returns the sidebar's sections (audit items 4–7): "Needs you" from the inbox, "Running" lifted out of the projects, then each project, hidden while filtering when nothing matched and open while filtering even when folded. A row carries its status, title (`SessionEntry.name`, `Untitled session` until titled), cost only above zero, and its subtitle as parts: text parts plus one `age` part holding `updated_at`, which each client localizes. The filter matches the title and the text parts, never the localized `age` part, case-insensitively, with diacritic folding only if a crate already in the workspace provides it — otherwise case-insensitive matching alone (A129). `cox-ffi` forwards it in one expression (A90).
 Check: `mise exec -- cargo nextest run -p cox-app workspace` passes `running_sessions_leave_their_project`, `a_filter_opens_a_folded_project`, `an_idle_session_says_done_only_after_a_turn`, `an_untitled_session_is_named_untitled`; `mise exec -- cargo nextest run -p cox-ffi` passes.
 
 #### T58.4.5 SidebarStore shows the core's sections
@@ -1814,8 +1849,8 @@ Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter Sideb
 #### T58.4.6 Short model names and the toolbar's figures
 
 Depends: — · Size: ~100 · Files: `crates/cox-app/src/status.rs`, `crates/cox-app/src/meter_text.rs`, `crates/cox-ffi/src/types.rs`
-Goal: `model_names` drops the `Claude ` prefix and a trailing ` (latest)` (A111, A116), so `Status.model_name` and `ModelChoice.display_name` arrive short (audit item 8); the meter's text gains `context_percent` (`42%`), `context_fill` (the parts' shares summed, capped at 1) and `cost` (audit item 9).
-Check: `mise exec -- cargo nextest run -p cox-app status meter_text` passes `a_model_name_drops_the_vendor_and_latest`, `context_fill_is_capped_at_one`; `mise exec -- cargo nextest run -p cox-ffi` passes.
+Goal: `model_names` adds a `short_name` alongside each model's existing name, dropping the `Claude ` prefix and a trailing ` (latest)` (A111, A116) — a new field, not a change to `Status.model_name` or `ModelChoice.display_name`, which keep their current (full) meaning so the TUI and ACP do not change (A129, audit item 8); the meter's text gains `context_percent` (`42%`), `context_fill` (the parts' shares summed, capped at 1) and `cost` (audit item 9).
+Check: `mise exec -- cargo nextest run -p cox-app status meter_text` passes `a_short_name_drops_the_vendor_and_latest`, `context_fill_is_capped_at_one`; `mise exec -- cargo nextest run -p cox-ffi` passes.
 
 #### T58.4.7 The model menu in `cox-app`
 
@@ -1862,7 +1897,7 @@ Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter Model
 #### T58.4.14 Short model names from the core
 
 Depends: T58.4.6, T58.4.11, T58.4.13 · Size: ~30 · Files: `CoxModel/Sources/CoxModel/ModelName.swift` (deleted), `CoxModel/Sources/CoxModel/ComposerStore.swift`
-Goal: the chip shows `status.modelName ?? id`; nothing shortens a name in Swift any more.
+Goal: the chip shows `status.shortName ?? id`; nothing shortens a name in Swift any more (A129).
 Check: `swift test --package-path desktop/macos/Packages/CoxModel --filter ComposerStoreTests`; `grep -rn "ModelName" desktop/macos` finds nothing.
 
 #### T58.4.15 Toolbar figures from the meter
@@ -1970,7 +2005,7 @@ Check: `dotnet test --filter LiveCoreClient` passes `Scripted_turn_reaches_the_u
 #### T58.8 Design tokens as a XAML resource dictionary
 
 Depends: T58.3 · Size: ~120 · Files: `desktop/design/style-dictionary.config.mjs`, `desktop/design/xaml/format.mjs` (new), `desktop/design/xaml/format.test.mjs` (new); manifest `desktop/design/package.json` (test glob); generated `desktop/windows/App/Tokens.g.xaml`
-Goal: the same DTCG source (`desktop/design/tokens/*.json`) that produces the Swift tokens and `tokens.css` also produces a `ResourceDictionary` with `ThemeDictionaries` for Light, Dark and HighContrast, mapped onto the Fluent theme resources where a token has a Fluent counterpart (accent, surface, stroke, text) so system controls follow. Whether the accent follows the user's Windows accent colour is A127 open question 7. One source of truth: no token is edited in XAML.
+Goal: the same DTCG source (`desktop/design/tokens/*.json`) that produces the Swift tokens and `tokens.css` also produces a `ResourceDictionary` with `ThemeDictionaries` for Light, Dark and HighContrast, mapped onto the Fluent theme resources where a token has a Fluent counterpart (accent, surface, stroke, text) so system controls follow. The accent uses the cox token accent, as on macOS; a future "follow the system accent" setting may come later (A127 open question 7, resolved by A129). One source of truth: no token is edited in XAML.
 Check: `npm --prefix desktop/design run build` writes `Tokens.g.xaml` and leaves `git diff` empty on a second run; `npm --prefix desktop/design test` runs the formatter test, which asserts every colour token has Light, Dark and HighContrast values.
 
 #### T58.9 Windows Fluent mockups
@@ -2089,8 +2124,8 @@ Check: xUnit: "new worktree" sends the worktree intent and no C# git call exists
 
 #### T58.28 Packaging
 
-Depends: T58.10; the creator's answer to A127 open question 3 · Size: ~100 · Files: `desktop/windows/App/App.csproj`, `desktop/windows/App/Package.appxmanifest` (if packaged), `scripts/desktop/windows-package.ps1` (new)
-Goal: build the app in the model the creator picks (R10.3.1–R10.3.3): (a) MSIX, with the container's file-system and registry virtualization turned off so the app sees the real `~/.cox` and repositories; (b) packaged with external location (identity for notifications, own installer); (c) unpackaged, self-contained. The bundled `cox.exe` ships next to the app, as `Cox.app/Contents/Helpers/cox` does on macOS (DT§7). Signing, a Store listing and publishing are the creator's steps.
+Depends: T58.10 · Size: ~100 · Files: `desktop/windows/App/App.csproj`, `desktop/windows/App/Package.appxmanifest`, `scripts/desktop/windows-package.ps1` (new)
+Goal: packaged with external location (R10.3.1) — a sparse package giving the app identity for actionable notifications, installed by cox's own installer rather than through the Store, with no full MSIX container virtualization (A127 open question 3, resolved by A129). The bundled `cox.exe` ships next to the app, as `Cox.app/Contents/Helpers/cox` does on macOS (DT§7). Signing, a Store listing and publishing are the creator's steps.
 Check: the Windows job produces the package; installing it on the runner and launching passes T58.29's smoke test.
 
 #### T58.29 UI automation smoke test
@@ -2295,6 +2330,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A125 T37.44.3 — by the creator (2026-09-29), replacing A118: the Figma file uses stand-in fonts (Inter for SF Pro, Roboto Mono for SF Mono); SF Pro and SF Mono stay in the HTML mockups, CoxUI and DESIGN.md. Why: with both fonts installed locally and Figma and `figma_agent` restarted, five `use_figma` probes found SF Mono absent and SF Pro listed but flagged `hasMissingFont` (115 of 135 text layers on screen 28 drew nothing); shared fonts need an Organization or Enterprise plan (https://help.figma.com/hc/en-us/articles/360039956774, checked 2026-09-29), and the account has Starter and Pro teams only. Effect: T37.44.3 is rewritten; metric comparisons (T37.44.2, T37.44.11) use the HTML renders, not Figma.
 - A126 T37.44.11 follow-ups — by the creator (2026-09-29): (1) the review screen stays as DT§5.4 has it (inspector kept); mockup 08 changes, not the app (T37.44.12). (2) The command palette of mockup 12 and ⌘K, ⌘N, ⌘⇧R are built (T37.44.13). (3) New session windows open at 1440×900, clamped to the screen (T37.44.14). (4) The approval notification has Allow once, Deny and Open as in mockup 23; DT§5.6 changes (T37.44.15). (5) An external ACP agent's question waits 15 minutes (`ASK_WAIT`, T52.5) and is then cancelled. Also carded from the verification passes: the shared walker skips `.git/` (T37.44.16) and durations format per locale (T37.44.17). Why: the running app was compared with the mockups end to end (T37.44.11), and these were the differences only the creator could decide or that were bugs outside that card.
 - A128 A127 open questions 2, 4, 5, 6 — by the creator (2026-09-29). (1) **Shell on Windows**: Git Bash when present, else PowerShell, for `bash`, `!` and hooks (T57.2). (2) **process-wrap 10.0.1** is approved as the one kill path for process trees (T57.5). (3) **D7 on Windows** forces only the less strict policy: `on-failure` becomes `on-request`; `untrusted` and `never` (stricter; `never` turns every `Ask` into `Deny`) stay as configured (T57.3). (4) **Windows 10 and later, x64 and ARM64** for the desktop and the release (Mica on Windows 11, the solid fallback on 10; T57.12, T58.10). Why: the P57/P58 cards waited on these answers. Effect: T57.2, T57.3, T57.5 and T57.12 lose their creator dependency; A127 questions 1, 3 and 7 stay open.
+- A129 T58.4.4, T58.4.6, T58.4.14, T58.1, T58.8, T58.28, T37.44, T52.17, T51.22 follow-ups — by the creator (2026-09-29). (1) **Sidebar filter (T58.4.4/T58.4.5)**: the filter moves to Rust; matching the localized `age` part is dropped; diacritic folding is kept only if a crate already in the workspace provides it (no new dependency), otherwise the filter stays case-insensitive only. (2) **Short model names (T58.4.6/T58.4.14)**: the core adds a separate `short_name` field; `Status.model_name` and `ModelChoice.display_name` keep their existing meaning, so the TUI and ACP do not change. (3) **Patch application and the tool tail cut** stay mirrored in each client, checked by fixture replay, not lifted into the protocol. (4) **Windows M2/M3** pieces (terminal, browser, tray, ACP, best-of-N, plugin panels) stay uncarded until a Windows M2/M3 is planned; the `ideas.md` line already covers them. (5) **Packaging (T58.28)**: packaged with external location (a sparse package) for actionable-notification identity, installed by cox's own installer, not full MSIX virtualization — answers A127 open question 3. (6) **Accent colour (T58.8)**: the cox token accent, as on macOS; a "follow the system accent" setting may come later — answers A127 open question 7. (7) **Bindings way out (T58.1)**: do not move `cox-ffi` back to uniffi 0.31; keep waiting for upstream (PR #176 adds uniffi 0.32); if the gate is not met by its review date, carry a fork under `forks/` with #176 applied — answers A127 open question 1. (8) New card **T37.44.18** "Terminal well token is opaque dark": `surface.terminal` becomes an opaque dark value matching mockup 24 (`#15161a`) in both appearances, with a High Contrast value as the token pipeline requires. (9) New card **T37.44.19** "Mockup 24 keeps the composer": the composer stays above the terminal pane; mockup 24 changes to match. (10) New card **T52.23** "Desktop draws plugin `tool:`/`item:` renderers", split for size into **T52.23.1** (Rust: `cox-app` render path, a `Block` field, `cox-ffi` types) and **T52.23.2** (Swift: CoxModel and the CoxUI tool card); T52.17's renderer-widgets-inside-tool-cards part moves here, so T52.17 closes on its panel, status-segment, overlay and command parts. (11) New card **T51.23** "Panes draw from `glass.fill` and `glass.border`": CoxUI's pane fill and rim move off `surface.*`/`separator` onto the T51.1 glass tokens, and the specular sweep's white literal (`Specular.swift`, `TranscriptView.swift`) gets a token in the same change; light and dark snapshots are re-recorded on purpose. Why: the creator's decisions on the CoxModel audit's open items and the design follow-ups the verification passes and A127/A128 left open. Effect: T58.4.4, T58.4.6, T58.4.14, T58.1, T58.8 and T58.28 are rewritten; T52.17's card gains one sentence; T37.44.18, T37.44.19, T52.23.1, T52.23.2 and T51.23 are new cards; no other card or status changes.
 - A127 §1.1 (planned `cox-ffi` `cdylib`, planned `desktop/windows/` row, the "Planned by A127" note), §3 (new P57: T57.1–T57.13, P58: T58.1–T58.30) — a Windows build of the core and a Windows desktop client, by the creator (2026-09-29). (1) **UI stack: WinUI 3 + C# over the in-process Rust core through `cox-ffi` (UniFFI).** C# bindings are generated by uniffi-bindgen-cs (NordSecurity). All logic stays in Rust (`cox-app`), as in the Swift client (DT goal 1: no logic re-implemented in the UI). (2) **Scope: M1 parity only**, the DT§3.1 feature set. M2 and M3 (terminal pane, browser pane, pop-out windows, tray and hotkey, ACP host, best-of-N, plugin panels) are not in these phases and not in `roadmap.md`; `ideas.md` holds them as one line. (3) **Sandbox: as D7 says.** On Windows there is no sandbox, a loud warning, and `on-request` forced; the Windows sandbox stays deferred (A123 (2), `docs/design/v0.3-windows-sandbox.md`); the UI shows the warning (T58.25). This supersedes DT§1 "Non-goals (v1): Windows/Linux GUI" for Windows (Linux GUI stays a non-goal); `docs/design/desktop.md` §1 carries a pointer. It is also the "Windows release target first, as its own decision" that A123 (2) asked for: T57.12 adds the target, the release stays the creator's step. Facts behind the cards, checked 2026-09-29 (`research.md` §10, ledger #41–#44): uniffi-bindgen-cs's latest release `v0.11.0+v0.31.0` is on uniffi 0.31, cox-ffi pins 0.32.2, the 0.32 upgrade is open PR #176 and async callback interfaces are broken (issue #165), so T58.1 is a gate like T33.43; the current Windows App SDK is 2.5.1 (the 1.8 line's servicing ended 2026-09-24); .NET 10 is the LTS; D7's forced `on-request` is only a doc comment today (T57.3); keyring 4.2.0 and portable-pty 0.9.0 already have Windows backends; `nix` and process groups are the blockers. D1 names one macOS app linking `cox-ffi` as a static library; a C# app loads it as a DLL, so T58.1 adds `cdylib` and T58.2 proposes D1's new wording. Open questions for the creator: (1) **Bindings way out** if T58.1's gate is not met by 2026-12-31: wait, move `cox-ffi` to uniffi 0.31 (a version change), or carry a fork under `forks/`. (2) **Shell on Windows** for `bash`, `!` and hooks (T57.2): Git Bash else PowerShell (Claude Code), `pwsh` → Windows PowerShell → `cmd` (Codex), or Git Bash required. (3) **Packaging** (T58.28): MSIX with virtualization off, packaged with external location, or unpackaged self-contained. (4) **Minimum Windows version and architectures**: Windows 10 or 11 only (Mica needs Windows 11, with a solid fallback), x64 only or also ARM64 (cargo-dist's Windows signing covers x64 only). (5) **process-wrap 10.0.1** as the one kill path for process trees (T57.5; not in `rust.md`; alternatives win32job or raw `windows-sys`). (6) **Which policies the D7 rule forces**: only `on-failure` becomes `on-request`, or also `untrusted` and `never` (T57.3 keeps the stricter two until answered). (7) **Accent colour**: the cox token accent, or the user's Windows accent (T58.8). Why: the creator wants the desktop client on Windows with the same core and no second implementation of its logic. Effect: P57 and P58; no existing card changes; P58's feature cards wait on T58.1 and on the creator's approval of T58.9's mockups.
 
 ## 7. Risk register
