@@ -30,6 +30,7 @@ use cox_app::{
     SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind, TaskTarget, TurnCosts,
     TurnUsage, UsageView,
 };
+use cox_app::{Fact, TurnFiles};
 use cox_app::{KeyError, PermissionRule, RuleKind, SessionGrant, SettingsGroup};
 use cox_app::{KeyValueRow, PluginKey, PluginSlot, SpanView, WidgetView};
 use cox_app::{MenuModel, ModelSection};
@@ -715,6 +716,14 @@ pub struct Changes {
     pub files: Vec<ChangedFile>,
     pub checkpoints: Vec<Checkpoint>,
     pub worktree: Option<Linked>,
+    pub worktree_facts: Vec<Fact>,
+    pub turns: Vec<TurnFiles>,
+}
+
+#[uniffi::remote(Record)]
+pub struct TurnFiles {
+    pub turn: u32,
+    pub files: Vec<ChangedFile>,
 }
 
 #[uniffi::remote(Record)]
@@ -762,6 +771,15 @@ pub struct Info {
     pub worktree: Option<Linked>,
     pub config: Vec<ConfigSource>,
     pub rollout: PathBuf,
+    pub facts: Vec<Fact>,
+    pub config_facts: Vec<Fact>,
+}
+
+#[uniffi::remote(Record)]
+pub struct Fact {
+    pub label: String,
+    pub value: Option<String>,
+    pub detail: bool,
 }
 
 #[uniffi::remote(Record)]

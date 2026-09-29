@@ -45,13 +45,13 @@ pub use best_of::{
     Launched, Picked,
 };
 pub use browser::{Browser, BrowserError, PageText};
-pub use changes::{ChangedFile, Changes, Checkpoint, FileChange};
+pub use changes::{ChangedFile, Changes, Checkpoint, FileChange, TurnFiles};
 pub use complete::{Completer, Completion};
 pub use controller::Controller;
 pub use costs::{CostRow, DaySummary, TurnCosts};
 pub use external::AgentChoice;
 pub use inbox::{Activity, Inbox, InboxItem, InboxStatus, Need};
-pub use info::{ConfigSource, Info};
+pub use info::{ConfigSource, Fact, Info};
 pub use intent::{AgentDispatch, Dispatch, Intent, IntentError, agent_dispatch, dispatch};
 pub use mcp_login::{LoginAction, McpLogin, McpServer};
 pub use mcp_status::McpStatus;

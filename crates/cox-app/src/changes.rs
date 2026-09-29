@@ -5,7 +5,8 @@
 //! `checkpoints` rows (kinds and times), the rollout's `write` inputs and
 //! git — not folded per event,
 //! because only an open tab asks. Separate from the timeline fold, which it
-//! only reads.
+//! only reads. The worktree's facts and Review's turns are built here too
+//! (T58.4.20) so each client shows them without deciding them again.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -17,6 +18,7 @@ use cox_render::diffmodel::{DiffLineKind, DiffModel};
 use cox_tools::git::Linked;
 use serde::{Deserialize, Serialize};
 
+use crate::info::{Fact, branch_fact};
 use crate::patch::{Block, BlockKind};
 use crate::timeline::key;
 
@@ -29,6 +31,19 @@ pub struct Changes {
     pub checkpoints: Vec<Checkpoint>,
     /// `None` when the session runs outside a linked worktree.
     pub worktree: Option<Linked>,
+    /// The worktree's branch and base; empty outside a linked worktree.
+    /// Its size is left to each client, which formats bytes its own way.
+    pub worktree_facts: Vec<Fact>,
+    /// `files` grouped by the turn that changed each last, oldest turn
+    /// first, each file in the order it was first changed (Review, DT§5.4).
+    pub turns: Vec<TurnFiles>,
+}
+
+/// The files one turn changed last.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TurnFiles {
+    pub turn: u32,
+    pub files: Vec<ChangedFile>,
 }
 
 /// How the session left a file.
@@ -138,15 +153,18 @@ pub fn build(
         file.removed += count(removed);
         (file.call, file.turn) = (call, row.turn);
     }
+    // Created and deleted again: nothing is left to show.
+    let files: Vec<ChangedFile> = files
+        .into_iter()
+        .filter(|(f, first)| {
+            !(*first == CheckpointKind::Created && f.change == FileChange::Deleted)
+        })
+        .map(|(f, _)| f)
+        .collect();
     Changes {
-        // Created and deleted again: nothing is left to show.
-        files: files
-            .into_iter()
-            .filter(|(f, first)| {
-                !(*first == CheckpointKind::Created && f.change == FileChange::Deleted)
-            })
-            .map(|(f, _)| f)
-            .collect(),
+        turns: by_turn(&files),
+        worktree_facts: worktree.as_ref().map(worktree_facts).unwrap_or_default(),
+        files,
         checkpoints: turns
             .into_iter()
             .map(|(turn, at, names)| Checkpoint {
@@ -157,6 +175,32 @@ pub fn build(
             .collect(),
         worktree,
     }
+}
+
+/// Each file under the turn that changed it last, oldest turn first.
+fn by_turn(files: &[ChangedFile]) -> Vec<TurnFiles> {
+    let mut turns: Vec<TurnFiles> = Vec::new();
+    for file in files {
+        match turns.iter_mut().find(|t| t.turn == file.turn) {
+            Some(turn) => turn.files.push(file.clone()),
+            None => turns.push(TurnFiles {
+                turn: file.turn,
+                files: vec![file.clone()],
+            }),
+        }
+    }
+    turns.sort_by_key(|t| t.turn);
+    turns
+}
+
+/// The branch, `detached` without one, and `Base` only when git named
+/// both the base and the merge-base commit.
+fn worktree_facts(tree: &Linked) -> Vec<Fact> {
+    let base = match (&tree.base, &tree.commit) {
+        (Some(base), Some(commit)) => Some(Fact::new("Base", format!("{base} @ {commit}"))),
+        _ => None,
+    };
+    std::iter::once(branch_fact(tree)).chain(base).collect()
 }
 
 /// The line count of each `write` call's `content`, from the rollout: a
@@ -316,6 +360,65 @@ mod tests {
                 (Some("new.rs"), FileChange::Created, 3, 0),
                 (Some("old.rs"), FileChange::Edited, 0, 0),
             ]
+        );
+    }
+
+    #[test]
+    fn a_file_sits_in_the_turn_that_changed_it_last() {
+        let (a, b, c) = (CallId::new(), CallId::new(), CallId::new());
+        let rows = [
+            row(1, Some(a), "/w/a.rs", CheckpointKind::Pre),
+            row(1, Some(a), "/w/b.rs", CheckpointKind::Pre),
+            row(3, Some(c), "/w/c.rs", CheckpointKind::Pre),
+            row(2, Some(b), "/w/a.rs", CheckpointKind::Pre),
+        ];
+        let blocks = [tool(a, 1), tool(b, 2), tool(c, 3)];
+        let changes = build(&blocks, &rows, &HashMap::new(), Path::new("/w"), None);
+        let turns: Vec<_> = changes
+            .turns
+            .iter()
+            .map(|t| {
+                let paths: Vec<_> = t.files.iter().map(|f| f.path.to_str()).collect();
+                (t.turn, paths)
+            })
+            .collect();
+        assert_eq!(
+            turns,
+            [
+                (1, vec![Some("b.rs")]),
+                (2, vec![Some("a.rs")]),
+                (3, vec![Some("c.rs")]),
+            ]
+        );
+    }
+
+    #[test]
+    fn base_needs_both_base_and_commit() {
+        let tree = |branch: Option<&str>, base: Option<&str>, commit: Option<&str>| Linked {
+            path: PathBuf::from("/wt"),
+            branch: branch.map(Into::into),
+            base: base.map(Into::into),
+            commit: commit.map(Into::into),
+            bytes: 0,
+        };
+        let facts = |t| -> Vec<(String, Option<String>)> {
+            worktree_facts(&t)
+                .into_iter()
+                .map(|f| (f.label, f.value))
+                .collect()
+        };
+        let fact = |l: &str, v: &str| (l.to_owned(), Some(v.to_owned()));
+        assert_eq!(
+            facts(tree(Some("wt/x"), Some("origin/main"), Some("abc123"))),
+            [fact("Branch", "wt/x"), fact("Base", "origin/main @ abc123")]
+        );
+        assert_eq!(
+            facts(tree(None, Some("origin/main"), None)),
+            [fact("Branch", "detached")]
+        );
+        assert_eq!(
+            facts(tree(Some("b"), None, Some("abc"))),
+            [fact("Branch", "b")]
         );
     }
 }

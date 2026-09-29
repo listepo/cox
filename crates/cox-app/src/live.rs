@@ -428,6 +428,7 @@ impl LiveSession {
             worktree,
             &settings,
             rollout,
+            &cox_config::load::home_dir(),
         ))
     }
 
