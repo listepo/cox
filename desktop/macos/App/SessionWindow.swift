@@ -306,8 +306,9 @@ struct SessionWindow: View {
       if opened[client.id] == nil { opened[client.id] = OpenedSession(shared) }
       (current, failure, reviewing) = (client.id, nil, nil)
       // The local config's models; a remote session's cwd is not a path here.
-      if remote == nil {
-        opened[client.id]?.models = (try? model.launch.live.get().models(cwd: cwd)) ?? []
+      if remote == nil, let live = try? model.launch.live.get() {
+        opened[client.id]?.models = (try? live.models(cwd: cwd)) ?? []
+        opened[client.id]?.modelSections = (try? live.modelMenu(cwd: cwd)) ?? []
       }
       model.sidebar.refresh()
       // Loads the granted plugins, so after it shows; a remote cwd is not a path here either.
