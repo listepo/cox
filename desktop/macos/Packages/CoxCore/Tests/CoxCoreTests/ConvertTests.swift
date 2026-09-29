@@ -73,12 +73,23 @@ import Testing
   let live = CoxFFIBindings.Changes(
     files: [.init(path: "a.rs", change: .created, added: 3, removed: 0, call: "c1", turn: 2)],
     checkpoints: [.init(turn: 2, label: "Turn 2 · before a.rs", time: "2026-09-28T14:02:00.000Z")],
-    worktree: .init(path: "/w", branch: "t1", base: "main", commit: "4273daa", bytes: 9))
+    worktree: .init(path: "/w", branch: "t1", base: "main", commit: "4273daa", bytes: 9),
+    worktreeFacts: [], turns: [])
   let want = CoxClient.Changes(
     files: [.init(path: "a.rs", change: .created, added: 3, removed: 0, call: "c1", turn: 2)],
     checkpoints: [.init(turn: 2, label: "Turn 2 · before a.rs", time: "2026-09-28T14:02:00.000Z")],
     worktree: .init(path: "/w", branch: "t1", base: "main", commit: "4273daa", bytes: 9))
   #expect(CoxClient.Changes(live) == want)
+}
+
+@Test func anInfoRecordCarriesItsFacts() {
+  let live = CoxFFIBindings.Info(
+    session: "s", cwd: "/w", worktree: nil, config: [], rollout: "/r.jsonl",
+    facts: [.init(label: "Branch", value: "detached", detail: true)],
+    configFacts: [.init(label: "~/.cox/config.toml", value: nil, detail: true)])
+  let info = CoxClient.Info(live)
+  #expect(info.facts == [CoxClient.Fact(label: "Branch", value: "detached", detail: true)])
+  #expect(info.configFacts == [CoxClient.Fact(label: "~/.cox/config.toml", detail: true)])
 }
 
 @Test func aTodoItemConvertsWithEachState() {

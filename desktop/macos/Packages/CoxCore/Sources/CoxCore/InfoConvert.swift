@@ -12,6 +12,14 @@ extension CoxClient.Info {
       config: info.config.map {
         CoxClient.ConfigSource(layer: .init($0.layer), file: $0.file, keys: $0.keys)
       },
-      rollout: info.rollout)
+      rollout: info.rollout, facts: info.facts.map { CoxClient.Fact($0) },
+      configFacts: info.configFacts.map { CoxClient.Fact($0) })
+  }
+}
+
+extension CoxClient.Fact {
+  /// Shared by the Info and Changes tabs.
+  init(_ fact: CoxFFIBindings.Fact) {
+    self.init(label: fact.label, value: fact.value, detail: fact.detail)
   }
 }
