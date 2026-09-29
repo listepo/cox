@@ -230,6 +230,7 @@ mod tests {
                 diff: None,
                 duration_ms: 0,
             },
+            plugin_view: None,
         }
     }
 

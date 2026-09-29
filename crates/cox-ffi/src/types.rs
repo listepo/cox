@@ -302,6 +302,7 @@ pub struct Block {
     pub id: BlockId,
     pub turn: u32,
     pub kind: BlockKind,
+    pub plugin_view: Option<WidgetView>,
 }
 
 #[uniffi::remote(Enum)]

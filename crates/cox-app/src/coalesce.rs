@@ -212,6 +212,7 @@ mod tests {
                 id: id(key),
                 turn: 1,
                 kind,
+                plugin_view: None,
             }),
             after: None,
         }

@@ -13,6 +13,7 @@ use cox_render::glyph::UNICODE;
 use cox_render::markdown;
 
 use crate::patch::{Block, BlockId, BlockKind, TimelinePatch, ToolState, tail};
+use crate::plugin_ui::WidgetView;
 use crate::summary::{self, Explore, one_line};
 use crate::tasks::TaskKind;
 use crate::usage::add_to;
@@ -370,6 +371,17 @@ impl Timeline {
         }
     }
 
+    /// A plugin's render of block `id` (T52.23.1, PL§8). It sits beside the
+    /// block's kind, so the fold's later updates keep it; a block the fold
+    /// no longer has (rewound) takes none.
+    pub fn plugin_view(&mut self, id: &BlockId, view: WidgetView) -> Vec<TimelinePatch> {
+        let Some(i) = self.find(id) else {
+            return vec![];
+        };
+        self.blocks[i].plugin_view = Some(view);
+        self.upsert(i)
+    }
+
     fn find(&self, id: &BlockId) -> Option<usize> {
         self.blocks.iter().rposition(|b| &b.id == id)
     }
@@ -389,7 +401,12 @@ impl Timeline {
         }
         self.explore = None;
         let turn = self.turn;
-        self.blocks.push(Block { id, turn, kind });
+        self.blocks.push(Block {
+            id,
+            turn,
+            kind,
+            plugin_view: None,
+        });
         self.upsert(self.blocks.len() - 1)
     }
 
@@ -429,6 +446,7 @@ impl Timeline {
                         id,
                         turn,
                         kind: kind.clone(),
+                        plugin_view: None,
                     },
                 );
             }),

@@ -13,7 +13,8 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use crate::coalesce;
-use crate::patch::{Block, TimelinePatch};
+use crate::patch::{Block, BlockId, TimelinePatch};
+use crate::plugin_ui::WidgetView;
 use crate::status::StatusFold;
 use crate::timeline::Timeline;
 use crate::usage::Meter;
@@ -159,6 +160,18 @@ impl Controller {
     /// for the next pull.
     pub fn push(&self, patch: TimelinePatch) {
         coalesce::push(&mut self.shared.lock().queue, patch);
+        self.shared.ready.notify_one();
+    }
+
+    /// A plugin's render of block `id` (T52.23.1), folded into the timeline
+    /// so a snapshot keeps it, and upserted for the next pull.
+    pub fn plugin_view(&self, id: &BlockId, view: WidgetView) {
+        {
+            let mut state = self.shared.lock();
+            for patch in state.timeline.plugin_view(id, view) {
+                coalesce::push(&mut state.queue, patch);
+            }
+        }
         self.shared.ready.notify_one();
     }
 

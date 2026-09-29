@@ -15,7 +15,7 @@ use cox_render::doc::{Block as DocBlock, StyledDoc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::plugin_ui::PluginSlot;
+use crate::plugin_ui::{PluginSlot, WidgetView};
 use crate::summary::Icon;
 use crate::tasks::TaskKind;
 use crate::usage::UsageView;
@@ -37,6 +37,11 @@ pub struct Block {
     /// The turn's ordinal (`TurnStarted.seq`); 0 before the first turn.
     pub turn: u32,
     pub kind: BlockKind,
+    /// A plugin's `tool:`/`item:` render of this finished block (T52.23.1,
+    /// PL§8), drawn in place of the built-in card; `None` keeps that card.
+    /// Absent from a stream without one, so recorded fixtures stay valid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin_view: Option<WidgetView>,
 }
 
 /// What a block shows (DT§4.3 block table).
