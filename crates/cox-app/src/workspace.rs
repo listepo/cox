@@ -553,11 +553,15 @@ mod tests {
         }
     }
 
-    fn listed() -> (
+    // Clippy rejects this tuple inline (`type_complexity`). The alias is
+    // the fixture the sidebar tests share.
+    type Listed = (
         Vec<(Project, Vec<SessionEntry>)>,
         HashMap<SessionId, Activity>,
         [SessionId; 4],
-    ) {
+    );
+
+    fn listed() -> Listed {
         let ids = [
             SessionId::new(),
             SessionId::new(),

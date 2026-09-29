@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use cox_protocol::SandboxPolicy;
 use nix::sys::signal::{Signal, killpg};
-use nix::unistd::Pid;
+use nix::unistd::{Pid, getpgid};
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tokio::sync::mpsc;
 
@@ -215,10 +215,11 @@ impl TerminalHandle {
         matches!((shell, foreground), (Some(shell), Some(group)) if shell != group)
     }
 
-    /// Ends the terminal: SIGHUP to the shell's process group and the
-    /// terminal's foreground job, as closing a terminal window does (the
-    /// shell passes it on to its background jobs), then SIGKILL to both
-    /// groups for whatever ignored it. Idempotent.
+    /// Ends the terminal: SIGHUP, then SIGKILL, to the shell's group, the
+    /// foreground group and every descendant's group. A background job is
+    /// its own group, and the shell forwards SIGHUP only while it is still
+    /// scheduled; under load it used to be killed first and the job lived.
+    /// Idempotent.
     pub fn close(&self) {
         if self.closed.swap(true, Ordering::SeqCst) {
             return;
@@ -226,13 +227,9 @@ impl TerminalHandle {
         let mut child = lock(&self.child);
         let shell = child.process_id().and_then(|pid| i32::try_from(pid).ok());
         let foreground = lock(&self.master).process_group_leader();
-        let groups: Vec<Pid> = shell
-            .into_iter()
-            .chain(foreground)
-            // Never 0 (our own group) or 1 (launchd/init).
-            .filter(|group| *group > 1)
-            .map(Pid::from_raw)
-            .collect();
+        // Descendants are reparented once the shell exits, so collect them
+        // before either signal.
+        let groups = groups_to_signal(shell, foreground);
         signal(&groups, Signal::SIGHUP);
         let deadline = Instant::now() + CLOSE_GRACE;
         while Instant::now() < deadline && matches!(child.try_wait(), Ok(None)) {
@@ -251,6 +248,92 @@ fn signal(groups: &[Pid], signal: Signal) {
     for group in groups {
         let _ = killpg(*group, signal);
     }
+}
+
+/// The shell, the foreground leader and every descendant, as process
+/// groups. Never 0 (our own group) or 1 (launchd/init).
+fn groups_to_signal(shell: Option<i32>, foreground: Option<i32>) -> Vec<Pid> {
+    let mut pids = Vec::new();
+    if let Some(shell) = shell {
+        pids.push(shell);
+        pids.extend(descendant_pids(shell));
+    }
+    if let Some(foreground) = foreground {
+        pids.push(foreground);
+    }
+    let mut groups = Vec::new();
+    for pid in pids {
+        let group = getpgid(Some(Pid::from_raw(pid)))
+            .map(|g| g.as_raw())
+            .unwrap_or(pid);
+        if group > 1 && !groups.contains(&group) {
+            groups.push(group);
+        }
+    }
+    groups.into_iter().map(Pid::from_raw).collect()
+}
+
+fn descendant_pids(root: i32) -> Vec<i32> {
+    let mut out = Vec::new();
+    let mut queue = child_pids(root);
+    while let Some(pid) = queue.pop() {
+        if pid <= 1 || out.contains(&pid) {
+            continue;
+        }
+        out.push(pid);
+        queue.extend(child_pids(pid));
+    }
+    out
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "proc")]
+unsafe extern "C" {
+    fn proc_listchildpids(ppid: i32, buffer: *mut i32, buffersize: i32) -> i32;
+}
+
+/// `proc_listchildpids` returns how many pids fit, and a full buffer may
+/// have stopped early, so grow until the result is shorter than the buffer.
+#[cfg(target_os = "macos")]
+fn child_pids(parent: i32) -> Vec<i32> {
+    let mut cap = 32usize;
+    loop {
+        let mut buf = vec![0i32; cap];
+        let bytes = buf.len() * std::mem::size_of::<i32>();
+        // SAFETY: `buf` is a uniquely owned i32 buffer of `bytes` bytes.
+        // libproc writes at most that many bytes of pid_t values into it.
+        let n = unsafe { proc_listchildpids(parent, buf.as_mut_ptr(), bytes as i32) };
+        if n <= 0 {
+            return Vec::new();
+        }
+        let n = n as usize;
+        if n < cap {
+            buf.truncate(n);
+            return buf;
+        }
+        cap = cap.saturating_mul(2);
+        if cap > 4096 {
+            return buf;
+        }
+    }
+}
+
+/// `/proc/<pid>/task/<pid>/children` is the kernel's child list. A missing
+/// file (or a pid that just exited) means there is nothing to signal.
+#[cfg(target_os = "linux")]
+fn child_pids(parent: i32) -> Vec<i32> {
+    let path = format!("/proc/{parent}/task/{parent}/children");
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    text.split_whitespace()
+        .filter_map(|pid| pid.parse().ok())
+        .collect()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn child_pids(_parent: i32) -> Vec<i32> {
+    Vec::new()
 }
 
 impl Drop for TerminalHandle {

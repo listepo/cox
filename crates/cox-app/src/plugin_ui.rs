@@ -8,10 +8,10 @@
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use cox_protocol::ids::{CallId, ItemId};
+use cox_protocol::ids::ItemId;
 use cox_protocol::plugin::ui::Span;
 use cox_protocol::plugin::{CommandDecl, KeyDecl, RenderIn, Slot, StyleToken, Widget};
-use cox_protocol::types::{Event, ItemKind, ToolCall, ToolResult};
+use cox_protocol::types::{Event, ItemKind, ToolCall};
 use cox_sanitize::sanitize;
 use cox_session::plugin_ui::{ItemSource, LivePlugins, PluginAnswer, PluginRequest};
 use serde::{Deserialize, Serialize};
@@ -717,8 +717,10 @@ pub fn serve_ui(
 mod tests {
     use super::*;
     use cox_protocol::commands::COMMANDS;
+    use cox_protocol::ids::CallId;
     use cox_protocol::plugin::Limits;
     use cox_protocol::plugin::ui::MAX_TEXT_BYTES;
+    use cox_protocol::types::ToolResult;
     use cox_session::plugin_ui::{PluginHost, answer};
 
     fn text(s: &str) -> Span {
