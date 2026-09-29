@@ -44,9 +44,11 @@ jobs:
       clippy-args: --workspace
       tools: nextest
       # Linux job A (plan.md T4.2): the sandbox must pick bubblewrap; job B
-      # (sandbox-landlock) covers the Landlock fallback.
+      # (sandbox-landlock) covers the Landlock fallback. cox-voice's build
+      # packages (T54.2) for `--workspace` and `--all-features`.
       setup-command: |
         if [ "$RUNNER_OS" = Linux ]; then bash .github/actions/bwrap/install.sh; fi
+        bash .github/actions/voice/install.sh
       test-command: cargo nextest run --workspace
       build-command: cargo build --workspace --all-targets --all-features --target "$TARGET"
       # CI runs only on pull requests, so the default-branch-only cache would
