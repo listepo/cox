@@ -59,6 +59,7 @@ ignore = [
     # P39). Ignored with a deadline, not forever.
     { id = "RUSTSEC-2026-0222", reason = "wasmtime 43 via extism 1.30.0: not guest-triggerable; needs the embedder to put an object from one Engine into another Engine's Store through specific APIs (debug_register_module, StructRefPre/ArrayRefPre/ExnRefPre::new, Tag::new, breakpoints). Neither extism nor cox calls them, and each extism Plugin keeps its own Engine and Store with no cross-plugin objects. Remove when extism ships wasmtime >= 48 (extism main already pins 48; no release since v1.30.0, 2026-06-04); review by 2026-12-31" },
     { id = "RUSTSEC-2026-0269", reason = "wasmtime 43 via extism 1.30.0: a WASI filesystem sandbox escape through trailing slashes. cox builds every plugin with WASI off and no preopens (cox-plugin host.rs), so no guest has a filesystem to escape; preopens (T33.14) stay blocked until the bump. Remove when extism ships wasmtime >= 48 (extism main already pins 48; no release since v1.30.0, 2026-06-04); review by 2026-12-31" },
+    { id = "RUSTSEC-2026-0316", reason = "wasmtime 43 via extism 1.30.0: a guest-returned value lifted through the component-model `Val` API can allocate past the hostcall fuel limit. Only hosts using `wasmtime::component::Val` are affected; extism 1.30.0 and cox use core modules only (no `wasmtime::component` anywhere in either). Fixed in 48.0.3; remove when extism ships wasmtime >= 48.0.3 (T33.43); review by 2026-12-31" },
 ]
 
 [sources]
