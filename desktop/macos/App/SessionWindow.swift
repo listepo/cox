@@ -33,12 +33,12 @@ struct SessionWindow: View {
   @State private var windowID = UUID()
   /// Set once first run chose a project; a fixture launch never asks.
   @AppStorage("CoxOnboarded") private var onboarded = false
-  @State private var screen = MainScreenState()
-  @State private var appearanceWrites = Coalescer()
+  @State var screen = MainScreenState()
+  @State var appearanceWrites = Coalescer()
   /// Every session this window opened, by id; each keeps pulling while another shows.
-  @State private var opened: [String: OpenedSession] = [:]
+  @State var opened: [String: OpenedSession] = [:]
   /// The one the window shows.
-  @State private var current: String?
+  @State var current: String?
   @State private var isOpening = false
   /// The login shell's environment is in the process, so sessions may open.
   @State private var isEnvLoaded = false
@@ -47,11 +47,11 @@ struct SessionWindow: View {
   /// The providers a turn could run on now, for the footer's count (A110); nil until probed.
   @State private var usable: [String]?
   /// Review shows in the column instead of the transcript, at this file or the first changed one.
-  @State private var reviewing: Reviewing?
+  @State var reviewing: Reviewing?
   /// Why the first session did not open.
   @State private var failure: String?
   /// Why the core refused the last intent; shown until dismissed.
-  @State private var refused: String?
+  @State var refused: String?
   /// The terminal pane shows under the column; its height is the user's drag, UI-only.
   @State private var isTerminalVisible = false
   @State private var terminalHeight = SessionTerminal.defaultHeight
@@ -140,7 +140,7 @@ struct SessionWindow: View {
     return state
   }
 
-  private var showing: OpenedSession? { current.flatMap { opened[$0] } }
+  var showing: OpenedSession? { current.flatMap { opened[$0] } }
 
   private var isFirstRun: Bool { !onboarded && !model.launch.isFixture }
 
@@ -166,12 +166,12 @@ struct SessionWindow: View {
   }
 
   /// A popped-out window has no sidebar to show.
-  private func toggleSidebar() {
+  func toggleSidebar() {
     if popOut == nil { screen.isSidebarVisible.toggle() }
   }
 
   /// Opens `session` in a window of its own, or as a tab of this one.
-  private func openPopOut(_ session: String, asTab: Bool) {
+  func openPopOut(_ session: String, asTab: Bool) {
     openWindow(value: PopOut(session: session, asTab: asTab))
   }
 
@@ -246,76 +246,6 @@ struct SessionWindow: View {
     }
   }
 
-  /// What the shell reports: the panes fold here, and an appearance change shows at once and is
-  /// written once the control rests.
-  private func handle(_ intent: MainScreenIntent) {
-    switch intent {
-    case .sidebar(let intent): handle(intent)
-    case .toolbar(let intent): handle(intent)
-    case .dismissPopover: screen.popover = nil
-    case .inspectorTab(let tab): screen.inspectorTab = tab
-    case .model(let row):
-      screen.popover = nil
-      if let intent = showing?.menu.pick(row) { send(intent) }
-    case .appearance(let change):
-      screen.appearance.apply(change)
-      screen.appearance.fillTexts()
-      let edit = AppearanceEdit(change)
-      guard let settings = model.settings else { return }
-      appearanceWrites.submit(edit.key) { await settings.apply(edit) }
-    }
-  }
-
-  private func handle(_ intent: SessionToolbar.Intent) {
-    switch intent {
-    case .showSidebar: toggleSidebar()
-    case .toggleInspector: screen.isInspectorVisible.toggle()
-    case .open(.appearance): screen.popover = screen.popover == .appearance ? nil : .appearance
-    case .mode(let mode): send(.setMode(mode: PermissionMode(mode)))
-    case .stop: send(.interrupt)
-    case .open(.cost):
-      // DT§5.1: the cost pill opens Context & Cost.
-      (screen.inspectorTab, screen.isInspectorVisible) = (.context, true)
-    case .open(.model): screen.popover = screen.popover == .model ? nil : .model
-    case .rename(let title): send(.rename(title: title))
-    }
-  }
-
-  private func handle(_ intent: Sidebar.Intent) {
-    switch intent {
-    case .hide: toggleSidebar()
-    case .filter(let text): model.sidebar.filter = text
-    case .toggle(let project): model.sidebar.toggle(project)
-    case .newSession: Task { await newSession() }
-    case .popOut(let session, let asTab): openPopOut(session, asTab: asTab)
-    case .reconnect(let group): reconnect(group)
-    case .rename(let session, let title): rename(session, to: title)
-    case .select(let session):
-      reviewing = nil
-      if opened[session] != nil {
-        current = session
-      } else if !model.launch.isFixture {
-        // A recording replays one session; its inbox rows name sessions it cannot open.
-        Task { await open(resume: session) }
-      }
-    }
-  }
-
-  /// A host group's Reconnect (T52.21).
-  private func reconnect(_ group: String) {
-    guard let host = RemoteHosts.host(section: group) else { return }
-    Task { await model.remotes.reconnect(host) }
-  }
-
-  /// An open session renames through its core; the store takes a closed one's directly.
-  private func rename(_ session: String, to title: String) {
-    if let store = opened[session]?.store {
-      send(.rename(title: title), to: store)
-    } else {
-      model.sidebar.rename(session, to: title)
-    }
-  }
-
   /// Reads the footer's provider health, then keeps the session list current while the window
   /// is open: this and other processes add sessions, and the inbox changes as turns run.
   private func watch() async {
@@ -339,14 +269,14 @@ struct SessionWindow: View {
   }
 
   /// New session: asks who drives it first when an external agent is configured (T52.8).
-  private func newSession() async {
+  func newSession() async {
     picking = await NewSession.picker(model.launch)
     if picking == nil { await open(resume: nil) }
   }
 
   /// Opens a new session, driven by `agent` when one was picked, or resumes `resume` where it
   /// last ran, and shows it. A session another window already shows is joined, not opened again.
-  private func open(resume: String?, agent: String? = nil) async {
+  func open(resume: String?, agent: String? = nil) async {
     guard !isOpening else { return }
     isOpening = true
     defer { isOpening = false }
@@ -394,24 +324,9 @@ struct SessionWindow: View {
       }
     }
   }
-
-  private func send(_ intent: Intent) {
-    guard let store = showing?.store else { return }
-    send(intent, to: store)
-  }
-
-  private func send(_ intent: Intent, to store: SessionStore) {
-    Task {
-      do {
-        _ = try await store.send(intent)
-      } catch {
-        refused = String(describing: error)
-      }
-    }
-  }
 }
 
 /// Where Review opened.
-private struct Reviewing: Equatable {
+struct Reviewing: Equatable {
   var path: String?
 }
