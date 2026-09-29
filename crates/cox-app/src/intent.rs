@@ -64,6 +64,15 @@ pub enum Intent {
         path: String,
         to_turn: u32,
     },
+    /// Put hunk `hunk` of Review's diff of `path` back (T51.20, DT§5.4):
+    /// `to_turn` as for `RevertFile`, `now_digest` the `DiffModel`'s
+    /// digest, so the core refuses bytes Review did not show.
+    RevertHunk {
+        path: String,
+        to_turn: u32,
+        hunk: u32,
+        now_digest: String,
+    },
     Fork {
         turn: Option<u32>,
     },
@@ -156,6 +165,17 @@ pub fn dispatch(intent: Intent) -> Result<Dispatch, IntentError> {
         }),
         Intent::Redo => now(Submission::Redo),
         Intent::RevertFile { path, to_turn } => now(Submission::RevertFile { path, to_turn }),
+        Intent::RevertHunk {
+            path,
+            to_turn,
+            hunk,
+            now_digest,
+        } => now(Submission::RevertHunk {
+            path,
+            to_turn,
+            hunk,
+            now_digest,
+        }),
         Intent::Fork { turn } => Ok(Dispatch::Fork { turn }),
         Intent::Handoff { objective } if objective.trim().is_empty() => Err(IntentError::Empty),
         Intent::Handoff { objective } => Ok(Dispatch::Handoff { objective }),
@@ -164,6 +184,69 @@ pub fn dispatch(intent: Intent) -> Result<Dispatch, IntentError> {
         Intent::Command { line } => command(&line),
         Intent::Rename { title } => rename(title),
     }
+}
+
+/// What a session driven by an external ACP agent does with an intent
+/// (T52.4, DT§3.3.1): the agent owns the model, mode, history and files, so
+/// only a prompt, a cancel, an answer to its own permission request (T52.5)
+/// and a rename mean anything; the rest is refused by name.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AgentDispatch {
+    /// `session/prompt`, after the one in flight.
+    Prompt(String),
+    /// `session/cancel`.
+    Cancel,
+    /// The user's answer to one of the agent's `session/request_permission`
+    /// asks, waiting in the inbox (T52.5).
+    Approve { call: CallId, decision: Decision },
+    /// The session's title in `cox.db`, as for any session.
+    Rename(String),
+    /// Not available in an agent's session; the intent's name.
+    Refused(&'static str),
+}
+
+/// Maps `intent` for an external agent's session. A `/` line goes to the
+/// agent verbatim (its commands apply, not cox's); a `!` line needs cox's
+/// shell and is refused.
+pub fn agent_dispatch(intent: Intent) -> Result<AgentDispatch, IntentError> {
+    Ok(match intent {
+        Intent::Send {
+            text, attachments, ..
+        }
+        | Intent::Queue {
+            text, attachments, ..
+        } => {
+            if !attachments.is_empty() {
+                AgentDispatch::Refused("Attachments")
+            } else if text.trim().is_empty() {
+                return Err(IntentError::Empty);
+            } else {
+                AgentDispatch::Prompt(text)
+            }
+        }
+        Intent::Command { line } if line.trim_start().starts_with('!') => {
+            AgentDispatch::Refused("Shell")
+        }
+        Intent::Command { line } if line.trim().is_empty() => return Err(IntentError::Empty),
+        Intent::Command { line } => AgentDispatch::Prompt(line.trim().to_string()),
+        Intent::Interrupt => AgentDispatch::Cancel,
+        Intent::Rename { title } if title.trim().is_empty() => return Err(IntentError::Empty),
+        Intent::Rename { title } => AgentDispatch::Rename(title),
+        Intent::Approve { call, decision } => AgentDispatch::Approve { call, decision },
+        Intent::Answer { .. } => AgentDispatch::Refused("Answer"),
+        Intent::Compact { .. } => AgentDispatch::Refused("Compact"),
+        Intent::SetMode { .. } => AgentDispatch::Refused("SetMode"),
+        Intent::SwitchModel { .. } => AgentDispatch::Refused("SwitchModel"),
+        Intent::SetEffort { .. } => AgentDispatch::Refused("SetEffort"),
+        Intent::Rewind { .. } => AgentDispatch::Refused("Rewind"),
+        Intent::Redo => AgentDispatch::Refused("Redo"),
+        Intent::RevertFile { .. } => AgentDispatch::Refused("RevertFile"),
+        Intent::RevertHunk { .. } => AgentDispatch::Refused("RevertHunk"),
+        Intent::Fork { .. } => AgentDispatch::Refused("Fork"),
+        Intent::Handoff { .. } => AgentDispatch::Refused("Handoff"),
+        Intent::Background { .. } => AgentDispatch::Refused("Background"),
+        Intent::Shell { .. } => AgentDispatch::Refused("Shell"),
+    })
 }
 
 /// A turn needs text or an attachment.
@@ -231,4 +314,57 @@ fn command(line: &str) -> Result<Dispatch, IntentError> {
         },
         spawn: true,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn revert_hunk_intent_maps_to_the_submission() {
+        let intent = Intent::RevertHunk {
+            path: "src/a.rs".into(),
+            to_turn: 2,
+            hunk: 1,
+            now_digest: "00ff".into(),
+        };
+        assert_eq!(
+            dispatch(intent),
+            Ok(Dispatch::Submit {
+                submission: Submission::RevertHunk {
+                    path: "src/a.rs".into(),
+                    to_turn: 2,
+                    hunk: 1,
+                    now_digest: "00ff".into(),
+                },
+                spawn: false,
+            })
+        );
+    }
+
+    /// T52.4: an agent's session prompts, cancels and renames; a `/` line
+    /// goes verbatim, and everything that needs cox's own state is refused.
+    #[test]
+    fn agent_dispatch_refuses_what_the_agent_owns() {
+        let line = |l: &str| Intent::Command { line: l.into() };
+        assert_eq!(
+            agent_dispatch(line("/review now")),
+            Ok(AgentDispatch::Prompt("/review now".into()))
+        );
+        assert_eq!(
+            agent_dispatch(line("!ls")),
+            Ok(AgentDispatch::Refused("Shell"))
+        );
+        assert_eq!(agent_dispatch(Intent::Interrupt), Ok(AgentDispatch::Cancel));
+        let rewind = Intent::Rewind {
+            to_turn: 1,
+            code: true,
+            conversation: true,
+        };
+        assert_eq!(agent_dispatch(rewind), Ok(AgentDispatch::Refused("Rewind")));
+        assert_eq!(
+            agent_dispatch(Intent::Fork { turn: None }),
+            Ok(AgentDispatch::Refused("Fork"))
+        );
+    }
 }

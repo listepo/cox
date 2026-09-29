@@ -416,6 +416,16 @@ pub trait Archive: Send + Sync {
     async fn get(&self, id: &ArchiveId) -> Result<Vec<u8>, StoreError>;
 }
 
+/// Puts one hunk of a file's net diff back (T51.19): cox-render's
+/// `diffmodel::revert_hunk`, installed by the surface like the
+/// `Checkpointer`, because cox-core may not depend on cox-render
+/// (`deps.rs`). Pure: no file is read or written here.
+pub trait HunkReverter: Send + Sync {
+    /// `now` with hunk `index` of the line diff from `before` put back to
+    /// `before`'s lines; `None` when the diff has no such hunk.
+    fn revert(&self, before: &str, now: &str, index: usize) -> Option<String>;
+}
+
 /// Where the loop gets a file's bytes before a call changes it (T26.1).
 /// Implemented by `cox-tools` (`checkpoint::GitCheckpointer`), which is
 /// the crate allowed to read files and run git; `cox-core` only decides
@@ -474,6 +484,18 @@ pub struct WorktreeInfo {
     pub bytes: u64,
 }
 
+/// One file a worktree changed against the commit it was cut from, with
+/// its line counts (T52.10): a best-of-n candidate's column.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileStat {
+    /// Relative to the worktree.
+    pub path: PathBuf,
+    /// Lines added.
+    pub added: u32,
+    /// Lines removed.
+    pub removed: u32,
+}
+
 /// Where the loop gets a worktree for `agent(isolation: "worktree")`
 /// (T27.3). Implemented by `cox-tools` (`git::GitWorktrees`), the crate
 /// allowed to run git; `cox-core` only decides which task gets one.
@@ -490,6 +512,27 @@ pub trait Worktrees: Send + Sync {
     async fn list(&self, from: &Path) -> Result<Vec<WorktreeInfo>, WorktreeError> {
         let _ = from;
         Ok(Vec::new())
+    }
+
+    /// What the worktree at `path` changed against the commit it was cut
+    /// from, committed or not, untracked files included (T52.10). The
+    /// default reports nothing.
+    async fn diffstat(&self, path: &Path) -> Result<Vec<FileStat>, WorktreeError> {
+        let _ = path;
+        Ok(Vec::new())
+    }
+
+    /// Removes the worktree at `path`, which must be locked for `owner`
+    /// (T52.10). A tree with uncommitted or untracked files is refused
+    /// (`WorktreeError::Dirty`) unless `discard`, which the person gives
+    /// only by confirming a second time that its changes go. The default
+    /// removes nothing: a source that only creates worktrees has none of
+    /// its own to remove.
+    async fn remove(&self, path: &Path, owner: &str, discard: bool) -> Result<(), WorktreeError> {
+        let _ = (owner, discard);
+        Err(WorktreeError::NotRegistered {
+            path: path.to_path_buf(),
+        })
     }
 }
 

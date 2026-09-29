@@ -29,7 +29,7 @@ extension TranscriptTextView {
         replaceTail(of: id, from: Int(from), with: tail, current: current, look)
       case .remove(let id):
         remove(id, look)
-      case .usage, .status:
+      case .usage, .status, .pluginSlot:
         continue
       }
     }

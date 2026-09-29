@@ -71,6 +71,8 @@ pub struct Config {
     pub record: RecordConfig,
     /// `[desktop.appearance]` / `[desktop.transcript]` (macOS app, P37)
     pub desktop: DesktopConfig,
+    /// `[external_agents.<name>]` (T52.2): user config only.
+    pub external_agents: BTreeMap<String, ExternalAgentConfig>,
 }
 
 impl Config {
@@ -1185,6 +1187,25 @@ impl Default for LspConfig {
     }
 }
 
+/// One `[external_agents.<name>]` entry (T52.2, DT§3.3.1): an ACP agent a
+/// top-level session can be driven by. The name is the TOML key. User
+/// config only: a project config can set none of it (the guards in
+/// `cox-config`'s `load.rs`), because an entry runs a program and widens
+/// where it may write. It always runs under the sandbox wrap, with network
+/// on and file limits kept.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct ExternalAgentConfig {
+    /// Program that speaks ACP on stdio: a name found on `PATH`, or an absolute path.
+    pub command: String,
+    /// Arguments to `command`.
+    pub args: Vec<String>,
+    /// The agent's own key variable, passed through to it by name only.
+    pub key_env: String,
+    /// Extra directories under your home the agent may write, for its own state.
+    pub writable: Vec<PathBuf>,
+}
+
 /// `[voice]` (P54, A123): push-to-talk dictation with local whisper, used
 /// only by a `cox` built with the `voice` feature. User config only: a
 /// project config cannot set any `voice.*` key (the guard in `cox-config`'s
@@ -1401,9 +1422,12 @@ pub const DESKTOP_LINE_HEIGHT: (f64, f64) = (1.0, 2.5);
 /// `[desktop]`: the macOS app's own settings (P37, DS§3.5, A67). Only the
 /// app reads them; they live here so they get a schema and provenance like
 /// every other setting.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct DesktopConfig {
+    /// Show cox's menu-bar extra: what needs you, what runs, and today's
+    /// spend (T51.14).
+    pub menu_bar: bool,
     /// `[desktop.appearance]`
     pub appearance: DesktopAppearanceConfig,
     /// `[desktop.transcript]`
@@ -1412,6 +1436,23 @@ pub struct DesktopConfig {
     pub context: DesktopContextConfig,
     /// `[desktop.review]`
     pub review: DesktopReviewConfig,
+    /// `ssh` host aliases the app connects to at launch, shown as sidebar
+    /// groups (T52.21). User config only: a project config cannot set it,
+    /// since a repository must not choose where the app opens a shell.
+    pub remote_hosts: Vec<String>,
+}
+
+impl Default for DesktopConfig {
+    fn default() -> Self {
+        Self {
+            menu_bar: true,
+            appearance: DesktopAppearanceConfig::default(),
+            transcript: DesktopTranscriptConfig::default(),
+            context: DesktopContextConfig::default(),
+            review: DesktopReviewConfig::default(),
+            remote_hosts: Vec::new(),
+        }
+    }
 }
 
 /// The window's glass material (DS§3.5).
@@ -1657,12 +1698,52 @@ fn generate_config_docs(toml: &str) -> String {
             None => out.push_str(&format!("- `{key}` = `{value}`\n")),
         }
     }
+    out.push_str(EXTERNAL_AGENTS_DOCS);
     out.push_str(KEYBINDINGS_DOCS);
     out.push_str(ACCESSIBILITY_DOCS);
     out.push_str(STATUS_LINE_DOCS);
     out.push_str(THEME_EDITOR_DOCS);
     out
 }
+
+/// T52.2: `[external_agents.<name>]` has no default entry, so the scan of
+/// `default.toml` has nothing to list; the table, its guard and examples.
+#[cfg(test)]
+const EXTERNAL_AGENTS_DOCS: &str = "## `[external_agents.<name>]`
+
+An ACP agent a new session can be driven by instead of cox's own loop (T52.2, DT§3.3.1). None by default. **User config only**: a project `.cox/config.toml` cannot add, change or widen an entry, because an entry runs a program; the loader reverts it with a warning. cox never installs the agent: you install it, and cox runs the installed program.
+
+- `command` — the program that speaks ACP on stdio: a name found on `PATH`, or an absolute path
+- `args` — arguments to `command`
+- `key_env` — the agent's own API-key variable. Only this one variable is passed through, by name, next to the child allowlist (`PATH`, `HOME`, `LANG`, `LC_*`, `TERM`, `TMPDIR`, `USER`, `SHELL`); cox's own provider keys stay behind. A key that does not resolve (env var, then keychain) leaves the agent out with one warning
+- `writable` — extra directories under your home the agent may write, for its own state (for example `~/.claude`). Each must resolve inside your home, never to your home itself; one that does not refuses the entry with a warning. A project config cannot set it
+
+An external agent always runs under the sandbox wrap. Its file limits are the session's `[sandbox]` ones plus `writable`, but it always has network access, whatever `sandbox.network` says: it has to reach its vendor's API. The agent's model, cost and context are its own: cox writes no usage row for it and shows its cost as \"—\".
+
+Examples (install the program first; these are not defaults):
+
+```toml
+[external_agents.claude]            # \"Claude Agent\": npm install -g @agentclientprotocol/claude-agent-acp
+command = \"claude-agent-acp\"
+args = [\"--hide-claude-auth\"]       # API key only, never a claude.ai login
+key_env = \"ANTHROPIC_API_KEY\"
+writable = [\"~/.claude\"]
+
+[external_agents.codex]             # \"Codex\": npm install -g @agentclientprotocol/codex-acp
+command = \"codex-acp\"
+key_env = \"CODEX_API_KEY\"
+writable = [\"~/.codex\"]
+
+[external_agents.gemini]            # \"Gemini CLI\": npm install -g @google/gemini-cli
+command = \"gemini\"
+args = [\"--acp\"]
+key_env = \"GEMINI_API_KEY\"
+writable = [\"~/.gemini\"]
+```
+
+Cursor (`agent acp`, `CURSOR_API_KEY`) comes from the granted Cursor plugin's `[[external_agents]]` entry (`plugins/cursor`), not from this table.
+
+";
 
 /// T29.2: the switches that make cox usable without sight, motion or
 /// red/green, gathered in one place; they live in three tables and a flag.

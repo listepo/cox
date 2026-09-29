@@ -1,5 +1,6 @@
 // The rewind timeline's intent (T37.28.1): a Changes tab checkpoint and a scope reach the session
-// as `Intent.rewind` to that turn; a file's Revert (T37.28.3) as `Intent.revertFile`.
+// as `Intent.rewind` to that turn; a file's Revert (T37.28.3) as `Intent.revertFile`; a Review
+// hunk's Revert hunk (T51.21) as `Intent.revertHunk`.
 
 import CoxClient
 import Testing
@@ -28,6 +29,38 @@ import Testing
   let store = SessionStore(session: session)
   try await store.revert(path: "src/retry.rs")
   #expect(session.sent == [.revertFile(path: "src/retry.rs", toTurn: 1)])
+}
+
+/// Review's open diff with two hunks the core numbered 0 and 1, read when the file hashed `digest`.
+private func reviewed(digest: String?) -> ReviewState {
+  let hunks = [
+    DiffHunk(header: "@@ -1 +1 @@", lines: [], index: 0),
+    DiffHunk(header: "@@ -9 +9 @@", lines: [], index: 1),
+  ]
+  return ReviewState(
+    Changes(), selection: "src/retry.rs",
+    diff: DiffModel(path: "/w/src/retry.rs", hunks: hunks, digest: digest))
+}
+
+@MainActor
+@Test func revertHunkSendsTheHunksIndexAndTheDiffsDigest() async throws {
+  let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []))
+  let store = SessionStore(session: session)
+  try await store.revert(hunk: 1, in: reviewed(digest: "00ff00ff00ff00ff"))
+  #expect(
+    session.sent == [
+      .revertHunk(path: "src/retry.rs", toTurn: 1, hunk: 1, nowDigest: "00ff00ff00ff00ff")
+    ])
+}
+
+@MainActor
+@Test func revertHunkSendsNothingWithoutADigestOrPastTheHunks() async throws {
+  let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []))
+  let store = SessionStore(session: session)
+  try await store.revert(hunk: 0, in: reviewed(digest: nil))
+  try await store.revert(hunk: 2, in: reviewed(digest: "00ff00ff00ff00ff"))
+  try await store.revert(hunk: 0, in: ReviewState())
+  #expect(session.sent.isEmpty)
 }
 
 @MainActor

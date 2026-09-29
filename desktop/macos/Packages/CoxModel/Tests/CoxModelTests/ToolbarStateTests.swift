@@ -1,6 +1,7 @@
 // The session toolbar's figures (T37.22.5): the title and project from the session's entry, the
 // branch from its Info, the cost and the context share the meter formatted with the ring's fill
-// from the split; before the first usage patch, a zero cost and an unknown share.
+// from the split; before the first usage patch, a zero cost and an unknown share; an external
+// agent's session names its agent in the model chip and has no cost (T52.8).
 
 import CoxClient
 import Foundation
@@ -43,4 +44,18 @@ import Testing
   #expect(fresh.title == "Untitled session")
   #expect(fresh.project == "acme-web")
   #expect(fresh.branch == nil)
+}
+
+@Test func anExternalAgentsSessionNamesItsAgentAndHasNoCost() {
+  let entry = SessionEntry(id: "s", title: "Refactor checkout form", agent: "claude")
+  let agents = [AgentChoice.cox, AgentChoice(name: "claude", label: "Claude Agent")]
+  let figures = ToolbarState(
+    usage: nil, entry: (entry, Project(root: "/src/web", name: "web")), info: nil, agents: agents)
+  #expect(figures.model == "Claude Agent · ACP")
+  #expect(figures.cost == "—")
+
+  let unlisted = ToolbarState(
+    usage: nil, entry: (entry, Project(root: "/src/web", name: "web")), info: nil)
+  #expect(unlisted.model == "claude · ACP")
+  #expect(ToolbarState(usage: nil, entry: nil, info: nil).model == nil)
 }

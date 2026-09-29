@@ -4,34 +4,45 @@
 //! fails this build instead of drifting. Separate from the exported objects
 //! because these are data only. Ids and paths cross as strings; the one
 //! type UniFFI cannot carry as-is (a span's `[u8; 3]` colour) crosses as
-//! the local `Span`, and the one record only this surface has
-//! (`OpenRequest`) is declared here too.
+//! the local `Span`, and the records only this surface has (`OpenRequest`,
+//! and `BestOfLaunch`, which carries session handles) are declared here too.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use cox_app::AgentChoice;
 use cox_app::Holder;
 use cox_app::SessionInfo;
+use cox_app::best_of::{
+    BestOf, BestOfId, BestOfRequest, Candidate, CandidateState, CandidateView, Launch, Launched,
+    Picked,
+};
 use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange};
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind, TextLine};
 use cox_app::onboarding::{CheckId, CheckRow, CheckStatus};
 use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 use cox_app::review::LineComment;
 use cox_app::{
-    Activity, ChangedFile, Changes, Checkpoint, Completion, ConfigSource, ContextPart, CostRow,
-    Dropped, FileChange, Icon, InboxItem, Info, Intent, Layer, Linked, McpLogin, McpServer,
-    McpStatus, MeterRow, MeterText, ModelChoice, Need, Project, SearchHit, SessionEntry, Setting,
-    SettingKind, SettingsView, Tally, TaskKind, TaskTarget, TurnCosts, TurnUsage, UsageView,
+    Activity, BrowserError, ChangedFile, Changes, Checkpoint, Completion, ConfigSource,
+    ContextPart, CostRow, DaySummary, Dropped, FileChange, Icon, InboxItem, Info, Intent, Layer,
+    Linked, McpLogin, McpServer, McpStatus, MeterRow, MeterText, ModelChoice, Need, PageText,
+    Project, SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind,
+    TaskTarget, TurnCosts, TurnUsage, UsageView,
 };
+use cox_app::{KeyValueRow, PluginKey, PluginSlot, SpanView, WidgetView};
 use cox_app::{PermissionRule, RuleKind, SessionGrant};
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
+use cox_protocol::plugin::Slot;
 use cox_protocol::plugin::ui::StyleToken;
-use cox_protocol::traits::WorktreeInfo;
+use cox_protocol::traits::{FileStat, Worktree, WorktreeInfo};
 use cox_protocol::types::{
     ApprovalPolicy, ArchiveRef, Attachment, CompactReason, DecidedBy, Decision, Effort, Level,
     ModelId, PermissionMode, Risk, Segments, Source, StopReason, Tier, TodoItem, TodoState,
     ToolCall, Usage, Why,
 };
 use serde_json::Value;
+
+use crate::session::SessionHandle;
 
 macro_rules! string_ids {
     ($($id:ident),*) => {$(
@@ -118,12 +129,23 @@ pub struct Project {
 
 /// What `App::open` opens: a new session in `cwd`, or `resume`'s.
 /// `theme` is the syntect theme code blocks are highlighted with; a diff
-/// takes its dark and light variant (A95).
+/// takes its dark and light variant (A95). `agent` names the external ACP
+/// agent a new session is driven by, `None` for cox (T52.7).
 #[derive(uniffi::Record)]
 pub struct OpenRequest {
     pub cwd: String,
     pub resume: Option<SessionId>,
     pub theme: String,
+    pub agent: Option<String>,
+}
+
+#[uniffi::remote(Record)]
+pub struct AgentChoice {
+    pub name: Option<String>,
+    pub label: String,
+    pub origin: String,
+    pub launch: String,
+    pub unavailable: Option<String>,
 }
 
 /// `StyledSpan` with its theme colours as `0xRRGGBB`.
@@ -167,6 +189,83 @@ pub enum TimelinePatch {
     Status {
         status: Status,
     },
+    PluginSlot {
+        slot: Box<PluginSlot>,
+    },
+}
+
+/// One plugin slot (T52.14, PL§8); the app draws `view` natively.
+#[uniffi::remote(Record)]
+pub struct PluginSlot {
+    pub plugin: String,
+    pub slot: Slot,
+    pub view: Option<WidgetView>,
+    pub visible: bool,
+    pub stopped: bool,
+}
+
+#[uniffi::remote(Enum)]
+pub enum Slot {
+    StatusLeft,
+    StatusRight,
+    Panel,
+    Overlay,
+}
+
+/// PL§8's closed widget tree, sanitized and bounded by cox-app; it recurses
+/// only through lists, which every binding carries as plain arrays.
+#[uniffi::remote(Enum)]
+pub enum WidgetView {
+    Text {
+        lines: Vec<Vec<SpanView>>,
+    },
+    List {
+        items: Vec<Vec<SpanView>>,
+        selected: Option<u32>,
+    },
+    Table {
+        header: Vec<SpanView>,
+        rows: Vec<Vec<SpanView>>,
+        widths: Vec<u16>,
+    },
+    KeyValue {
+        rows: Vec<KeyValueRow>,
+    },
+    Gauge {
+        ratio: f64,
+        label: SpanView,
+    },
+    Stack {
+        vertical: bool,
+        children: Vec<WidgetView>,
+        sizes: Vec<u16>,
+    },
+    Block {
+        title: Option<SpanView>,
+        child: Vec<WidgetView>,
+    },
+}
+
+#[uniffi::remote(Record)]
+pub struct SpanView {
+    pub text: String,
+    pub style: StyleToken,
+    pub bold: bool,
+    pub italic: bool,
+}
+
+#[uniffi::remote(Record)]
+pub struct KeyValueRow {
+    pub key: SpanView,
+    pub value: Vec<SpanView>,
+}
+
+#[uniffi::remote(Record)]
+pub struct PluginKey {
+    pub plugin: String,
+    pub key: String,
+    pub name: String,
+    pub description: String,
 }
 
 #[uniffi::remote(Record)]
@@ -467,6 +566,12 @@ pub enum Intent {
         path: String,
         to_turn: u32,
     },
+    RevertHunk {
+        path: String,
+        to_turn: u32,
+        hunk: u32,
+        now_digest: String,
+    },
     Fork {
         turn: Option<u32>,
     },
@@ -530,6 +635,8 @@ pub enum Activity {
 pub struct SessionEntry {
     pub info: SessionInfo,
     pub held_by: Option<Holder>,
+    pub agent: Option<String>,
+    pub best_of: Option<String>,
 }
 
 #[uniffi::remote(Record)]
@@ -816,12 +923,14 @@ pub struct Attachment {
 pub struct DiffModel {
     pub path: PathBuf,
     pub hunks: Vec<DiffHunk>,
+    pub digest: Option<String>,
 }
 
 #[uniffi::remote(Record)]
 pub struct DiffHunk {
     pub header: String,
     pub lines: Vec<DiffLine>,
+    pub index: u32,
 }
 
 #[uniffi::remote(Record)]
@@ -958,4 +1067,155 @@ pub enum Level {
     Warn,
     Budget,
     Security,
+}
+
+/// T51.12: the menu bar's "Today" footer.
+#[uniffi::remote(Record)]
+pub struct DaySummary {
+    pub cost: String,
+    pub sessions: u64,
+    pub text: String,
+}
+
+/// T51.8: what the app's browser pane reports of its page.
+#[uniffi::remote(Record)]
+pub struct PageText {
+    pub title: String,
+    pub url: String,
+    pub text: String,
+}
+
+/// T51.8: why the Swift browser could not do what a tool asked. Local, not
+/// `cox_app::BrowserError` declared remote, because a foreign trait's error
+/// must also take UniFFI's unexpected-callback error, and that `From` may
+/// only be written for a type of this crate.
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum BrowserFailure {
+    #[error("no page is open; call browser_open first")]
+    NoPage,
+    #[error("{message}")]
+    Page { message: String },
+}
+
+impl From<uniffi::UnexpectedUniFFICallbackError> for BrowserFailure {
+    fn from(e: uniffi::UnexpectedUniFFICallbackError) -> Self {
+        Self::Page { message: e.reason }
+    }
+}
+
+impl From<BrowserFailure> for BrowserError {
+    fn from(e: BrowserFailure) -> Self {
+        match e {
+            BrowserFailure::NoPage => Self::NoPage,
+            BrowserFailure::Page { message } => Self::Page(message),
+        }
+    }
+}
+
+// Best of n (T52.9, T52.10, T52.11): the launch, the compare view's columns
+// and what a pick did.
+uniffi::custom_type!(BestOfId, String, {
+    remote,
+    lower: |id| id.0,
+    try_lift: |s| Ok(BestOfId(s)),
+});
+
+#[uniffi::remote(Enum)]
+pub enum Candidate {
+    Cox { model: Option<String> },
+    Agent { name: String },
+}
+
+#[uniffi::remote(Record)]
+pub struct BestOfRequest {
+    pub project: PathBuf,
+    pub prompt: String,
+    pub candidates: Vec<Candidate>,
+}
+
+#[uniffi::remote(Record)]
+pub struct Worktree {
+    pub path: PathBuf,
+    pub branch: String,
+    pub main: PathBuf,
+}
+
+#[uniffi::remote(Record)]
+pub struct Launched {
+    pub candidate: Candidate,
+    pub worktree: Option<Worktree>,
+    pub session: Option<SessionId>,
+    pub failed: Option<String>,
+    pub started_ms: u64,
+    pub pruned: bool,
+}
+
+#[uniffi::remote(Record)]
+pub struct BestOf {
+    pub id: BestOfId,
+    pub project: PathBuf,
+    pub prompt: String,
+    pub candidates: Vec<Launched>,
+    pub kept: Option<u32>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum CandidateState {
+    Running,
+    WaitingOnYou,
+    Done,
+    Failed { why: String },
+    Kept,
+    Pruned,
+}
+
+#[uniffi::remote(Record)]
+pub struct FileStat {
+    pub path: PathBuf,
+    pub added: u32,
+    pub removed: u32,
+}
+
+#[uniffi::remote(Record)]
+pub struct CandidateView {
+    pub candidate: Candidate,
+    pub label: String,
+    pub state: CandidateState,
+    pub session: Option<SessionId>,
+    pub worktree: Option<PathBuf>,
+    pub branch: Option<String>,
+    pub files: Vec<FileStat>,
+    pub added: u32,
+    pub removed: u32,
+    pub cost_usd: f64,
+    pub duration_ms: u64,
+}
+
+#[uniffi::remote(Record)]
+pub struct Picked {
+    pub pruned: Vec<PathBuf>,
+    pub dirty: Vec<PathBuf>,
+    pub refused: Vec<String>,
+}
+
+/// `cox_app::Launch` as Swift sees it: the group, and a handle on each
+/// candidate session that started, in candidate order, for the windows.
+/// Local because a `LiveSession` crosses only inside a `SessionHandle`.
+#[derive(uniffi::Record)]
+pub struct BestOfLaunch {
+    pub group: BestOf,
+    pub sessions: Vec<Arc<SessionHandle>>,
+}
+
+impl From<Launch> for BestOfLaunch {
+    fn from(launch: Launch) -> Self {
+        Self {
+            group: launch.group,
+            sessions: launch
+                .sessions
+                .into_iter()
+                .map(SessionHandle::new)
+                .collect(),
+        }
+    }
 }

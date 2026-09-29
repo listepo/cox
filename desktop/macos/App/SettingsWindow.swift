@@ -22,11 +22,13 @@ struct SettingsWindow: View {
   var body: some View {
     Group {
       if let settings = model.settings {
-        SettingsScreen(state: state(settings)) { handle($0, settings) }
-          .task {
-            sliderWrites.onIdle = { dragged = [:] }
-            await settings.load()
-          }
+        SettingsScreen(state: state(settings), recorder: Hotkeys.recorder) {
+          handle($0, settings)
+        }
+        .task {
+          sliderWrites.onIdle = { dragged = [:] }
+          await settings.load()
+        }
       } else if case .failure(let error) = model.launch.live {
         Text(String(describing: error)).textSelection(.enabled).padding(Space.xxl)
       }
@@ -79,7 +81,8 @@ struct SettingsWindow: View {
         settings.dropped(in: group).map { .init(id: $0.key, reason: $0.reason, change: $0.change) }
       } ?? [],
       filter: settings.filter,
-      permissions: group == .permissions ? permissions(settings) : nil)
+      permissions: group == .permissions ? permissions(settings) : nil,
+      shortcuts: shown == .general ? Hotkeys.shortcuts : [])
   }
 
   private func permissions(_ settings: SettingsStore) -> SettingsScreen.Permissions {

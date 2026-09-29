@@ -337,6 +337,7 @@
       "description": "`[desktop.appearance]` / `[desktop.transcript]` (macOS app, P37)",
       "$ref": "#/$defs/DesktopConfig",
       "default": {
+        "menu_bar": true,
         "appearance": {
           "material": "frosted",
           "opacity": 0.42,
@@ -356,8 +357,17 @@
         },
         "review": {
           "send": "queue"
-        }
+        },
+        "remote_hosts": []
       }
+    },
+    "external_agents": {
+      "description": "`[external_agents.<name>]` (T52.2): user config only.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ExternalAgentConfig"
+      },
+      "default": {}
     }
   },
   "additionalProperties": false,
@@ -1973,6 +1983,11 @@
       "description": "`[desktop]`: the macOS app's own settings (P37, DS§3.5, A67). Only the\napp reads them; they live here so they get a schema and provenance like\nevery other setting.",
       "type": "object",
       "properties": {
+        "menu_bar": {
+          "description": "Show cox's menu-bar extra: what needs you, what runs, and today's\nspend (T51.14).",
+          "type": "boolean",
+          "default": true
+        },
         "appearance": {
           "description": "`[desktop.appearance]`",
           "$ref": "#/$defs/DesktopAppearanceConfig",
@@ -2008,6 +2023,14 @@
           "default": {
             "send": "queue"
           }
+        },
+        "remote_hosts": {
+          "description": "`ssh` host aliases the app connects to at launch, shown as sidebar\ngroups (T52.21). User config only: a project config cannot set it,\nsince a repository must not choose where the app opens a shell.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
         }
       },
       "additionalProperties": false
@@ -2194,6 +2217,39 @@
           "const": "now"
         }
       ]
+    },
+    "ExternalAgentConfig": {
+      "description": "One `[external_agents.<name>]` entry (T52.2, DT§3.3.1): an ACP agent a\ntop-level session can be driven by. The name is the TOML key. User\nconfig only: a project config can set none of it (the guards in\n`cox-config`'s `load.rs`), because an entry runs a program and widens\nwhere it may write. It always runs under the sandbox wrap, with network\non and file limits kept.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "Program that speaks ACP on stdio: a name found on `PATH`, or an absolute path.",
+          "type": "string",
+          "default": ""
+        },
+        "args": {
+          "description": "Arguments to `command`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "key_env": {
+          "description": "The agent's own key variable, passed through to it by name only.",
+          "type": "string",
+          "default": ""
+        },
+        "writable": {
+          "description": "Extra directories under your home the agent may write, for its own state.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

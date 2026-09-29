@@ -22,18 +22,21 @@ public struct SettingsScreenState: Equatable, Sendable {
   public var filter = ""
   /// The rules and session grants, on the Permissions page.
   public var permissions: SettingsScreen.Permissions?
+  /// The global shortcuts the person records, on the General page (T51.15).
+  public var shortcuts: [SettingsScreen.Shortcut] = []
 
   public init(
     pages: [SettingsPage] = [], selection: SettingsPage = .general,
     tables: [SettingsScreen.Table] = [], userFile: String = "", projectFile: String? = nil,
     logins: [SettingsScreen.Login] = [], dropped: [SettingsScreen.DroppedValue] = [],
     filter: String = "",
-    permissions: SettingsScreen.Permissions? = nil
+    permissions: SettingsScreen.Permissions? = nil,
+    shortcuts: [SettingsScreen.Shortcut] = []
   ) {
     (self.pages, self.selection, self.tables) = (pages, selection, tables)
     (self.userFile, self.projectFile) = (userFile, projectFile)
     (self.logins, self.dropped, self.filter) = (logins, dropped, filter)
-    self.permissions = permissions
+    (self.permissions, self.shortcuts) = (permissions, shortcuts)
   }
 }
 
@@ -59,9 +62,16 @@ public enum SettingsScreenIntent: Equatable, Sendable {
 public struct SettingsScreen: View {
   let state: SettingsScreenState
   let send: (SettingsScreenIntent) -> Void
+  /// The control that records a shortcut, by its id: the app's, from its hotkey library, which
+  /// CoxUI does not link (T51.15).
+  let recorder: (@MainActor (SettingsScreen.Shortcut.ID) -> AnyView)?
 
-  public init(state: SettingsScreenState, send: @escaping (SettingsScreenIntent) -> Void) {
-    (self.state, self.send) = (state, send)
+  public init(
+    state: SettingsScreenState,
+    recorder: (@MainActor (SettingsScreen.Shortcut.ID) -> AnyView)? = nil,
+    send: @escaping (SettingsScreenIntent) -> Void
+  ) {
+    (self.state, self.recorder, self.send) = (state, recorder, send)
   }
 
   public var body: some View {
@@ -81,6 +91,9 @@ public struct SettingsScreen: View {
                 .accessibilityAddTraits(.isHeader)
               if !state.dropped.isEmpty { DroppedBox(values: state.dropped) }
               if !state.logins.isEmpty { LoginsBox(logins: state.logins, send: send) }
+              if !state.shortcuts.isEmpty, let recorder {
+                ShortcutsBox(shortcuts: state.shortcuts, recorder: recorder)
+              }
               ForEach(state.tables) { TableBox(table: $0, send: send) }
               if let permissions = state.permissions {
                 PermissionsBoxes(permissions: permissions, send: send)

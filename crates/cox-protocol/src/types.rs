@@ -1065,6 +1065,23 @@ pub enum Submission {
         /// The turn to go back before.
         to_turn: u32,
     },
+    /// Put one of Review's hunks back (T51.19, A101): hunk `hunk` of the
+    /// file's net diff, from its first pre-image since `to_turn` to its
+    /// bytes on disk, written back to the pre-image's lines alone. The
+    /// current bytes are checkpointed first so the revert can itself be
+    /// undone; a file whose [`content_digest`] is no longer `now_digest` is
+    /// left as it is, with a Notice.
+    RevertHunk {
+        /// Relative to the session's cwd or absolute; confined to the
+        /// workspace roots like a tool's path.
+        path: String,
+        /// The turn whose pre-image the diff starts from.
+        to_turn: u32,
+        /// The hunk's index in Review's diff, from 0.
+        hunk: u32,
+        /// [`content_digest`] of the bytes Review diffed.
+        now_digest: String,
+    },
     /// `Ctrl+B` (T27.1): detach a running `bash` or `agent` call into a
     /// background task; the model gets a pointer result and the turn goes on.
     Background {
@@ -1677,6 +1694,18 @@ pub struct ToolOutput {
     pub structured: Option<Value>,
 }
 
+/// The digest a hunk revert carries (T51.19): Review takes it of the bytes
+/// it diffed and the core of the file on disk, so a hunk is never put back
+/// into bytes the person did not see. Both sides run in one binary, so the
+/// standard hasher, fixed within a build though unspecified across Rust
+/// releases, is enough; 16 hex digits.
+pub fn content_digest(bytes: &[u8]) -> String {
+    use std::hash::{DefaultHasher, Hash as _, Hasher as _};
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1828,6 +1857,7 @@ mod tests {
     #[case::command(Submission::Command { command: SlashCommand { name: "compact".into(), args: vec![] } })]
     #[case::hook_result(Submission::HookResult { hook_id: "pre-tool-use".into(), outcome: HookOutcome::Continue })]
     #[case::revert_file(Submission::RevertFile { path: "src/a.rs".into(), to_turn: 2 })]
+    #[case::revert_hunk(Submission::RevertHunk { path: "src/a.rs".into(), to_turn: 2, hunk: 1, now_digest: content_digest(b"now") })]
     #[case::background(Submission::Background { call_id: CallId::new() })]
     #[case::user_shell(Submission::UserShell { command: "ls".into(), share: true })]
     #[case::user_agent(Submission::UserAgent { name: "explore".into(), task: "find the router".into() })]

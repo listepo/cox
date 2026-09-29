@@ -1,6 +1,7 @@
 // Notification actions without posting one (T37.27): a note's content carries what its
 // action needs, each action becomes its intent, and approving the recorded `approve-write`
-// fixture's note from the notification resumes the waiting turn.
+// fixture's note from the notification resumes the waiting turn. The menu bar's Allow and Deny
+// take the same route (T51.14).
 
 import CoxClient
 import Foundation
@@ -38,6 +39,19 @@ private func routed(_ note: HostNote, _ action: String, text: String? = nil) -> 
   #expect(
     routed(note, NotificationActions.deny)
       == NotificationRoute(session: "s1", intent: .approve(call: "c1", decision: .deniedByUser)))
+}
+
+@Test func allowFromTheMenuBarSendsTheNotificationPathsIntent() {
+  let note = HostNote(session: "s1", kind: .approval, text: "bash git push", badge: 1, call: "c1")
+  #expect(
+    NotificationActions.approval(session: "s1", call: "c1", allow: true)
+      == routed(note, NotificationActions.allow))
+  #expect(
+    NotificationActions.approval(session: "s1", call: "c1", allow: false)
+      == routed(note, NotificationActions.deny))
+  #expect(
+    NotificationActions.approval(session: "s1", call: "c1", allow: true)?.intent
+      == .approve(call: "c1", decision: .allow))
 }
 
 @Test func aQuestionTakesATypedAnswerAndIgnoresABlankOne() {

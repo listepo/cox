@@ -1123,6 +1123,7 @@ dependencies = [
  "async-trait",
  "clap",
  "cox-acp",
+ "cox-app",
  "cox-config",
  "cox-core",
  "cox-ext",
@@ -1173,7 +1174,9 @@ dependencies = [
  "cox-sandbox",
  "cox-sanitize",
  "cox-tools",
+ "insta",
  "serde_json",
+ "similar 3.2.0",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -1199,12 +1202,16 @@ dependencies = [
  "cox-store",
  "cox-tools",
  "insta",
+ "nix 0.31.3",
+ "portable-pty",
  "rmcp",
+ "schemars 1.2.2",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
+ "url",
 ]
 
 [[package]]
@@ -1270,6 +1277,7 @@ dependencies = [
 name = "cox-ffi"
 version = "0.1.2"
 dependencies = [
+ "async-trait",
  "cox-app",
  "cox-protocol",
  "serde_json",

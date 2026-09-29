@@ -37,7 +37,8 @@ use cox_protocol::{
 use cox_protocol::traits::{KV_PLUGIN_LIMIT, KV_VALUE_LIMIT};
 
 use models::{
-    CheckpointDbRow, NewArchive, NewMemory, NewSession, PluginGrantDbRow, PluginKvDbRow, UsageDbRow,
+    CheckpointDbRow, NewArchive, NewMemory, NewSession, PluginGrantDbRow, PluginKvDbRow,
+    SessionAgentDb, UsageDbRow,
 };
 use queries::LedgerRow;
 use rollout::RolloutWriter;
@@ -839,8 +840,57 @@ impl TitleSource {
     }
 }
 
+/// The external ACP agent a session is driven by (T52.6, DT§3.3.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionAgent {
+    /// The `[external_agents.<name>]` or plugin entry's name.
+    pub agent: String,
+    /// The agent's own ACP `sessionId`, which `session/load` reopens.
+    pub agent_session: Option<String>,
+}
+
 /// Public query methods for surfaces like `cox stats`.
 impl Store {
+    /// Marks session `id` as driven by `agent`, whose ACP session is
+    /// `agent_session`.
+    pub fn session_agent_set(
+        &self,
+        id: &SessionId,
+        agent: &SessionAgent,
+    ) -> Result<(), StoreError> {
+        use schema::sessions::dsl as s;
+        let row = s::sessions.filter(s::id.eq(id.to_string()));
+        let values = (
+            s::agent.eq(&agent.agent),
+            s::agent_session.eq(agent.agent_session.as_deref()),
+        );
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        diesel::update(row)
+            .set(values)
+            .execute(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+        Ok(())
+    }
+
+    /// The agent behind session `id`; `None` for a cox session, and for an
+    /// id with no row.
+    pub fn session_agent(&self, id: &SessionId) -> Result<Option<SessionAgent>, StoreError> {
+        use schema::sessions::dsl as s;
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        let row: Option<SessionAgentDb> = s::sessions
+            .filter(s::id.eq(id.to_string()))
+            .select((s::agent, s::agent_session))
+            .first(&mut *conn)
+            .optional()
+            .map_err(|_| StoreError::Sqlite)?;
+        Ok(row.and_then(|row| {
+            Some(SessionAgent {
+                agent: row.agent?,
+                agent_session: row.agent_session,
+            })
+        }))
+    }
+
     /// Stores `title` as the session's title, set by `source`. An `Auto`
     /// title never replaces a `User` one (A113); returns whether the row
     /// changed.
@@ -1083,7 +1133,7 @@ mod tests {
             err,
             StoreError::SchemaNewer {
                 db: "99991231000000".into(),
-                binary: "00000000000005".into(),
+                binary: "00000000000006".into(),
             }
         );
     }
@@ -1309,6 +1359,43 @@ mod tests {
         }
         let info = store.session_info(&id).expect("info");
         assert_eq!(info.title.as_deref(), Some("Mine"));
+    }
+
+    /// T52.6: an external agent's name and ACP session id survive a
+    /// reopen of the store; a cox session has neither.
+    #[test]
+    fn sessions_agent_column_round_trips() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (agent, cox) = (SessionId::new(), SessionId::new());
+        {
+            let store = Store::open(dir.path()).expect("open store");
+            for id in [agent, cox] {
+                store
+                    .session_create(&SessionRow {
+                        id,
+                        created_at: String::new(),
+                        cwd: PathBuf::from("/tmp"),
+                        project_slug: String::new(),
+                        title: None,
+                        parent_id: None,
+                        rollout_path: PathBuf::new(),
+                    })
+                    .expect("session");
+            }
+            let row = SessionAgent {
+                agent: "claude".into(),
+                agent_session: Some("acp-7".into()),
+            };
+            store.session_agent_set(&agent, &row).expect("set");
+        }
+        let store = Store::open(dir.path()).expect("reopen store");
+        let expected = SessionAgent {
+            agent: "claude".into(),
+            agent_session: Some("acp-7".into()),
+        };
+        assert_eq!(store.session_agent(&agent).expect("read"), Some(expected));
+        assert_eq!(store.session_agent(&cox).expect("read"), None);
+        assert_eq!(store.session_agent(&SessionId::new()).expect("read"), None);
     }
 
     /// A113: a `TitleSet` in the rollout lands in `sessions.title`, where

@@ -12,6 +12,7 @@ use std::time::Duration;
 use cox_protocol::StoreError;
 use cox_protocol::errors::CoreError;
 use cox_protocol::ids::SessionId;
+use cox_protocol::traits::Worktrees;
 use cox_protocol::types::Event;
 use cox_session::SessionError;
 use cox_store::lock::Holder;
@@ -20,7 +21,7 @@ use crate::live::LiveSession;
 use crate::mcp_login::{LoginError, McpAuth};
 use crate::mcp_status::McpRun;
 use crate::{Activity, Inbox, InboxItem, IntentError, SettingsError, SettingsView};
-use crate::{RuleKind, SessionGrant};
+use crate::{AgentChoice, RuleKind, SessionGrant};
 use crate::{Workspace, WorkspaceError};
 
 /// The project `cwd` is in, as MCP discovery finds it: its git root.
@@ -46,9 +47,20 @@ pub trait Host: Send + Sync {
     fn badge(&self, badge: u32);
     /// An MCP server's login page, or a link the person asked to follow.
     fn open_url(&self, url: &str);
+    /// T52.20: a web link a session on the ssh host `origin` asked to show.
+    /// That machine, not the person, chose it, so the host names `origin`
+    /// and opens `url` only once the person confirms. The default opens
+    /// nothing: a host that cannot ask never opens a remote's link.
+    fn confirm_open_url(&self, _origin: &str, _url: &str) {}
     /// The stored secret for a provider section (`anthropic`, `openai`, a
     /// `[providers.<name>]`); its env var, when set, wins.
     fn secret(&self, section: &str) -> Option<String>;
+    /// T51.7: the page the agent drives (the app's browser pane). With one,
+    /// each session opened after gets the `browser_*` tools; `None`, the
+    /// default, leaves the tool set as it was.
+    fn browser(&self) -> Option<Arc<dyn crate::browser::Browser>> {
+        None
+    }
 }
 
 /// What opening, resuming or driving a session can fail with.
@@ -73,8 +85,27 @@ pub enum AppError {
     McpLogin(#[from] LoginError),
     #[error("the session's events were already taken")]
     EventsTaken,
+    /// T51.3: the terminal pane's shell could not start or be driven.
+    #[error(transparent)]
+    Terminal(#[from] crate::TerminalError),
     #[error("session {0} is not open here")]
     NotOpen(SessionId),
+    /// T52.4 (DT§3.3.1): the intent needs cox state an external agent's
+    /// session does not have: its model, mode, history and files are the
+    /// agent's own.
+    #[error("{intent} is not available in {agent} sessions (Agent Client Protocol)")]
+    Unsupported { agent: String, intent: &'static str },
+    /// T52.6: a stored agent session reopened read-only; `why` says what
+    /// kept it from reattaching. A new session is the way on.
+    #[error("this {agent} session is read-only ({why}); start a new session to go on")]
+    ReadOnly { agent: String, why: String },
+    /// T52.4: the agent could not start: its program or key is missing (the
+    /// one warning, EA§7), or it failed `initialize` or `session/new`.
+    #[error(transparent)]
+    Agent(#[from] cox_session::acp_session::AcpOpenError),
+    /// T52.9: a best-of-n launch had nothing to launch, or names no group.
+    #[error(transparent)]
+    BestOf(#[from] crate::best_of::BestOfError),
 }
 
 impl From<SessionError> for AppError {
@@ -132,8 +163,26 @@ impl App {
         host: Arc<dyn Host>,
         mcp: McpAuth,
     ) -> Result<Arc<Self>, AppError> {
+        Self::build(home, host, mcp, Arc::new(cox_tools::git::GitWorktrees))
+    }
+
+    /// [`App::new`] over another git side: a test's fake worktrees (T52.9).
+    pub fn with_worktrees(
+        home: Option<PathBuf>,
+        host: Arc<dyn Host>,
+        worktrees: Arc<dyn Worktrees>,
+    ) -> Result<Arc<Self>, AppError> {
+        Self::build(home, host, McpAuth::default(), worktrees)
+    }
+
+    fn build(
+        home: Option<PathBuf>,
+        host: Arc<dyn Host>,
+        mcp: McpAuth,
+        worktrees: Arc<dyn Worktrees>,
+    ) -> Result<Arc<Self>, AppError> {
         let home = home.unwrap_or_else(cox_config::load::cox_home);
-        let workspace = Workspace::open(&home, Arc::new(cox_tools::git::GitWorktrees))?;
+        let workspace = Workspace::open(&home, worktrees)?;
         Ok(Arc::new(Self {
             home,
             host,
@@ -218,11 +267,95 @@ impl App {
         resume: Option<SessionId>,
         theme: String,
     ) -> Result<Arc<LiveSession>, AppError> {
+        // T52.6: a session an external agent drove reopens through it.
+        if let Some(id) = resume
+            && let Some(stored) = self.workspace.store().session_agent(&id)?
+        {
+            let app = Arc::clone(self);
+            return LiveSession::open_agent(app, cwd, &stored.agent, theme, Some(id)).await;
+        }
         let resume = match resume {
             Some(id) => Some((id, cox_session::resume(&self.home, id)?)),
             None => None,
         };
         LiveSession::open(Arc::clone(self), cwd, resume, theme).await
+    }
+
+    /// What `OpenRequest` opens (T52.7): a new session driven by `agent`
+    /// when one is named, else [`App::open`]'s. A stored session reopens
+    /// with the agent it was stored with, whatever `agent` says (T52.6).
+    pub async fn open_as(
+        self: &Arc<Self>,
+        cwd: PathBuf,
+        resume: Option<SessionId>,
+        agent: Option<String>,
+        theme: String,
+    ) -> Result<Arc<LiveSession>, AppError> {
+        match (agent, resume) {
+            (Some(agent), None) => self.open_agent(cwd, &agent, theme).await,
+            (_, resume) => self.open(cwd, resume, theme).await,
+        }
+    }
+
+    /// The agents a new session in `cwd` can be driven by, cox first, each
+    /// with why it cannot start when it cannot (T52.7). Loads the granted
+    /// plugins to read their entries, so call it off the main thread.
+    pub fn agents(&self, cwd: &Path) -> Result<Vec<AgentChoice>, AppError> {
+        let config = self.config(cwd)?;
+        Ok(crate::external::choices(self, &config, cwd))
+    }
+
+    /// A new session in `cwd` driven by the external agent `agent` (T52.4,
+    /// DT§3.3.1): a user-config `[external_agents.<name>]` entry or a
+    /// granted plugin's. Call on a tokio runtime, as for [`App::open`].
+    pub async fn open_agent(
+        self: &Arc<Self>,
+        cwd: PathBuf,
+        agent: &str,
+        theme: String,
+    ) -> Result<Arc<LiveSession>, AppError> {
+        LiveSession::open_agent(Arc::clone(self), cwd, agent, theme, None).await
+    }
+
+    /// Best of n (T52.9): one worktree and one session per candidate in
+    /// `request.project`, each sent `request.prompt`, grouped under one id
+    /// the sidebar shows as one group. A candidate that cannot start is
+    /// listed with why; the others run. Call on a tokio runtime, as for
+    /// [`App::open`].
+    pub async fn best_of(
+        self: &Arc<Self>,
+        request: crate::best_of::BestOfRequest,
+        theme: String,
+    ) -> Result<crate::best_of::Launch, AppError> {
+        let launch = crate::best_of::launch(self, request, theme).await?;
+        // The group lives in memory, which the store's change token does
+        // not see.
+        self.listed.notify_waiters();
+        Ok(launch)
+    }
+
+    /// Best-of-n group `id`'s candidates as the compare view shows them
+    /// (T52.10): state, files changed with `+n −m`, cost and duration.
+    pub async fn compare(
+        &self,
+        id: &crate::best_of::BestOfId,
+    ) -> Result<Vec<crate::best_of::CandidateView>, AppError> {
+        crate::best_of::compare(self, id).await
+    }
+
+    /// Keeps candidate `keep` of group `id` and prunes the other worktrees
+    /// the person confirmed (T52.10); `discard` is their second
+    /// confirmation for worktrees with changes, which are otherwise left
+    /// and listed.
+    pub async fn pick(
+        &self,
+        id: &crate::best_of::BestOfId,
+        keep: u32,
+        discard: bool,
+    ) -> Result<crate::best_of::Picked, AppError> {
+        let picked = crate::best_of::pick(self, id, keep, discard).await?;
+        self.listed.notify_waiters();
+        Ok(picked)
     }
 
     /// The Settings screen for a session in `cwd` (DT§5.7), with each MCP

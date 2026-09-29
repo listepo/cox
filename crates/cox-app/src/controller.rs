@@ -155,6 +155,13 @@ impl Controller {
         self.shared.ready.notify_one();
     }
 
+    /// Queues a patch from beside the event stream (a plugin slot, T52.14)
+    /// for the next pull.
+    pub fn push(&self, patch: TimelinePatch) {
+        coalesce::push(&mut self.shared.lock().queue, patch);
+        self.shared.ready.notify_one();
+    }
+
     /// The next coalesced batch, waiting until there is one; `None` once the
     /// event stream has ended (or `close` was called) and everything was
     /// pulled.

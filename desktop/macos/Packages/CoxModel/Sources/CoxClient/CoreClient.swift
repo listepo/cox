@@ -8,14 +8,17 @@ import Foundation
 import Synchronization
 
 /// What `CoreClient.open` opens: a new session in `cwd`, or `resume`'s.
-/// `theme` is the syntect theme code blocks are highlighted with.
+/// `theme` is the syntect theme code blocks are highlighted with. `agent` names the external
+/// ACP agent a new session is driven by, `nil` for cox (T52.7); a resumed session keeps the
+/// agent it was stored with.
 public struct OpenSession: Equatable, Sendable {
   public var cwd: String
   public var resume: String?
   public var theme: String
+  public var agent: String?
 
-  public init(cwd: String, resume: String? = nil, theme: String) {
-    (self.cwd, self.resume, self.theme) = (cwd, resume, theme)
+  public init(cwd: String, resume: String? = nil, theme: String, agent: String? = nil) {
+    (self.cwd, self.resume, self.theme, self.agent) = (cwd, resume, theme, agent)
   }
 }
 
@@ -58,8 +61,19 @@ public protocol SessionClient: AnyObject, Sendable {
   func info() async throws -> Info
   /// The Context tab's cost history (`cox_app::live::LiveSession::turn_costs`, T37.29.3.2).
   func turnCosts() async throws -> TurnCosts
+  /// A terminal pane's login shell in the session's cwd, under its sandbox, `cols` × `rows`
+  /// cells (`cox_app::live::LiveSession::open_terminal`, T51.3).
+  func openTerminal(cols: UInt16, rows: UInt16) throws -> any TerminalClient
   /// Stops the pull; the session keeps running (DT§4.5).
   func close()
+  /// Hides the plugin overlay shown, as Esc does
+  /// (`cox_app::live::LiveSession::close_plugin_overlay`, T52.17).
+  func closePluginOverlay()
+}
+
+extension SessionClient {
+  /// A client with no plugins has no overlay to hide.
+  public func closePluginOverlay() {}
 }
 
 /// What opening a task shows (`cox_app::TaskTarget`).
@@ -271,6 +285,9 @@ public final class FixtureSession: SessionClient {
   public func info() async throws -> Info { fixedInfo }
 
   public func turnCosts() async throws -> TurnCosts { fixedCosts }
+
+  /// A shell with no process: it prints nothing until a test says so.
+  public func openTerminal(cols: UInt16, rows: UInt16) -> any TerminalClient { FixtureTerminal() }
 
   public func close() {
     let resume = state.withLock { state in

@@ -334,6 +334,26 @@ impl Store {
             .sum())
     }
 
+    /// What the whole ledger spent since `since` (RFC 3339 UTC, as
+    /// `usage.created_at` is written) and how many sessions were written
+    /// since then: the menu bar's "Today" footer (T51.12). A session counts
+    /// once however many rows it wrote, subagents included, as the sidebar
+    /// lists them.
+    pub fn activity_since(&self, since: &str) -> Result<(f64, i64), StoreError> {
+        let mut conn = self.conn.lock().map_err(|_| StoreError::Io)?;
+        let cost: Option<f64> = usage::table
+            .filter(usage::created_at.ge(since))
+            .select(diesel::dsl::sum(usage::cost_usd))
+            .get_result(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+        let active: i64 = sessions::table
+            .filter(sessions::updated_at.ge(since))
+            .count()
+            .get_result(&mut *conn)
+            .map_err(|_| StoreError::Sqlite)?;
+        Ok((cost.unwrap_or(0.0), active))
+    }
+
     /// Every session whose parent is `parent`, oldest first: its forks,
     /// handoffs and subagents (T37.29.6).
     pub fn children(&self, parent: &SessionId) -> Result<Vec<SessionId>, StoreError> {

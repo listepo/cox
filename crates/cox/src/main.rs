@@ -163,6 +163,13 @@ fn main() -> anyhow::Result<()> {
             std::process::exit(code);
         }
         Some(Command::Acp) => acp_cmd::run(&cli, &cwd),
+        // T52.19: protocol lines only on stdout; logs go to the log file.
+        #[cfg(feature = "app-server")]
+        Some(Command::AppServer(_)) => {
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(cox_app::server::serve_stdio(cli.home.clone()))?;
+            Ok(())
+        }
         Some(Command::Init(args)) => {
             let code = session::run_init(&cli, &cwd, args.force)?;
             drop(telemetry);

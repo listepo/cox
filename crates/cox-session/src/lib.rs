@@ -13,17 +13,21 @@ use cox_core::{History, Session};
 use cox_protocol::Config;
 use cox_protocol::errors::{CoreError, ProviderError};
 use cox_protocol::ids::SessionId;
-use cox_protocol::traits::{Hook, Store as _};
+use cox_protocol::traits::{Hook, Store as _, Tool};
 use cox_protocol::types::Level;
 use cox_store::Store;
 use cox_tools::send_message::SendMessageTool;
 
+#[cfg(feature = "plugins")]
+pub mod acp_session;
 pub mod doctor;
 pub mod env;
 #[cfg(feature = "plugins")]
 pub mod external_agents;
 pub mod lineage;
 pub mod mcp;
+#[cfg(feature = "plugins")]
+pub mod plugin_ui;
 pub mod plugins;
 pub mod provider;
 pub mod sandbox;
@@ -37,7 +41,7 @@ pub use mcp::{mcp_auth, mcp_servers};
 pub use plugins::start_plugins;
 pub use plugins::{Plugins, load_plugins, plugin_notices, write_grant};
 pub use provider::{lmstudio_model, provider_for};
-pub use sandbox::{sandbox_policy, sandboxed_argv};
+pub use sandbox::{agent_argv, agent_policy, sandbox_policy, sandboxed_argv};
 pub use tools::{tools, with_client_tools};
 
 /// Why a session could not be built. Anything an extension breaks is a
@@ -144,6 +148,10 @@ pub struct SessionSpec {
     /// T37.34: who drives the session (`tui`, `plain`, `headless`, `acp`,
     /// `app`), named to a second process that tries to open it.
     pub surface: String,
+    /// T51.7: tools only this surface can back (the app's `browser_*`),
+    /// added before the `tool_search` index is built so the deferred ones
+    /// are found. Fixed at open, so the tool set stays byte-stable.
+    pub tools: Vec<Arc<dyn Tool>>,
 }
 
 /// The ACP client's side of a session (T11.1): the link its proxy tools
@@ -191,6 +199,7 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
         plugin_ui,
         client,
         surface,
+        tools: surface_tools,
     } = spec;
     let cwd = cwd.as_path();
     let mut warnings = Vec::new();
@@ -346,6 +355,7 @@ pub async fn open_with_keys(spec: SessionSpec, keys: Option<Keys>) -> Result<Ope
         cwd,
         &mut plugin_warnings,
     ));
+    all.extend(surface_tools);
     let all = tools::with_lsp(all, &config, &writable);
     let all = tools::with_tool_search_index(all);
     let session = match resume {
@@ -558,6 +568,7 @@ mod tests {
             plugin_ui: None,
             client: None,
             surface: "test".into(),
+            tools: Vec::new(),
         };
         let scenario = scenario.display().to_string();
         let vars = [

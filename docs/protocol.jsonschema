@@ -3240,6 +3240,43 @@
         ]
       },
       {
+        "description": "Put one of Review's hunks back (T51.19, A101): hunk `hunk` of the\nfile's net diff, from its first pre-image since `to_turn` to its\nbytes on disk, written back to the pre-image's lines alone. The\ncurrent bytes are checkpointed first so the revert can itself be\nundone; a file whose [`content_digest`] is no longer `now_digest` is\nleft as it is, with a Notice.",
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "Relative to the session's cwd or absolute; confined to the\nworkspace roots like a tool's path.",
+            "type": "string"
+          },
+          "to_turn": {
+            "description": "The turn whose pre-image the diff starts from.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "hunk": {
+            "description": "The hunk's index in Review's diff, from 0.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "now_digest": {
+            "description": "[`content_digest`] of the bytes Review diffed.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "revert_hunk"
+          }
+        },
+        "required": [
+          "type",
+          "path",
+          "to_turn",
+          "hunk",
+          "now_digest"
+        ]
+      },
+      {
         "description": "`Ctrl+B` (T27.1): detach a running `bash` or `agent` call into a\nbackground task; the model gets a pointer result and the turn goes on.",
         "type": "object",
         "properties": {

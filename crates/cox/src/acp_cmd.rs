@@ -49,6 +49,7 @@ impl cox_acp::SessionFactory for AcpFactory {
                 terminal: req.client_terminal,
             }),
             surface: "acp".into(),
+            tools: Vec::new(),
         })
         .await?;
         // stdout carries the protocol: warnings reach the client as notices,

@@ -1,7 +1,9 @@
 // Review for one session (DT§5.4, T37.28, T37.22.5): `SessionStore.review` and the draft on the
 // store copied into CoxUI's `ReviewPane`, whose intents go back to the store: a line-number click
-// picks the line, "Send to agent" posts the draft as `[desktop.review] send` says (A108), and the
-// timeline rewinds. Separate from `SessionInspector` because Review replaces the transcript column.
+// picks the line, "Send to agent" posts the draft as `[desktop.review] send` says (A108), the
+// timeline rewinds, and a hunk's "Revert hunk" (T51.21) reverts it; a stale revert's refusal is
+// the core's Notice in the transcript. Separate from `SessionInspector` because Review replaces
+// the transcript column.
 
 import CoxClient
 import CoxModel
@@ -50,6 +52,9 @@ public struct SessionReview: View {
     case .save(let text): store.reviewDraft.save(text)
     case .remove(let index): store.reviewDraft.remove(at: index)
     case .sendComments: perform { try await store.sendReview(reviewSend) }
+    case .revertHunk(let hunk):
+      let shown = review
+      perform { try await store.revert(hunk: hunk, in: shown) }
     case .timeline(.rewind(let checkpoint, let code, let conversation)):
       perform {
         try await store.rewind(checkpoint: checkpoint, code: code, conversation: conversation)
@@ -81,6 +86,7 @@ extension ReviewPane.State {
       selection: review.selection,
       hunks: review.diff?.hunks.map(ToolCard.Hunk.init) ?? [],
       comments: draft.comments.map { ReviewPane.Comment(anchor: anchor($0), text: $0.text) },
-      editing: draft.editing.map(anchor))
+      editing: draft.editing.map(anchor),
+      revertsHunks: review.diff?.digest != nil)
   }
 }

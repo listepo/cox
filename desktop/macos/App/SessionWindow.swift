@@ -6,8 +6,16 @@
 // title, model, mode and cost and stops its turn, the toolbar's title and a sidebar row's menu
 // rename a session (A113), its model popover switches the session's model
 // as `/model` does, the inspector's tabs read the open session,
-// Review replaces the transcript column, the shell's panes fold and the Appearance popover writes
+// Review replaces the transcript column, the shell's panes fold, ⌃` shows the session's terminal
+// pane under the column (T51.6; the window asks before closing over a running command), ⌘⇧B
+// shows the browser pane beside it (T51.10), plugin panels sit above the composer and a plugin
+// overlay shows as a sheet (T52.17), File › Connect to Host… lists a remote host's sessions in
+// the sidebar and opens one through that host (T52.21), New session asks which agent drives it
+// and an external agent's transcript opens with its ACP banner (T52.8), the composer offers
+// best of n and its compare sheet (T52.12), and the Appearance popover writes
 // `[desktop.appearance]`.
+// A popped-out window (T51.11) is the same view on one session with no sidebar; every window
+// on a session shares its stores through `AppStore`.
 
 import CoxClient
 import CoxModel
@@ -17,6 +25,12 @@ import SwiftUI
 
 struct SessionWindow: View {
   let model: AppModel
+  /// Set for a popped-out window: the one session it shows, and the window it joins as a tab.
+  let popOut: PopOut?
+  /// The syntax theme the fixtures were recorded with; Settings' appearance replaces it.
+  static let syntaxTheme = "base16-ocean.dark"
+  /// This window's hold on the sessions it shows in `AppStore`.
+  @State private var windowID = UUID()
   /// Set once first run chose a project; a fixture launch never asks.
   @AppStorage("CoxOnboarded") private var onboarded = false
   @State private var screen = MainScreenState()
@@ -38,7 +52,27 @@ struct SessionWindow: View {
   @State private var failure: String?
   /// Why the core refused the last intent; shown until dismissed.
   @State private var refused: String?
+  /// The terminal pane shows under the column; its height is the user's drag, UI-only.
+  @State private var isTerminalVisible = false
+  @State private var terminalHeight = SessionTerminal.defaultHeight
+  /// The browser pane shows beside the column; UI-only, like the terminal's.
+  @State private var isBrowserVisible = false
+  /// The Connect to Host sheet, while it shows (T52.21).
+  @State private var connecting: ConnectHostSheet.State?
+  /// The New-session sheet's agents, while it shows (T52.8).
+  @State private var picking: AgentPicker?
+  /// The composer's best-of-n candidates and the group the compare sheet shows (T52.12).
+  @State private var bestOf = BestOfLauncher()
   @Environment(\.coxAppearance) private var base
+  @Environment(\.openWindow) private var openWindow
+
+  init(model: AppModel, popOut: PopOut? = nil) {
+    self.model = model
+    self.popOut = popOut
+    var screen = MainScreenState()
+    screen.isSidebarVisible = popOut == nil
+    _screen = State(initialValue: screen)
+  }
 
   var body: some View {
     Group {
@@ -65,6 +99,12 @@ struct SessionWindow: View {
       if !appearanceWrites.isPending { readAppearance() }
     }
     .alert(refused ?? "", isPresented: isRefused) {}
+    .connectHostSheet($connecting, remotes: model.remotes)
+    .newSessionSheet($picking) { agent in await open(resume: nil, agent: agent) }
+    .bestOfSheet(bestOf, workspace: try? model.launch.live.get()) { session in
+      handle(Sidebar.Intent.select(session))
+      reviewing = Reviewing(path: nil)
+    }
   }
 
   private var main: some View {
@@ -73,14 +113,21 @@ struct SessionWindow: View {
         \.shell,
         ShellActions(
           isSidebarVisible: screen.isSidebarVisible, isInspectorVisible: screen.isInspectorVisible,
-          toggleSidebar: { screen.isSidebarVisible.toggle() },
-          toggleInspector: { screen.isInspectorVisible.toggle() })
+          isTerminalVisible: isTerminalShown, isBrowserVisible: isBrowserVisible,
+          toggleSidebar: { toggleSidebar() },
+          toggleInspector: { screen.isInspectorVisible.toggle() },
+          toggleTerminal: { toggleTerminal() }, toggleBrowser: { isBrowserVisible.toggle() },
+          popOut: current.map { session -> (Bool) -> Void in { openPopOut(session, asTab: $0) } },
+          connectHost: model.remotes.canConnect ? { connecting = ConnectHostSheet.State() } : nil)
       )
-      .task { if current == nil { await open(resume: nil) } }
+      .task { if current == nil { await open(resume: popOut?.session) } }
       .task { await watch() }
+      .task { if popOut == nil { await model.remotes.watch() } }
       .onDisappear {
-        for session in opened.values { session.close() }
+        for session in opened.values { session.close(in: model.registry, window: windowID) }
       }
+      .joinsTabs(of: popOut?.tabOf)
+      .closeGuard { opened.values.contains { $0.store.hasBusyTerminal } }
   }
 
   private var shown: MainScreenState {
@@ -88,7 +135,7 @@ struct SessionWindow: View {
     state.toolbar = ShellState.toolbar(showing, sidebar: model.sidebar, popover: screen.popover)
     state.model = ShellState.models(showing?.menu)
     state.sidebar = ShellState.sidebar(
-      model.sidebar, selection: current,
+      model.sidebar, remotes: model.remotes, selection: current,
       providers: ProviderHealth(usable: usable, check: providerCheck))
     return state
   }
@@ -96,6 +143,37 @@ struct SessionWindow: View {
   private var showing: OpenedSession? { current.flatMap { opened[$0] } }
 
   private var isFirstRun: Bool { !onboarded && !model.launch.isFixture }
+
+  /// The pane shows while it is toggled on and the session has a terminal left open.
+  private var isTerminalShown: Bool {
+    isTerminalVisible && showing?.store.terminals.isEmpty == false
+  }
+
+  /// ⌃`: shows or hides the terminal pane; showing it with no terminal open opens the session's
+  /// shell first.
+  private func toggleTerminal() {
+    guard let store = showing?.store else { return }
+    let isShown = isTerminalShown
+    if !isShown && store.terminals.isEmpty {
+      do {
+        try store.openTerminal()
+      } catch {
+        refused = String(describing: error)
+        return
+      }
+    }
+    isTerminalVisible = !isShown
+  }
+
+  /// A popped-out window has no sidebar to show.
+  private func toggleSidebar() {
+    if popOut == nil { screen.isSidebarVisible.toggle() }
+  }
+
+  /// Opens `session` in a window of its own, or as a tab of this one.
+  private func openPopOut(_ session: String, asTab: Bool) {
+    openWindow(value: PopOut(session: session, asTab: asTab))
+  }
 
   private var isRefused: Binding<Bool> {
     Binding(get: { refused != nil }, set: { if !$0 { refused = nil } })
@@ -109,14 +187,40 @@ struct SessionWindow: View {
       ) { refused = $0 }
       .onExitCommand { self.reviewing = nil }
     } else if let showing {
-      VStack(spacing: 0) {
-        TranscriptView(store: showing.store, send: send)
-          .composer(showing.composer)
-        // At its own height, so the transcript takes the rest of the column.
-        SessionComposer(store: showing.composer).fixedSize(horizontal: false, vertical: true)
+      HStack(spacing: 0) {
+        VStack(spacing: 0) {
+          if let agent = showing.agent(in: model.sidebar) {
+            AcpBanner(agent: agent)
+              .frame(maxWidth: Size.readingWidth)
+              .padding(.horizontal, Space.xl)
+              .padding(.top, Space.ml)
+          }
+          TranscriptView(store: showing.store, send: send)
+            .composer(showing.composer)
+          let panels = PluginWidgets.panels(showing.store)
+          if !panels.isEmpty { PluginPanel(panels).fixedSize(horizontal: false, vertical: true) }
+          BestOfBar(launcher: bestOf, open: showing, model: model) { sessions in
+            for session in sessions where opened[session.id] == nil {
+              opened[session.id] = OpenedSession(model.registry.adopt(session, window: windowID))
+            }
+          }
+          // At its own height, so the transcript takes the rest of the column.
+          SessionComposer(store: showing.composer).fixedSize(horizontal: false, vertical: true)
+          if isTerminalShown {
+            SessionTerminal(
+              store: showing.store, surfaces: showing.terminals,
+              branch: showing.info?.worktree?.branch, height: $terminalHeight
+            ) { refused = $0 }
+          }
+        }
+        if isBrowserVisible {
+          SessionBrowser(controller: model.launch.browser) { refused = $0 }
+            .frame(width: SessionBrowser.paneWidth)
+        }
       }
       // A new view per session, so the transcript's text is rebuilt from the one it shows.
       .id(current)
+      .pluginOverlaySheet(showing.store)
     } else if let failure {
       Text(failure).textSelection(.enabled)
     } else {
@@ -127,7 +231,8 @@ struct SessionWindow: View {
   @ViewBuilder private func inspector(_ tab: InspectorTab) -> some View {
     if let showing {
       SessionInspector(
-        store: showing.store, tab: tab, cacheHit: model.settings?.cacheHitScope ?? .turn
+        store: showing.store, tab: tab, cacheHit: model.settings?.cacheHitScope ?? .turn,
+        agents: showing.agents
       ) { request in
         switch request {
         // The tab's Review button shows Review, or hides it again.
@@ -163,7 +268,7 @@ struct SessionWindow: View {
 
   private func handle(_ intent: SessionToolbar.Intent) {
     switch intent {
-    case .showSidebar: screen.isSidebarVisible.toggle()
+    case .showSidebar: toggleSidebar()
     case .toggleInspector: screen.isInspectorVisible.toggle()
     case .open(.appearance): screen.popover = screen.popover == .appearance ? nil : .appearance
     case .mode(let mode): send(.setMode(mode: PermissionMode(mode)))
@@ -178,17 +283,13 @@ struct SessionWindow: View {
 
   private func handle(_ intent: Sidebar.Intent) {
     switch intent {
-    case .hide: screen.isSidebarVisible.toggle()
+    case .hide: toggleSidebar()
     case .filter(let text): model.sidebar.filter = text
     case .toggle(let project): model.sidebar.toggle(project)
-    case .newSession: Task { await open(resume: nil) }
-    case .rename(let session, let title):
-      // An open session renames through its core; the store takes a closed one's directly.
-      if let store = opened[session]?.store {
-        send(.rename(title: title), to: store)
-      } else {
-        model.sidebar.rename(session, to: title)
-      }
+    case .newSession: Task { await newSession() }
+    case .popOut(let session, let asTab): openPopOut(session, asTab: asTab)
+    case .reconnect(let group): reconnect(group)
+    case .rename(let session, let title): rename(session, to: title)
     case .select(let session):
       reviewing = nil
       if opened[session] != nil {
@@ -197,6 +298,21 @@ struct SessionWindow: View {
         // A recording replays one session; its inbox rows name sessions it cannot open.
         Task { await open(resume: session) }
       }
+    }
+  }
+
+  /// A host group's Reconnect (T52.21).
+  private func reconnect(_ group: String) {
+    guard let host = RemoteHosts.host(section: group) else { return }
+    Task { await model.remotes.reconnect(host) }
+  }
+
+  /// An open session renames through its core; the store takes a closed one's directly.
+  private func rename(_ session: String, to title: String) {
+    if let store = opened[session]?.store {
+      send(.rename(title: title), to: store)
+    } else {
+      model.sidebar.rename(session, to: title)
     }
   }
 
@@ -222,26 +338,51 @@ struct SessionWindow: View {
     screen.appearance = AppearancePopover.State(settings)
   }
 
-  /// Opens a new session, or resumes `resume` where it last ran, and shows it.
-  private func open(resume: String?) async {
+  /// New session: asks who drives it first when an external agent is configured (T52.8).
+  private func newSession() async {
+    picking = await NewSession.picker(model.launch)
+    if picking == nil { await open(resume: nil) }
+  }
+
+  /// Opens a new session, driven by `agent` when one was picked, or resumes `resume` where it
+  /// last ran, and shows it. A session another window already shows is joined, not opened again.
+  private func open(resume: String?, agent: String? = nil) async {
     guard !isOpening else { return }
     isOpening = true
     defer { isOpening = false }
     do {
-      let cwd = resume.flatMap { model.sidebar.entry($0)?.session.cwd } ?? LaunchCore.project()
-      let client = try await model.launch.core.get().open(
-        // The syntax theme the fixtures were recorded with; Settings' appearance replaces it.
-        OpenSession(cwd: cwd, resume: resume, theme: "base16-ocean.dark"))
-      let store = SessionStore(session: client)
-      opened[client.id]?.close()
-      opened[client.id] = OpenedSession(
-        store: store, composer: ComposerStore(session: store), pull: Task { await store.run() })
+      // A remote host's session opens through that host, in its cwd there (T52.21).
+      let remote = resume.flatMap { model.remotes.workspace(for: $0) }
+      let cwd =
+        remote?.cwd ?? resume.flatMap { model.sidebar.entry($0)?.session.cwd }
+        ?? LaunchCore.project()
+      let shared: AppStore.Shared
+      if let resume, let joined = model.registry.join(resume, window: windowID) {
+        shared = joined
+      } else {
+        let core: any CoreClient
+        if let remote { core = remote.workspace } else { core = try model.launch.core.get() }
+        let client = try await core.open(
+          OpenSession(cwd: cwd, resume: resume, theme: Self.syntaxTheme, agent: agent))
+        shared = model.registry.adopt(client, window: windowID)
+      }
+      let client = shared.store.session
+      // An asked session was held for this window (T51.17); the window holds it now.
+      if let handoff = popOut?.handoff { model.registry.release(client.id, window: handoff) }
+      if opened[client.id] == nil { opened[client.id] = OpenedSession(shared) }
       (current, failure, reviewing) = (client.id, nil, nil)
-      opened[client.id]?.models = (try? model.launch.live.get().models(cwd: cwd)) ?? []
+      // The local config's models; a remote session's cwd is not a path here.
+      if remote == nil {
+        opened[client.id]?.models = (try? model.launch.live.get().models(cwd: cwd)) ?? []
+      }
       model.sidebar.refresh()
+      // Loads the granted plugins, so after it shows; a remote cwd is not a path here either.
+      if remote == nil, let live = try? model.launch.live.get() {
+        opened[client.id]?.agents = (try? await live.agents(cwd: cwd)) ?? []
+      }
       // After it shows: Info asks git about the cwd, which can take a while.
       if let info = try? await client.info() {
-        model.register(store, as: info.session)
+        model.register(shared.store, as: info.session)
         opened[client.id]?.info = info
       }
     } catch {

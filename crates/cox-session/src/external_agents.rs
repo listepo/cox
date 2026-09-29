@@ -23,10 +23,10 @@ use agent_client_protocol::schema::v1::{
 use cox_acp::{Approver, ClientHost};
 use cox_core::external_agent::StreamJsonMapper;
 use cox_core::permission::Engine;
-use cox_plugin::external_agent::ExternalAgentCommand;
+use cox_plugin::external_agent::{AgentSource, ExternalAgentCommand};
 use cox_plugin_api::AgentMode;
 use cox_protocol::Config;
-use cox_protocol::config::CHILD_ENV_ALLOWLIST;
+use cox_protocol::config::{CHILD_ENV_ALLOWLIST, ExternalAgentConfig};
 use cox_protocol::errors::{CoreError, ProviderError};
 use cox_protocol::ids::{ItemId, TurnId};
 use cox_protocol::traits::ExternalAgent;
@@ -61,39 +61,27 @@ pub(crate) fn drivers(
     if agents.is_empty() {
         return (out, left_out);
     }
-    let home = std::env::home_dir();
-    // The rules the session's own engine compiled from (`Session::new`); an
-    // error there already failed the session, so this is belt and braces.
-    let engine = match Engine::compile(&config.permissions, home.as_deref(), cwd) {
-        Ok(engine) => Arc::new(engine),
+    let acp = match acp_host(config, cwd, writable) {
+        Ok(host) => Arc::new(host),
         Err(e) => {
-            left_out.push(format!("external agents left out: permissions: {e}"));
+            left_out.push(format!("external agents left out: {e}"));
             return (out, left_out);
         }
     };
-    let policy = crate::sandbox::sandbox_policy(config);
-    let acp = Arc::new(AcpHost {
-        roots: writable.to_vec(),
-        cwd: cwd.to_path_buf(),
-        sandbox: (policy.mode != SandboxMode::DangerFullAccess).then_some(policy),
-        engine,
-        mode: config.permissions.mode,
-        approval: config.permissions.approval,
-    });
     for agent in agents {
         let name = agent.name().to_string();
         if let Some(cli) = agent.missing_cli(path) {
             left_out.push(format!(
-                "external agent {name} (plugin {}) left out: `{}` is not on PATH",
-                agent.plugin(),
+                "external agent {name} ({}) left out: `{}` is not on PATH",
+                agent.origin(),
                 cli.display()
             ));
             continue;
         }
         let Ok(secret) = key(agent.key_env(), &name) else {
             left_out.push(format!(
-                "external agent {name} (plugin {}) left out: {} is not set",
-                agent.plugin(),
+                "external agent {name} ({}) left out: {} is not set",
+                agent.origin(),
                 agent.key_env()
             ));
             continue;
@@ -117,21 +105,97 @@ pub(crate) fn drivers(
     (out, left_out)
 }
 
-/// How one entry's CLI is started for a turn.
-struct Spawn {
-    name: String,
-    agent: ExternalAgentCommand,
-    mode: AgentMode,
-    key_env: String,
-    key: String,
-    cwd: PathBuf,
+/// Every user-config `[external_agents.<name>]` entry (T52.2, DT§3.3.1)
+/// resolved through `ExternalAgentCommand`'s one constructor, wrapped by
+/// [`crate::sandbox::agent_argv`] with the session's `writable` roots plus
+/// the entry's own state directories, plus one warning per entry refused.
+/// Each state directory passes `path::confine` against `home` (symlinks
+/// resolved) and may not be `home` itself: an entry widens writes to a
+/// directory under the user's home, never to the home or outside it. A bad
+/// directory, command or wrap refuses the whole entry (fail closed; the
+/// rest still resolve). The config layer has already dropped anything a
+/// project config tried to set here.
+pub fn config_agents(
+    config: &Config,
+    writable: &[PathBuf],
+    home: Option<&Path>,
+) -> (Vec<ExternalAgentCommand>, Vec<String>) {
+    let (mut agents, mut refused) = (Vec::new(), Vec::new());
+    for (name, entry) in &config.external_agents {
+        match config_agent(name, entry, config, writable, home) {
+            Ok(agent) => agents.push(agent),
+            Err(e) => refused.push(format!("external agent {name} (user config) left out: {e}")),
+        }
+    }
+    (agents, refused)
+}
+
+fn config_agent(
+    name: &str,
+    entry: &ExternalAgentConfig,
+    config: &Config,
+    writable: &[PathBuf],
+    home: Option<&Path>,
+) -> Result<ExternalAgentCommand, String> {
+    if entry.command.trim().is_empty() {
+        return Err(String::from("`command` is empty"));
+    }
+    if entry.key_env.trim().is_empty() {
+        return Err(String::from("`key_env` is empty"));
+    }
+    let state = state_dirs(&entry.writable, home)?;
+    let decl = cox_plugin_api::ExternalAgentDecl {
+        name: name.to_string(),
+        command: entry.command.clone(),
+        args: entry.args.clone(),
+        mode: AgentMode::Acp,
+        key_env: entry.key_env.clone(),
+    };
+    let roots: Vec<PathBuf> = writable.iter().chain(&state).cloned().collect();
+    let wrap =
+        |program: &Path, args: &[String]| crate::sandbox::agent_argv(program, args, config, &roots);
+    ExternalAgentCommand::resolve(AgentSource::Config { writable: &state }, &decl, wrap)
+        .map_err(|e| e.to_string())
+}
+
+/// An entry's `writable` list, each confined to a directory strictly under
+/// `home` through the one path guard.
+fn state_dirs(dirs: &[PathBuf], home: Option<&Path>) -> Result<Vec<PathBuf>, String> {
+    if dirs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let home = home.ok_or_else(|| String::from("`writable` needs a home directory"))?;
+    let canon_home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
+    let roots = [home.to_path_buf()];
+    dirs.iter()
+        .map(|dir| {
+            let shown = dir.display().to_string();
+            let confined = cox_tools::path::confine(&roots, home, &shown)
+                .map_err(|_| format!("`writable` {shown} is not under your home"))?;
+            if confined == canon_home || confined == home {
+                return Err(format!("`writable` {shown} is your whole home"));
+            }
+            Ok(confined)
+        })
+        .collect()
+}
+
+/// How one entry's CLI is started: for a turn here, for a whole session in
+/// `acp_session` (T52.4), through the same env allowlist and process group.
+pub(crate) struct Spawn {
+    pub(crate) name: String,
+    pub(crate) agent: ExternalAgentCommand,
+    pub(crate) mode: AgentMode,
+    pub(crate) key_env: String,
+    pub(crate) key: String,
+    pub(crate) cwd: PathBuf,
 }
 
 impl Spawn {
     /// The wrapped argv plus `extra`, with the child env allowlist (D14)
     /// and the key from `key_env` only — cox's own provider keys stay
     /// behind. Its own process group, so `Reap` takes everything it started.
-    fn spawn(&self, extra: &[&str], stdin: Stdio) -> Result<(Child, Reap), CoreError> {
+    pub(crate) fn spawn(&self, extra: &[&str], stdin: Stdio) -> Result<(Child, Reap), CoreError> {
         use std::os::unix::process::CommandExt as _;
 
         let mut cmd = self.agent.command();
@@ -156,7 +220,7 @@ impl Spawn {
         Ok((child, reap))
     }
 
-    fn error(&self, message: String) -> CoreError {
+    pub(crate) fn error(&self, message: String) -> CoreError {
         CoreError::ExternalAgent {
             agent: self.name.clone(),
             message,
@@ -167,7 +231,7 @@ impl Spawn {
 /// Kills the CLI's process group however the turn ends — done, failed,
 /// cancelled, or the core dropping the turn — with the kill a cancelled
 /// `bash` ends with.
-struct Reap(Option<u32>);
+pub(crate) struct Reap(Option<u32>);
 
 impl Drop for Reap {
     fn drop(&mut self) {
@@ -179,7 +243,7 @@ impl Drop for Reap {
 
 /// The last `STDERR_TAIL` bytes the CLI wrote to stderr, sanitized. Read to
 /// the end so a chatty CLI never blocks on a full pipe.
-async fn stderr_tail(mut stderr: impl AsyncRead + Unpin) -> String {
+pub(crate) async fn stderr_tail(mut stderr: impl AsyncRead + Unpin) -> String {
     let (mut tail, mut buf) = (Vec::new(), [0u8; 4096]);
     while let Ok(n) = stderr.read(&mut buf).await {
         if n == 0 {
@@ -250,13 +314,66 @@ impl ExternalAgent for StreamJson {
 }
 
 /// Everything an ACP `ClientHost` is built from, shared by every ACP entry.
-struct AcpHost {
+pub(crate) struct AcpHost {
     roots: Vec<PathBuf>,
     cwd: PathBuf,
     sandbox: Option<SandboxPolicy>,
     engine: Arc<Engine>,
     mode: PermissionMode,
     approval: ApprovalPolicy,
+}
+
+/// The host every ACP agent in a session in `cwd` is answered from: the
+/// rules the session's own engine compiled from (`Session::new`), and, since
+/// T52.2, the agent's own policy (`agent_policy`, network on), so the
+/// terminals it asks cox for run as the agent itself does.
+pub(crate) fn acp_host(
+    config: &Config,
+    cwd: &Path,
+    writable: &[PathBuf],
+) -> Result<AcpHost, String> {
+    let home = std::env::home_dir();
+    let engine = Engine::compile(&config.permissions, home.as_deref(), cwd)
+        .map_err(|e| format!("permissions: {e}"))?;
+    let policy = crate::sandbox::agent_policy(config);
+    Ok(AcpHost {
+        roots: writable.to_vec(),
+        cwd: cwd.to_path_buf(),
+        sandbox: (policy.mode != SandboxMode::DangerFullAccess).then_some(policy),
+        engine: Arc::new(engine),
+        mode: config.permissions.mode,
+        approval: config.permissions.approval,
+    })
+}
+
+impl AcpHost {
+    /// A `ClientHost` whose `Ask` verdicts go to `approver` and whose
+    /// `session/update`s go to `updates`.
+    pub(crate) fn client(
+        &self,
+        approver: Arc<dyn Approver>,
+        updates: mpsc::UnboundedSender<SessionUpdate>,
+    ) -> ClientHost {
+        ClientHost {
+            roots: self.roots.clone(),
+            cwd: self.cwd.clone(),
+            sandbox: self.sandbox.clone(),
+            engine: self.engine.clone(),
+            mode: self.mode,
+            approval: self.approval,
+            grants: Vec::new(),
+            approver,
+            updates: Some(updates),
+        }
+    }
+
+    pub(crate) fn cwd(&self) -> &Path {
+        &self.cwd
+    }
+
+    pub(crate) fn sandboxed(&self) -> bool {
+        self.sandbox.is_some()
+    }
 }
 
 /// `mode = "acp"` (EA§4): the CLI speaks ACP on its stdio for one turn:
@@ -271,7 +388,7 @@ struct Acp {
 /// route to the session's `ApprovalRequired` relay, so the request is
 /// refused (fail closed) with the way out named. A rule the engine already
 /// allows or denies is decided as usual.
-struct RefuseAsk;
+pub(crate) struct RefuseAsk;
 
 #[async_trait::async_trait]
 impl Approver for RefuseAsk {
@@ -307,20 +424,9 @@ impl ExternalAgent for Acp {
         };
         let stderr = tokio::spawn(stderr_tail(stderr));
         let (tx, mut updates) = mpsc::unbounded_channel();
-        let h = &self.host;
-        let host = ClientHost {
-            roots: h.roots.clone(),
-            cwd: h.cwd.clone(),
-            sandbox: h.sandbox.clone(),
-            engine: h.engine.clone(),
-            mode: h.mode,
-            approval: h.approval,
-            grants: Vec::new(),
-            approver: Arc::new(RefuseAsk),
-            updates: Some(tx),
-        };
-        let cwd = h.cwd.clone();
-        let sandboxed = h.sandbox.is_some();
+        let host = self.host.client(Arc::new(RefuseAsk), tx);
+        let cwd = self.host.cwd().to_path_buf();
+        let sandboxed = self.host.sandboxed();
         let transport = ByteStreams::new(stdin.compat_write(), stdout.compat());
         let run = cox_acp::connect(transport, host, async move |cx| {
             cx.send_request(cox_acp::initialize_request(sandboxed))
@@ -408,7 +514,11 @@ mod tests {
         config.core.workspace_roots = vec![ws.to_path_buf()];
         let roots = config.core.workspace_roots.clone();
         let wrap = |p: &Path, a: &[String]| crate::sandbox::sandboxed_argv(p, a, &config, &roots);
-        let agent = ExternalAgentCommand::resolve("cur", pkg, &decl, wrap).ok()?;
+        let source = AgentSource::Plugin {
+            id: "cur",
+            dir: pkg,
+        };
+        let agent = ExternalAgentCommand::resolve(source, &decl, wrap).ok()?;
         Some((agent, config))
     }
 
@@ -513,8 +623,11 @@ text = "done"
             let argv = std::iter::once(p.display().to_string()).chain(a.iter().cloned());
             Ok::<_, String>(argv.collect())
         };
-        let resolve =
-            |d| ExternalAgentCommand::resolve("cur", pkg.path(), &d, wrap).expect("resolves");
+        let source = AgentSource::Plugin {
+            id: "cur",
+            dir: pkg.path(),
+        };
+        let resolve = |d| ExternalAgentCommand::resolve(source, &d, wrap).expect("resolves");
         let exec = std::fs::Permissions::from_mode(0o755);
         std::fs::write(bin.path().join("present"), "#!/bin/sh\n").expect("cli");
         std::fs::set_permissions(bin.path().join("present"), exec).expect("chmod");
@@ -600,6 +713,53 @@ wait
             matches!(gone, Ok(Ok(()))),
             "the agent's background process outlived the cancel"
         );
+    }
+
+    /// T52.2: an entry's `writable` directories stay strictly under the
+    /// user's home, through `path::confine`; the home itself, a path
+    /// outside it and a symlink out of it are each refused.
+    #[test]
+    fn config_agent_state_dirs_stay_under_home() {
+        let home = tempfile::tempdir().expect("home");
+        let other = tempfile::tempdir().expect("other");
+        let h = home.path();
+        let ok = state_dirs(&[h.join(".claude")], Some(h)).expect("under home");
+        assert_eq!(ok.len(), 1);
+        assert!(ok[0].ends_with(".claude"), "{ok:?}");
+        assert!(state_dirs(&[h.to_path_buf()], Some(h)).is_err());
+        assert!(state_dirs(&[other.path().to_path_buf()], Some(h)).is_err());
+        std::os::unix::fs::symlink(other.path(), h.join("out")).expect("symlink");
+        assert!(state_dirs(&[h.join("out/state")], Some(h)).is_err());
+        assert!(state_dirs(&[h.join(".codex")], None).is_err());
+        assert_eq!(state_dirs(&[], None), Ok(Vec::new()));
+    }
+
+    /// T52.2: a user-config entry with no `command` or no `key_env` is
+    /// refused with one warning naming it, and never reaches the wrap.
+    #[test]
+    fn config_agent_without_command_or_key_is_refused() {
+        let mut config = Config::default();
+        config.external_agents.insert(
+            "codex".into(),
+            ExternalAgentConfig {
+                command: String::new(),
+                key_env: "CODEX_API_KEY".into(),
+                ..ExternalAgentConfig::default()
+            },
+        );
+        config.external_agents.insert(
+            "gemini".into(),
+            ExternalAgentConfig {
+                command: "gemini".into(),
+                args: vec!["--acp".into()],
+                ..ExternalAgentConfig::default()
+            },
+        );
+        let (agents, refused) = config_agents(&config, &[], None);
+        assert!(agents.is_empty());
+        assert_eq!(refused.len(), 2, "{refused:?}");
+        assert!(refused[0].contains("codex") && refused[0].contains("command"));
+        assert!(refused[1].contains("gemini") && refused[1].contains("key_env"));
     }
 
     #[test]

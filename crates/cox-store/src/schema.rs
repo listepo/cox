@@ -34,6 +34,8 @@ diesel::table! {
         cost_usd -> Double,
         state -> Text,
         title_source -> Nullable<Text>,
+        agent -> Nullable<Text>,
+        agent_session -> Nullable<Text>,
     }
 }
 

@@ -63,7 +63,7 @@ that already exist in cox's core and that the competitors lack or hide:
 | **Any model** | Anthropic, OpenAI, OpenRouter, Ollama, LM Studio, vLLM; tier routing visible per turn | `cox-provider`, `cox-models`, `TurnStarted{tier, model}` |
 | **Worktrees that clean up** | Each session's worktree with its disk size, merged/stale state and one-click prune | `Worktrees` trait, `GitWorktrees` |
 
-Later (M2/M3) edges from R9.2: an ACP host that renders Claude Code, Codex and
+Later (M2/M3) edges from R9.2: an ACP host that renders Claude Agent, Codex and
 Cursor (P35) sessions in the same UI (Zed's and JetBrains Air's model), a
 browser pane the agent drives, best-of-n across models, plugin panels drawn
 natively from the WASM widget tree.
@@ -105,11 +105,180 @@ titles and App Intents ("Ask cox in <project>") for Shortcuts; per-hunk revert.
 
 ### 3.3 M3 — beyond a single agent
 
-ACP host: Claude Code, Codex, Gemini CLI and Cursor (P35) sessions in the same
-sidebar and transcript (reusing `crates/cox-acp` and T35.3's client adapter);
+ACP host: Claude Agent (Claude Code's ACP adapter), Codex, Gemini CLI and
+Cursor (P35) sessions in the same sidebar and transcript (reusing `crates/cox-acp` and T35.3's client adapter);
 best-of-n (one prompt, several models, each in a worktree, compared diffs);
 plugin panels drawn from the `Widget` tree (R9.4.12); remote sessions over SSH
 through a `cox app-server` that speaks the same patch protocol (DT§4.4).
+
+#### 3.3.1 ACP host: a top-level session driven by an external agent (T52.1)
+
+Status: **approved by the creator on 2026-09-29**, with decisions 5 and 7 of
+the list at the end settled as written there. Evidence: R9.6.
+Guards and fail-open rules are EA§2, §4 and §7 (`docs/design/external-agents.md`),
+unchanged; this section only adds what a *top-level* session needs beyond the
+subagent path T35.13 built.
+
+**Driving a session.** `OpenRequest { agent: Some(name), .. }` resolves `name`
+to one `ExternalAgentCommand` through its only constructor, from either source:
+a `[external_agents.<name>]` user-config entry (T52.2) or a granted plugin's
+`[[external_agents]]` entry (T35.6). Both come back already wrapped in the
+session's `sandbox::Policy`, so no path spawns an unwrapped agent. `cox-app`
+then (T52.4):
+
+1. spawns **one process per session**, not per turn as the subagent driver
+   does (R9.6.2.7). It runs in the session cwd or its worktree, in its own
+   process group, with `CHILD_ENV_ALLOWLIST` plus `key_env` and nothing else
+   from cox's environment. Its sandbox is the session's `[sandbox]` with
+   network always on and the entry's `writable` state directories added
+   (`agent_policy`, T52.2). A program on no `PATH` directory, or a key that
+   does not resolve, is one warning, and the session does not open (EA§7);
+2. sends `initialize` (`initialize_request(sandboxed)`) and then `session/new`
+   with the cwd and no MCP servers (the agent keeps its own MCP config). On
+   reopen it sends `session/load` instead when the agent advertises
+   `loadSession` (T52.6);
+3. maps `Send` to `session/prompt`. ACP allows one prompt in flight, so
+   `Queue` holds the next one locally. `Interrupt` sends `session/cancel` and
+   waits for the `cancelled` stop reason. Closing the session, or a quit,
+   kills the process group (`cox_tools::bash::kill_group`);
+4. folds every `session/update` through T52.3's mapper into the same
+   `Timeline` and patch coalescer a cox session uses (DT-7), so there is no
+   second fold. All text passes `cox_sanitize::sanitize` first.
+
+**Event mapping (T52.3).** A pure fold. Kinds are from R9.6.2.1, stop reasons
+from R9.6.2.3.
+
+| ACP | cox |
+| --- | --- |
+| `session/prompt` sent | `TurnStarted`, then the user item (cox-app emits these; the agent does not echo them) |
+| `agent_message_chunk` (text) | `ItemStarted(AssistantMessage)` on the first chunk, `TextDelta` after it, and `ItemDone` when another kind arrives or the turn ends |
+| `agent_thought_chunk` | `ThinkingDelta`; `ThinkingDone` when another kind arrives |
+| `tool_call` | `ItemStarted(ToolCall { name: title, input: rawInput })` + `ToolCallRequested`, shown as "run by <agent>". The request is informational only: it never becomes an approval (see approvals below) |
+| `tool_call_update` with `content` | `ToolCallOutput`; output over the cap is archived before it is shortened (lossless rule) |
+| `tool_call_update` with `diff` | `ToolCallDone` carrying the diff, so Changes and Review list the file |
+| `tool_call_update` with `terminal` | the output of the cox-run terminal (T35.11) with that id |
+| `tool_call_update` status `completed` / `failed` | `ToolCallDone` / `ToolCallDone` with the error text, then `ItemDone` |
+| `plan` | `ToolResult.structured` (the Inspector's Plan tab, G3) |
+| `session_info_update` (title) | `TitleSet` |
+| `usage_update` | the context ring only (`used` / `size`). `cost` is dropped, and no `Usage` event is made (see "What is stored" below) |
+| `available_commands_update` | the composer's `/` completion list for this session; no `Event` |
+| `current_mode_update`, `config_option_update` | kept as session info for the Inspector's Info tab; no `Event` |
+| `user_message_chunk` | user items, only during a `session/load` replay |
+| any other or unknown kind, or a non-text content block | one sanitized `Notice(Info)`, never a failure (fail open; R9.6.3) |
+| stop `end_turn` / `cancelled` | `TurnDone` / `TurnDone` (interrupted) |
+| stop `max_tokens` / `max_turn_requests` / `refusal` | `Notice(Warn)` naming the reason, then `TurnDone` |
+| JSON-RPC error or process exit mid-turn | `Error(CoreError::ExternalAgent { agent, message })` (T35.12) with the sanitized stderr tail |
+
+**Intents.** An external session accepts `Send`, `Queue`, `Interrupt`,
+`Approve` (for its own inbox items) and `Rename`. Every other intent returns
+`AppError::Unsupported { agent, intent }`, because the cox state behind it
+does not exist: the model, mode, history and checkpoints all belong to the
+agent's process.
+
+| Intent | Why it is refused | What the user sees |
+| --- | --- | --- |
+| `SetMode` | The Engine that judges the agent's requests is compiled once, at open, from `[permissions]` and the mode picked in the New-session sheet. ACP's own `session/set_mode` is the agent's mode, not cox's, so it is not offered in M3 | The mode control is replaced by the "<agent> · ACP" chip |
+| `SwitchModel`, `SetEffort` | The model is the agent's own. `session/set_config_option` is not driven in M3 | The model chip reads "<agent> · ACP" and has no menu (mockup 27) |
+| `Rewind`, `Redo`, `RevertFile`, `RevertHunk` | cox took no checkpoint: the agent wrote the files itself | No rewind gutter marks. Review shows the diffs without revert buttons |
+| `Compact` | The agent compacts its own context | The menu item is disabled. `/compact` typed in the composer goes to the agent as text if the agent advertised it |
+| `Fork`, `Handoff` | There is no cox history to fork, and ACP's `session/fork` is unstable (R9.6.2.5) | The menu items are disabled |
+| `Background`, `Shell` (`!`), `Answer` | They need cox's task list, `UserShell` or `ask_user`. The agent has none of them | The controls are hidden. `!` mode is off |
+| `Command` (cox slash commands) | The agent's commands are the ones that apply | `/…` is sent verbatim, and completion lists the agent's commands |
+
+A disabled control carries the same sentence as its help tag: "Not available
+in <agent> sessions (Agent Client Protocol)". The error itself is reached only
+through a shortcut, an App Intent or the remote wire. It then shows the same
+way as any other failed intent, with the agent named.
+
+**Approvals.** The agent's own tool calls run inside its process. They are
+guarded by the process sandbox, not judged per call (EA§2). Only what the
+agent asks cox for meets cox's guards:
+
+- `session/request_permission` goes to `cox_permission::Engine` through the
+  existing `judge()` (T35.3's kind→tool map). `Allow` and `Deny` answer at
+  once. `Ask` goes to a new `Approver` in `cox-app` (T52.5), which replaces
+  `RefuseAsk` for top-level sessions. It becomes an `ApprovalRequired` block
+  and an inbox item, with the agent as `source`. Allow once → `allow_once`.
+  Allow for session → the engine's grant, recorded for this connection, and
+  `allow_always`. Deny → `reject_once`. A closed session or a timeout
+  answers deny;
+- `fs/read_text_file` and `fs/write_text_file` go through `path::confine`
+  against the session's roots, and writes also through the sandbox policy.
+  They never prompt: an agent asks with `request_permission` before an edit;
+- `terminal/create` is judged by the Engine as a `bash` call (its `Ask` takes
+  the same inbox path). It runs only under the session's sandbox grant, and
+  otherwise it is refused with the reason named (T35.11).
+
+**What is stored.**
+
+- The session row gets its `agent` name (T52.6), plus the agent's ACP
+  `sessionId` so that `session/load` can find it.
+- The rollout gets the prompts and the mapped events, sanitized.
+  Over-cap tool output goes to the archive as usual.
+- The ledger gets **no row**. An external agent's usage is its own billing:
+  cox made no model request, and a zero or estimated row would be invented.
+  The subagent path's `$0`/`billed_externally` row (EA§6, T35.5) stays as it
+  is: there the external turn is a request inside a cox session.
+- The cost pill, the notification's cost and the sidebar show "—".
+  `[budget]` does not apply. A best-of-n group (T52.9) sums only its cox
+  candidates' rows and marks the total as partial when an external candidate
+  is in it.
+
+**Launch table** (the documented examples T52.2 ships, not defaults; R9.6.1;
+`writable` is the entry's state directory, from the creator's decision 7):
+
+| Agent (display name) | `command` | `args` | `key_env` | `writable` | Install (by the user; cox never installs) |
+| --- | --- | --- | --- | --- | --- |
+| Claude Code's ACP adapter ("Claude Agent", R9.6.1.6) | `claude-agent-acp` | `["--hide-claude-auth"]` | `ANTHROPIC_API_KEY` | `["~/.claude"]` | `npm install -g @agentclientprotocol/claude-agent-acp` (0.84.0, Node ≥ 22; brings the Claude Code binary) |
+| Codex's ACP adapter ("Codex") | `codex-acp` | `[]` | `CODEX_API_KEY` | `["~/.codex"]` | `npm install -g @agentclientprotocol/codex-acp` (2.0.0; brings `@openai/codex`) |
+| Gemini CLI's ACP mode ("Gemini CLI") | `gemini` | `["--acp"]` | `GEMINI_API_KEY` | `["~/.gemini"]` | `npm install -g @google/gemini-cli` (0.61.0, Node ≥ 20) or `brew install gemini-cli` |
+| Cursor ("Cursor") | `agent` | `["acp"]` | `CURSOR_API_KEY` | — (a plugin entry has no `writable`) | `curl https://cursor.com/install -fsS \| bash`; the entry comes from the granted Cursor plugin's `[[external_agents]]` (T35.6), not from user config |
+
+The `@zed-industries/*` package names are deprecated (R9.6.1.2, R9.6.1.8), so
+the table uses the `@agentclientprotocol/*` names.
+
+**Risks found here, for T52.4's live check.**
+
+- The host wrap copied `[sandbox] network`, whose default is `false`
+  (R9.6.2.8), so under the default none of the four agents could reach its
+  vendor's API. Settled by decision 7: an external agent's wrap always has
+  network (`agent_policy`, T52.2).
+- The agents may need to write their own state directories under `$HOME`.
+  The sandbox denies those writes (R9.6.3, unverified). Settled by decision
+  7 for user-config entries (`writable`); the Cursor plugin's entry has no
+  such list yet, so `~/.cursor` stays read-only for it.
+
+**Approved by the creator on 2026-09-29** (all eight, as written, with 5 and
+7 settled as below)
+
+1. Top-level ACP sessions accept only `Send`, `Queue`, `Interrupt`, `Approve`
+   and `Rename`. Everything else is `AppError::Unsupported`, with the UI
+   above. ACP's `session/set_mode`, `session/set_config_option` and
+   `session/fork` are not driven in M3.
+2. One agent process per session, kept alive across turns. The mode is fixed
+   at open.
+3. No ledger row and "—" for cost, and `[budget]` does not apply, while the
+   subagent path keeps its EA§6 `$0` row. The agent's reported `usage_update`
+   cost is dropped, not shown.
+4. The launch table above, including the `@agentclientprotocol/*` names,
+   installed programs only (no `npx -y`, which would fetch unpinned code on
+   every launch), and API keys only.
+5. Claude: it runs as `claude-agent-acp --hide-claude-auth`, with
+   `ANTHROPIC_API_KEY` only, so cox never uses a claude.ai subscription or
+   login (Anthropic's rule, R9.6.1.6), and it is labelled "Claude Agent" in
+   the UI, never "Claude Code". Mockup 27 now says "Claude Agent".
+6. Store the agent's ACP `sessionId` next to `sessions.agent`. T52.6 names
+   only the `agent` column.
+7. Network and state directories: an external agent always gets network
+   inside its sandbox, whatever `[sandbox] network` says; its file limits
+   stay. An `[external_agents.<name>]` entry may add `writable` directories
+   for the agent's own state (`~/.claude`, `~/.codex`, `~/.gemini`,
+   `~/.cursor`). They are confined to the user's home, and a project config
+   may not set them (its own guard and reason, `external_agents.*.writable`).
+   The Agents list's launch line shows both. T52.2's schema carries
+   `writable`.
+8. cox's own slash commands are off in external sessions; `/…` goes to the
+   agent verbatim.
 
 ## 4. Architecture
 
@@ -521,6 +690,8 @@ current project and slash commands. The whole app is keyboard-drivable:
 | ⌘⇧R | Review |
 | ⌃⌘I / ⌃⌘S | Inspector / sidebar: the defaults of the system `InspectorCommands` and `SidebarCommands` (A89) |
 | ⌘⌥A | Appearance popover |
+| ⌃` | Terminal pane under the transcript: show / hide; the first show opens the session's shell (T51.6) |
+| ⌘⇧B | Browser pane beside the transcript: show / hide; the page the agent's `browser_*` tools drive (T51.10) |
 | ⌘⇧F | Search all sessions |
 | ⌘[ / ⌘] | Previous / next turn in the transcript |
 | ⌘+ / ⌘− | Text size |

@@ -355,12 +355,15 @@ fn plugin_agents(
     writable: &[PathBuf],
     notices: &mut Vec<String>,
 ) -> Vec<cox_plugin::external_agent::ExternalAgentCommand> {
-    use cox_plugin::external_agent::ExternalAgentCommand;
+    use cox_plugin::external_agent::{AgentSource, ExternalAgentCommand};
 
-    let wrap = |program: &Path, args: &[String]| sandboxed_argv(program, args, config, writable);
+    // T52.2: an external agent always has network inside its sandbox.
+    let wrap = |program: &Path, args: &[String]| {
+        crate::sandbox::agent_argv(program, args, config, writable)
+    };
     let mut agents = Vec::new();
     for decl in &manifest.external_agents {
-        match ExternalAgentCommand::resolve(id, dir, decl, wrap) {
+        match ExternalAgentCommand::resolve(AgentSource::Plugin { id, dir }, decl, wrap) {
             Ok(agent) => agents.push(agent),
             Err(e) => notices.push(format!(
                 "plugin {id}: external agent {} skipped: {e}",

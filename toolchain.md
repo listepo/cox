@@ -80,14 +80,14 @@ Programs the project uses and the direct packages from its manifests.
 | opentelemetry-otlp | local | https://crates.io/crates/opentelemetry-otlp | Rust dependency |
 | opentelemetry_sdk | local | https://crates.io/crates/opentelemetry_sdk | Rust dependency |
 | pathdiff | local | https://crates.io/crates/pathdiff | Relative path between two paths |
-| portable-pty | local | https://crates.io/crates/portable-pty | Rust dependency |
+| portable-pty | local | https://crates.io/crates/portable-pty | Rust dependency: the TUI e2e tests' PTY and, T51.3, `cox-app`'s terminal pane (0.9.0, the latest release, 2025-02-11) |
 | predicates | local | https://crates.io/crates/predicates | Rust dependency |
 | pretty_assertions | local | https://crates.io/crates/pretty_assertions | Rust dependency |
 | proptest | local | https://crates.io/crates/proptest | Rust dependency |
 | pulldown-cmark | local | https://crates.io/crates/pulldown-cmark | T5.3: plan.md says pulldown-cmark 0.10; 0.13 is the current line with the same Tag/TagEnd API. syntect without onig (pure-Rust fancy-regex engine). Lives in `cox-render` (T32.2). |
 | ratatui | local | https://crates.io/crates/ratatui | cox-tui |
 | reqwest | local | https://crates.io/crates/reqwest | cox-provider |
-| url | local | https://crates.io/crates/url | cox-tools: LSP `file://` URI ↔ path (T41.3) |
+| url | local | https://crates.io/crates/url | cox-tools: LSP `file://` URI ↔ path (T41.3); `cox-app`'s browser tools parse a URL and pass only http/https (T51.7). 2.5.8, the latest release, 2026-01-05 |
 | rmcp | local | https://crates.io/crates/rmcp | cox-mcp |
 | rubato | local | https://github.com/HEnquist/rubato | cox-voice: the microphone's rate (often 44.1 or 48 kHz) to whisper's 16 kHz (T54.3, A123) |
 | rstest | local | https://crates.io/crates/rstest | Rust dependency |
@@ -166,3 +166,5 @@ Programs the project uses and the direct packages from its manifests.
 | swift-collections | local (`CoxModel`) | https://github.com/apple/swift-collections | T37.16: `OrderedDictionary` keeps the timeline store in block order (research.md §9.5.6) |
 | SwiftLintPlugins | local (every package under `desktop/macos/Packages`) | https://github.com/SimplyDanny/SwiftLintPlugins | T37.18: `SwiftLintBuildToolPlugin` lints each package's targets; version equals the SwiftLint pin in `mise.toml` |
 | swift-snapshot-testing | local (`CoxUI` tests) | https://github.com/pointfreeco/swift-snapshot-testing | T37.19: image snapshots of the CoxUI Foundations and components (DS§9, A67) |
+| SwiftTerm | local (`CoxPlatform`) | https://github.com/migueldeicaza/SwiftTerm | T51.5: the terminal pane's VT emulator and renderer, `TerminalView` only — the shell runs in Rust (research.md §9.5.2; 1.20.0, the latest release, 2026-08-18; MIT) |
+| KeyboardShortcuts | local (the `Cox` app target, `desktop/macos/project.yml`) | https://github.com/sindresorhus/KeyboardShortcuts | T51.15: the two global hotkeys' recorder, registration and storage in Settings › General (DT§4.6; 3.1.0, the latest release, 2026-09-11; MIT) |

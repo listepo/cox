@@ -15,7 +15,14 @@ final class SilentHost: AppHost {
   func notify(item: CoxFFIBindings.InboxItem, badge: UInt32) {}
   func badge(badge: UInt32) {}
   func openUrl(url: String) {}
+  func confirmOpenUrl(origin: String, url: String) {}
   func secret(section: String) -> String? { nil }
+  func hasBrowser() -> Bool { false }
+  func browserLoad(url: String) async throws { throw CoxFFIBindings.BrowserFailure.NoPage }
+  func browserText() async throws -> CoxFFIBindings.PageText {
+    throw CoxFFIBindings.BrowserFailure.NoPage
+  }
+  func browserSnapshot() async throws -> Data { throw CoxFFIBindings.BrowserFailure.NoPage }
 }
 
 /// A scratch home and a client over it. Settings reads each HTTP MCP server's

@@ -5,14 +5,17 @@
 //! Separate from `changes.rs`, which lists the files and their turns from
 //! what the session recorded; this reads one file's bytes on request. Also
 //! the words of Review's line comments (T37.28.4), so every surface sends
-//! the agent the same prompt for the same draft.
+//! the agent the same prompt for the same draft, and the core's hunk
+//! reverter over cox-render's `revert_hunk` (T51.20), since the core may
+//! not depend on cox-render.
+
+use std::sync::Arc;
 
 use std::fmt::Write as _;
 use std::path::Path;
 
-use cox_protocol::CheckpointRow;
-use cox_protocol::types::CheckpointKind;
-use cox_protocol::{ArchiveId, Before};
+use cox_protocol::types::{CheckpointKind, content_digest};
+use cox_protocol::{ArchiveId, Before, CheckpointRow, HunkReverter};
 use cox_render::diffmodel::{self, DiffModel};
 
 /// The first row that recorded `path` (confined, so canonical): the file as
@@ -37,19 +40,38 @@ pub fn kept<E>(
 }
 
 /// `shown`'s change from `before` to `now`: no hunks when they are equal,
-/// `None` when a side is over the size cap.
+/// `None` when a side is over the size cap. Each hunk carries its index and
+/// the model the digest of `now`, which a hunk revert sends back (T51.20);
+/// a missing file digests as empty, as the core reads it.
 pub fn diff(shown: &Path, before: &Before, now: &Before, theme: &str) -> Option<DiffModel> {
     let text = |side: &Before| match side {
         Before::Absent => Some(String::new()),
         Before::Bytes(bytes) => Some(String::from_utf8_lossy(bytes).into_owned()),
         Before::TooLarge => None,
     };
-    Some(diffmodel::between(
-        shown,
-        &text(before)?,
-        &text(now)?,
-        theme,
-    ))
+    let digest = match now {
+        Before::Bytes(bytes) => content_digest(bytes),
+        _ => content_digest(&[]),
+    };
+    let mut model = diffmodel::between(shown, &text(before)?, &text(now)?, theme);
+    model.digest = Some(digest);
+    Some(model)
+}
+
+/// The core's `HunkReverter`: cox-render's `revert_hunk`, the same diff
+/// Review's hunks come from.
+pub struct RenderHunks;
+
+impl RenderHunks {
+    pub fn shared() -> Arc<dyn HunkReverter> {
+        Arc::new(Self)
+    }
+}
+
+impl HunkReverter for RenderHunks {
+    fn revert(&self, before: &str, now: &str, index: usize) -> Option<String> {
+        diffmodel::revert_hunk(before, now, index).ok()
+    }
 }
 
 /// One of Review's line comments: what the person wrote about a line of
@@ -123,6 +145,24 @@ mod tests {
                  \n- `notes.md:1`: Typo."
             )
         );
+    }
+
+    #[test]
+    fn review_diff_carries_hunk_indices() {
+        let before: String = (1..=20).map(|i| format!("line {i}\n")).collect();
+        let now = before
+            .replace("line 2\n", "line two\n")
+            .replace("line 18\n", "line eighteen\n");
+        let old = Before::Bytes(before.clone().into_bytes());
+        let new = Before::Bytes(now.clone().into_bytes());
+        let model = diff(Path::new("notes.txt"), &old, &new, "base16-ocean.dark");
+        let model = model.expect("both sides are text");
+        let indices: Vec<u32> = model.hunks.iter().map(|h| h.index).collect();
+        assert_eq!(indices, [0, 1]);
+        assert_eq!(model.digest, Some(content_digest(now.as_bytes())));
+        // The index is the one the core's reverter puts back.
+        let reverted = RenderHunks.revert(&before, &now, 1).expect("hunk 1");
+        assert_eq!(reverted, before.replace("line 2\n", "line two\n"));
     }
 
     #[test]

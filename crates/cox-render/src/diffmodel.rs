@@ -3,15 +3,17 @@
 //! runs, so the desktop app draws an edit without parsing unified text.
 //! Also the unified-text parse the TUI's `diff` draws from, so both surfaces
 //! read a hunk the same way, and the one word diff of a replaced line pair
-//! both surfaces mark (T37.23.11). Outside `diff` because that module draws
-//! with ratatui, and `cox-app` builds without the `ratatui` feature.
+//! both surfaces mark (T37.23.11), and `revert_hunk`, which puts one of
+//! Review's hunks back (T51.18) from the same line diff `between` draws.
+//! Outside `diff` because that module draws with ratatui, and `cox-app`
+//! builds without the `ratatui` feature.
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use cox_protocol::types::Diff;
 use serde::{Deserialize, Serialize};
-use similar::{ChangeTag, TextDiff};
+use similar::{ChangeTag, DiffTag, TextDiff};
 
 use crate::doc::{StyledLine, StyledSpan};
 use crate::markdown::{highlight_runs, theme_variants};
@@ -21,6 +23,11 @@ use crate::markdown::{highlight_runs, theme_variants};
 pub struct DiffModel {
     pub path: PathBuf,
     pub hunks: Vec<DiffHunk>,
+    /// `content_digest` of the new side's bytes when Review built the
+    /// model from the file on disk (T51.20), so a hunk revert names the
+    /// bytes it was shown; `None` for a tool's diff.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub digest: Option<String>,
 }
 
 /// An `@@` header and the lines under it.
@@ -29,6 +36,10 @@ pub struct DiffHunk {
     /// `@@ -41,12 +41,26 @@ impl Backoff`; empty for lines before any header.
     pub header: String,
     pub lines: Vec<DiffLine>,
+    /// The hunk's place in its model, from 0: for Review's model, the
+    /// index [`revert_hunk`] puts back (T51.20).
+    #[serde(default)]
+    pub index: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -269,19 +280,66 @@ fn cut(spans: StyledLine, words: &[Range<usize>]) -> StyledLine {
     out
 }
 
+/// Lines of context around a hunk, as the edit tools write.
+const CONTEXT: usize = 3;
+
 /// The change from `old` to `new` of the file at `path`, as [`model`] reads
 /// it: for two texts no tool diffed, such as Review's checkpoint copy and the
-/// file on disk (T37.28.2). Three lines of context, as the edit tools write.
+/// file on disk (T37.28.2). Hunk `i` of the model is the one
+/// [`revert_hunk`]`(old, new, i)` puts back.
 pub fn between(path: &Path, old: &str, new: &str, theme: &str) -> DiffModel {
     let unified = TextDiff::from_lines(old, new)
         .unified_diff()
-        .context_radius(3)
+        .context_radius(CONTEXT)
         .to_string();
     let diff = Diff {
         path: path.to_path_buf(),
         unified,
     };
     model(&diff, theme)
+}
+
+/// Why a hunk could not be put back.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum HunkError {
+    /// The diff of these texts has no hunk at that index: the file changed
+    /// since Review drew it, so the hunk shown is not the one there now.
+    #[error("that hunk is no longer in the diff; review the file again")]
+    Stale,
+}
+
+/// `now` with hunk `index` of [`between`]`(before, now)` put back to
+/// `before`, every other line kept as it is, line endings included. The
+/// hunks are the same line diff's groups `between`'s unified text is cut
+/// from, so an index means the hunk Review shows. Whether `now` is still the
+/// text Review diffed is the caller's check (the core compares digests);
+/// an index past the last hunk is [`HunkError::Stale`].
+pub fn revert_hunk(before: &str, now: &str, index: usize) -> Result<String, HunkError> {
+    let diff = TextDiff::from_lines(before, now);
+    let group = diff
+        .grouped_ops(CONTEXT)
+        .into_iter()
+        // As the unified text skips them, so the indices line up.
+        .filter(|ops| !ops.is_empty())
+        .nth(index)
+        .ok_or(HunkError::Stale)?;
+    let mut changed = group.iter().filter(|op| op.tag() != DiffTag::Equal);
+    let (Some(first), last) = (changed.next(), changed.next_back()) else {
+        return Err(HunkError::Stale);
+    };
+    let last = last.unwrap_or(first);
+    // Equal runs between a hunk's changes read alike on both sides, so the
+    // hunk's whole span on `now` is swapped for its span on `before`.
+    let old = first.old_range().start..last.old_range().end;
+    let new = first.new_range().start..last.new_range().end;
+    let before: Vec<&str> = diff.iter_old_slices().collect();
+    let now: Vec<&str> = diff.iter_new_slices().collect();
+    let (Some(head), Some(put_back), Some(tail)) =
+        (now.get(..new.start), before.get(old), now.get(new.end..))
+    else {
+        return Err(HunkError::Stale);
+    };
+    Ok([head, put_back, tail].concat().concat())
 }
 
 /// `diff` as hunks. Bodies go through the one syntect pass the TUI's diff
@@ -328,6 +386,7 @@ pub fn model(diff: &Diff, theme: &str) -> DiffModel {
             Row::Meta(l) if l.starts_with("@@") => hunks.push(DiffHunk {
                 header: l.to_owned(),
                 lines: Vec::new(),
+                index: next_index(&hunks),
             }),
             Row::Meta(_) => {}
             Row::Body {
@@ -341,6 +400,7 @@ pub fn model(diff: &Diff, theme: &str) -> DiffModel {
                     hunks.push(DiffHunk {
                         header: String::new(),
                         lines: Vec::new(),
+                        index: 0,
                     });
                 }
                 let kind = match marker {
@@ -375,7 +435,13 @@ pub fn model(diff: &Diff, theme: &str) -> DiffModel {
     DiffModel {
         path: diff.path.clone(),
         hunks,
+        digest: None,
     }
+}
+
+/// The index the next hunk pushed onto `hunks` takes.
+fn next_index(hunks: &[DiffHunk]) -> u32 {
+    u32::try_from(hunks.len()).unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]
@@ -542,5 +608,59 @@ mod tests {
         assert!(spans.iter().any(|s| s.rgb != s.light));
         let plain = model(&diff("NOTES", "@@ -1 +1 @@\n+a\n"), "base16-ocean.dark");
         assert_eq!(plain.hunks[0].lines[0].spans, [StyledSpan::plain("a")]);
+    }
+
+    /// Twenty numbered lines with lines 2 and 18 replaced: two hunks, far
+    /// enough apart that their context does not merge them.
+    fn two_hunks() -> (String, String) {
+        let before: String = (1..=20).map(|i| format!("line {i}\n")).collect();
+        let now = before
+            .replace("line 2\n", "line two\n")
+            .replace("line 18\n", "line eighteen\n");
+        (before, now)
+    }
+
+    #[test]
+    fn revert_hunk_restores_only_that_hunk() {
+        let (before, now) = two_hunks();
+        let shown = between(Path::new("notes.txt"), &before, &now, "base16-ocean.dark");
+        assert_eq!(shown.hunks.len(), 2);
+        let reverted = revert_hunk(&before, &now, 1);
+        assert_eq!(reverted, Ok(before.replace("line 2\n", "line two\n")));
+        let reverted = revert_hunk(&before, &now, 0);
+        assert_eq!(reverted, Ok(before.replace("line 18\n", "line eighteen\n")));
+    }
+
+    #[test]
+    fn revert_hunk_of_an_added_file_region() {
+        let before = "a\nb\n";
+        let now = "a\nadded one\nadded two\nb\n";
+        assert_eq!(revert_hunk(before, now, 0), Ok(before.to_owned()));
+        // A file that did not exist at the checkpoint is all one added hunk.
+        assert_eq!(revert_hunk("", now, 0), Ok(String::new()));
+    }
+
+    #[test]
+    fn revert_hunk_refuses_a_stale_index() {
+        let (before, now) = two_hunks();
+        assert_eq!(revert_hunk(&before, &now, 2), Err(HunkError::Stale));
+        // Reverted meanwhile: nothing is left to put back.
+        assert_eq!(revert_hunk(&before, &before, 0), Err(HunkError::Stale));
+    }
+
+    #[test]
+    fn revert_hunk_keeps_line_endings() {
+        let before = "one\r\ntwo\r\nthree\r\n";
+        let now = "one\r\nTWO\r\nthree\r\nfour";
+        let reverted = revert_hunk(before, now, 0);
+        // The one hunk holds both changes; the reverted text is `before`,
+        // CRLF endings and all.
+        assert_eq!(reverted, Ok(before.to_owned()));
+        let mixed_before = "a\r\nb\nc\r\n";
+        let mixed_now = "a\r\nB\nc\r\n";
+        assert_eq!(
+            revert_hunk(mixed_before, mixed_now, 0),
+            Ok(mixed_before.to_owned())
+        );
     }
 }

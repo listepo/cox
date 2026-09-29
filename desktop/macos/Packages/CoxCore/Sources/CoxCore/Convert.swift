@@ -67,6 +67,7 @@ extension CoxClient.TimelinePatch {
     case .remove(let id): self = .remove(id: id)
     case .usage(let usage): self = .usage(usage: .init(usage))
     case .status(let status): self = .status(status: .init(status))
+    case .pluginSlot(let slot): self = .pluginSlot(slot: .init(slot))
     }
   }
 }
@@ -101,8 +102,9 @@ extension CoxClient.DiffModel {
     self.init(
       path: value.path,
       hunks: value.hunks.map { hunk in
-        .init(header: hunk.header, lines: hunk.lines.map { CoxClient.DiffLine($0) })
-      })
+        .init(
+          header: hunk.header, lines: hunk.lines.map { CoxClient.DiffLine($0) }, index: hunk.index)
+      }, digest: value.digest)
   }
 }
 
@@ -371,6 +373,8 @@ extension CoxFFIBindings.Intent {
       self = .rewind(toTurn: toTurn, code: code, conversation: conversation)
     case .redo: self = .redo
     case .revertFile(let path, let toTurn): self = .revertFile(path: path, toTurn: toTurn)
+    case .revertHunk(let path, let toTurn, let hunk, let nowDigest):
+      self = .revertHunk(path: path, toTurn: toTurn, hunk: hunk, nowDigest: nowDigest)
     case .fork(let turn): self = .fork(turn: turn)
     case .handoff(let objective): self = .handoff(objective: objective)
     case .background(let call): self = .background(call: call)

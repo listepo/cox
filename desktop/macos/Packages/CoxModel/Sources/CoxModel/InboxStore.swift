@@ -48,12 +48,17 @@ extension InboxRow {
 public final class InboxStore {
   /// In the core's order: most urgent first, oldest first within a rank.
   public private(set) var rows: [InboxRow] = []
+  /// The same items as the core sent them, for the menu bar's Allow and Deny (T51.14).
+  public private(set) var items: [InboxItem] = []
   @ObservationIgnored private let client: any InboxClient
 
   public init(client: any InboxClient) { self.client = client }
 
   /// Reads the inbox again; the app calls it on each `PlatformHost.notify` and `badge`.
-  public func refresh() { rows = client.inbox().map(InboxRow.init) }
+  public func refresh() {
+    items = client.inbox()
+    rows = items.map(InboxRow.init)
+  }
 
   /// The section header's count, `nil` when nothing waits.
   public var count: String? { rows.isEmpty ? nil : "\(rows.count)" }

@@ -17,6 +17,9 @@ public enum Intent: Equatable, Sendable {
   case rewind(toTurn: UInt32, code: Bool, conversation: Bool)
   case redo
   case revertFile(path: String, toTurn: UInt32)
+  /// One hunk of Review's diff back to before `toTurn` (T51.21); `nowDigest` is the diff's
+  /// `digest`, so a file changed since Review read it is refused.
+  case revertHunk(path: String, toTurn: UInt32, hunk: UInt32, nowDigest: String)
   case fork(turn: UInt32?)
   case handoff(objective: String)
   case background(call: String)

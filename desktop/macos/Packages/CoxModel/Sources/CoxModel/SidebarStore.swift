@@ -30,6 +30,8 @@ public struct SidebarSection: Identifiable, Equatable, Sendable {
   public enum Kind: Equatable, Sendable {
     case section(count: String?)
     case project(isExpanded: Bool)
+    /// A remote host's sessions (T52.21), and whether its connection holds.
+    case host(isConnected: Bool)
   }
 
   public let id: String
@@ -53,6 +55,9 @@ public final class SidebarStore {
   @ObservationIgnored private let workspace: (any WorkspaceClient)?
   @ObservationIgnored private let inbox: InboxStore?
   @ObservationIgnored private let locale: Locale
+  /// Called after each successful read; the app re-syncs its Spotlight index from `listed`
+  /// (T51.16).
+  @ObservationIgnored public var didRefresh: (@MainActor () -> Void)?
 
   /// A fixture launch has no workspace, a recording no inbox: the list shows what there is.
   public init(
@@ -77,6 +82,7 @@ public final class SidebarStore {
         projects.flatMap(\.sessions).map { ($0.id, workspace.activity(session: $0.id)) },
         uniquingKeysWith: { first, _ in first })
       (readAt, failure) = (now, nil)
+      didRefresh?()
     } catch {
       failure = String(describing: error)
     }
@@ -128,6 +134,20 @@ public final class SidebarStore {
     }
     return nil
   }
+
+  /// Every session the list read, with its project and its last write; Spotlight mirrors it
+  /// (T51.16).
+  public var listed: [ListedSession] {
+    projects.flatMap { entry in
+      entry.sessions.map {
+        ListedSession(
+          session: $0, project: entry.project, updated: ChangesTabState.date($0.updatedAt))
+      }
+    }
+  }
+
+  /// The inbox's items as the core sent them; the menu bar reads them (T51.14).
+  public var inboxItems: [InboxItem] { inbox?.items ?? [] }
 
   /// "Needs you" and "Running" while they hold a row, then every project that does; with a
   /// filter, a folded project opens to show what matched.
@@ -194,9 +214,10 @@ public final class SidebarStore {
       case .failed: (.error, [ago, "failed"])
       case .idle: (.idle, [ago, entry.turns > 0 ? "done" : nil])
       }
+    // An external agent's session says whose it is first (mockup 27).
     return SidebarRow(
       id: entry.id, session: entry.id, status: status, title: entry.name,
-      subtitle: subtitle.compactMap { $0 }.joined(separator: " · "),
+      subtitle: ([entry.agent] + subtitle).compactMap { $0 }.joined(separator: " · "),
       cost: entry.costUsd > 0 ? usd(entry.costUsd) : nil, isReadOnly: false)
   }
 
@@ -238,4 +259,11 @@ extension SessionEntry {
   /// What the toolbar and the sidebar call it: its title, or `Untitled session` until it has one.
   public var name: String { title ?? Self.untitled }
   public static let untitled = "Untitled session"
+}
+
+/// One row of `SidebarStore.listed`: a session, its project and its last write.
+public struct ListedSession: Sendable {
+  public let session: SessionEntry
+  public let project: Project
+  public let updated: Date?
 }

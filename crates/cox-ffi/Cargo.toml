@@ -37,6 +37,9 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 # A pull the app cancels aborts its task on the runtime (`on_runtime`).
 tokio-util = { workspace = true, features = ["rt"] }
+# T51.8: `AppHost`'s browser methods are async, and UniFFI's generated
+# foreign-trait impl names `::async_trait`; `cox-app`'s `Browser` is one too.
+async-trait = { workspace = true }
 
 [dev-dependencies]
 # `tests/forward_only.rs` parses the forwarding files as Rust (D11, A90);

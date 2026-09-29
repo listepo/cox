@@ -123,6 +123,27 @@ impl Shell {
     }
 }
 
+/// The login shell a user's own terminal runs (the desktop terminal pane,
+/// T51.3): `$SHELL`'s file name when it names a shell of the allowlist
+/// above, else the platform default (`zsh` on macOS, `sh` elsewhere), each
+/// resolved in `SHELL_DIRS` and never on `PATH` — the directory `$SHELL`
+/// points into is ignored, so a workspace cannot pick the program. `None`
+/// when neither is installed.
+pub fn login_shell(env_shell: Option<&str>) -> Option<PathBuf> {
+    let named = env_shell
+        .and_then(|shell| Path::new(shell).file_name()?.to_str())
+        .and_then(|name| serde_json::from_value::<Shell>(Value::String(name.to_string())).ok());
+    let default = if cfg!(target_os = "macos") {
+        Shell::Zsh
+    } else {
+        Shell::Sh
+    };
+    named
+        .into_iter()
+        .chain([default])
+        .find_map(|shell| shell.path().ok())
+}
+
 /// A command line and the shell that runs it, kept together so every hop
 /// down to the sandbox carries both.
 #[derive(Clone)]

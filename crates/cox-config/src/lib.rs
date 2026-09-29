@@ -84,4 +84,32 @@ mod tests {
             }
         }
     }
+
+    /// T52.2: the `[external_agents.<name>]` part of the committed schema
+    /// matches the types, and an entry has exactly the four keys the docs
+    /// name. Narrower than the whole-file test above, so a drift here names
+    /// the table that moved.
+    #[test]
+    fn external_agents_schema_drift() {
+        let generated = super::schema().expect("schema");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/config.jsonschema");
+        let committed: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).expect("read schema"))
+                .expect("committed schema is JSON");
+        for pointer in ["/properties/external_agents", "/$defs/ExternalAgentConfig"] {
+            assert_eq!(
+                committed.pointer(pointer),
+                generated.pointer(pointer),
+                "{pointer} is stale in docs/config.jsonschema"
+            );
+        }
+        let keys: Vec<&str> = generated
+            .pointer("/$defs/ExternalAgentConfig/properties")
+            .and_then(serde_json::Value::as_object)
+            .expect("entry properties")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(keys, ["command", "args", "key_env", "writable"]);
+    }
 }

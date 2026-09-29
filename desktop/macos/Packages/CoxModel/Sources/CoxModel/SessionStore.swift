@@ -1,8 +1,9 @@
 // One open session as observable state (DT§4.6): the timeline keyed by
 // block id in insertion order (`OrderedDictionary`, research.md 9.5.6), the
-// token meter and the composer draft. It applies patches and sends intents
-// and nothing else; every decision already came from Rust. The rules mirror
-// `cox_app::coalesce::apply`, the reference consumer the Rust tests prove.
+// token meter, the composer draft, the terminal tabs and the plugin slots. It
+// applies patches and sends intents and nothing else; every decision already
+// came from Rust. The rules mirror `cox_app::coalesce::apply`, the reference
+// consumer the Rust tests prove.
 
 import CoxClient
 import Observation
@@ -21,6 +22,15 @@ public final class SessionStore {
   public var draft = ""
   /// Review's line comments, kept while Review opens other files (T37.28.4).
   public var reviewDraft = ReviewDraft()
+  /// The session's terminal panes in tab order (T51.6): the shells run in Rust, and what they
+  /// print never reaches `blocks`.
+  public internal(set) var terminals: [TerminalTab] = []
+  /// The tab the terminal pane shows.
+  public var terminalSelection: TerminalTab.ID?
+  /// The last tab's id, so a closed tab's id is never handed out again.
+  @ObservationIgnored var terminalCount = 0
+  /// Each plugin slot's latest state (T52.17, PL§8), in the order the slots first reported.
+  public private(set) var pluginSlots: OrderedDictionary<PluginSlotKey, PluginSlot> = [:]
   @ObservationIgnored public let session: any SessionClient
 
   public init(session: any SessionClient) {
@@ -71,7 +81,16 @@ public final class SessionStore {
       usage = view
     case .status(let new):
       status = new
+    case .pluginSlot(let slot):
+      // Beside the blocks, as in `cox_app::coalesce`: a reset keeps it, and it replaces only
+      // its own slot.
+      pluginSlots[slot.key] = slot
     }
+  }
+
+  /// Hides the plugin overlay shown, as Esc does; the core answers with the slot's patch.
+  public func closePluginOverlay() {
+    session.closePluginOverlay()
   }
 
   private static func keyed(_ all: [Block]) -> OrderedDictionary<BlockID, Block> {
@@ -125,4 +144,11 @@ func lastLines(_ text: String) -> String {
     }
   }
   return text
+}
+
+extension SessionStore {
+  /// The shown plugin views in one slot, in the order the plugins first reported.
+  public func pluginViews(_ kind: PluginSlotKind) -> [PluginSlot] {
+    pluginSlots.values.filter { $0.slot == kind && $0.visible && $0.view != nil }
+  }
 }

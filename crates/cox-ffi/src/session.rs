@@ -5,9 +5,12 @@
 
 use std::sync::Arc;
 
+use cox_app::TerminalHandle as Terminal;
 use cox_app::diffmodel::DiffModel;
 use cox_app::live::LiveSession;
-use cox_app::{Block, Changes, Completion, Info, Intent, TaskTarget, TimelinePatch, TurnCosts};
+use cox_app::{
+    Block, Changes, Completion, Info, Intent, PluginKey, TaskTarget, TimelinePatch, TurnCosts,
+};
 use cox_protocol::ids::{ArchiveId, SessionId, TaskId};
 use cox_protocol::types::TodoItem;
 
@@ -109,6 +112,31 @@ impl SessionHandle {
             .history(usize::try_from(limit).unwrap_or(usize::MAX))?)
     }
 
+    /// A terminal pane in this session's cwd, under its sandbox (T51.3).
+    pub fn open_terminal(&self, cols: u16, rows: u16) -> Result<Arc<TerminalHandle>, AppError> {
+        Ok(TerminalHandle::new(self.live.open_terminal(cols, rows)?))
+    }
+
+    /// The plugin keys granted in this session (T52.14).
+    pub fn plugin_keys(&self) -> Vec<PluginKey> {
+        self.live.plugin_keys()
+    }
+
+    /// `<leader> <key>`: asks `plugin`'s `cox_key`; false when not granted.
+    pub fn plugin_key(&self, plugin: String, name: String) -> bool {
+        self.live.plugin_key(&plugin, &name)
+    }
+
+    /// The window's area in cells, for plugin panels and overlays.
+    pub fn plugin_area(&self, width: u16, height: u16) {
+        self.live.plugin_area(width, height);
+    }
+
+    /// Esc on a plugin overlay.
+    pub fn close_plugin_overlay(&self) {
+        self.live.close_plugin_overlay();
+    }
+
     /// Stops the pull; the session keeps running (DT§4.5).
     pub fn close(&self) {
         self.live.close();
@@ -117,5 +145,55 @@ impl SessionHandle {
     /// Quitting: ends every turn and kills what it detached (T38.2).
     pub fn end(&self) {
         self.live.end();
+    }
+}
+
+/// A terminal pane's shell (T51.4): the user's own terminal, so bytes in
+/// and bytes out, which SwiftTerm interprets; nothing here reaches the
+/// session's events. Dropping the last reference closes it.
+#[derive(uniffi::Object)]
+pub struct TerminalHandle {
+    term: Terminal,
+}
+
+impl TerminalHandle {
+    pub(crate) fn new(term: Terminal) -> Arc<Self> {
+        Arc::new(Self { term })
+    }
+}
+
+#[uniffi::export]
+impl TerminalHandle {
+    /// Keys and pastes, as the terminal view encodes them.
+    pub fn write(&self, bytes: Vec<u8>) -> Result<(), AppError> {
+        Ok(self.term.write(&bytes)?)
+    }
+
+    /// The pane's new size in cells.
+    pub fn resize(&self, cols: u16, rows: u16) -> Result<(), AppError> {
+        Ok(self.term.resize(cols, rows)?)
+    }
+
+    /// The next bytes the shell wrote; `None` once it exited and drained.
+    pub async fn next_output(self: Arc<Self>) -> Option<Vec<u8>> {
+        on_runtime(async move { self.term.next_output().await })
+            .await
+            .ok()
+            .flatten()
+    }
+
+    /// The shell's exit code, once it exited.
+    pub fn exit_status(&self) -> Option<u32> {
+        self.term.exit_status()
+    }
+
+    /// A job other than the shell holds the foreground, so closing asks first.
+    pub fn is_busy(&self) -> bool {
+        self.term.is_busy()
+    }
+
+    /// Hangs up the shell and kills its process groups.
+    pub fn close(&self) {
+        self.term.close();
     }
 }

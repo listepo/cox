@@ -10,8 +10,14 @@ use std::sync::{Arc, OnceLock};
 
 use cox_app::WorkspaceError;
 use cox_app::app::{App as Owner, AppError as OwnerError};
+use cox_app::best_of::{BestOfId, BestOfRequest, CandidateView, Picked};
 use cox_app::onboarding::CheckRow;
-use cox_app::{Activity, Holder, InboxItem, ModelChoice, Project, SearchHit, SessionEntry};
+use cox_app::remote::RemoteError;
+use cox_app::terminal::TerminalError;
+use cox_app::{
+    Activity, AgentChoice, DaySummary, Holder, InboxItem, ModelChoice, Project, SearchHit,
+    SessionEntry,
+};
 use cox_app::{RuleKind, SessionGrant, SettingsView};
 use cox_protocol::ids::SessionId;
 use cox_protocol::traits::WorktreeInfo;
@@ -19,12 +25,14 @@ use tokio::runtime::Runtime;
 use tokio_util::task::AbortOnDropHandle;
 
 pub mod host;
+pub mod remote;
 pub mod session;
 pub mod types;
 
 pub use host::AppHost;
-pub use session::SessionHandle;
-pub use types::OpenRequest;
+pub use remote::{RemoteHandle, RemoteSessionHandle};
+pub use session::{SessionHandle, TerminalHandle};
+pub use types::{BestOfLaunch, BrowserFailure, OpenRequest};
 
 uniffi::setup_scaffolding!();
 
@@ -62,6 +70,21 @@ impl From<OwnerError> for AppError {
 impl From<WorkspaceError> for AppError {
     fn from(e: WorkspaceError) -> Self {
         OwnerError::from(e).into()
+    }
+}
+
+impl From<TerminalError> for AppError {
+    fn from(e: TerminalError) -> Self {
+        OwnerError::from(e).into()
+    }
+}
+
+/// T52.20: a remote failure is shown as the session's own would be.
+impl From<RemoteError> for AppError {
+    fn from(e: RemoteError) -> Self {
+        Self::Session {
+            message: e.to_string(),
+        }
     }
 }
 
@@ -111,6 +134,13 @@ pub fn review_message(comments: Vec<cox_app::review::LineComment>) -> Option<Str
     cox_app::review::message(&comments)
 }
 
+/// T51.10: the browser pane's typed address as the URL to load, or `None`
+/// when it is not an `http`/`https` page; `browser_open`'s rule.
+#[uniffi::export]
+pub fn web_address(text: String) -> Option<String> {
+    cox_app::browser::web_address(&text)
+}
+
 /// One per process: the workspace, the inbox across sessions, the host.
 #[derive(uniffi::Object)]
 pub struct App {
@@ -136,6 +166,11 @@ impl App {
             .owner
             .workspace()
             .sessions(Path::new(&project), i64::from(limit))?)
+    }
+
+    /// The menu bar's "Today" footer (T51.12).
+    pub fn today(&self) -> Result<DaySummary, AppError> {
+        Ok(self.owner.workspace().today()?)
     }
 
     pub fn search(&self, query: String, limit: u32) -> Result<Vec<SearchHit>, AppError> {
@@ -259,6 +294,53 @@ impl App {
         Ok(on_runtime(async move { self.owner.checklist(Path::new(&cwd)) }).await??)
     }
 
+    /// The agents a new session in `cwd` can be driven by, cox first, each
+    /// with why it cannot start (T52.7); it loads the granted plugins, so it
+    /// runs off the caller's thread.
+    pub async fn agents(self: Arc<Self>, cwd: String) -> Result<Vec<AgentChoice>, AppError> {
+        Ok(on_runtime(async move { self.owner.agents(Path::new(&cwd)) }).await??)
+    }
+
+    /// A remote host's workspace over the person's own ssh (T52.20).
+    pub async fn connect_remote(
+        self: Arc<Self>,
+        host: String,
+    ) -> Result<Arc<RemoteHandle>, AppError> {
+        Ok(RemoteHandle::new(
+            on_runtime(async move { self.owner.connect_remote(&host).await }).await??,
+        ))
+    }
+
+    /// Best of n (T52.9): one worktree and one session per candidate, each
+    /// sent the same prompt; a candidate that cannot start is listed with
+    /// why and the others run.
+    pub async fn best_of(
+        self: Arc<Self>,
+        request: BestOfRequest,
+        theme: String,
+    ) -> Result<BestOfLaunch, AppError> {
+        Ok(BestOfLaunch::from(
+            on_runtime(async move { self.owner.best_of(request, theme).await }).await??,
+        ))
+    }
+
+    /// Group `id`'s compare view (T52.10): one column per candidate. It
+    /// runs `git diff` per worktree, so it runs off the caller's thread.
+    pub async fn compare(self: Arc<Self>, id: BestOfId) -> Result<Vec<CandidateView>, AppError> {
+        Ok(on_runtime(async move { self.owner.compare(&id).await }).await??)
+    }
+
+    /// Keeps candidate `keep` of group `id` and prunes the others (T52.10);
+    /// `discard` is the second confirmation for worktrees with changes.
+    pub async fn pick(
+        self: Arc<Self>,
+        id: BestOfId,
+        keep: u32,
+        discard: bool,
+    ) -> Result<Picked, AppError> {
+        Ok(on_runtime(async move { self.owner.pick(&id, keep, discard).await }).await??)
+    }
+
     pub async fn open(
         self: Arc<Self>,
         request: OpenRequest,
@@ -266,7 +348,12 @@ impl App {
         Ok(SessionHandle::new(
             on_runtime(async move {
                 self.owner
-                    .open(request.cwd.into(), request.resume, request.theme)
+                    .open_as(
+                        request.cwd.into(),
+                        request.resume,
+                        request.agent,
+                        request.theme,
+                    )
                     .await
             })
             .await??,
