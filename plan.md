@@ -50,11 +50,11 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T56.8 | todo | P3 | 3 | 0% | |
 | T56.9 | todo | P3 | 1 | 0% | |
 | T56.10 | todo | P3 | 2 | 0% | |
-| T57.1 | todo | P1 | 2 | 0% | |
+| T57.1 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T57.4 | todo | P1 | 4 | 0% | |
 | T57.5 | todo | P1 | 4 | 0% | |
 | T57.6 | todo | P2 | 3 | 0% | |
-| T57.7 | todo | P1 | 2 | 0% | |
+| T57.7 | in progress | P1 | 2 | 0% | Claude Code / opus-5.5 |
 | T57.8 | todo | P1 | 5 | 0% | |
 | T57.9 | todo | P1 | 2 | 0% | |
 | T57.10 | todo | P2 | 2 | 0% | |
