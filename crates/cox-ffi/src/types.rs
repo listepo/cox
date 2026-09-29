@@ -20,6 +20,7 @@ use cox_app::best_of::{
 use cox_app::diffmodel::{DiffHunk, DiffLine, DiffLineKind, DiffModel, WordRange};
 use cox_app::doc::{Block as DocBlock, StyledDoc, StyledSpan, TextKind, TextLine};
 use cox_app::onboarding::{CheckId, CheckRow, CheckStatus};
+use cox_app::patch::TaskState;
 use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState};
 use cox_app::review::LineComment;
 use cox_app::{
@@ -357,6 +358,7 @@ pub enum BlockKind {
         done: bool,
         cost_usd: f64,
         exit_code: Option<i32>,
+        state: TaskState,
         kind: TaskKind,
     },
     Compaction {
@@ -388,6 +390,13 @@ pub enum BlockKind {
 pub enum ToolState {
     Running,
     Done,
+    Failed,
+}
+
+#[uniffi::remote(Enum)]
+pub enum TaskState {
+    Running,
+    Succeeded,
     Failed,
 }
 

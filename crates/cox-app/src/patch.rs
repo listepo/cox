@@ -115,6 +115,9 @@ pub enum BlockKind {
         done: bool,
         cost_usd: f64,
         exit_code: Option<i32>,
+        /// Read by the Tasks tab and the task card, so neither reads
+        /// `exit_code` itself (T58.4.23).
+        state: TaskState,
         /// Which the Tasks tab labels it; a click opens a transcript or an
         /// output (T37.29.6).
         kind: TaskKind,
@@ -154,6 +157,26 @@ pub enum ToolState {
     Running,
     Done,
     Failed,
+}
+
+/// Where a task stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskState {
+    Running,
+    Succeeded,
+    Failed,
+}
+
+impl TaskState {
+    /// A finished task: no exit code (a subagent, which has none) is a
+    /// success, as is `0`.
+    pub fn ended(exit_code: Option<i32>) -> Self {
+        match exit_code {
+            None | Some(0) => Self::Succeeded,
+            Some(_) => Self::Failed,
+        }
+    }
 }
 
 /// One change to the block list, keyed by id so a UI's identity is stable
