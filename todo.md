@@ -28,9 +28,6 @@
 - T37.33. Performance budget suite
 - T39.7. Optional: live check against the real Gemini endpoint (needs the creator's key)
 - T43.6. Bench the map on and off
-- T51.6. Terminal pane in the session window (mockup 24)
-- T51.10. Browser preview pane (mockup 25)
-- T52.8. CoxUI and app: agent picker, ACP banner, Agents list (mockup 27)
 - T52.17. Plugin panels, status segments, overlays and commands in the app
 - T53.5. Freeze ABI `api = 1`
 - T53.6. `cox-plugin-api` ready for crates.io

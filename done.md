@@ -8707,3 +8707,45 @@ Deviations: none.
 Check (2026-09-29): `swift test --package-path desktop/macos/Packages/CoxPlatform` 30 passed, including action → `Intent`/route mapping and titles/options tests. Commit 0f085e80.
 
 Not done: screen 23 not checked — needs notification permission for io.github.listepo.cox (system permission left unchanged).
+
+#### T51.6 Terminal pane in the session window (mockup 24)
+
+Depends: T51.5 · Size: ~150 · Files: CoxUI `TerminalPaneChrome` organism (header with shell, branch, tabs, `+`), `desktop/macos/App` session scene wiring, CoxModel `SessionStore` terminal state
+Goal: mockup 24: the pane under the transcript column, toggled by ⌃\` (added to the DT§5.5 key table), header "zsh — <branch>", `+` opens another terminal of the same session; closing the session window closes its terminals (asking first while one runs a foreground job); the pane height is UI-only state.
+Check: CoxUI snapshots of the pane (one and two tabs, light and dark); `npm run diff` of the app screenshot against 24-terminal-pane-m2 leaves no unexplained layout or type region; a CoxModel test that closing the session closes its handles; swiftlint strict and swift-format clean.
+Status: done 2026-09-29
+Result: the terminal pane as in the card; round-4 fixes (b3f905e1): the well is painted once (SwiftTerm background clear), rows at 18 pt through `TerminalStyle.lineHeight` → SwiftTerm `lineSpacing`, the 250 pt default sizes the well as mockup 24's `.term`.
+
+Deviations: none beyond the fixes.
+
+Check: App screenshot on the scripted provider (`read-and-reply.toml`), window 1440×900, `screencapture -l`, `npm run diff` threshold 0.3 crop 80,80,2880,1800 (verify round 4, 2026-09-29); swiftlint --strict and swift format lint --strict clean on changed files; `just desktop-app` builds; vs 24-terminal-pane-m2 3.95% (4.77% before the fix); remaining regions: shell content, well colour (token `surface.terminal` vs the mockup's opaque `#15161a`), pane ~10 pt higher (column ends a pane gap above the window bottom; solid mockups draw flush), padding 12/10 vs 14/10, 11.5 pt vs 12 px text; CoxPlatform `TerminalPaneTests` 6/6 (new `theStylesLineHeightSetsTheRowPitch`), CoxUI `TerminalPaneChromeTests` pass.
+
+Not done: typing into the terminal (not focusable through AX) and the worktree branch title in the header (covered by CoxUI snapshots) not exercised live. Open for the creator: well colour token vs mockup; mockup 24 has no composer above the terminal, the app keeps it.
+
+#### T51.10 Browser preview pane (mockup 25)
+
+Depends: T51.9 · Size: ~150 · Files: CoxUI `BrowserPaneChrome` organism (back, lock, address, reload), `desktop/macos/App` session scene wiring, CoxModel pane state
+Goal: mockup 25: the pane beside the transcript, showing the same `WebPage` the agent drives; the user can type an address (the same `http`/`https` rule, checked in Rust through the open intent) and reload; the agent's actions appear as ordinary tool cards; a toggle in the View menu and the palette.
+Check: CoxUI snapshots of the pane chrome (idle, loading, `https` lock); `npm run diff` against 25-browser-preview-m2; swiftlint strict and swift-format clean.
+Status: done 2026-09-29
+Result: the browser preview pane as in the card; round-4 fix (cefab44b): browser and inspector exclude each other as mockup 25 draws it (with the inspector open the browser pushed Stop and the inspector button off the toolbar), and the pane is `maxWidth: paneWidth` so it narrows at the 1100 pt minimum window.
+
+Deviations: none beyond the fix.
+
+Check: App screenshot on the scripted provider (`read-and-reply.toml`), window 1440×900, `screencapture -l`, `npm run diff` threshold 0.3 crop 80,80,2880,1800 (verify round 4, 2026-09-29); swiftlint --strict and swift format lint --strict clean on changed files; `just desktop-app` builds; vs 25-browser-preview-m2 2.00%; remaining regions: the mockup's agent highlight overlay on Pay, no lock for `http://localhost`, Stop and cost only during a running turn, content.
+
+Not done: at 1100 pt with the browser open the composer model chip truncates ("Sonn…· high") — out of scope.
+
+#### T52.8 CoxUI and app: agent picker, ACP banner, Agents list (mockup 27)
+
+Depends: T52.7 · Size: ~170 · Files: CoxUI new-session sheet and `AgentsList` organism, CoxUI transcript banner, `desktop/macos/App` wiring
+Goal: mockup 27: New session offers the agent; an external session's transcript opens with the "driven by <agent> over the Agent Client Protocol" banner, its toolbar model chip reads "<agent> · ACP" and cost "—"; the sidebar row shows the agent; the inspector's Info tab lists the agents with their launch line and availability.
+Check: CoxUI snapshots of the picker, banner and Agents list; `npm run diff` against 27-external-agents-acp-m3; swiftlint strict and swift-format clean.
+Status: done 2026-09-29
+Result: external ACP agents as in the card; round-4 fixes: the banner bolds the agent name (`NoticeRow` takes an `AttributedString`, the name never parsed as Markdown; 4 `acpBanner` snapshots re-recorded, 281a6814) and its top inset is 16 (mockup 6 + 10, cefab44b).
+
+Deviations: none beyond the fixes.
+
+Check: App screenshot on the scripted provider (`read-and-reply.toml`), window 1440×900, `screencapture -l`, `npm run diff` threshold 0.3 crop 80,80,2880,1800 (verify round 4, 2026-09-29); swiftlint --strict and swift format lint --strict clean on changed files; `just desktop-app` builds; vs 27-external-agents-acp-m3 2.74%; picker lists cox, Claude Agent, Codex; the session opens with the banner, toolbar "Claude Agent · ACP", cost "—", the fake agent's reply renders, Info lists the agents; remaining regions: the inspector Agents list and sidebar label follow the existing CoxUI design and snapshots, content, composer counters; CoxUI `ExternalAgentTests`, `TurnMoleculeTests` pass.
+
+Not done: banner icon is SF `powerplug` (mockup draws a vertical plug; `powerplug.portrait` would be closer, left because `NoticeRow` is shared). Out of scope: in an ACP session the composer model chip reads "claude · ACP · high" (config name and an effort that does not apply).

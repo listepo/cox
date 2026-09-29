@@ -34,9 +34,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.33 | todo | P1 | 3 | 0% | |
 | T39.7 | todo | P3 | 2 | 0% | |
 | T43.6 | todo | P3 | 3 | 0% | |
-| T51.6 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T51.10 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T52.8 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T52.17 | todo | P3 | 3 | 0% | |
 | T53.5 | todo | P3 | 3 | 0% | |
 | T53.6 | todo | P3 | 2 | 0% | |
@@ -1362,18 +1359,6 @@ Every card in this phase keeps the P37 rules (business logic in `cox-app`, `cox-
 - a Swift card that draws an M2 screen compares it with its mockup by `npm run diff` in `desktop/design`;
 - a new dependency is named in its card and gets its §1.1 and `toolchain.md` rows in the same commit.
 
-#### T51.6 Terminal pane in the session window (mockup 24)
-
-Depends: T51.5 · Size: ~150 · Files: CoxUI `TerminalPaneChrome` organism (header with shell, branch, tabs, `+`), `desktop/macos/App` session scene wiring, CoxModel `SessionStore` terminal state
-Goal: mockup 24: the pane under the transcript column, toggled by ⌃\` (added to the DT§5.5 key table), header "zsh — <branch>", `+` opens another terminal of the same session; closing the session window closes its terminals (asking first while one runs a foreground job); the pane height is UI-only state.
-Check: CoxUI snapshots of the pane (one and two tabs, light and dark); `npm run diff` of the app screenshot against 24-terminal-pane-m2 leaves no unexplained layout or type region; a CoxModel test that closing the session closes its handles; swiftlint strict and swift-format clean.
-
-#### T51.10 Browser preview pane (mockup 25)
-
-Depends: T51.9 · Size: ~150 · Files: CoxUI `BrowserPaneChrome` organism (back, lock, address, reload), `desktop/macos/App` session scene wiring, CoxModel pane state
-Goal: mockup 25: the pane beside the transcript, showing the same `WebPage` the agent drives; the user can type an address (the same `http`/`https` rule, checked in Rust through the open intent) and reload; the agent's actions appear as ordinary tool cards; a toggle in the View menu and the palette.
-Check: CoxUI snapshots of the pane chrome (idle, loading, `https` lock); `npm run diff` against 25-browser-preview-m2; swiftlint strict and swift-format clean.
-
 ### P52 — Desktop M3 (goal: beyond a single agent — Claude Agent, Codex, Gemini CLI and Cursor sessions in the same sidebar over ACP, best-of-n across models in worktrees, plugin panels drawn natively from the `Widget` tree, and remote sessions over SSH through `cox app-server`; DT§3.3)
 
 Rationale in §6 A121. Design: DT§3.3, §4.4 (patch types are serde so the same stream can go over a socket), §4.7 G9, §10; PL§8 (`Widget` tree); EA (external agents, P35) and `crates/cox-acp` (`client.rs`, `terminal.rs`, T35.3/T35.11) and `crates/cox-session/src/external_agents.rs` (T35.13). Approved look: mockup 27-external-agents-acp-m3. Starts after P51.
@@ -1383,12 +1368,6 @@ Every card keeps the P51 rules, and:
 - an external agent's usage is its own billing: no `usage` row is invented for it, and the cost pill shows "—" as the mockup does;
 - a remote session never sends API keys or the Keychain's secrets over the wire and never forwards the ssh agent;
 - plugin widgets reach the screen only through `cox_sanitize::sanitize` and PL§8's limits, as in the TUI.
-
-#### T52.8 CoxUI and app: agent picker, ACP banner, Agents list (mockup 27)
-
-Depends: T52.7 · Size: ~170 · Files: CoxUI new-session sheet and `AgentsList` organism, CoxUI transcript banner, `desktop/macos/App` wiring
-Goal: mockup 27: New session offers the agent; an external session's transcript opens with the "driven by <agent> over the Agent Client Protocol" banner, its toolbar model chip reads "<agent> · ACP" and cost "—"; the sidebar row shows the agent; the inspector's Info tab lists the agents with their launch line and availability.
-Check: CoxUI snapshots of the picker, banner and Agents list; `npm run diff` against 27-external-agents-acp-m3; swiftlint strict and swift-format clean.
 
 #### T52.17 Plugin panels, status segments, overlays and commands in the app
 
