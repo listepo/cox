@@ -26,8 +26,8 @@ use cox_app::{
     Activity, BrowserError, ChangedFile, Changes, Checkpoint, Completion, ConfigSource,
     ContextPart, CostRow, DaySummary, Dropped, FileChange, Icon, InboxItem, Info, Intent, Layer,
     Linked, McpLogin, McpServer, McpStatus, MeterRow, MeterText, ModelChoice, Need, PageText,
-    Project, SearchHit, SessionEntry, Setting, SettingKind, SettingsView, Tally, TaskKind,
-    TaskTarget, TurnCosts, TurnUsage, UsageView,
+    PaletteHit, PaletteItem, PaletteKind, Project, SearchHit, SessionEntry, Setting, SettingKind,
+    SettingsView, Tally, TaskKind, TaskTarget, TurnCosts, TurnUsage, UsageView,
 };
 use cox_app::{KeyValueRow, PluginKey, PluginSlot, SpanView, WidgetView};
 use cox_app::{PermissionRule, RuleKind, SessionGrant};
@@ -894,6 +894,28 @@ pub enum SettingKind {
 pub struct Completion {
     pub insert: String,
     pub detail: String,
+}
+
+#[uniffi::remote(Enum)]
+pub enum PaletteKind {
+    Action,
+    Session,
+    Command,
+    File,
+}
+
+#[uniffi::remote(Record)]
+pub struct PaletteItem {
+    pub kind: PaletteKind,
+    pub id: String,
+    pub title: String,
+    pub detail: String,
+}
+
+#[uniffi::remote(Record)]
+pub struct PaletteHit {
+    pub item: PaletteItem,
+    pub matched: Vec<u32>,
 }
 
 #[uniffi::remote(Record)]

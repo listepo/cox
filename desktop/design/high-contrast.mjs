@@ -62,7 +62,7 @@ const RULES = [
   ...PAGES.map((p) => ({ fg: [`tile.settings.${p}.glyph`], bg: ['top', 'bottom'].map((e) => `tile.settings.${p}.${e}`), min: GRAPHIC })),
 ];
 // Tints and depth with nothing to read on them; A89 sets no ratio, so they keep their value.
-const KEPT = ['fill.secondary', 'status.successSoft', 'shadow.tint', 'glass.highlight'];
+const KEPT = ['fill.secondary', 'status.successSoft', 'shadow.tint', 'shadow.scrim', 'glass.highlight'];
 
 const fail = (msg) => {
   throw new Error(`high contrast: ${msg}`);

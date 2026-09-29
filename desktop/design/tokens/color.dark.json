@@ -660,6 +660,20 @@
           "hex": "#000000"
         },
         "$description": "Shadow colour; navy keeps glass depth cool, not grey"
+      },
+      "scrim": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "hex": "#000000",
+          "alpha": 0.18
+        },
+        "$description": "Dims the window under the command palette: the mockup's .scrim (screen 12)"
       }
     },
     "tile": {

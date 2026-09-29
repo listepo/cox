@@ -583,6 +583,18 @@ impl LiveSession {
         self.completer.complete(token, limit)
     }
 
+    /// The command palette's rows: `items` (the window's actions and
+    /// sessions) and this session's `/` commands and `@` files, ranked for
+    /// `query`, at most `per_kind` of each kind (T37.44.13).
+    pub fn palette(
+        &self,
+        query: &str,
+        items: Vec<crate::PaletteItem>,
+        per_kind: usize,
+    ) -> Vec<crate::PaletteHit> {
+        self.completer.palette(query, items, per_kind)
+    }
+
     /// This session's earlier prompts, newest first, for ↑ in an empty
     /// composer (T37.24.6).
     pub fn history(&self, limit: usize) -> Result<Vec<String>, AppError> {

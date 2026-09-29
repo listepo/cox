@@ -9,7 +9,8 @@ use cox_app::TerminalHandle as Terminal;
 use cox_app::diffmodel::DiffModel;
 use cox_app::live::LiveSession;
 use cox_app::{
-    Block, Changes, Completion, Info, Intent, PluginKey, TaskTarget, TimelinePatch, TurnCosts,
+    Block, Changes, Completion, Info, Intent, PaletteHit, PaletteItem, PluginKey, TaskTarget,
+    TimelinePatch, TurnCosts,
 };
 use cox_protocol::ids::{ArchiveId, SessionId, TaskId};
 use cox_protocol::types::TodoItem;
@@ -102,6 +103,13 @@ impl SessionHandle {
     pub fn complete(&self, token: String, limit: u32) -> Vec<Completion> {
         self.live
             .complete(&token, usize::try_from(limit).unwrap_or(usize::MAX))
+    }
+
+    /// The command palette's rows for `query`: `items` plus this session's
+    /// `/` commands and `@` files, at most `limit` of each kind (T37.44.13).
+    pub fn palette(&self, query: String, items: Vec<PaletteItem>, limit: u32) -> Vec<PaletteHit> {
+        self.live
+            .palette(&query, items, usize::try_from(limit).unwrap_or(usize::MAX))
     }
 
     /// This session's earlier prompts, newest first, for ↑ in an empty

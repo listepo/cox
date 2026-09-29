@@ -107,6 +107,10 @@ public enum Size {
     public static let composerTextMinHeight: CGFloat = 46
     /// The composer's completion list: the mockup's .pop, 470px wide
     public static let completionWidth: CGFloat = 470
+    /// The command palette: the mockup's .palette, 640px wide (screen 12)
+    public static let paletteWidth: CGFloat = 640
+    /// A palette row's icon well: the mockup's .palette .ic2, 26px
+    public static let paletteIcon: CGFloat = 26
     /// Review's file list: the mockup's 260px column (screen 08)
     public static let reviewFileListWidth: CGFloat = 260
 }
@@ -122,6 +126,8 @@ public extension FontToken {
     static let titleGroup = FontToken(size: 12, weight: .semibold, design: .default, lineHeight: 1.45, tracking: 0)
     /// Session row title in the sidebar: the mockup's .row .t, 13px medium
     static let titleSession = FontToken(size: 13, weight: .medium, design: .default, lineHeight: 1.45, tracking: 0)
+    /// The command palette's query: the mockup's .palette .q, 18px regular (screen 12)
+    static let titlePalette = FontToken(size: 18, weight: .regular, design: .default, lineHeight: 1.3, tracking: 0)
     /// Default UI text
     static let body = FontToken(size: 13, weight: .regular, design: .default, lineHeight: 1.45, tracking: 0)
     /// Assistant and user messages

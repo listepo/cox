@@ -64,6 +64,12 @@ final class RemoteSession: SessionClient {
   /// none.
   func complete(_ token: String, limit: UInt32) -> [CoxClient.Completion] { [] }
 
+  func palette(
+    _ query: String, items: [CoxClient.PaletteItem], limit: UInt32
+  ) -> [CoxClient.PaletteHit] {
+    CoxClient.PaletteHit.ranked(query, items, limit: limit)
+  }
+
   func history(limit: UInt32) throws -> [String] { [] }
 
   func changes() async throws -> CoxClient.Changes {

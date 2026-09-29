@@ -55,6 +55,8 @@
   --size-sendButton: 30px;
   --size-composerTextMinHeight: 46px;
   --size-completionWidth: 470px;
+  --size-paletteWidth: 640px;
+  --size-paletteIcon: 26px;
   --size-reviewFileListWidth: 260px;
   --c-surface-window: rgba(255, 255, 255, 1);
   --c-surface-sidebar: rgba(242, 242, 246, 0.86);
@@ -104,6 +106,7 @@
   --c-context-instructions: rgba(95, 200, 255, 1);
   --c-context-history: rgba(10, 108, 240, 1);
   --c-shadow-tint: rgba(25, 30, 80, 1);
+  --c-shadow-scrim: rgba(0, 0, 0, 0.18);
   --c-tile-neutral-top: rgba(255, 255, 255, 1);
   --c-tile-neutral-bottom: rgba(228, 232, 243, 1);
   --c-tile-neutral-glyph: rgba(61, 68, 102, 1);
@@ -205,6 +208,7 @@
   --c-context-instructions: rgba(95, 200, 255, 1);
   --c-context-history: rgba(59, 155, 255, 1);
   --c-shadow-tint: rgba(0, 0, 0, 1);
+  --c-shadow-scrim: rgba(0, 0, 0, 0.18);
   --c-tile-neutral-top: rgba(255, 255, 255, 1);
   --c-tile-neutral-bottom: rgba(228, 232, 243, 1);
   --c-tile-neutral-glyph: rgba(61, 68, 102, 1);
@@ -306,6 +310,7 @@
   --c-context-instructions: rgba(70, 148, 189, 1);
   --c-context-history: rgba(10, 108, 240, 1);
   --c-shadow-tint: rgba(25, 30, 80, 1);
+  --c-shadow-scrim: rgba(0, 0, 0, 0.18);
   --c-tile-neutral-top: rgba(255, 255, 255, 1);
   --c-tile-neutral-bottom: rgba(228, 232, 243, 1);
   --c-tile-neutral-glyph: rgba(61, 68, 102, 1);
@@ -407,6 +412,7 @@
   --c-context-instructions: rgba(95, 200, 255, 1);
   --c-context-history: rgba(59, 155, 255, 1);
   --c-shadow-tint: rgba(0, 0, 0, 1);
+  --c-shadow-scrim: rgba(0, 0, 0, 0.18);
   --c-tile-neutral-top: rgba(255, 255, 255, 1);
   --c-tile-neutral-bottom: rgba(228, 232, 243, 1);
   --c-tile-neutral-glyph: rgba(61, 68, 102, 1);

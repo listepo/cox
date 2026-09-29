@@ -146,6 +146,18 @@ public final class SidebarStore {
     }
   }
 
+  /// The listed sessions as command-palette rows (T37.44.13): each title over its project and
+  /// how long ago it last wrote, as the sidebar says it.
+  public var paletteItems: [PaletteItem] {
+    let ages = self.ages
+    return listed.map { listed in
+      let ago = listed.updated.map { ages.localizedString(for: $0, relativeTo: readAt) }
+      return PaletteItem(
+        kind: .session, id: listed.session.id, title: listed.session.name,
+        detail: [listed.project.name, ago].compactMap { $0 }.joined(separator: " · "))
+    }
+  }
+
   /// The inbox's items as the core sent them; the menu bar reads them (T51.14).
   public var inboxItems: [InboxItem] { inbox?.items ?? [] }
 

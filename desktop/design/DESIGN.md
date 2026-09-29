@@ -123,6 +123,7 @@ Name by role, never by hue. A view asks for `text.secondary`, not "grey".
 | data | `meter.sent`, `meter.received`, `context.system/tools/instructions/history` | Token meter and context bar |
 | tile | `tile.<kind>.top/bottom/glyph` for `neutral`, `edit`, `shell`, `search`, `write`; `tile.settings.<page>.top/bottom/glyph` per Settings page | Tool icon tiles; Settings page tiles (A96) |
 | shadow | `shadow.tint` | The colour every elevation layer uses |
+| shadow | `shadow.scrim` | The dim laid over a window under the command palette (mockup 12's `.scrim`) |
 
 Mode colours: Ask uses `text.primary` on the selected segment, Plan uses `status.plan`, Auto uses
 `accent`, Bypass fills the segment with `status.danger` and draws a 3 pt `status.danger` strip under
@@ -140,6 +141,7 @@ tok/s, timers) are always tabular (`.monospacedDigit()`).
 | `font.title.page` | Settings page title (`.set-main h1`) | 20 / bold |
 | `font.title.hero` | First-run window title (screen 21); no view draws it yet | 26 / bold |
 | `font.title.group` | Settings group box title (`.gtitle`), sentence case | 12 / semibold |
+| `font.title.palette` | The command palette's query (`.palette .q`) | 18 / regular |
 | `font.title.session` | Session row title in the sidebar (`.row .t`) | 13 / medium |
 | `font.body` | Default UI text | 13 / regular |
 | `font.transcript` | Messages | 13.5 / regular, line height 1.55 |
@@ -175,7 +177,8 @@ tok/s, timers) are always tabular (`.monospacedDigit()`).
   gap between floating panes 8, capsule 32, button 28 / 24, icon tile 22, status dot 9 (halo 3, idle
   ring 1.5), count badge 16, hairline 0.5, quote bar 3; composer chip `chipHeight` 26, Send
   `sendButton` 30, the composer's text area at least `composerTextMinHeight` 46 with its insets,
-  completion list `completionWidth` 470, Review's file list `reviewFileListWidth` 260, and the
+  completion list `completionWidth` 470, the command palette `paletteWidth` 640 with its row
+  symbol well `paletteIcon` 26, Review's file list `reviewFileListWidth` 260, and the
   first-run window `windowSmallWidth` 980 (the mockup's `.window.small`), and a new session window
   `windowDefaultWidth` × `windowDefaultHeight` 1440 × 900 (the mockups' window, A126).
 
@@ -434,6 +437,7 @@ component.
 | `PluginPanel(items)` | the plugin `panel` slot above the composer (PL§8, T52.17): per shown panel, a header naming the plugin on `fill.primary` under a top hairline, `font.caption` in `text.secondary`, over its PluginWidgetView on `surface.window`, at most eight `font.monoCode` lines tall and scrolling past that. The app shows an `overlay` slot's tree in a sheet that Esc closes | — |
 | `BrowserPaneChrome(state:, send:, content:)` | the browser pane beside the transcript (mockup 25, T51.10): a `Size.toolbarHeight` bar with a back chevron in `text.secondary`; the address in a sunken `fill.primary` well (`font.caption`, `radius.m`) led by a `Spinner` while the page loads or a lock for `https`; and a reload icon capsule. Below, the `content` slot in a `radius.xl` well with a hairline rim, where the app puts WebKit's `WebView` over CoxPlatform's `BrowserController.page`. Return in the field reports what was typed; Rust checks it | web column of 25 |
 | `MenuBarPanel(state:, send:)` | the menu-bar extra's panel (mockup 26, T51.13), 360 pt wide: a "Needs you" `SectionHeader` over one row per waiting inbox item led by a waiting `StatusDot` — an approval shows its title over the command in `font.monoInline` with small primary Allow and secondary Deny buttons, a question its title over "asks: …" and opens its session on click; a "Running" section of rows led by a `Spinner`, the title over activity · time · cost in `font.footnote`, each opening its session; `Hairline` rules between sections; then "Today" with the day's figures, New session… ⌥⌘N and Open cox ⌘O. With nothing waiting or running it says "Nothing needs you". Allow for the session and editing a command stay in the app (DT§5.6). No glass of its own: it sits on the extra's window | `.popover` of 26 |
+| `CommandPalette(state:, send:)`, `.commandPalette(_:send:)` | ⌘K's palette (mockup 12, DT§5.5, T37.44.13): a `magnifyingglass` and the query in `font.title.palette` with an `esc` KeyCap over a Hairline, then a SectionHeader per group (Actions, Sessions, Commands & files) over its rows — the symbol (or `/` glyph) in a `size.paletteIcon` `fill.secondary` well at `radius.s`, the title in `font.transcript` with the characters the query matched bold, the keys or `project · when` in footnote `text.secondary` trailing; the selected row `text.onAccent` on an `accent` face at `radius.l`, with no well; "No matches" in footnote when nothing is left. `size.paletteWidth` wide on readable `surface.popover` glass at `radius.pane`, hairline, e4. The modifier lays it two toolbar heights down over a `shadow.scrim` that a click dismisses. Rows, their order and the matched characters are `cox_app::palette::rank`'s | `.palette`, `.scrim` |
 
 ### 6.5 The glass main screen, decomposed
 

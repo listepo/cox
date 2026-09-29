@@ -676,7 +676,13 @@ turn in the list. Per-hunk revert is M2.
 ### 5.5 Command palette and keyboard
 
 ⌘K opens one palette over actions, sessions (fuzzy on title), files in the
-current project and slash commands. The whole app is keyboard-drivable:
+current project and slash commands (mockup 12, T37.44.13). `cox_app::palette::rank`
+orders it: actions, then sessions, then commands and files, best match first
+within each group and at most five of each, with the matched characters for the
+row to draw bold; commands and files join only once something is typed. ⏎ runs
+the selected row: an action runs, a session shows in the window, a command or
+file lands at the end of the composer's draft. Esc or a click on the scrim
+closes it. The whole app is keyboard-drivable:
 
 | Key | Action |
 | --- | --- |
