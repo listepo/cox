@@ -12,6 +12,8 @@ public struct PluginSpan: Equatable, Sendable {
   /// PL§8's `StyleToken`: the TUI theme's roles a plugin may name. The permission-mode tints are
   /// not among them, so a plugin cannot imitate the composer's trust signal.
   public enum Role: CaseIterable, Sendable {
+    // The token's own name, as CoxClient's `StyleToken` spells it.
+    // swiftlint:disable:next identifier_name
     case text, dim, accent, user, agent, tool, ok, warn, error
     case diffAdd, diffDel, diffHunk, border, selection
   }
