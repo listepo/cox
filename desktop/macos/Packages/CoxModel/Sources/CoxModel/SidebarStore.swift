@@ -137,10 +137,11 @@ public final class SidebarStore {
 
   /// Every session the list read, with its project and its last write; Spotlight mirrors it
   /// (T51.16).
-  public var listed: [(session: SessionEntry, project: Project, updated: Date?)] {
+  public var listed: [ListedSession] {
     projects.flatMap { entry in
       entry.sessions.map {
-        (session: $0, project: entry.project, updated: ChangesTabState.date($0.updatedAt))
+        ListedSession(
+          session: $0, project: entry.project, updated: ChangesTabState.date($0.updatedAt))
       }
     }
   }
@@ -258,4 +259,11 @@ extension SessionEntry {
   /// What the toolbar and the sidebar call it: its title, or `Untitled session` until it has one.
   public var name: String { title ?? Self.untitled }
   public static let untitled = "Untitled session"
+}
+
+/// One row of `SidebarStore.listed`: a session, its project and its last write.
+public struct ListedSession: Sendable {
+  public let session: SessionEntry
+  public let project: Project
+  public let updated: Date?
 }

@@ -130,7 +130,8 @@ public final class FixtureBestOf: BestOfClient {
   private let dirty: Set<String>
 
   public init(_ columns: [CandidateView], dirty: Set<String> = []) {
-    (self.columns, self.dirty) = (Mutex(columns), dirty)
+    self.columns = Mutex(columns)
+    self.dirty = dirty
   }
 
   /// Replaces the columns, as a candidate's progress would.

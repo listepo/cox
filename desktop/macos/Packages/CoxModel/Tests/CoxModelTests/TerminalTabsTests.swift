@@ -19,7 +19,7 @@ private func emptyStore() -> SessionStore {
   store.closeTerminals()
   let clients = [first, second].compactMap { $0.client as? FixtureTerminal }
   #expect(clients.count == 2)
-  #expect(clients.allSatisfy(\.isClosed))
+  #expect(clients.allSatisfy { $0.isClosed })
   #expect(store.terminals.isEmpty)
   #expect(store.terminalSelection == nil)
 }

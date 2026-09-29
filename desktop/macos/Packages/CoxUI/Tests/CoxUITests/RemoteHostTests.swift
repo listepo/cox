@@ -34,6 +34,6 @@ import Testing
     }
     #expect(hosts.map(\.kind) == [.host(isConnected: true), .host(isConnected: false)])
     #expect(hosts[0].sessions.allSatisfy { !$0.isReadOnly })
-    #expect(hosts[1].sessions.allSatisfy(\.isReadOnly))
+    #expect(hosts[1].sessions.allSatisfy { $0.isReadOnly })
   }
 }
