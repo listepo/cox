@@ -143,6 +143,23 @@ extension Variant {
     #expect(kinds.map(\.radius) == [Radius.window, Radius.panel, Radius.pane, Radius.pane])
   }
 
+  /// T51.23: on glass the panes draw `glass.fill` as the token has it, rimmed by `glass.border`;
+  /// the window keeps its `surface.window` tint, and Solid keeps every plain surface.
+  @Test func panesOnGlassDrawTheGlassTokens() {
+    let panes = [ShellPaneKind.sidebar, .column, .inspector]
+    for material in [GlassMaterial.frosted, .glossy] {
+      let glass = Appearance(material: material)
+      #expect(panes.allSatisfy { $0.fill(glass) == Color(.glassFill) && $0.role(glass) == .tint })
+      #expect(ShellPaneKind.allCases.allSatisfy { $0.rim(glass) == Color(.glassBorder) })
+      #expect(ShellPaneKind.window.fill(glass) == Color(.surfaceWindow))
+      #expect(ShellPaneKind.window.role(glass) == .chrome)
+    }
+    let solid = Appearance(material: .solid)
+    #expect(ShellPaneKind.sidebar.fill(solid) == Color(.surfaceSidebar))
+    #expect(ShellPaneKind.inspector.fill(solid) == Color(.surfaceWindow))
+    #expect(ShellPaneKind.allCases.allSatisfy { $0.rim(solid) == Color(.separator) })
+  }
+
   @Test func inspectorTabsFollowTheDesignOrder() {
     #expect(InspectorTab.allCases.map(\.title) == ["Changes", "Plan", "Context", "Tasks", "Info"])
   }

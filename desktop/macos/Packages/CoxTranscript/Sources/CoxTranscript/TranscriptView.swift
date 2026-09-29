@@ -228,7 +228,8 @@ extension TranscriptStyle.Bubble {
       face: SurfaceColour.window.nsColor.withAlphaComponent(appearance.readableOpacity),
       sweep: appearance.sweepStops.map {
         TranscriptStyle.SweepStop(
-          color: .white.withAlphaComponent($0.opacity), location: $0.location)
+          color: SurfaceColour.specular.nsColor.withAlphaComponent($0.opacity),
+          location: $0.location)
       },
       shadows: ElevationToken.e2.layers(at: appearance).map {
         TranscriptStyle.Shadow(

@@ -222,6 +222,13 @@ white rims.
 | `glass.fill` | `#ffffff` at 0.34 | `#14141a` at 0.34 | glass: keeps `glassKeep` of its transparency (0.835) |
 | `glass.border` | `#ffffff` at 0.75 | `#ffffff` at 0.16 | a border: solid, at least 3:1 on every page surface |
 | `glass.highlight` | `#ffffff` at 0.95 | `#ffffff` at 0.22 | kept: depth, nothing to read on it |
+| `glass.specular` | `#ffffff` | `#ffffff` | kept: the sweep's light; Increase Contrast drops the sweep instead |
+
+On glass (Frosted, Glossy) the panes — sidebar, transcript column, inspector — draw `glass.fill`
+as the token has it, not scaled by the window opacity (the slider moves the window's tint under
+them), and every shell layer, the window's too, is rimmed by `glass.border`; in Solid they keep
+their plain `surface.*` and the `separator` hairline (T51.23). The specular sweep and streak are
+`glass.specular` at `material.*Specular` strength, in SwiftUI and in the transcript's AppKit bubble.
 
 In dark, lifted panes (e2 and up) draw `glass.highlight` as it is; controls (e1) draw it at
 `material.darkHighlight`'s share — none by default, as mockups 31 and 32 show (A109, §3.4).
@@ -236,7 +243,8 @@ the filter prompt 7.1:1, laid over opaque `surface.window` (§8).
   (`material`, `opacity`, `blur`, `depth`, `tint`), so they have a schema and provenance like any other
   setting.
 - Text-bearing surfaces — messages, code, diffs, terminal, popovers, the composer — never drop below
-  `material.readableFloor`. The transparency slider only moves the window and pane backgrounds.
+  `material.readableFloor`. The transparency slider only moves the window's background; the panes
+  over it keep `glass.fill` (T51.23).
 - Increase Contrast (A89, A100): no specular sweep, and every glass background — window, panes and
   readable surfaces — keeps `material.highContrast.glassKeep` (a quarter) of its transparency:
   `opacity' = 1 − (1 − opacity) × glassKeep`. `Appearance.effective` applies it; Reduce Transparency

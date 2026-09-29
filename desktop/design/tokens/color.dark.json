@@ -139,6 +139,19 @@
           "alpha": 0.22
         },
         "$description": "The 1 pt top-edge highlight of lifted glass panes (e2 and up) in dark; controls (e1) draw it at material.darkHighlight's share, none by default (A109; mockups 31, 32)"
+      },
+      "specular": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [
+            1,
+            1,
+            1
+          ],
+          "hex": "#ffffff"
+        },
+        "$description": "The light the specular sweep and streak lay on glass, at `material.*Specular` strength: the mockups' .glass .window:after"
       }
     },
     "fill": {

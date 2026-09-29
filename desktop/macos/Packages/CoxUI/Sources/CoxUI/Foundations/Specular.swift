@@ -21,7 +21,7 @@ private struct Specular<S: Shape>: ViewModifier {
   @EffectiveAppearance private var appearance
 
   func body(content: Content) -> some View {
-    // A background, not an overlay: a translucent white over the content would lighten it by
+    // A background, not an overlay: a translucent light over the content would lighten it by
     // up to `strength`, most at the top leading corner where each pane's first lines sit.
     content.background {
       if appearance.specular > 0, strength > 0 {
@@ -33,7 +33,7 @@ private struct Specular<S: Shape>: ViewModifier {
   private var sweep: LinearGradient {
     LinearGradient(
       stops: Appearance.sweep(strength).map {
-        .init(color: Color.white.opacity($0.opacity), location: $0.location)
+        .init(color: Color(.glassSpecular).opacity($0.opacity), location: $0.location)
       },
       startPoint: .topLeading,
       endPoint: .bottomTrailing
@@ -43,7 +43,7 @@ private struct Specular<S: Shape>: ViewModifier {
 
 extension Appearance {
   /// The mockup's 118° gradient at `strength`: a bright corner, a clear middle and a thin
-  /// streak, as white opacities by location. Shared with the transcript's AppKit bubble
+  /// streak, as opacities of `glass.specular` by location. Shared with the transcript's AppKit bubble
   /// (`sweepStops`), so both draw one sweep.
   static func sweep(_ strength: Double) -> [(opacity: Double, location: Double)] {
     [
