@@ -31,7 +31,6 @@
 - T39.7. Optional: live check against the real Gemini endpoint (needs the creator's key)
 - T43.6. Bench the map on and off
 - T51.23. Panes draw from `glass.fill` and `glass.border`
-- T52.17. Plugin panels, status segments, overlays and commands in the app
 - T52.23.1. Rust: plugin `tool:`/`item:` render path
 - T52.23.2. Swift: the tool card draws a plugin renderer
 - T53.5. Freeze ABI `api = 1`

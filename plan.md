@@ -32,12 +32,11 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.44.18 | todo | P3 | 1 | 0% | |
-| T37.44.19 | todo | P3 | 1 | 0% | |
+| T37.44.18 | in progress | P3 | 1 | 0% | Claude Code / opus-5.5 |
+| T37.44.19 | in progress | P3 | 1 | 0% | Claude Code / opus-5.5 |
 | T39.7 | todo | P3 | 2 | 0% | |
 | T43.6 | todo | P3 | 3 | 0% | |
-| T51.23 | todo | P3 | 2 | 0% | |
-| T52.17 | todo | P3 | 3 | 0% | |
+| T51.23 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
 | T52.23.1 | todo | P3 | 3 | 0% | |
 | T52.23.2 | todo | P3 | 2 | 0% | |
 | T53.5 | todo | P3 | 3 | 0% | |
@@ -1463,12 +1462,6 @@ Every card keeps the P51 rules, and:
 - an external agent's usage is its own billing: no `usage` row is invented for it, and the cost pill shows "—" as the mockup does;
 - a remote session never sends API keys or the Keychain's secrets over the wire and never forwards the ssh agent;
 - plugin widgets reach the screen only through `cox_sanitize::sanitize` and PL§8's limits, as in the TUI.
-
-#### T52.17 Plugin panels, status segments, overlays and commands in the app
-
-Depends: T52.16 · Size: ~150 · Files: `desktop/macos/App` session scene, CoxModel `SessionStore` plugin state, CoxUI toolbar status area
-Goal: a `panel` slot above the composer (≤ 8 rows, toggled by its command), `status.left`/`status.right` segments in the toolbar status area (dropped first when narrow), `overlay` as a sheet (Esc closes), `/<id>:<name>` in the palette. The `tool:`/`item:` renderer-widgets-inside-tool-cards part moves to T52.23 (A129): this card closes on the panel, status-segment, overlay and command parts only.
-Check: a CoxModel test that a slot patch updates only its slot; CoxUI snapshots of a panel and a status segment; `just desktop-app` builds.
 
 #### T52.23.1 Rust: plugin `tool:`/`item:` render path
 

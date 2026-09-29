@@ -8777,3 +8777,17 @@ Deviations: with no backend the notice is emitted for every policy (D7's "loud w
 Check (2026-09-29): card filters `no_backend_forces_on_request no_backend_emits_a_security_notice backend_present_keeps_the_configured_policy` 3 passed; `cargo nextest run -p cox-session -p cox-sandbox` 74 passed; after the merge `-p cox -p cox-session -p cox-ext` 298 passed, 2 skipped; clippy -D warnings and fmt clean. Commit 09857754.
 
 Not done: no test goes through `open_with_keys` with an injected `None` (the backend is detected inside `open`); the real binary was not run against a scratch `COX_HOME` (Seatbelt is present on macOS, so behaviour here is unchanged).
+
+#### T52.17 Plugin panels, status segments, overlays and commands in the app
+
+Depends: T52.16 · Size: ~150 · Files: `desktop/macos/App` session scene, CoxModel `SessionStore` plugin state, CoxUI toolbar status area
+Goal: a `panel` slot above the composer (≤ 8 rows, toggled by its command), `status.left`/`status.right` segments in the toolbar status area (dropped first when narrow), `overlay` as a sheet (Esc closes), `/<id>:<name>` in the palette. The `tool:`/`item:` renderer-widgets-inside-tool-cards part moves to T52.23 (A129): this card closes on the panel, status-segment, overlay and command parts only.
+Check: a CoxModel test that a slot patch updates only its slot; CoxUI snapshots of a panel and a status segment; `just desktop-app` builds.
+Status: done 2026-09-29
+Result: plugin panels, status segments, overlays and commands in the desktop as in the card; verify round 3 fix (454c0e6a): `LiveSession::plugin_area` was never called, so panels and overlays always laid out at 80×24 — the column's size in monoCode cells now goes through `SessionClient`/`SessionStore.pluginArea` (test `theColumnsAreaReachesTheSessionInCells`).
+
+Deviations: the `tool:`/`item:` renderers moved to T52.23.1/T52.23.2 (A129 (10)): cox-app has no `cox_render_item` path, ~250 lines across five places.
+
+Check (2026-09-29, verify round 3): CoxModel slot-patch test (a slot patch updates only its slot) and CoxUI panel and status-segment snapshots pass; `just desktop-app` builds; nextest 1897/1897, clippy, fmt, swiftlint --strict clean.
+
+Not done: the renderers (T52.23).
