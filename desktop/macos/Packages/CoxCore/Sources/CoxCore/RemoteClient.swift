@@ -70,6 +70,27 @@ final class RemoteSession: SessionClient {
     CoxClient.PaletteHit.ranked(query, items, limit: limit)
   }
 
+  func typedToken(
+    _ text: String, caret: Int, selection: Bool, shell: Bool
+  ) -> CoxClient.TypedToken? {
+    ComposerRules.typedToken(text, caret: caret, selection: selection, shell: shell)
+  }
+
+  func pick(_ text: String, token: CoxClient.TypedToken, insert: String) -> CoxClient.Splice? {
+    ComposerRules.pick(text, token: token, insert: insert)
+  }
+
+  func mentions(_ text: String, picked: [String]) -> [String] {
+    CoxFFIBindings.mentions(text: text, picked: picked)
+  }
+
+  func draftIntent(
+    _ text: String, shell: Bool, attachments: Int, running: Bool, when: CoxClient.SendWhen
+  ) -> CoxClient.DraftIntent {
+    ComposerRules.draftIntent(
+      text, shell: shell, attachments: attachments, running: running, when: when)
+  }
+
   func history(limit: UInt32) throws -> [String] { [] }
 
   func changes() async throws -> CoxClient.Changes {

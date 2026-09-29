@@ -60,6 +60,27 @@ final class LiveSession: SessionClient {
       .map { CoxClient.PaletteHit($0) }
   }
 
+  func typedToken(
+    _ text: String, caret: Int, selection: Bool, shell: Bool
+  ) -> CoxClient.TypedToken? {
+    ComposerRules.typedToken(text, caret: caret, selection: selection, shell: shell)
+  }
+
+  func pick(_ text: String, token: CoxClient.TypedToken, insert: String) -> CoxClient.Splice? {
+    ComposerRules.pick(text, token: token, insert: insert)
+  }
+
+  func mentions(_ text: String, picked: [String]) -> [String] {
+    CoxFFIBindings.mentions(text: text, picked: picked)
+  }
+
+  func draftIntent(
+    _ text: String, shell: Bool, attachments: Int, running: Bool, when: CoxClient.SendWhen
+  ) -> CoxClient.DraftIntent {
+    ComposerRules.draftIntent(
+      text, shell: shell, attachments: attachments, running: running, when: when)
+  }
+
   func history(limit: UInt32) throws -> [String] { try handle.history(limit: limit) }
 
   func changes() async throws -> CoxClient.Changes {
@@ -98,6 +119,44 @@ final class LiveSession: SessionClient {
 extension CoxFFIBindings.LineComment {
   init(_ value: CoxClient.LineComment) {
     self.init(path: value.path, line: value.line, removed: value.removed, text: value.text)
+  }
+}
+
+// The composer's rules (T58.4.16, T58.4.17) are pure functions of cox-ffi, so a local and a
+// remote session ask the same Rust.
+enum ComposerRules {
+  static func typedToken(
+    _ text: String, caret: Int, selection: Bool, shell: Bool
+  ) -> CoxClient.TypedToken? {
+    CoxFFIBindings.typedToken(
+      text: text, caret: UInt32(clamping: caret), selection: selection, shell: shell
+    ).map { CoxClient.TypedToken(start: Int($0.start), end: Int($0.end), text: $0.text) }
+  }
+
+  static func pick(
+    _ text: String, token: CoxClient.TypedToken, insert: String
+  ) -> CoxClient.Splice? {
+    let token = CoxFFIBindings.TypedToken(
+      start: UInt32(clamping: token.start), end: UInt32(clamping: token.end), text: token.text)
+    return CoxFFIBindings.pick(text: text, token: token, insert: insert)
+      .map { CoxClient.Splice(text: $0.text, caret: Int($0.caret)) }
+  }
+
+  static func draftIntent(
+    _ text: String, shell: Bool, attachments: Int, running: Bool, when: CoxClient.SendWhen
+  ) -> CoxClient.DraftIntent {
+    let intent = CoxFFIBindings.draftIntent(
+      text: text, shell: shell, attachments: UInt32(clamping: attachments), running: running,
+      when: when == .now ? .now : .queue)
+    let kind: CoxClient.DraftKind =
+      switch intent.kind {
+      case .shell: .shell
+      case .command: .command
+      case .turn: .turn
+      }
+    return CoxClient.DraftIntent(
+      kind: kind, queued: intent.queued, canSend: intent.canSend,
+      keepsAttachments: intent.keepsAttachments, entersShell: intent.entersShell)
   }
 }
 
