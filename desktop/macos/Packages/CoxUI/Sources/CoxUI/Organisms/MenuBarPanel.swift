@@ -23,23 +23,24 @@ public struct MenuBarPanel: View {
     }
   }
 
+  /// What a `Need` asks for; one level up so the types nest only one deep.
+  public enum NeedKind: Equatable, Sendable {
+    /// A tool call to allow or deny, with the command it runs.
+    case approval(command: String)
+    /// A question, with what it asks; answering it happens in the app.
+    case question(String)
+  }
+
   /// One inbox item waiting on the person.
   public struct Need: Identifiable, Equatable, Sendable {
-    public enum Kind: Equatable, Sendable {
-      /// A tool call to allow or deny, with the command it runs.
-      case approval(command: String)
-      /// A question, with what it asks; answering it happens in the app.
-      case question(String)
-    }
-
     /// The inbox item's id, which Allow and Deny report.
     public var id: String
     /// The session it belongs to, which a click on a question opens.
     public var session: String
     public var title: String
-    public var kind: Kind
+    public var kind: NeedKind
 
-    public init(id: String, session: String, title: String, kind: Kind) {
+    public init(id: String, session: String, title: String, kind: NeedKind) {
       (self.id, self.session, self.title, self.kind) = (id, session, title, kind)
     }
   }
@@ -170,9 +171,9 @@ public struct MenuBarPanel: View {
   }
 
   /// A title over its detail line.
-  private func lines<Detail: View>(_ title: String, @ViewBuilder detail: () -> Detail)
-    -> some View
-  {
+  private func lines<Detail: View>(
+    _ title: String, @ViewBuilder detail: () -> Detail
+  ) -> some View {
     VStack(alignment: .leading, spacing: Space.xxs) {
       Text(title)
         .textStyle(.body)
@@ -187,9 +188,9 @@ public struct MenuBarPanel: View {
 
   /// A menu line: a label with its figures or shortcut at the trailing edge; a button when it
   /// has an action.
-  @ViewBuilder private func item(_ label: String, trailing: String, action: (() -> Void)?)
-    -> some View
-  {
+  @ViewBuilder private func item(
+    _ label: String, trailing: String, action: (() -> Void)?
+  ) -> some View {
     let line = HStack(spacing: Space.m) {
       Text(label).foregroundStyle(Color(.textPrimary))
       Spacer(minLength: Space.m)

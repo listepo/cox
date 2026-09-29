@@ -32,7 +32,8 @@ struct TerminalPaneSample: View {
   static let height: CGFloat = 250
 
   var body: some View {
-    TerminalPaneChrome(state: state) { _ in } content: {
+    TerminalPaneChrome(state: state) { _ in
+    } content: {
       VStack(alignment: .leading, spacing: 0) {
         ForEach(PreviewState.terminalLines, id: \.self) { Text($0) }
       }

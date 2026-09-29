@@ -60,6 +60,7 @@ private func emptyStore() -> SessionStore {
 }
 
 @Test func theTitleIsTheShellThenTheWorktreesBranch() {
-  #expect(TerminalTab.title(shell: "/bin/zsh", branch: "wt/retry-jitter") == "zsh — wt/retry-jitter")
+  #expect(
+    TerminalTab.title(shell: "/bin/zsh", branch: "wt/retry-jitter") == "zsh — wt/retry-jitter")
   #expect(TerminalTab.title(shell: "/opt/homebrew/bin/fish", branch: nil) == "fish")
 }

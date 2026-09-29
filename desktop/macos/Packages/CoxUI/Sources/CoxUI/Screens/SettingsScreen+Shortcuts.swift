@@ -40,9 +40,9 @@ struct ShortcutsBox: View {
 }
 
 #Preview("shortcuts") {
-  SettingsScreen(state: PreviewState.settingsGeneral, recorder: PreviewState.shortcutRecorder) {
-    _ in
-  }
+  SettingsScreen(
+    state: PreviewState.settingsGeneral, recorder: PreviewState.shortcutRecorder, send: { _ in }
+  )
   .frame(width: Size.windowMinWidth, height: Size.windowMinHeight)
   .padding(Space.xxl)
   .background(PreviewBackdrop())

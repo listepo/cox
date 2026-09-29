@@ -7,13 +7,14 @@
 import CoxClient
 
 public struct MenuBarState: Equatable, Sendable {
-  public struct Need: Identifiable, Equatable, Sendable {
-    public enum Kind: Equatable, Sendable {
-      /// What the call acts on: the command, the path.
-      case approval(command: String)
-      case question(String)
-    }
+  /// What a `Need` asks for; one level up so the types nest only one deep.
+  public enum NeedKind: Equatable, Sendable {
+    /// What the call acts on: the command, the path.
+    case approval(command: String)
+    case question(String)
+  }
 
+  public struct Need: Identifiable, Equatable, Sendable {
     /// The inbox item's id, as `InboxRow`'s.
     public let id: String
     public let session: String
@@ -21,7 +22,7 @@ public struct MenuBarState: Equatable, Sendable {
     public let call: String
     /// The session's title.
     public let title: String
-    public let kind: Kind
+    public let kind: NeedKind
   }
 
   public struct Running: Identifiable, Equatable, Sendable {
@@ -44,7 +45,7 @@ public struct MenuBarState: Equatable, Sendable {
   ) {
     needs = inbox.compactMap { item in
       guard !item.expired else { return nil }
-      let (call, kind): (String, Need.Kind)
+      let (call, kind): (String, NeedKind)
       switch item.need {
       case .approval(let id, let tool, let subject, _):
         (call, kind) = (id, .approval(command: subject.isEmpty ? tool : subject))
