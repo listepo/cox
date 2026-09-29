@@ -2162,6 +2162,12 @@ fn on_event(state: &mut State, ev: Event) -> Vec<Cmd> {
                 done: false,
                 render: ItemRender::Builtin,
             }),
+            // A signed empty block is Gemini's replay token, not something the
+            // model said; an unsigned empty one is a live stream awaiting deltas.
+            ItemKind::Thinking {
+                text,
+                signature: Some(_),
+            } if text.is_empty() => {}
             ItemKind::Thinking { text, .. } => state.transcript.push(Cell::Thinking {
                 item,
                 text,
@@ -2435,6 +2441,38 @@ mod tests {
             update(state, Msg::Key(KeyEvent::from(KeyCode::Char(c))));
         }
         update(state, Msg::Key(KeyEvent::from(KeyCode::Enter)))
+    }
+
+    #[test]
+    fn empty_signed_thinking_draws_no_cell() {
+        let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+        let signed = ItemId::new();
+        update(
+            &mut state,
+            Msg::Event(Event::ItemStarted {
+                item: signed,
+                kind: ItemKind::Thinking {
+                    text: String::new(),
+                    signature: Some("sig".into()),
+                },
+            }),
+        );
+        update(&mut state, Msg::Event(Event::ItemDone { item: signed }));
+        assert!(state.transcript.is_empty());
+
+        // An unsigned block starts empty too and fills from deltas.
+        let live = ItemId::new();
+        update(
+            &mut state,
+            Msg::Event(Event::ItemStarted {
+                item: live,
+                kind: ItemKind::Thinking {
+                    text: String::new(),
+                    signature: None,
+                },
+            }),
+        );
+        assert_eq!(state.transcript.len(), 1);
     }
 
     #[test]

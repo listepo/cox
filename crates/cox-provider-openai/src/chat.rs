@@ -29,7 +29,9 @@
 //!
 //! **Thinking.** Chat has no reasoning-item replay (that is a Responses
 //! feature), so `Content::Thinking` is treated exactly as in
-//! `responses.rs`: unsigned dropped, signed rejected with `Unsupported`.
+//! `responses.rs`: unsigned dropped, signed rejected with `Unsupported` —
+//! except a signed empty block directly before a tool call (Gemini's thought
+//! signature), which is replayed as that call's `extra_content`.
 
 use async_trait::async_trait;
 use cox_models::{Api, Capabilities, effort_for};
@@ -115,8 +117,10 @@ fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
     let mut text = String::new();
     let mut tool_calls = Vec::new();
     let mut images = Vec::new();
+    // A signed empty thinking block rides on the tool call right after it.
+    let mut pending_signature: Option<&str> = None;
 
-    for c in &m.content {
+    for (i, c) in m.content.iter().enumerate() {
         match c {
             Content::Text { text: t } => {
                 if !text.is_empty() {
@@ -124,11 +128,17 @@ fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
                 }
                 text.push_str(t);
             }
-            Content::ToolUse { id, name, input } => tool_calls.push(json!({
-                "id": id.to_string(),
-                "type": "function",
-                "function": {"name": name, "arguments": input.to_string()},
-            })),
+            Content::ToolUse { id, name, input } => {
+                let mut call = json!({
+                    "id": id.to_string(),
+                    "type": "function",
+                    "function": {"name": name, "arguments": input.to_string()},
+                });
+                if let Some(signature) = pending_signature.take() {
+                    call["extra_content"] = json!({"google": {"thought_signature": signature}});
+                }
+                tool_calls.push(call);
+            }
             Content::ToolResult {
                 call_id,
                 content,
@@ -162,11 +172,16 @@ fn message_items(m: &Message) -> Result<Vec<Value>, ProviderError> {
                 }
                 text.push_str(&format!("[archived: {summary}; expand {}]", archive.id));
             }
-            Content::Thinking { signature, .. } => {
-                if signature.is_some() {
-                    return Err(ProviderError::Unsupported {
-                        feature: "thinking replay".into(),
-                    });
+            Content::Thinking { text, signature } => {
+                if let Some(signature) = signature {
+                    let before_tool_use =
+                        matches!(m.content.get(i + 1), Some(Content::ToolUse { .. }));
+                    if !(text.is_empty() && before_tool_use) {
+                        return Err(ProviderError::Unsupported {
+                            feature: "thinking replay".into(),
+                        });
+                    }
+                    pending_signature = Some(signature);
                 }
                 // No signature: nothing to replay, drop silently.
             }
@@ -974,6 +989,36 @@ mod tests {
         let err = build_body(&req, &Capabilities::default())
             .expect_err("signed thinking must not drop silently");
         assert!(matches!(err, ProviderError::Unsupported { .. }));
+    }
+
+    /// T39.3: the signature goes out on the call it precedes and on no other.
+    #[test]
+    fn chat_request_replays_signature_on_its_tool_call() {
+        let mut req = base("gemini-3.8-flash");
+        req.messages = vec![
+            user_text("read both files"),
+            Message {
+                role: Role::Assistant,
+                content: vec![
+                    Content::Thinking {
+                        text: String::new(),
+                        signature: Some("sig-fixture".into()),
+                    },
+                    Content::ToolUse {
+                        id: call(1),
+                        name: "read".into(),
+                        input: json!({"path": "a.rs"}),
+                    },
+                    Content::ToolUse {
+                        id: call(2),
+                        name: "read".into(),
+                        input: json!({"path": "b.rs"}),
+                    },
+                ],
+            },
+        ];
+        let body = build_body(&req, &Capabilities::default()).expect("adjacent signature replays");
+        insta::assert_json_snapshot!(body);
     }
 
     #[test]

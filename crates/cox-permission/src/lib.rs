@@ -258,3 +258,51 @@ pub fn why_text(why: &Why) -> String {
         Why::Policy { policy } => format!("approval policy {policy:?} requires approval"),
     }
 }
+
+/// The one definition of how wide a mode is: `Plan < Default < Auto < Bypass`.
+fn rank(mode: PermissionMode) -> u8 {
+    match mode {
+        PermissionMode::Plan => 0,
+        PermissionMode::Default => 1,
+        PermissionMode::Auto => 2,
+        PermissionMode::Bypass => 3,
+    }
+}
+
+/// The narrower of two modes, so a preset (architect's `Plan`, a subagent's
+/// cap) can only tighten the gate and never widen what the user chose.
+pub fn narrower(a: PermissionMode, b: PermissionMode) -> PermissionMode {
+    if rank(a) <= rank(b) { a } else { b }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL: [PermissionMode; 4] = [
+        PermissionMode::Plan,
+        PermissionMode::Default,
+        PermissionMode::Auto,
+        PermissionMode::Bypass,
+    ];
+
+    #[test]
+    fn narrower_never_returns_the_wider_mode() {
+        for a in ALL {
+            for b in ALL {
+                let n = narrower(a, b);
+                assert!(rank(n) <= rank(a) && rank(n) <= rank(b), "{a:?} {b:?}");
+                assert!(n == a || n == b, "{a:?} {b:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn narrower_is_commutative() {
+        for a in ALL {
+            for b in ALL {
+                assert_eq!(narrower(a, b), narrower(b, a), "{a:?} {b:?}");
+            }
+        }
+    }
+}

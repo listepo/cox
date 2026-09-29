@@ -364,6 +364,18 @@ pub enum PermissionMode {
     Bypass,
 }
 
+/// Session mode: a preset over the main tier and the permission mode, not a
+/// second loop (`docs/design/v0.2-modes.md`, "Resolved (P42)").
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    /// The configured permission mode and the configured main tier.
+    #[default]
+    Editor,
+    /// `PermissionMode::Plan` and the `think` main tier: plan text, no edits.
+    Architect,
+}
+
 /// `permissions.approval` (plan.md §1.6/§1.8 step 8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -1125,6 +1137,14 @@ pub enum Event {
         /// The mode now in force.
         mode: PermissionMode,
     },
+    /// The session mode changed. Carries the permission mode it resolved to
+    /// so a consumer needs no second event to know what the gate now does.
+    ModeChanged {
+        /// The mode now in force.
+        mode: Mode,
+        /// The permission mode that mode resolved to.
+        permission_mode: PermissionMode,
+    },
     /// A decision plugin answered a decision point (PL§4, T33.20). Recorded
     /// for every answer, used or not, so replay and `cox stats` see which
     /// advice changed the core's pick; it never feeds model history.
@@ -1501,6 +1521,7 @@ mod tests {
     #[case::task_completed(Event::TaskCompleted { task: TaskId::new(), result_item: ItemId::new(), cost_usd: 0.002, exit_code: Some(0), archive: Some(ArchiveId::new()) })]
     #[case::model_switched(Event::ModelSwitched { tier: Tier::Code, from: ModelId("claude-sonnet-5".into()), to: ModelId("claude-opus-5".into()) })]
     #[case::permission_mode_changed(Event::PermissionModeChanged { mode: PermissionMode::Plan })]
+    #[case::mode_changed(Event::ModeChanged { mode: Mode::Architect, permission_mode: PermissionMode::Plan })]
     #[case::advised(Event::Advised { point: crate::plugin::DecidePoint::Route, plugin: "jev".into(), advice: crate::plugin::Advice { answer: crate::plugin::Answer::Choice { order: vec![0] }, confidence: Some(0.9), note: None }, applied: true })]
     #[case::notice(Event::Notice { level: Level::Warn, text: "hook skipped".into() })]
     #[case::turn_done(Event::TurnDone { turn: TurnId::new(), stop: StopReason::EndTurn })]

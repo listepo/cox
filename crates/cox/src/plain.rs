@@ -98,6 +98,12 @@ pub fn run(cli: &Cli, cwd: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A signed empty thinking item is a replay token, not model speech; an
+/// unsigned empty one is a live stream that fills from deltas.
+fn draws(text: &str, signature: &Option<String>) -> bool {
+    !(text.is_empty() && signature.is_some())
+}
+
 struct Plain {
     session: Session,
     full_thinking: bool,
@@ -265,7 +271,9 @@ impl Plain {
                 ItemKind::AssistantMessage { text } => {
                     self.texts.insert(item, ("cox", text));
                 }
-                ItemKind::Thinking { text, .. } if self.full_thinking => {
+                ItemKind::Thinking { text, signature }
+                    if self.full_thinking && draws(&text, &signature) =>
+                {
                     self.texts.insert(item, ("thinking", text));
                 }
                 _ => {}
@@ -592,6 +600,13 @@ fn spawn_sigint() -> mpsc::Receiver<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plain_skips_empty_signed_thinking() {
+        assert!(!draws("", &Some("sig".into())));
+        assert!(draws("", &None));
+        assert!(draws("thought", &Some("sig".into())));
+    }
 
     #[test]
     fn markdown_table_reads_as_header_value_rows() {

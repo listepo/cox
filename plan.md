@@ -27,32 +27,32 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
-| T39.3 | todo | P1 | 2 | 0% | |
-| T39.4 | todo | P2 | 1 | 0% | |
-| T39.5 | todo | P1 | 2 | 0% | |
-| T39.6 | todo | P1 | 3 | 0% | |
-| T39.7 | todo | P3 | 2 | 0% | |
+| T39.3 | in progress | P1 | 2 | 0% | Cursor / claude-sonnet-5.5 |
+| T39.4 | in progress | P2 | 1 | 0% | Cursor / claude-sonnet-5.5 |
+| T39.5 | in progress | P1 | 2 | 0% | Cursor / claude-sonnet-5.5 |
+| T39.6 | in progress | P1 | 3 | 0% | Cursor / claude-sonnet-5.5 |
+| T39.7 | in progress | P3 | 2 | 0% | Cursor / claude-sonnet-5.5 |
 | T40.2 | todo | P1 | 4 | 0% | |
-| T40.3 | todo | P2 | 2 | 0% | |
+| T40.3 | in progress | P2 | 2 | 0% | Cursor / claude-sonnet-5.5 |
 | T40.5 | todo | P1 | 3 | 0% | |
 | T40.6 | todo | P1 | 4 | 0% | |
 | T40.7 | todo | P2 | 2 | 0% | |
 | T40.8 | todo | P2 | 3 | 0% | |
 | T40.9 | todo | P2 | 2 | 0% | |
 | T40.10 | todo | P3 | 2 | 0% | |
-| T41.3 | todo | P1 | 2 | 0% | |
-| T41.4 | todo | P1 | 4 | 0% | |
-| T41.5 | todo | P1 | 2 | 0% | |
-| T41.6 | todo | P1 | 4 | 0% | |
-| T41.7 | todo | P1 | 3 | 0% | |
-| T41.8 | todo | P1 | 3 | 0% | |
-| T41.9 | todo | P3 | 2 | 0% | |
-| T42.1 | todo | P2 | 2 | 0% | |
+| T41.3 | in progress | P1 | 2 | 0% | Cursor / claude-opus-5.5 |
+| T41.4 | in progress | P1 | 4 | 0% | Cursor / claude-opus-5.5 |
+| T41.5 | in progress | P1 | 2 | 0% | Cursor / claude-opus-5.5 |
+| T41.6 | in progress | P1 | 4 | 0% | Cursor / claude-opus-5.5 |
+| T41.7 | in progress | P1 | 3 | 0% | Cursor / claude-opus-5.5 |
+| T41.8 | in progress | P1 | 3 | 0% | Cursor / claude-opus-5.5 |
+| T41.9 | in progress | P3 | 2 | 0% | Cursor / claude-opus-5.5 |
+| T42.1 | in progress | P2 | 2 | 0% | Cursor / claude-sonnet-5.5 |
 | T42.2 | todo | P2 | 2 | 0% | |
 | T42.3 | todo | P2 | 4 | 0% | |
 | T42.4 | todo | P2 | 3 | 0% | |
 | T42.5 | todo | P3 | 2 | 0% | |
-| T43.0 | todo | P2 | 1 | 0% | |
+| T43.0 | in progress | P2 | 1 | 0% | Cursor / composer-2.5 |
 | T43.1 | todo | P2 | 3 | 0% | |
 | T43.2 | todo | P2 | 2 | 0% | |
 | T43.3 | todo | P2 | 3 | 0% | |
@@ -64,7 +64,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T44.4 | todo | P2 | 3 | 0% | |
 | T44.5 | todo | P3 | 1 | 0% | |
 | T45.2 | todo | P2 | 3 | 0% | |
-| T45.3 | todo | P2 | 3 | 0% | |
+| T45.3 | in progress | P2 | 3 | 0% | Cursor / claude-sonnet-5.5 |
 | T45.4 | todo | P2 | 3 | 0% | |
 | T45.5 | todo | P2 | 3 | 0% | |
 | T45.6 | todo | P3 | 3 | 0% | |
@@ -72,20 +72,20 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T46.2 | todo | P2 | 3 | 0% | |
 | T46.3 | todo | P2 | 3 | 0% | |
 | T46.4 | todo | P2 | 2 | 0% | |
-| T46.5 | todo | P3 | 2 | 0% | |
+| T46.5 | in progress | P3 | 2 | 0% | Cursor / claude-sonnet-5.5 |
 | T46.6 | todo | P3 | 3 | 0% | |
 | T46.7 | todo | P3 | 3 | 0% | |
-| T47.1 | todo | P2 | 3 | 0% | |
-| T47.2 | todo | P2 | 4 | 0% | |
+| T47.1 | in progress | P2 | 3 | 0% | Cursor / claude-sonnet-5.5 |
+| T47.2 | in progress | P2 | 4 | 0% | Cursor / claude-sonnet-5.5 |
 | T47.3 | todo | P2 | 2 | 0% | |
 | T47.4 | todo | P3 | 2 | 0% | |
 | T48.1 | todo | P2 | 2 | 0% | |
 | T48.2 | todo | P2 | 2 | 0% | |
-| T49.1 | todo | P2 | 3 | 0% | |
+| T49.1 | in progress | P2 | 3 | 0% | Cursor / composer-2.5 |
 | T49.2 | todo | P3 | 3 | 0% | |
-| T49.3 | todo | P3 | 2 | 0% | |
-| T49.4 | todo | P3 | 2 | 0% | |
-| T49.5 | todo | P3 | 3 | 0% | |
+| T49.3 | in progress | P3 | 2 | 0% | Cursor / composer-2.5 |
+| T49.4 | in progress | P3 | 2 | 0% | Cursor / composer-2.5 |
+| T49.5 | in progress | P3 | 3 | 0% | Cursor / composer-2.5 |
 | T50.3 | todo | P2 | 1 | 0% | |
 | T50.5 | todo | P3 | 1 | 0% | |
 

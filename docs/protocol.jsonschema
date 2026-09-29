@@ -559,6 +559,29 @@
         ]
       },
       {
+        "description": "The session mode changed. Carries the permission mode it resolved to\nso a consumer needs no second event to know what the gate now does.",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "description": "The mode now in force.",
+            "$ref": "#/$defs/Mode"
+          },
+          "permission_mode": {
+            "description": "The permission mode that mode resolved to.",
+            "$ref": "#/$defs/PermissionMode"
+          },
+          "type": {
+            "type": "string",
+            "const": "mode_changed"
+          }
+        },
+        "required": [
+          "type",
+          "mode",
+          "permission_mode"
+        ]
+      },
+      {
         "description": "A decision plugin answered a decision point (PL§4, T33.20). Recorded\nfor every answer, used or not, so replay and `cox stats` see which\nadvice changed the core's pick; it never feeds model history.",
         "type": "object",
         "properties": {
@@ -1575,6 +1598,21 @@
             "description": "Everything is allowed; flag-only, banner shown.",
             "type": "string",
             "const": "bypass"
+          }
+        ]
+      },
+      "Mode": {
+        "description": "Session mode: a preset over the main tier and the permission mode, not a\nsecond loop (`docs/design/v0.2-modes.md`, \"Resolved (P42)\").",
+        "oneOf": [
+          {
+            "description": "The configured permission mode and the configured main tier.",
+            "type": "string",
+            "const": "editor"
+          },
+          {
+            "description": "`PermissionMode::Plan` and the `think` main tier: plan text, no edits.",
+            "type": "string",
+            "const": "architect"
           }
         ]
       },
