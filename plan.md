@@ -32,23 +32,29 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
+| T37.44.12 | todo | P2 | 1 | 0% | |
+| T37.44.13 | todo | P2 | 4 | 0% | |
+| T37.44.14 | todo | P2 | 2 | 0% | |
+| T37.44.15 | todo | P2 | 2 | 0% | |
+| T37.44.16 | todo | P2 | 2 | 0% | |
+| T37.44.17 | todo | P3 | 1 | 0% | |
 | T39.7 | todo | P3 | 2 | 0% | |
 | T43.6 | todo | P3 | 3 | 0% | |
-| T51.5 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T51.6 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T51.9 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T51.10 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T51.11 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T51.14 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T51.15 | in progress | P3 | 2 | 0% | Claude Code / opus-5.5 |
-| T51.16 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
-| T51.17 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
+| T51.5 | todo | P2 | 3 | 0% | |
+| T51.6 | todo | P2 | 3 | 0% | |
+| T51.9 | todo | P2 | 3 | 0% | |
+| T51.10 | todo | P2 | 3 | 0% | |
+| T51.11 | todo | P2 | 3 | 0% | |
+| T51.14 | todo | P2 | 3 | 0% | |
+| T51.15 | todo | P3 | 2 | 0% | |
+| T51.16 | todo | P3 | 3 | 0% | |
+| T51.17 | todo | P3 | 3 | 0% | |
 | T51.22 | todo | P2 | 2 | 0% | |
-| T52.8 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
-| T52.12 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
-| T52.17 | in progress | P3 | 3 | 0% | Claude Code / opus-5.5 |
-| T52.20 | in progress | P3 | 4 | 0% | Claude Code / opus-5.5 |
-| T52.22 | in progress | P3 | 1 | 0% | Claude Code / opus-5.5 |
+| T52.8 | todo | P2 | 3 | 0% | |
+| T52.12 | todo | P3 | 3 | 0% | |
+| T52.17 | todo | P3 | 3 | 0% | |
+| T52.20 | todo | P3 | 4 | 0% | |
+| T52.22 | todo | P3 | 1 | 0% | |
 | T53.5 | todo | P3 | 3 | 0% | |
 | T53.6 | todo | P3 | 2 | 0% | |
 | T53.7 | todo | P3 | 2 | 0% | |
@@ -1361,6 +1367,42 @@ On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
 
+#### T37.44.12 Mockup 08 keeps the inspector in review
+
+Depends: — · Size: ~40 · Files: `desktop/design/mockups/` (screen 08 and its render)
+Goal: A126 (1). The review screen follows DT§5.4, as the app already does: the inspector stays on the right. Mockup 08 is redrawn with it; the toolbar title and the review controls stay only where DT§5.4 has them. Unified/Split, Revert and Open in editor are not added.
+Check: `render.sh 08-…` ok; `npm run diff` of the app's review screen against the new 08 shows content-only regions.
+
+#### T37.44.13 Command palette and its shortcuts
+
+Depends: — · Size: ~200 · Files: `desktop/macos/App` (palette window and menu commands), CoxUI palette organism and snapshots, `cox-app` `Completer` if the command list is not there yet
+Goal: A126 (2). Mockup 12's command palette, opened with ⌘K, lists commands and sessions with fuzzy search from `cox-app` (logic in Rust, Swift draws); ⌘N opens a new session and ⌘⇧R opens review, as the mockups' menus show.
+Check: CoxUI snapshots of the palette in every variant; a `cox-app` test for the palette's ranking; the running app's palette diffed against mockup 12.
+
+#### T37.44.14 New session windows open at 1440×900
+
+Depends: — · Size: ~60 · Files: token `size.window.default` (DTCG source and generated Swift), `desktop/macos/App`
+Goal: A126 (3). A new session window opens at 1440×900, the mockups' size, from a new default-size token, clamped to the screen's visible frame so it never opens larger than the screen; a window the user resized keeps its saved frame.
+Check: a unit test of the clamp; `just desktop-tokens` pass; the running app's new window measured at 1440×900 on a large screen.
+
+#### T37.44.15 Approval notification: Allow once, Deny, Open
+
+Depends: — · Size: ~60 · Files: `desktop/macos/App` (notification category), `docs/design/desktop.md` DT§5.6
+Goal: A126 (4). The approval notification carries the mockup's three actions: "Allow once" (the one-call approval, never a standing rule), "Deny" and "Open" (brings the session window forward on the pending approval). DT§5.6 is updated to match.
+Check: a test that each action maps to the right `Intent`; screen 23 checked in the running app once notifications are allowed for Cox.
+
+#### T37.44.16 The shared file walker skips `.git/`
+
+Depends: — · Size: ~40 · Files: `crates/cox-search` (the walker), its tests
+Goal: verification found the walker behind `glob`, `grep` and the @-completion lists `.git/` internals (hooks, objects); only the repo map filtered them (T43.1). The walker skips a `.git` directory or file at any depth unless a path the user or model names explicitly is inside it.
+Check: a regression test that fails without the fix; `cargo nextest run -p cox-search -p cox-tools`.
+
+#### T37.44.17 Durations print in the user's locale without a stray decimal
+
+Depends: — · Size: ~30 · Files: where the app formats durations (CoxUI or `cox-app`), its tests
+Goal: T37.44.11 saw durations printed as "0,0s" in a comma-decimal locale. Durations under a second print as milliseconds and longer ones with at most one decimal in the user's locale, matching the mockups' style.
+Check: a test in two locales (`en_US`, `ru_RU`) that fails without the fix.
+
 ### P51 — Desktop M2 (goal: the rest of the terminal inside the app — a sandboxed terminal pane, a browser pane the agent can read and screenshot, pop-out windows and tabs, a menu-bar extra with a global hotkey, Spotlight and App Intents, and per-hunk revert — plus the dark glass look; DT§3.2)
 
 Plan (A121): one agent implements P51's cards in table order on branch `p51-roadmap`, one commit per card, without building or running tests (the creator's instruction); T51.1 waits for the creator's approval of the dark renders. A verification pass builds and tests each commit before the branch merges into `p37-desktop`.
@@ -1810,6 +1852,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A123 §0 (the v0.2+ "voice" entry), §1.1 (new `cox-voice` and `cox-cursor-cloud` rows), §3 (new P54: T54.1–T54.7, P55: T55.1, P56: T56.1–T56.10) — the P49 gate verdicts, by the creator (2026-09-29). (1) **T49.1 remote control: defer.** Why: `docs/design/v0.3-remote-control.md` — no `agent-client-protocol` release ships the HTTP/WebSocket transport, and hand-rolling one the spec may change is falsifier 1. Effect: no card; reopens when such a release ships, with candidate A (loopback only, opt-in, per-run token, the user's own tunnel); never a hosted relay. (2) **T49.2 Windows sandbox: defer.** Why: `docs/design/v0.3-windows-sandbox.md` — there is no Windows release target, so a backend would ship to nobody (falsifier 2). Effect: no card; a Windows release target comes first as its own decision; there is never a token-only backend that relaxes D7's forced prompts; D7 is unchanged. (3) **T49.3 voice: build** option 2 of `docs/design/v0.3-voice.md` — local `whisper-rs` in its own crate `cox-voice`, push-to-talk with auto-submit in the TUI. Why: the creator wants the push-to-talk gap closed; local transcription needs no paid endpoint, no key (D3), no audio leaving the machine and no ledger unit (it is not a request and costs nothing). Effect: P54. New dependencies (crates.io API, checked 2026-09-29): `whisper-rs` 0.16.0 (Unlicense, released 2026-03-12; https://codeberg.org/tazz4843/whisper-rs last commit 2026-03-14, not archived; already pinned by `apps/runa` and in the workspace `rust.md`) with `whisper-rs-sys` 0.15.0 (Unlicense) building whisper.cpp (MIT) through cmake; `cpal` 0.18.2 (Apache-2.0, released 2026-08-16; https://github.com/RustAudio/cpal last commit 2026-09-20; new to `rust.md`); `rubato` 5.0.0 (MIT OR Apache-2.0, released 2026-08-10; in `rust.md`); program `cmake` through mise. `cox-voice` stays behind the `voice` cargo feature of `crates/cox`, off by default; whether release builds turn it on is left to the creator. Models (ggml, MIT, https://huggingface.co/ggerganov/whisper.cpp, 78–488 MB for `tiny.en`–`small.en`, checked 2026-09-29) are pinned by a `scripts/vendor` script (A48) and fetched only by `cox voice model download` after the user confirms, SHA-256 verified; never silently. A project config cannot set `voice.*`. The §0 "voice" entry stays and points at P54. (4) **T49.4 MCP Apps: build (a) only**, as the single card T55.1: cox ignores a tool's `ui://` resource and keeps its text and structured result, test-backed. Why: `docs/design/v0.3-mcp-apps.md` — (a) is today's behaviour and adds no listener, dependency or rmcp bump; no existing MCP phase fits (P47 is elicitation), so it is its own phase. Effect: P55; (b) (browser page over a loopback listener) is deferred and returns as its own gate if its falsifier 1 fires; (c) waits for ACP to carry App resources. (5) **T49.5 Cursor Cloud Agents: build** as `docs/design/v0.3-cursor-cloud.md` describes — a host-driven plugin capability `[[cloud_agents]]`, the off-machine step an `Engine` approval (`CloudAgent(<repo>)`), and $0 `billed_externally` usage rows carrying Cursor-reported tokens. Terms, from the primary sources (checked 2026-09-29; paraphrased with section numbers): the Terms of Service (https://cursor.com/terms-of-service, last updated 2026-09-03) define the Service to include Anysphere's APIs and Documentation, grant a limited right to access and use it (§1.1), forbid reproducing, modifying, translating or making derivative works of it (§1.5(ii)), and grant no implied licences (§5.1); they say nothing about third-party API clients. The Acceptable Use Policy (https://cursor.com/acceptable-use-policy, last updated 2026-08-11), which applies however the Service is accessed, lists among prohibited uses "Accessing the Service through automated or non-human means" (by bot, script or otherwise), and copying or distributing the Service. The API page (https://cursor.com/docs/cloud-agent/api/endpoints) documents API keys for users and service accounts, marks v1 as a public beta that may change before general availability, accepts GitHub repositories only, and returns per-run `inputTokens`/`outputTokens`/`cacheWriteTokens`/`cacheReadTokens`/`totalTokens` with no cost and no model. The OpenAPI file (https://cursor.com/docs-static/cloud-agents-openapi.yaml: HTTP 200, 59,113 bytes, SHA-256 `fef3a8b7272a8b1d0eb8abbc12a4f8a9745f3d56531f86566e60d926cc0dd35f`, OpenAPI 3.0.3, `info.version` 1.0.0) carries no `license`, no `termsOfService` and no copyright statement. Reading: (i) **vendoring the spec is not allowed** — no licence, §5.1 grants none by implication, and §1.5(ii) and the AUP forbid reproducing or distributing the Documentation; so A40 step (2) and the gate doc's `scripts/vendor` step are dropped, the wire types are hand-written from the public docs (A40 step 3), and nothing is generated from or copied out of the OpenAPI file. (ii) **Whether a third-party client may call the API is unresolved**: the API exists for programs, but the AUP line, read literally, forbids any program's access, and no document names third-party clients. This is new since the gate doc (T49.5 cited only the silent ToS). Effect: P56 (T56.1–T56.10), every card blocked on the creator's written go-ahead on (ii), recorded as its own amendment (or Cursor's written answer, e.g. to the spec's contact address); no request carries the user's name, email or git identity (bodies carry the prompt, the credential-stripped GitHub URL, the ref and the model; `/v1/me` is never called); `cox-cursor-cloud` adds no dependency (it builds on `cox-provider-http`). Deferred items (1), (2) and (4b) stay recorded in their gate docs and here; A80 sends nothing back to `roadmap.md` or `ideas.md`, so neither changes.
 - A124 T52.1, P52 — by the creator (2026-09-29), approving DT§3.3.1 as written plus two decisions. (1) An external ACP agent always gets network inside its sandbox, whatever `[sandbox] network` says; file limits stay, and an `[external_agents.<name>]` entry may add writable directories for the agent's own state, which a project config may not set. Why: none of the agents can reach its API otherwise. (2) Claude runs as `claude-agent-acp --hide-claude-auth` with `ANTHROPIC_API_KEY` only and is labelled "Claude Agent", never "Claude Code" and never a claude.ai login. Why: Anthropic's terms and branding rules for third-party clients (`research.md` §9.6). Effect: T52.2's schema gains the writable-directory list and its project-config guard; mockup 27 and the P52 goal say "Claude Agent". No §0 decision changes.
 - A125 T37.44.3 — by the creator (2026-09-29), replacing A118: the Figma file uses stand-in fonts (Inter for SF Pro, Roboto Mono for SF Mono); SF Pro and SF Mono stay in the HTML mockups, CoxUI and DESIGN.md. Why: with both fonts installed locally and Figma and `figma_agent` restarted, five `use_figma` probes found SF Mono absent and SF Pro listed but flagged `hasMissingFont` (115 of 135 text layers on screen 28 drew nothing); shared fonts need an Organization or Enterprise plan (https://help.figma.com/hc/en-us/articles/360039956774, checked 2026-09-29), and the account has Starter and Pro teams only. Effect: T37.44.3 is rewritten; metric comparisons (T37.44.2, T37.44.11) use the HTML renders, not Figma.
+- A126 T37.44.11 follow-ups — by the creator (2026-09-29): (1) the review screen stays as DT§5.4 has it (inspector kept); mockup 08 changes, not the app (T37.44.12). (2) The command palette of mockup 12 and ⌘K, ⌘N, ⌘⇧R are built (T37.44.13). (3) New session windows open at 1440×900, clamped to the screen (T37.44.14). (4) The approval notification has Allow once, Deny and Open as in mockup 23; DT§5.6 changes (T37.44.15). Also carded from the verification passes: the shared walker skips `.git/` (T37.44.16) and durations format per locale (T37.44.17). Why: the running app was compared with the mockups end to end (T37.44.11), and these were the differences only the creator could decide or that were bugs outside that card.
 
 ## 7. Risk register
 
