@@ -62,5 +62,3 @@
 - T37.44.13. Command palette and its shortcuts
 - T37.44.14. New session windows open at 1440×900
 - T37.44.15. Approval notification: Allow once, Deny, Open
-- T37.44.16. The shared file walker skips `.git/`
-- T37.44.17. Durations print in the user's locale without a stray decimal

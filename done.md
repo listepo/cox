@@ -8469,3 +8469,31 @@ Deviations: see the card's commit body.
 Check (2026-09-29, verification round 2): `cargo nextest run --workspace` 1886/1886; clippy `-D warnings` clean (default, `--no-default-features --features otel`, with and without `plugins`); fmt clean; `cargo deny check` ok; `just desktop-xcframework` ok; swift test CoxCore 15, CoxModel 125, CoxTranscriptText 38, CoxUI 232 (132 new or re-recorded snapshots reviewed); `swift test --filter BestOf` 8/8; must-run tests (terminal_*, remote_*, `-p cox --test remote`, cox-ffi forward_only, wire_*, app_server_* with `app_server_schema_drift`) pass; real binary `cox app-server --stdio` on the fixture ok. Commit 62a76297.
 
 Not done: the app build and CoxPlatform tests are blocked until the Metal Toolchain is installed (SwiftTerm's shaders); this card does not depend on them.
+
+#### T37.44.16 The shared file walker skips `.git/`
+
+Depends: — · Size: ~40 · Files: `crates/cox-search` (the walker), its tests
+Goal: verification found the walker behind `glob`, `grep` and the @-completion lists `.git/` internals (hooks, objects); only the repo map filtered them (T43.1). The walker skips a `.git` directory or file at any depth unless a path the user or model names explicitly is inside it.
+Check: a regression test that fails without the fix; `cargo nextest run -p cox-search -p cox-tools`.
+Status: done 2026-09-29
+Result: `crates/cox-search/src/grep.rs`'s shared `walker()` filters any entry named `.git` at any depth, so `glob::find`, `glob::workspace_files` (the @-completion) and `grep::search` skip `.git/` internals; `grep::search` now uses the shared walker instead of its own `WalkBuilder` (which also lacked `require_git(false)`). The repo map's own `.git/` filter in `cox-tools/src/repomap.rs` is removed, leaving one filter. `tempfile` added as a dev-dependency of `cox-search` (already a workspace dependency).
+
+Deviations: `grep::search` unified onto the shared walker.
+
+Check (2026-09-29): `cargo nextest run -p cox-search -p cox-tools` 154 passed, 1 skipped (new `walker_skips_a_git_directory_at_any_depth`, `search_does_not_match_inside_the_git_directory`, both fail without the fix); clippy on both crates and fmt clean. Commit 75bf70e2.
+
+Not done: nothing.
+
+#### T37.44.17 Durations print in the user's locale without a stray decimal
+
+Depends: — · Size: ~30 · Files: where the app formats durations (CoxUI or `cox-app`), its tests
+Goal: T37.44.11 saw durations printed as "0,0s" in a comma-decimal locale. Durations under a second print as milliseconds and longer ones with at most one decimal in the user's locale, matching the mockups' style.
+Check: a test in two locales (`en_US`, `ru_RU`) that fails without the fix.
+Status: done 2026-09-29
+Result: `CoxTranscript/TranscriptCard.swift`'s `ToolCard.Content.seconds` prints durations under a second as milliseconds (`40ms`) and longer ones with a tenth only when it is not a whole second (`2999ms` → `3s`, `2400ms` → `2.4s` / `2,4 с`), in the user's locale.
+
+Deviations: none.
+
+Check (2026-09-29): new `DurationFormattingTests` (en_US and ru_RU) 3/3, all fail without the fix; `CoxTranscript` 55 tests pass in isolation (the two known key-event races fail only under the full parallel run); `TranscriptSnapshotTests` and `TranscriptTextSizeTests` still pass. Commit 267d7aa1.
+
+Not done: nothing.

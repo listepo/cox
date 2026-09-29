@@ -36,8 +36,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.13 | todo | P2 | 4 | 0% | |
 | T37.44.14 | todo | P2 | 2 | 0% | |
 | T37.44.15 | todo | P2 | 2 | 0% | |
-| T37.44.16 | in progress | P2 | 2 | 0% | Claude Code / opus-5.5 |
-| T37.44.17 | in progress | P3 | 1 | 0% | Claude Code / opus-5.5 |
 | T39.7 | todo | P3 | 2 | 0% | |
 | T43.6 | todo | P3 | 3 | 0% | |
 | T51.5 | todo | P2 | 3 | 0% | |
@@ -1390,18 +1388,6 @@ Check: a unit test of the clamp; `just desktop-tokens` pass; the running app's n
 Depends: — · Size: ~60 · Files: `desktop/macos/App` (notification category), `docs/design/desktop.md` DT§5.6
 Goal: A126 (4). The approval notification carries the mockup's three actions: "Allow once" (the one-call approval, never a standing rule), "Deny" and "Open" (brings the session window forward on the pending approval). DT§5.6 is updated to match.
 Check: a test that each action maps to the right `Intent`; screen 23 checked in the running app once notifications are allowed for Cox.
-
-#### T37.44.16 The shared file walker skips `.git/`
-
-Depends: — · Size: ~40 · Files: `crates/cox-search` (the walker), its tests
-Goal: verification found the walker behind `glob`, `grep` and the @-completion lists `.git/` internals (hooks, objects); only the repo map filtered them (T43.1). The walker skips a `.git` directory or file at any depth unless a path the user or model names explicitly is inside it.
-Check: a regression test that fails without the fix; `cargo nextest run -p cox-search -p cox-tools`.
-
-#### T37.44.17 Durations print in the user's locale without a stray decimal
-
-Depends: — · Size: ~30 · Files: where the app formats durations (CoxUI or `cox-app`), its tests
-Goal: T37.44.11 saw durations printed as "0,0s" in a comma-decimal locale. Durations under a second print as milliseconds and longer ones with at most one decimal in the user's locale, matching the mockups' style.
-Check: a test in two locales (`en_US`, `ru_RU`) that fails without the fix.
 
 ### P51 — Desktop M2 (goal: the rest of the terminal inside the app — a sandboxed terminal pane, a browser pane the agent can read and screenshot, pop-out windows and tabs, a menu-bar extra with a global hotkey, Spotlight and App Intents, and per-hunk revert — plus the dark glass look; DT§3.2)
 
