@@ -13,12 +13,17 @@ struct NoticeRow: View {
     case info, warning, error
   }
 
-  let text: String
+  /// Plain words, or runs a caller marked, as `AcpBanner` bolds the agent's name.
+  let text: AttributedString
   let kind: Kind
   /// A DS§3.7 symbol for what the notice is about, or the kind's own.
   let symbol: String
 
   init(_ text: String, kind: Kind = .info, symbol: String? = nil) {
+    self.init(AttributedString(text), kind: kind, symbol: symbol)
+  }
+
+  init(_ text: AttributedString, kind: Kind = .info, symbol: String? = nil) {
     self.text = text
     self.kind = kind
     self.symbol = symbol ?? kind.symbol

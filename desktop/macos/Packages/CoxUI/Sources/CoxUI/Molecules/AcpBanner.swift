@@ -12,10 +12,18 @@ public struct AcpBanner: View {
   public init(agent: String) { self.agent = agent }
 
   public var body: some View {
-    NoticeRow(
-      "This session is driven by \(agent) over the Agent Client Protocol. Its own model, auth "
-        + "and billing apply; cox renders the stream and answers approvals.",
-      symbol: "powerplug")
+    NoticeRow(text, symbol: "powerplug")
+  }
+
+  /// The agent's name in bold, as mockup 27 sets it; built from runs, never parsed as
+  /// Markdown, since the name comes from the user's config or a plugin.
+  private var text: AttributedString {
+    var name = AttributedString(agent)
+    name.inlinePresentationIntent = .stronglyEmphasized
+    return AttributedString("This session is driven by ") + name
+      + AttributedString(
+        " over the Agent Client Protocol. Its own model, auth and billing apply; cox renders "
+          + "the stream and answers approvals.")
   }
 }
 
