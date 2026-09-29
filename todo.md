@@ -45,8 +45,6 @@
 - T56.9. Docs: cloud agents for users and in EA
 - T56.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T57.1. Windows CI job: `cargo check` over a growing crate list
-- T57.2. The shell for `bash`, `!` and hooks on Windows
-- T57.3. D7 as code: no sandbox backend forces `on-request` and warns
 - T57.4. `path::confine` on Windows paths
 - T57.5. One kill path for process trees: hooks and the session environment
 - T57.6. The same kill path for the lsp server, the status line and external agents

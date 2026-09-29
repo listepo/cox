@@ -51,8 +51,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T56.9 | todo | P3 | 1 | 0% | |
 | T56.10 | todo | P3 | 2 | 0% | |
 | T57.1 | todo | P1 | 2 | 0% | |
-| T57.2 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
-| T57.3 | in progress | P1 | 3 | 0% | Claude Code / opus-5.5 |
 | T57.4 | todo | P1 | 4 | 0% | |
 | T57.5 | todo | P1 | 4 | 0% | |
 | T57.6 | todo | P2 | 3 | 0% | |
@@ -1590,18 +1588,6 @@ A new dependency in this phase (process-wrap, T57.5) needs the creator's approva
 Depends: — · Size: ~60 · Files: `.github/workflows/ci.yml`, `justfile`
 Goal: a `windows` job on `windows-latest` (Windows Server 2025, R10.6.2) that runs `just windows-check`: `cargo check` for the crates that already build on Windows (R10.1.10), listed once in the `justfile`. Each later P57 card adds its crates to the list in the same change. The job is required for a merge to `main` only when T57.11 lands. Whether mise and `.github/actions/rust` run on a Windows runner is unverified (R10.8); this card settles it or adds the Windows setup step.
 Check: the job is green on the branch; `just windows-check` lists its crates in one place; `mise exec -- cargo check --workspace` on macOS is unchanged.
-
-#### T57.2 The shell for `bash`, `!` and hooks on Windows
-
-Depends: — (shell chosen, A128 (1)) · Size: ~180 · Files: `crates/cox-tools/src/bash/shell.rs` (new), `crates/cox-tools/src/bash/mod.rs`, `crates/cox-tools/src/bash/classify.rs`
-Goal: on Windows, resolve Git Bash when present, else PowerShell (A128 (1); what Claude Code does, R10.5.2). The lookup goes through `PATH` on Windows (today it is `SHELL_DIRS` only, R10.1.5) and is injected in tests. The new module's `//!` header records the choice and its consequences: the `bash` tool description names the shell in use; the risk classifier parses bash with tree-sitter, so a PowerShell or `cmd` command it cannot parse is classified as unknown and asks; `Bash(...)` permission rules match the command text as today. The same resolution serves `!` and hooks.
-Check: `mise exec -- cargo nextest run -p cox-tools windows_shell_resolution_follows_the_chosen_order unparsed_powershell_command_asks` (the resolution test takes an injected lookup, so it runs on every host).
-
-#### T57.3 D7 as code: no sandbox backend forces `on-request` and warns
-
-Depends: — · Size: ~120 · Files: `crates/cox-session/src/sandbox.rs`, `crates/cox-session/src/lib.rs`, `crates/cox-sandbox/src/sandbox/mod.rs` (doc comment)
-Goal: D7's Windows rule exists only as a doc comment on `cox_sandbox::sandbox::backend` today; no caller forces anything (R10.1.9, ledger #42). Add one pure function in `cox-session` that takes the detected backend and the configured `ApprovalPolicy` and returns the effective policy plus a `Level::Security` notice; `open_with_keys` applies it, so the TUI, `run -p`, ACP and the desktop apps all get it. With no backend, `on-failure` (which runs without asking) becomes `on-request`. `untrusted` and `never` (both stricter: `never` turns every `Ask` into `Deny`) stay as configured (A128 (3)). The notice is emitted on every session open, not once per install. The same path applies on any host without a backend, so it is tested on macOS and Linux with an injected `None`.
-Check: `mise exec -- cargo nextest run -p cox-session no_backend_forces_on_request no_backend_emits_a_security_notice backend_present_keeps_the_configured_policy`.
 
 #### T57.4 `path::confine` on Windows paths
 
