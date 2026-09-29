@@ -183,8 +183,8 @@ tok/s, timers) are always tabular (`.monospacedDigit()`).
 Six levels. Each is a stack of shadow layers tinted `shadow.tint` plus, from e1 up, a 1 pt inner
 highlight on the top edge — the highlight is what makes glass read as a solid object. In dark
 mode the highlight follows two `[desktop.appearance]` settings (A109): `dark_highlight` is `none`
-(the default, the dark mockup) or `subtle` (`material.darkHighlight.subtle` of the light
-strength), and `dark_highlight_scope` applies it to controls only (`e1`, the default) or to every
+(the default, the dark mockup) or `subtle` (`material.darkHighlight.subtle` of
+`glass.highlight`, §3.5), and `dark_highlight_scope` applies it to controls only (`e1`, the default) or to every
 lifted level (`e1`–`e4`, the user bubble too); the other levels keep the full highlight.
 
 | Level | What sits there |
@@ -220,7 +220,9 @@ white rims.
 | `glass.highlight` | `#ffffff` at 0.95 | `#ffffff` at 0.22 | kept: depth, nothing to read on it |
 
 In dark, lifted panes (e2 and up) draw `glass.highlight` as it is; controls (e1) draw it at
-`material.darkHighlight`'s share — none by default, as mockups 31 and 32 show (A109, §3.4). On the
+`material.darkHighlight`'s share — none by default, as mockups 31 and 32 show (A109, §3.4).
+CoxUI keeps the light highlight in the elevation tokens and scales it by `glass.highlight`'s
+strength in the drawn appearance, read from the colour asset (T51.22). On the
 dark glass, `text.primary` is 15.3:1, `text.secondary` 6.7:1, the selected row's subtitle 5.4:1 and
 the filter prompt 7.1:1, laid over opaque `surface.window` (§8).
 
