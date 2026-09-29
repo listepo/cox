@@ -24,6 +24,13 @@ host. At start it reads the login shell's environment, as the app does locally,
 so tools such as `cargo` or `mise` and env-var keys resolve as they would in a
 terminal there.
 
+A one-line request to try it by hand is in
+`crates/cox/tests/fixtures/app-server/projects.jsonl`:
+
+```sh
+cox app-server --stdio < crates/cox/tests/fixtures/app-server/projects.jsonl
+```
+
 The subcommand is behind the `app-server` cargo feature, which is on by
 default and pulls in the `plugins` feature.
 
@@ -58,8 +65,9 @@ module, and a drift test keeps it current.
   - `ended`: a session's stream is over.
   - `inbox`: an approval or a question that waits, with the Dock badge.
   - `badge`: the badge alone.
-  - `open_url`: a page a tool asked to show. The app opens it only if it is
-    `http` or `https`.
+  - `open_url`: a page a tool asked to show. The app drops anything but an
+    `http` or `https` link, then asks the person first, naming the host the
+    link came from; it opens the page only on Open.
 
 A stalled client never delays a turn. The server keeps at most 64 lines queued
 for the writer. Past that, each session's patches fold into the latest state
