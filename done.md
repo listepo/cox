@@ -8525,3 +8525,143 @@ Deviations: the narrower column shows the unified diff; the Unified/Split toggle
 Check (2026-09-29): `render.sh 08-review-diff` OK and inspected; `npm run diff` of the app's `review.png` against the render (window crop, threshold 0.3) 2.20% pixels differ — layout lines up (sidebar, file list, diff, inspector); the rest is content, the controls row and draft comments the app does not draw. Commit dbff29c8.
 
 Not done: nothing.
+
+#### T51.5 CoxPlatform terminal view over SwiftTerm
+
+Depends: T51.4 · Size: ~150 · Files: `desktop/macos/Packages/CoxPlatform/Package.swift`, `…/CoxPlatform/Sources/CoxPlatform/TerminalPane.swift` (new), its test
+Goal: an `NSViewRepresentable` over SwiftTerm's `TerminalView` (not `LocalProcessTerminalView`: Swift never spawns) bridged to a `TerminalClient` protocol in CoxClient (`write`, `resize`, `outputs: AsyncStream<[UInt8]>`); `send` and `sizeChanged` from the delegate go to the handle, one `Task` feeds output in; colours and font from tokens (`surface.terminal`, `text.terminal`, `text.terminalOk`, the mono font token). New dependency SwiftTerm v1.19.0 (research.md §9.5.2, MIT, maintained; licence fits GPLv3 and the royalty-free option, A68) — §1.1 row and `toolchain.md` Swift row.
+Check: `swift test --package-path desktop/macos/Packages/CoxPlatform --filter TerminalPane` with a fake `TerminalClient` (keys typed reach `write`, a resize reaches `resize`, fed bytes appear in the buffer); swiftlint strict and swift-format clean.
+Status: done 2026-09-29
+Result: the terminal pane (CoxPlatform `TerminalPane`) as in the card.
+
+Deviations: `TerminalPaneTests` uses failable `String(bytes:)` for swiftlint strict (7cf7e1fb).
+
+Check (2026-09-29, verify round 3 on p51-roadmap): CoxPlatform 29/29 (TerminalPane: keys reach `write`, resize reaches `resize`, fed bytes appear); `just desktop-app` builds with Metal (merged SessionWindow.swift, split into `SessionWindow+Intents.swift`, 300e5c7b); swiftlint --strict over App and all packages clean; nextest 1897/1897, clippy and fmt clean, `cargo deny check` passes.
+
+Not done: nothing.
+
+#### T51.9 CoxPlatform browser controller over `WebPage`
+
+Depends: T51.8 · Size: ~150 · Files: `…/CoxPlatform/Sources/CoxPlatform/BrowserController.swift` (new), `…/CoxPlatform/Sources/CoxPlatform/Host.swift`, its test
+Goal: a `BrowserController` over SwiftUI's `WebPage` (macOS 26, R9.3.11; no new dependency) implements the host's browser methods: load, read `document.title`, `location.href` and `document.body.innerText` by evaluating script in the page's own world, snapshot to PNG. No script message handlers and no bridge from the page to the app (DT§10); a non-persistent website data store, so the agent's page never sees the user's cookies; `MacHost` returns it from `has_browser`.
+Check: `swift test --package-path desktop/macos/Packages/CoxPlatform --filter BrowserController` loads a local HTML fixture, reads its text and gets a non-empty PNG; a test that the controller registers no message handler; swiftlint strict and swift-format clean.
+Status: done 2026-09-29
+Result: the browser controller as in the card.
+
+Deviations: none.
+
+Check (2026-09-29, verify round 3 on p51-roadmap): CoxPlatform BrowserController tests pass (local HTML fixture: text read, non-empty PNG; no message handler registered); `just desktop-app` builds with Metal (merged SessionWindow.swift, split into `SessionWindow+Intents.swift`, 300e5c7b); swiftlint --strict over App and all packages clean; nextest 1897/1897, clippy and fmt clean, `cargo deny check` passes.
+
+Not done: nothing.
+
+#### T51.11 Pop a session out into its own window or a native tab
+
+Depends: — · Size: ~160 · Files: CoxModel `AppStore` (store registry), `desktop/macos/App` scenes and commands, a CoxModel test
+Goal: "Open in New Window" and "Open in New Tab" from the sidebar row's context menu and the Window menu open the session in a `WindowGroup(for:)` window (transcript, composer, inspector; no sidebar) that joins native window tabs. All windows showing one session share one `SessionStore` and one patch-pull task, which the registry keeps while any window shows the session; closing a window never stops a running turn (DT§4.5).
+Check: a CoxModel test that two windows on one session get the same store and closing one keeps it; `just desktop-app` builds; swiftlint strict and swift-format clean.
+Status: done 2026-09-29
+Result: Open in New Window / New Tab as in the card.
+
+Deviations: none.
+
+Check (2026-09-29, verify round 3 on p51-roadmap): AppStoreTests: two windows on one session share one store, closing one keeps it; `just desktop-app` builds with Metal (merged SessionWindow.swift, split into `SessionWindow+Intents.swift`, 300e5c7b); swiftlint --strict over App and all packages clean; nextest 1897/1897, clippy and fmt clean, `cargo deny check` passes.
+
+Not done: window and tab behaviour not seen in the running app (no Screen Recording/Accessibility for the host).
+
+#### T51.14 Menu-bar extra scene and its setting
+
+Depends: T51.13 · Size: ~120 · Files: `desktop/macos/App` (`MenuBarExtra` scene), `crates/cox-protocol/src/config.rs` (`desktop.menu_bar`), `config/default.toml`
+Goal: a `MenuBarExtra` (window style) fed by `AppStore`'s inbox and running sessions; Allow and Deny send the same `Intent::Approve` the notification actions send (`NotificationActions` reused, no second mapping); the extra shows while `desktop.menu_bar = true` (default on), a key with a schema, provenance and a row in `docs/config.md`.
+Check: `mise exec -- cargo nextest run -p cox-config` (schema drift regenerated on purpose) and the `docs/config.md` coverage test; a CoxModel test that Allow from the menu emits the notification path's intent; `just desktop-app` builds.
+Status: done 2026-09-29
+Result: the menu-bar extra and `desktop.menu_bar` as in the card.
+
+Deviations: `MenuBarState`/`MenuBarPanel`: `Need.Kind` lifted to `NeedKind`, brace style (swiftlint strict, 7cf7e1fb).
+
+Check (2026-09-29, verify round 3 on p51-roadmap): cox-config and docs/config.md coverage pass; CoxModel test that menu Allow emits the notification path's intent; `just desktop-app` builds with Metal (merged SessionWindow.swift, split into `SessionWindow+Intents.swift`, 300e5c7b); swiftlint --strict over App and all packages clean; nextest 1897/1897, clippy and fmt clean, `cargo deny check` passes.
+
+Not done: the extra not seen live (no Screen Recording/Accessibility for the host).
+
+#### T51.15 Global hotkey for the menu-bar panel and a new session
+
+Depends: T51.14 · Size: ~80 · Files: `desktop/macos/App` (hotkey names and handlers), CoxUI Settings General page, `desktop/macos/App` package manifest
+Goal: two user-recorded global shortcuts, "Show cox menu" and "New session", with no default binding; recorded in Settings › General with the library's recorder and stored by it as UI-only state (DT§4.6). New dependency KeyboardShortcuts 3.1.0 (research.md §9.5.7, MIT, maintained) — §1.1 row and `toolchain.md` Swift row.
+Check: `just desktop-app` builds; a CoxUI snapshot of the General page with the recorders; swiftlint strict and swift-format clean.
+Status: done 2026-09-29
+Result: global hotkeys and their recorders as in the card.
+
+Deviations: Shortcuts preview and test closures fixed for swiftlint strict (7cf7e1fb).
+
+Check (2026-09-29, verify round 3 on p51-roadmap): CoxUI General-page recorder snapshot passes; `just desktop-app` builds with Metal (merged SessionWindow.swift, split into `SessionWindow+Intents.swift`, 300e5c7b); swiftlint --strict over App and all packages clean; nextest 1897/1897, clippy and fmt clean, `cargo deny check` passes.
+
+Not done: the recorder not tried live.
+
+#### T51.16 Spotlight indexes session titles
+
+Depends: — · Size: ~140 · Files: `…/CoxPlatform/Sources/CoxPlatform/SpotlightIndex.swift` (new), its test, `desktop/macos/App` continuation handler
+Goal: session titles (already sanitized in Rust), their project and last activity are indexed with CoreSpotlight (native, no dependency) and removed when a session is archived or deleted; only titles, never transcript text; opening a result opens that session through `NSUserActivity` continuation. The index is fed from `AppStore`'s session rows behind a protocol, so the mapping tests without Spotlight.
+Check: `swift test --package-path desktop/macos/Packages/CoxPlatform --filter SpotlightIndex` (row → attributes, delete on archive, no transcript text); `just desktop-app` builds.
+Status: done 2026-09-29
+Result: Spotlight indexing as in the card.
+
+Deviations: none.
+
+Check (2026-09-29, verify round 3 on p51-roadmap): CoxPlatform SpotlightIndex tests (row → attributes, delete on archive, no transcript text); `just desktop-app` builds with Metal (merged SessionWindow.swift, split into `SessionWindow+Intents.swift`, 300e5c7b); swiftlint --strict over App and all packages clean; nextest 1897/1897, clippy and fmt clean, `cargo deny check` passes.
+
+Not done: nothing.
+
+#### T51.17 App Intents: "Ask cox in <project>" and "Open session"
+
+Depends: — · Size: ~150 · Files: `desktop/macos/App/Intents/AskCoxIntent.swift` (new), `…/Intents/Entities.swift` (new), `…/Intents/Shortcuts.swift` (new)
+Goal: `ProjectEntity` and `SessionEntity` whose queries read `App.projects()` and `App.sessions()`; `AskCoxIntent(project, prompt)` opens the app, starts a session in that project and sends the prompt through the normal `Send` intent (approvals then land in the inbox as usual; the engine decides as always); `OpenSessionIntent(session)`; an `AppShortcutsProvider` with the phrase "Ask cox in \(project)".
+Check: `just desktop-app` builds and the intents appear in `xcrun appintentsmetadataprocessor` output of the build; a CoxModel test that the ask intent maps to open-then-send.
+Status: done 2026-09-29
+Result: App Intents as in the card.
+
+Deviations: none.
+
+Check (2026-09-29, verify round 3 on p51-roadmap): the build's App Intents metadata lists `AskCoxIntent`, `OpenSessionIntent`, the Project and Session entities and the phrase "Ask ${applicationName} in ${project}"; CoxModel AskCox test (open-then-send) passes; `just desktop-app` builds with Metal (merged SessionWindow.swift, split into `SessionWindow+Intents.swift`, 300e5c7b); swiftlint --strict over App and all packages clean; nextest 1897/1897, clippy and fmt clean, `cargo deny check` passes.
+
+Not done: nothing.
+
+#### T52.12 CoxUI best-of-n control and compare view
+
+Depends: T52.11 · Size: ~180 · Files: CoxUI composer "Best of n" control, CoxUI `BestOfCompare` screen, `desktop/macos/App` wiring
+Goal: the composer's "Compare with a second agent on the same prompt · Best of n" control from mockup 27 (pick candidates, then send), and a compare view: one column per candidate with state, diffstat, cost, "Open in Review" and "Keep this one" (confirmation lists what will be pruned).
+Check: CoxUI snapshots (2 and 3 candidates, one failed); swiftlint strict and swift-format clean.
+Status: done 2026-09-29
+Result: best-of-N candidates UI as in the card.
+
+Deviations: none.
+
+Check (2026-09-29, verify round 3 on p51-roadmap): CoxUI snapshots (2 and 3 candidates, one failed) and BestOf tests pass; `just desktop-app` builds with Metal (merged SessionWindow.swift, split into `SessionWindow+Intents.swift`, 300e5c7b); swiftlint --strict over App and all packages clean; nextest 1897/1897, clippy and fmt clean, `cargo deny check` passes.
+
+Not done: nothing.
+
+#### T52.20 `cox-app` remote workspace over SSH
+
+Depends: T52.19 · Size: ~190 · Files: `crates/cox-app/src/remote.rs` (new), `crates/cox-app/src/lib.rs`, `crates/cox-ffi/src/lib.rs`
+Goal: `RemoteWorkspace::connect(host)` runs `/usr/bin/ssh -T -o BatchMode=yes -o ForwardAgent=no -o ClearAllForwardings=yes -- <host> cox app-server --stdio` (the host name validated: no leading `-`, no whitespace or control characters), with no environment forwarded, and exposes the same session-handle surface as a local session, so CoxModel's `CoreClient` works unchanged; authentication is the user's own ssh configuration and agent, never a password field in the app; a dropped connection marks its sessions disconnected with a reconnect action. `App.connect_remote` forwards it (A90).
+Check: `mise exec -- cargo nextest run -p cox-app remote_host_with_leading_dash_is_refused remote_spawn_forwards_no_agent_and_no_env remote_session_streams_through_a_fake_ssh` (a fake `ssh` script that execs the local `cox app-server --stdio`); the A90 forwarder test.
+Status: done 2026-09-29
+Result: remote sessions over ssh as in the card.
+
+Deviations: two verify fixes: the remote patch stream is folded through `coalesce::push` like the local controller's instead of an unbounded channel of batches (07b4e247, two tests); `SessionWindow.open` registers the store by `client.id` before `client.info()`, which a remote session throws on, so notification and menu-bar answers for a remote approval were dropped (29eb7b50).
+
+Check (2026-09-29, verify round 3 on p51-roadmap): the card's cox-app nextest filters and the A90 forwarder test pass; `just desktop-app` builds with Metal (merged SessionWindow.swift, split into `SessionWindow+Intents.swift`, 300e5c7b); swiftlint --strict over App and all packages clean; nextest 1897/1897, clippy and fmt clean, `cargo deny check` passes.
+
+Not done: nothing.
+
+#### T52.22 App-server and remote-session docs
+
+Depends: T52.21 · Size: ~80 (docs) · Files: `docs/app-server.md` (new), `docs/how-it-works.md` (surfaces list), `AGENTS.md` ("What this is" names `cox app-server`)
+Goal: how to run `cox app-server --stdio` on a remote machine, what crosses the wire and what never does (keys, the ssh agent), and how the app connects.
+Check: the docs link and command-coverage tests pass (`mise exec -- cargo nextest run -p cox --test docs`).
+Status: done 2026-09-29
+Result: docs link and command-coverage tests.
+
+Deviations: `crates/cox/tests/docs.rs` also checks that paths cited in app-server.md exist; `cox init` was undocumented — line added to getting-started.md (the test fails without it) (5e21740e).
+
+Check (2026-09-29, verify round 3 on p51-roadmap): `cargo nextest run -p cox --test docs` passes; `just desktop-app` builds with Metal (merged SessionWindow.swift, split into `SessionWindow+Intents.swift`, 300e5c7b); swiftlint --strict over App and all packages clean; nextest 1897/1897, clippy and fmt clean, `cargo deny check` passes.
+
+Not done: nothing.

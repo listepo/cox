@@ -37,20 +37,10 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.44.15 | todo | P2 | 2 | 0% | |
 | T39.7 | todo | P3 | 2 | 0% | |
 | T43.6 | todo | P3 | 3 | 0% | |
-| T51.5 | todo | P2 | 3 | 0% | |
 | T51.6 | todo | P2 | 3 | 0% | |
-| T51.9 | todo | P2 | 3 | 0% | |
 | T51.10 | todo | P2 | 3 | 0% | |
-| T51.11 | todo | P2 | 3 | 0% | |
-| T51.14 | todo | P2 | 3 | 0% | |
-| T51.15 | todo | P3 | 2 | 0% | |
-| T51.16 | todo | P3 | 3 | 0% | |
-| T51.17 | todo | P3 | 3 | 0% | |
 | T52.8 | todo | P2 | 3 | 0% | |
-| T52.12 | todo | P3 | 3 | 0% | |
 | T52.17 | todo | P3 | 3 | 0% | |
-| T52.20 | todo | P3 | 4 | 0% | |
-| T52.22 | todo | P3 | 1 | 0% | |
 | T53.5 | todo | P3 | 3 | 0% | |
 | T53.6 | todo | P3 | 2 | 0% | |
 | T53.7 | todo | P3 | 2 | 0% | |
@@ -1393,59 +1383,17 @@ Every card in this phase keeps the P37 rules (business logic in `cox-app`, `cox-
 - a Swift card that draws an M2 screen compares it with its mockup by `npm run diff` in `desktop/design`;
 - a new dependency is named in its card and gets its §1.1 and `toolchain.md` rows in the same commit.
 
-#### T51.5 CoxPlatform terminal view over SwiftTerm
-
-Depends: T51.4 · Size: ~150 · Files: `desktop/macos/Packages/CoxPlatform/Package.swift`, `…/CoxPlatform/Sources/CoxPlatform/TerminalPane.swift` (new), its test
-Goal: an `NSViewRepresentable` over SwiftTerm's `TerminalView` (not `LocalProcessTerminalView`: Swift never spawns) bridged to a `TerminalClient` protocol in CoxClient (`write`, `resize`, `outputs: AsyncStream<[UInt8]>`); `send` and `sizeChanged` from the delegate go to the handle, one `Task` feeds output in; colours and font from tokens (`surface.terminal`, `text.terminal`, `text.terminalOk`, the mono font token). New dependency SwiftTerm v1.19.0 (research.md §9.5.2, MIT, maintained; licence fits GPLv3 and the royalty-free option, A68) — §1.1 row and `toolchain.md` Swift row.
-Check: `swift test --package-path desktop/macos/Packages/CoxPlatform --filter TerminalPane` with a fake `TerminalClient` (keys typed reach `write`, a resize reaches `resize`, fed bytes appear in the buffer); swiftlint strict and swift-format clean.
-
 #### T51.6 Terminal pane in the session window (mockup 24)
 
 Depends: T51.5 · Size: ~150 · Files: CoxUI `TerminalPaneChrome` organism (header with shell, branch, tabs, `+`), `desktop/macos/App` session scene wiring, CoxModel `SessionStore` terminal state
 Goal: mockup 24: the pane under the transcript column, toggled by ⌃\` (added to the DT§5.5 key table), header "zsh — <branch>", `+` opens another terminal of the same session; closing the session window closes its terminals (asking first while one runs a foreground job); the pane height is UI-only state.
 Check: CoxUI snapshots of the pane (one and two tabs, light and dark); `npm run diff` of the app screenshot against 24-terminal-pane-m2 leaves no unexplained layout or type region; a CoxModel test that closing the session closes its handles; swiftlint strict and swift-format clean.
 
-#### T51.9 CoxPlatform browser controller over `WebPage`
-
-Depends: T51.8 · Size: ~150 · Files: `…/CoxPlatform/Sources/CoxPlatform/BrowserController.swift` (new), `…/CoxPlatform/Sources/CoxPlatform/Host.swift`, its test
-Goal: a `BrowserController` over SwiftUI's `WebPage` (macOS 26, R9.3.11; no new dependency) implements the host's browser methods: load, read `document.title`, `location.href` and `document.body.innerText` by evaluating script in the page's own world, snapshot to PNG. No script message handlers and no bridge from the page to the app (DT§10); a non-persistent website data store, so the agent's page never sees the user's cookies; `MacHost` returns it from `has_browser`.
-Check: `swift test --package-path desktop/macos/Packages/CoxPlatform --filter BrowserController` loads a local HTML fixture, reads its text and gets a non-empty PNG; a test that the controller registers no message handler; swiftlint strict and swift-format clean.
-
 #### T51.10 Browser preview pane (mockup 25)
 
 Depends: T51.9 · Size: ~150 · Files: CoxUI `BrowserPaneChrome` organism (back, lock, address, reload), `desktop/macos/App` session scene wiring, CoxModel pane state
 Goal: mockup 25: the pane beside the transcript, showing the same `WebPage` the agent drives; the user can type an address (the same `http`/`https` rule, checked in Rust through the open intent) and reload; the agent's actions appear as ordinary tool cards; a toggle in the View menu and the palette.
 Check: CoxUI snapshots of the pane chrome (idle, loading, `https` lock); `npm run diff` against 25-browser-preview-m2; swiftlint strict and swift-format clean.
-
-#### T51.11 Pop a session out into its own window or a native tab
-
-Depends: — · Size: ~160 · Files: CoxModel `AppStore` (store registry), `desktop/macos/App` scenes and commands, a CoxModel test
-Goal: "Open in New Window" and "Open in New Tab" from the sidebar row's context menu and the Window menu open the session in a `WindowGroup(for:)` window (transcript, composer, inspector; no sidebar) that joins native window tabs. All windows showing one session share one `SessionStore` and one patch-pull task, which the registry keeps while any window shows the session; closing a window never stops a running turn (DT§4.5).
-Check: a CoxModel test that two windows on one session get the same store and closing one keeps it; `just desktop-app` builds; swiftlint strict and swift-format clean.
-
-#### T51.14 Menu-bar extra scene and its setting
-
-Depends: T51.13 · Size: ~120 · Files: `desktop/macos/App` (`MenuBarExtra` scene), `crates/cox-protocol/src/config.rs` (`desktop.menu_bar`), `config/default.toml`
-Goal: a `MenuBarExtra` (window style) fed by `AppStore`'s inbox and running sessions; Allow and Deny send the same `Intent::Approve` the notification actions send (`NotificationActions` reused, no second mapping); the extra shows while `desktop.menu_bar = true` (default on), a key with a schema, provenance and a row in `docs/config.md`.
-Check: `mise exec -- cargo nextest run -p cox-config` (schema drift regenerated on purpose) and the `docs/config.md` coverage test; a CoxModel test that Allow from the menu emits the notification path's intent; `just desktop-app` builds.
-
-#### T51.15 Global hotkey for the menu-bar panel and a new session
-
-Depends: T51.14 · Size: ~80 · Files: `desktop/macos/App` (hotkey names and handlers), CoxUI Settings General page, `desktop/macos/App` package manifest
-Goal: two user-recorded global shortcuts, "Show cox menu" and "New session", with no default binding; recorded in Settings › General with the library's recorder and stored by it as UI-only state (DT§4.6). New dependency KeyboardShortcuts 3.1.0 (research.md §9.5.7, MIT, maintained) — §1.1 row and `toolchain.md` Swift row.
-Check: `just desktop-app` builds; a CoxUI snapshot of the General page with the recorders; swiftlint strict and swift-format clean.
-
-#### T51.16 Spotlight indexes session titles
-
-Depends: — · Size: ~140 · Files: `…/CoxPlatform/Sources/CoxPlatform/SpotlightIndex.swift` (new), its test, `desktop/macos/App` continuation handler
-Goal: session titles (already sanitized in Rust), their project and last activity are indexed with CoreSpotlight (native, no dependency) and removed when a session is archived or deleted; only titles, never transcript text; opening a result opens that session through `NSUserActivity` continuation. The index is fed from `AppStore`'s session rows behind a protocol, so the mapping tests without Spotlight.
-Check: `swift test --package-path desktop/macos/Packages/CoxPlatform --filter SpotlightIndex` (row → attributes, delete on archive, no transcript text); `just desktop-app` builds.
-
-#### T51.17 App Intents: "Ask cox in <project>" and "Open session"
-
-Depends: — · Size: ~150 · Files: `desktop/macos/App/Intents/AskCoxIntent.swift` (new), `…/Intents/Entities.swift` (new), `…/Intents/Shortcuts.swift` (new)
-Goal: `ProjectEntity` and `SessionEntity` whose queries read `App.projects()` and `App.sessions()`; `AskCoxIntent(project, prompt)` opens the app, starts a session in that project and sends the prompt through the normal `Send` intent (approvals then land in the inbox as usual; the engine decides as always); `OpenSessionIntent(session)`; an `AppShortcutsProvider` with the phrase "Ask cox in \(project)".
-Check: `just desktop-app` builds and the intents appear in `xcrun appintentsmetadataprocessor` output of the build; a CoxModel test that the ask intent maps to open-then-send.
 
 ### P52 — Desktop M3 (goal: beyond a single agent — Claude Agent, Codex, Gemini CLI and Cursor sessions in the same sidebar over ACP, best-of-n across models in worktrees, plugin panels drawn natively from the `Widget` tree, and remote sessions over SSH through `cox app-server`; DT§3.3)
 
@@ -1463,29 +1411,11 @@ Depends: T52.7 · Size: ~170 · Files: CoxUI new-session sheet and `AgentsList` 
 Goal: mockup 27: New session offers the agent; an external session's transcript opens with the "driven by <agent> over the Agent Client Protocol" banner, its toolbar model chip reads "<agent> · ACP" and cost "—"; the sidebar row shows the agent; the inspector's Info tab lists the agents with their launch line and availability.
 Check: CoxUI snapshots of the picker, banner and Agents list; `npm run diff` against 27-external-agents-acp-m3; swiftlint strict and swift-format clean.
 
-#### T52.12 CoxUI best-of-n control and compare view
-
-Depends: T52.11 · Size: ~180 · Files: CoxUI composer "Best of n" control, CoxUI `BestOfCompare` screen, `desktop/macos/App` wiring
-Goal: the composer's "Compare with a second agent on the same prompt · Best of n" control from mockup 27 (pick candidates, then send), and a compare view: one column per candidate with state, diffstat, cost, "Open in Review" and "Keep this one" (confirmation lists what will be pruned).
-Check: CoxUI snapshots (2 and 3 candidates, one failed); swiftlint strict and swift-format clean.
-
 #### T52.17 Plugin panels, status segments, overlays and commands in the app
 
 Depends: T52.16 · Size: ~150 · Files: `desktop/macos/App` session scene, CoxModel `SessionStore` plugin state, CoxUI toolbar status area
 Goal: a `panel` slot above the composer (≤ 8 rows, toggled by its command), `status.left`/`status.right` segments in the toolbar status area (dropped first when narrow), `overlay` as a sheet (Esc closes), renderer widgets inside tool cards, `/<id>:<name>` in the palette.
 Check: a CoxModel test that a slot patch updates only its slot; CoxUI snapshots of a panel and a status segment; `just desktop-app` builds.
-
-#### T52.20 `cox-app` remote workspace over SSH
-
-Depends: T52.19 · Size: ~190 · Files: `crates/cox-app/src/remote.rs` (new), `crates/cox-app/src/lib.rs`, `crates/cox-ffi/src/lib.rs`
-Goal: `RemoteWorkspace::connect(host)` runs `/usr/bin/ssh -T -o BatchMode=yes -o ForwardAgent=no -o ClearAllForwardings=yes -- <host> cox app-server --stdio` (the host name validated: no leading `-`, no whitespace or control characters), with no environment forwarded, and exposes the same session-handle surface as a local session, so CoxModel's `CoreClient` works unchanged; authentication is the user's own ssh configuration and agent, never a password field in the app; a dropped connection marks its sessions disconnected with a reconnect action. `App.connect_remote` forwards it (A90).
-Check: `mise exec -- cargo nextest run -p cox-app remote_host_with_leading_dash_is_refused remote_spawn_forwards_no_agent_and_no_env remote_session_streams_through_a_fake_ssh` (a fake `ssh` script that execs the local `cox app-server --stdio`); the A90 forwarder test.
-
-#### T52.22 App-server and remote-session docs
-
-Depends: T52.21 · Size: ~80 (docs) · Files: `docs/app-server.md` (new), `docs/how-it-works.md` (surfaces list), `AGENTS.md` ("What this is" names `cox app-server`)
-Goal: how to run `cox app-server --stdio` on a remote machine, what crosses the wire and what never does (keys, the ssh agent), and how the app connects.
-Check: the docs link and command-coverage tests pass (`mise exec -- cargo nextest run -p cox --test docs`).
 
 ### P53 — Plugin distribution (goal: a plugin installs from git or a URL through the same validation and per-digest grant as a local folder, and the plugin API, the Rust SDK and the Go SDK are ready to publish once `api = 1` is frozen)
 
