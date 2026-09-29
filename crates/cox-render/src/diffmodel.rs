@@ -324,7 +324,7 @@ pub fn revert_hunk(before: &str, now: &str, index: usize) -> Result<String, Hunk
         .nth(index)
         .ok_or(HunkError::Stale)?;
     let mut changed = group.iter().filter(|op| op.tag() != DiffTag::Equal);
-    let (Some(first), last) = (changed.next(), changed.last()) else {
+    let (Some(first), last) = (changed.next(), changed.next_back()) else {
         return Err(HunkError::Stale);
     };
     let last = last.unwrap_or(first);

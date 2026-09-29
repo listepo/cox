@@ -37,6 +37,7 @@ use cox_plugin_api::AgentMode;
 use cox_protocol::Config;
 use cox_protocol::errors::{CoreError, ProviderError};
 use cox_protocol::ids::{CallId, ItemId, SessionId, TurnId};
+use cox_protocol::traits::Store as _;
 use cox_protocol::types::{
     DecidedBy, Decision, Event, ItemKind, Job, ModelId, Source, Tier, ToolCall, Why,
 };
@@ -235,7 +236,7 @@ pub async fn open(
 pub async fn connect(
     agent: String,
     id: SessionId,
-    transport: impl ConnectTo<Client> + Send + 'static,
+    transport: impl ConnectTo<Client> + 'static,
     host: impl FnOnce(Arc<dyn Approver>, mpsc::UnboundedSender<SessionUpdate>) -> ClientHost,
     tail: Option<JoinHandle<String>>,
     resume: Option<AcpResume>,
@@ -272,7 +273,7 @@ pub async fn connect(
                     cx.send_request(load).block_task().await?;
                     // The replay is what cox's rollout already holds.
                     while updates.try_recv().is_ok() {}
-                    Ok(Some(session))
+                    Ok::<_, agent_client_protocol::Error>(Some(session))
                 }
                 Some(_) => Ok(None),
                 None => {

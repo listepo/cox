@@ -222,7 +222,7 @@ async fn read(link: Arc<Link>, reader: impl AsyncRead + Unpin, local: Arc<dyn Ho
                 ServerEvent::Ended { session } => {
                     lock(&link.streams).remove(&session);
                 }
-                ServerEvent::Inbox { item, badge } => local.notify(item, badge),
+                ServerEvent::Inbox { item, badge } => local.notify(*item, badge),
                 // The badge counts this machine's sessions; a remote count
                 // would overwrite it.
                 ServerEvent::Badge { .. } => {}
@@ -534,7 +534,7 @@ mod tests {
         let (client, mut server) = tokio::io::duplex(4096);
         let (reader, writer) = tokio::io::split(client);
         let links = Arc::new(Links::default());
-        let local: Arc<dyn Host> = Arc::clone(&links);
+        let local = Arc::clone(&links) as Arc<dyn Host>;
         let link = Link::start("devbox", reader, writer, None, local);
         for url in [
             "https://example.com/login",

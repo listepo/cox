@@ -45,6 +45,9 @@ const PLUGIN_QUEUE: usize = 64;
 /// What runs the session: cox's own core, or an external ACP agent's
 /// process (T52.4), whose events feed the same timeline. A stored agent
 /// session that could not be reattached keeps the reason instead (T52.6).
+// One per open session and never moved after `open`, so the core's size
+// costs nothing a box would save.
+#[allow(clippy::large_enum_variant)]
 enum Driver {
     Core(Session),
     Agent {

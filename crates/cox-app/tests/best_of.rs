@@ -16,7 +16,7 @@ use cox_app::{
     BestOfRequest, BlockKind, Candidate, CandidateState, InboxItem, Launch, TimelinePatch,
 };
 use cox_protocol::errors::WorktreeError;
-use cox_protocol::traits::{FileStat, Worktree, Worktrees};
+use cox_protocol::traits::{FileStat, Store as _, Worktree, Worktrees};
 
 const THEME: &str = "base16-ocean.dark";
 const PROMPT: &str = "Split CheckoutForm into three components.";
@@ -342,13 +342,13 @@ async fn best_of_pick_refuses_dirty_without_second_confirmation() {
         .path;
     std::fs::write(other.join("DIRTY"), "work in progress\n").expect("write");
     let first = app.pick(&launch.group.id, 0, false).await.expect("pick");
-    assert_eq!(first.dirty, [other.clone()]);
+    assert_eq!(first.dirty, std::slice::from_ref(&other));
     assert!(first.pruned.is_empty());
     assert!(
         other.exists(),
         "a tree with changes stays without a second yes"
     );
     let second = app.pick(&launch.group.id, 0, true).await.expect("pick");
-    assert_eq!(second.pruned, [other.clone()]);
+    assert_eq!(second.pruned, std::slice::from_ref(&other));
     assert!(!other.exists());
 }

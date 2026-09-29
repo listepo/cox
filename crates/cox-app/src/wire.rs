@@ -158,7 +158,7 @@ pub enum ServerEvent {
     /// `Host::notify`: a new inbox item and the badge.
     Inbox {
         #[schemars(with = "Value")]
-        item: InboxItem,
+        item: Box<InboxItem>,
         badge: u32,
     },
     /// `Host::badge`.

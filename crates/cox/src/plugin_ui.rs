@@ -26,7 +26,9 @@ pub(crate) fn serve(
 }
 
 /// One request's answer, as `serve` gives it (the service's
-/// `plugin_ui::answer` under the TUI's types).
+/// `plugin_ui::answer` under the TUI's types). Only the tests call it:
+/// `serve` goes through the service's own loop.
+#[cfg(test)]
 pub(crate) fn answer(host: Option<&PluginHost>, request: PluginRequest) -> PluginUiMsg {
     let (request, cell) = split(request);
     join(cell, service::answer(host, request))

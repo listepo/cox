@@ -59,7 +59,10 @@ impl ServerHost {
 
 impl Host for ServerHost {
     fn notify(&self, item: InboxItem, badge: u32) {
-        self.push(ServerEvent::Inbox { item, badge });
+        self.push(ServerEvent::Inbox {
+            item: Box::new(item),
+            badge,
+        });
     }
 
     fn badge(&self, badge: u32) {

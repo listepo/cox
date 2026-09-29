@@ -490,7 +490,9 @@ pub struct WorktreeInfo {
 pub struct FileStat {
     /// Relative to the worktree.
     pub path: PathBuf,
+    /// Lines added.
     pub added: u32,
+    /// Lines removed.
     pub removed: u32,
 }
 
