@@ -10,97 +10,8 @@ use cox_protocol::types::{Effort, ModelId, PermissionMode, SlashCommand, Submiss
 
 use crate::keymap::Keymap;
 
-/// `(name, usage, what it does)`; the palette lists the names in this order.
-pub const COMMANDS: &[(&str, &str, &str)] = &[
-    (
-        "model",
-        "/model [cheap|code|think] [model]",
-        "switch a tier's model",
-    ),
-    (
-        "think",
-        "/think <prompt>",
-        "one turn on the think tier, price confirmed first",
-    ),
-    (
-        "effort",
-        "/effort [low|medium|high|xhigh]",
-        "effort for the rest of the session; bare restores the tier default",
-    ),
-    ("compact", "/compact [focus]", "compact the context now"),
-    (
-        "rewind",
-        "/rewind",
-        "go back to an earlier turn: code, conversation or both",
-    ),
-    ("undo", "/undo", "undo the last turn's file changes"),
-    ("redo", "/redo", "redo what /undo took back"),
-    ("cost", "/cost", "what this session has spent"),
-    ("context", "/context", "where the next request's tokens go"),
-    (
-        "autocompact",
-        "/autocompact",
-        "the compaction threshold and its config source",
-    ),
-    (
-        "permissions",
-        "/permissions [default|plan|auto|bypass]",
-        "show or set the permission mode",
-    ),
-    (
-        "sandbox",
-        "/sandbox <read-only|workspace-write|danger-full-access>",
-        "set the sandbox mode",
-    ),
-    ("resume", "/resume", "pick an earlier session to resume"),
-    ("sessions", "/sessions", "this project's recent sessions"),
-    (
-        "expand",
-        "/expand <id>",
-        "show an archived tool output in full",
-    ),
-    ("agents", "/agents", "live cox sessions in this workspace"),
-    (
-        "loop",
-        "/loop <interval> <prompt> [--budget usd] | /loop stop",
-        "repeat a prompt on a timer with its own budget cap",
-    ),
-    ("skills", "/skills", "list skills"),
-    ("hooks", "/hooks", "list hooks"),
-    ("mcp", "/mcp", "MCP servers and their tools"),
-    (
-        "plugin",
-        "/plugin <new|update|remove|list|reload> ...",
-        "manage plugins (PL§13)",
-    ),
-    ("doctor", "/doctor", "check the install"),
-    ("clear", "/clear", "new session, same directory"),
-    (
-        "fork",
-        "/fork [turn]",
-        "new child session with the history up to a turn (default: all)",
-    ),
-    (
-        "handoff",
-        "/handoff <objective>",
-        "new child session seeded with a cheap summary and the objective",
-    ),
-    (
-        "init",
-        "/init [--force]",
-        "scaffold AGENTS.md for this repo",
-    ),
-    ("todo", "/todo", "toggle the todo panel"),
-    ("tasks", "/tasks", "list running background tasks"),
-    ("vim", "/vim", "toggle vim keys"),
-    (
-        "theme",
-        "/theme [name]",
-        "pick a colour theme, previewed live",
-    ),
-    ("help", "/help", "this list"),
-    ("quit", "/quit", "exit"),
-];
+/// The shared table (T37.10), re-exported so the TUI's paths stay put.
+pub use cox_protocol::commands::COMMANDS;
 
 /// Where a key applies (T24.6): the composer with no turn, a running turn,
 /// a modal that takes the keys (approval, question, picker), or an overlay
@@ -149,6 +60,9 @@ pub const KEYMAP: &[(&str, &str, Context)] = &[
     ("Ctrl+O", "transcript", Context::Idle),
     ("Ctrl+E", "expand", Context::Idle),
     ("Ctrl+G", "diff", Context::Idle),
+    // T54.6: push-to-talk; a running turn falls back to this row, so a
+    // transcript can queue like `Enter`.
+    ("Alt+V", "voice", Context::Idle),
     // T33.25, PL§8: a plugin's `commands`/`keys` reach `state.commands`
     // and `Keymap::declare_plugin_keys` only after this fires once.
     ("Ctrl+K", "plugin.leader", Context::Idle),
@@ -169,6 +83,8 @@ pub const KEYMAP: &[(&str, &str, Context)] = &[
     ("Esc", "close", Context::Modal),
     ("Up", "previous", Context::Modal),
     ("Down", "next", Context::Modal),
+    // T46.7: only over `/theme`; `view::hints` leaves it off other modals.
+    ("Ctrl+E", "theme.edit", Context::Modal),
     ("Esc", "close", Context::Overlay),
     ("?", "close", Context::Overlay),
     ("PageUp", "scroll.up", Context::Overlay),
@@ -187,6 +103,9 @@ pub enum Action {
     Quit,
     Help,
     Cost,
+    /// `/context` (A98): the last request's window and split, drawn from
+    /// state the TUI already holds rather than asked of the core.
+    Context,
     /// Toggle the todo panel.
     Todo,
     /// List the running background tasks.
@@ -336,6 +255,7 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
         },
         "compact" => Action::Submit(Submission::Compact { focus: joined() }),
         "cost" => Action::Cost,
+        "context" => Action::Context,
         "permissions" => match args.first().map(String::as_str) {
             None => Action::Notice("/permissions <default|plan|auto|bypass>".into()),
             Some(m) => match mode_named(m) {
@@ -354,6 +274,10 @@ pub fn parse(line: &str, tier: Tier) -> Option<Action> {
         },
         "sessions" => Action::Sessions,
         "resume" => Action::Resume,
+        "rename" => match joined() {
+            Some(title) => Action::Submit(Submission::Rename { title }),
+            None => Action::Notice("/rename needs a title".into()),
+        },
         "rewind" => Action::Rewind,
         "undo" => Action::Undo,
         "redo" => Action::Redo,
@@ -562,14 +486,8 @@ fn mode_named(s: &str) -> Option<PermissionMode> {
     }
 }
 
-/// `Shift+Tab`: default → plan → auto → default (§1.13).
-pub fn next_mode(mode: PermissionMode) -> PermissionMode {
-    match mode {
-        PermissionMode::Default => PermissionMode::Plan,
-        PermissionMode::Plan => PermissionMode::Auto,
-        PermissionMode::Auto | PermissionMode::Bypass => PermissionMode::Default,
-    }
-}
+/// `Shift+Tab`'s cycle, shared with the desktop composer (T37.24.7).
+pub use cox_core::permission::next_mode;
 
 /// `/autocompact`'s line: the threshold and the config layer that set it —
 /// `source` is `cox config show --sources`' `source_of` layer name.
@@ -600,6 +518,26 @@ mod tests {
         assert_eq!(p("!! git status "), shell("git status", true));
         assert!(matches!(p("!"), Some(Action::Notice(_))));
         assert!(matches!(p("!! "), Some(Action::Notice(_))));
+    }
+
+    /// P42: `/mode` is in `/help` and reaches the core as a command.
+    #[test]
+    fn mode_command_is_listed_in_help() {
+        let help = help(&Keymap::default());
+        let row = help
+            .lines()
+            .find(|l| l.starts_with("/mode "))
+            .expect("/mode in /help");
+        insta::assert_snapshot!(row);
+        assert_eq!(
+            parse("/mode architect", Tier::Code),
+            Some(Action::Submit(Submission::Command {
+                command: SlashCommand {
+                    name: "mode".into(),
+                    args: vec!["architect".into()],
+                },
+            }))
+        );
     }
 
     /// T26.3: `/fork` takes an optional turn in either spelling the

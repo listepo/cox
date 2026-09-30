@@ -1,0 +1,873 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Line",
+  "description": "One line on the wire, either direction.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "request"
+        }
+      },
+      "$ref": "#/$defs/Request",
+      "required": [
+        "type"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "response"
+        }
+      },
+      "$ref": "#/$defs/Response",
+      "required": [
+        "type"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "notification"
+        }
+      },
+      "$ref": "#/$defs/Notification",
+      "required": [
+        "type"
+      ]
+    }
+  ],
+  "$defs": {
+    "Call": {
+      "description": "What `App`, its `Workspace` and a `LiveSession` answer, one variant per\nmethod the desktop app calls over the FFI.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "projects"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "limit": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              },
+              "required": [
+                "limit"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "sessions"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "project": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              },
+              "required": [
+                "project",
+                "limit"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "search"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": "integer",
+                  "format": "int64"
+                }
+              },
+              "required": [
+                "query",
+                "limit"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "description": "A new session in `cwd`, or `resume`'s; its patches then stream as\n`patches` notifications.",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "open"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "cwd": {
+                  "type": "string"
+                },
+                "resume": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/SessionId"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "theme": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "cwd",
+                "theme"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "send"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "session": {
+                  "$ref": "#/$defs/SessionId"
+                },
+                "intent": true
+              },
+              "required": [
+                "session",
+                "intent"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "snapshot"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "session": {
+                  "$ref": "#/$defs/SessionId"
+                }
+              },
+              "required": [
+                "session"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "description": "A truncated output in full, as `cox expand` prints it.",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "expand"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "session": {
+                  "$ref": "#/$defs/SessionId"
+                },
+                "archive": {
+                  "$ref": "#/$defs/ArchiveId"
+                }
+              },
+              "required": [
+                "session",
+                "archive"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "complete"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "session": {
+                  "$ref": "#/$defs/SessionId"
+                },
+                "token": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "session",
+                "token",
+                "limit"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "changes"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "session": {
+                  "$ref": "#/$defs/SessionId"
+                }
+              },
+              "required": [
+                "session"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "plan"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "session": {
+                  "$ref": "#/$defs/SessionId"
+                }
+              },
+              "required": [
+                "session"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "description": "Stops the session's patch stream; the session keeps running.",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "close"
+            },
+            "params": {
+              "type": "object",
+              "properties": {
+                "session": {
+                  "$ref": "#/$defs/SessionId"
+                }
+              },
+              "required": [
+                "session"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        }
+      ]
+    },
+    "SessionId": {
+      "description": "SessionId: a 26-character Crockford-base32 ULID.",
+      "type": "string",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    },
+    "ArchiveId": {
+      "description": "ArchiveId: a 26-character Crockford-base32 ULID.",
+      "type": "string",
+      "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+    },
+    "Request": {
+      "description": "A client's call; `id` pairs it with its response.",
+      "type": "object",
+      "properties": {
+        "v": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "call": {
+          "$ref": "#/$defs/Call"
+        }
+      },
+      "required": [
+        "v",
+        "id",
+        "call"
+      ]
+    },
+    "Outcome": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "ok"
+            },
+            "value": {
+              "$ref": "#/$defs/Reply"
+            }
+          },
+          "required": [
+            "status",
+            "value"
+          ]
+        },
+        {
+          "description": "The error's text; the client shows it as the FFI's error would be.",
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "err"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "value"
+          ]
+        }
+      ]
+    },
+    "Reply": {
+      "description": "A call's result, named as the call. The payload types are the FFI's own;\nthe schema leaves their fields to those types (`Value`), so it pins the\nenvelope without a second copy of every block shape.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "projects"
+            },
+            "value": {
+              "type": "array",
+              "items": true
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "sessions"
+            },
+            "value": {
+              "type": "array",
+              "items": true
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "search"
+            },
+            "value": {
+              "type": "array",
+              "items": true
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "opened"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "session": {
+                  "$ref": "#/$defs/SessionId"
+                },
+                "blocks": {
+                  "type": "array",
+                  "items": true
+                },
+                "warnings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "session",
+                "blocks",
+                "warnings"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A fork or handoff answers with its child, already open here.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "sent"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "child": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/SessionId"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "snapshot"
+            },
+            "value": {
+              "type": "array",
+              "items": true
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "expand"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "complete"
+            },
+            "value": {
+              "type": "array",
+              "items": true
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "changes"
+            },
+            "value": true
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "plan"
+            },
+            "value": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/TodoItem"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "closed"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "TodoItem": {
+      "description": "One row of the `todo` tool's list, the shape of its `structured` payload.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Unique within the list.",
+          "type": "string"
+        },
+        "text": {
+          "description": "What the step is.",
+          "type": "string"
+        },
+        "state": {
+          "description": "Where the step stands.",
+          "$ref": "#/$defs/TodoState"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "state"
+      ]
+    },
+    "TodoState": {
+      "description": "Where a todo step stands.",
+      "oneOf": [
+        {
+          "description": "Not started.",
+          "type": "string",
+          "const": "pending"
+        },
+        {
+          "description": "Being worked on.",
+          "type": "string",
+          "const": "in_progress"
+        },
+        {
+          "description": "Finished.",
+          "type": "string",
+          "const": "done"
+        }
+      ]
+    },
+    "Response": {
+      "description": "The answer to request `id`.",
+      "type": "object",
+      "properties": {
+        "v": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        }
+      },
+      "required": [
+        "v",
+        "id",
+        "outcome"
+      ]
+    },
+    "ServerEvent": {
+      "oneOf": [
+        {
+          "description": "One coalesced batch of a session's timeline, as `next_patches`\nreturns it.",
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "patches"
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "session": {
+                  "$ref": "#/$defs/SessionId"
+                },
+                "patches": {
+                  "type": "array",
+                  "items": true
+                }
+              },
+              "required": [
+                "session",
+                "patches"
+              ]
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ]
+        },
+        {
+          "description": "The session's stream ended.",
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "ended"
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "session": {
+                  "$ref": "#/$defs/SessionId"
+                }
+              },
+              "required": [
+                "session"
+              ]
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ]
+        },
+        {
+          "description": "`Host::notify`: a new inbox item and the badge.",
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "inbox"
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "item": true,
+                "badge": {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "item",
+                "badge"
+              ]
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ]
+        },
+        {
+          "description": "`Host::badge`.",
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "badge"
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "badge": {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "badge"
+              ]
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ]
+        },
+        {
+          "description": "`Host::open_url`: the client opens it only after the user confirms,\nand only an `http(s)` URL (T52.19).",
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "open_url"
+            },
+            "data": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "url"
+              ]
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ]
+        }
+      ]
+    },
+    "Notification": {
+      "description": "Pushed by the server, never answered.",
+      "type": "object",
+      "properties": {
+        "v": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "event": {
+          "$ref": "#/$defs/ServerEvent"
+        }
+      },
+      "required": [
+        "v",
+        "event"
+      ]
+    }
+  }
+}

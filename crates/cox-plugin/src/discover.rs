@@ -179,6 +179,9 @@ fn scan_ids(dir: &Path) -> Vec<String> {
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
         .filter_map(|e| e.file_name().into_string().ok())
+        // No valid id starts with `.`; `plugins/.staging/` (PL§1, T53.2)
+        // holds downloads that have not been installed yet.
+        .filter(|name| !name.starts_with('.'))
         .collect();
     ids.sort();
     ids

@@ -62,13 +62,25 @@ If both locations have the same id, the user plugin wins and the project plugin 
 
 The global switch is `plugins.enabled`, as a config key, an env var and `--no-plugins` (D13).
 
-**Install sources in v1: a local directory only.** Fewer is better:
+**Install sources: a local directory, an https URL, or a git repository (A121 §3, P53).** Fewer is better, so the added sources end in the same install this section already describes — validate the manifest, digest the tree, copy into `versions/<digest12>/`, ask for the grant — no second path, no plugin runs before its grant:
 
-- a local path needs no network, no download UX and no trust-on-first-download;
-- it is enough for the dev loop (`new` → build → `install` or `link`) and for every test;
-- a URL with a pinned `sha256` and a git tag are listed in §12 as out of scope.
+- **A local directory:** `cox plugin install <dir>`, as above. No network, no download UX, no trust-on-first-download; the dev loop (`new` → build → `install` or `link`) and every test.
+- **An https URL:** `cox plugin install <https-url> --sha256 <hex>` fetches a `.tar.gz` archive. `--sha256` is required — a URL with none, `http://`, `file://` and every other scheme are all refused before a byte is fetched — and the download is refused the moment its digest fails to match, before anything is unpacked.
+- **A git repository:** `cox plugin install git+<url> --rev <tag|commit> [--path <subdir>]`. `--rev` is required and must name a tag or a commit; a branch name is refused, so `update` (§1b) never follows a moving target silently. `--path` selects a subdirectory of the clone as the package root, confined inside the clone.
 
-`install` records `{kind: "path", path, digest}`, and `update` re-reads that path.
+Both downloads land under `~/.cox/plugins/.staging/` first, removed on every exit — success, refusal or a crash — before anything moves into `versions/<digest12>/`. A downloaded archive or a cloned repository is repository content, and repository content is untrusted (D14): nothing in it runs during install, and any symlink or path entry that resolves outside the staging directory is refused, for the archive's entries and the clone's alike.
+
+Git is shelled to exactly as `crates/cox-tools/src/git.rs` shells to it for the status line and worktrees (A13, `git_or_err`/`git`, `crates/cox-tools/src/git.rs:511-529`): `git` found on `PATH` through `Command::new("git")`, never linked in via `git2` or `gix`, and never read from a cloned repository's own config for how to run git itself. Install runs `git clone --depth 1 --no-recurse-submodules --branch <tag>` (or a fetch of a commit when `--rev` is not a tag) with `GIT_TERMINAL_PROMPT=0`, so a private repository fails instead of prompting, into the staging directory; the resolved commit is what gets recorded. Archive extraction reuses the `tar` shell-out `crates/cox/src/self_update.rs` already runs to unpack a release (`unpack_cox`, `std::process::Command::new("tar")`, `crates/cox/src/self_update.rs:118-155`) rather than adding a second extraction path.
+
+`install` records the source it used:
+
+- local: `{kind: "path", path, digest}`
+- URL: `{kind: "url", url, sha256}`
+- git: `{kind: "git", url, rev, commit, path}`
+
+`update` (§1b) re-reads that recorded source, per kind: a local path is re-read from disk, as today; a URL source is re-fetched at the same URL and the same hash — a changed file at that URL is a hash mismatch, refused, never a silent update, and a new version is a new `install` with a new hash; a git source is re-fetched at the same tag or commit — a tag that now resolves to a different commit yields a new digest and asks for the grant again with the capability diff, exactly like a bytes-changed local update. `--check` (§1b) applies to all three: fetch, compute, print, change nothing.
+
+No new dependency: the URL source reuses the `reqwest` client and the SHA-256 helper `crates/cox/src/self_update.rs` already has, archive extraction reuses its `tar` shell-out, and git is already shelled to the same way (A13).
 
 ### 1b. Update and rollback
 
@@ -151,6 +163,10 @@ price = { input = 0.042, output = 0.0 }
 name = "gh"
 command = "bin/gh-mcp-${target}" # inside the package, or a PATH program shown verbatim at approval
 args = ["--stdio"]
+
+[[agents]]                       # T45.3: a subagent definition, same format as .cox/agents/*.md
+name = "reviewer"                # dispatched as agent(preset: "reviewer")
+file = "agents/reviewer.md"
 ```
 
 Validation (T33.1 and T33.4):
@@ -160,6 +176,8 @@ Validation (T33.1 and T33.4):
 - `net` entries are host patterns, not URLs;
 - `fs` roots are `$WORKSPACE`, `$PLUGIN_DATA` or paths inside them;
 - a `ui.render` target outside the plugin's own tools needs an explicit `tool:<name>`, which approval shows as "changes how <name> looks";
+- an `[[agents]]` `file` is a relative `.md` path with no `..`, `\` or `:` component, and names are unique (T45.3);
+- `wasm` may be omitted only by a data-only package: `[[mcp]]` and/or `[[agents]]`, nothing else;
 - unknown keys are an error. The manifest is ours, so `deny_unknown_fields` applies, as in `Config` (`crates/cox-protocol/src/config.rs:35`).
 
 The capability list is the unit of approval. Each entry becomes one line in the dialog, for example "Can call the model on the cheap tier (costs appear in `cox stats` as `plugin:git-glance`)".
@@ -181,7 +199,7 @@ There is no general kv table today (`schema.rs:13-87`). A narrow `PluginStore` t
 - `NeedsApproval { added, removed }`: a new digest, or wider capabilities.
 - `Disabled`.
 
-The granted list (T33.6) is a sorted JSON array of strings, one line per capability: `events:<tag>`, `hooks:<name>`, `tools:<name>`, `invoke:<name>`, `net:<host>`, `fs.read:<root>`, `fs.write:<root>`, `decide:<point>`, `ui.render:<target>`, the flags `wasi`, `context`, `kv`, `ui.status`, `ui.panel`, `ui.overlay`, `ui.commands`, `ui.keys`, `model:cheap` or `model:code`, plus one line per `[[provider]]` (`provider:<name> <base_url> key=<env>`), `[[mcp]]` (`mcp:<name> <command args | url>`) and `[[external_agents]]` entry. The model tier is the one ordered entry: a `model:code` grant covers a `model:cheap` request. A row whose `capabilities` is not such an array grants nothing, and a store read error counts as no grant. `Disabled` wins over the digest check. A project `.cox/config.toml` may turn `plugins.enabled` off but never on (the project-config guard list).
+The granted list (T33.6) is a sorted JSON array of strings, one line per capability: `events:<tag>`, `hooks:<name>`, `tools:<name>`, `invoke:<name>`, `net:<host>`, `fs.read:<root>`, `fs.write:<root>`, `decide:<point>`, `ui.render:<target>`, the flags `wasi`, `context`, `kv`, `ui.status`, `ui.panel`, `ui.overlay`, `ui.commands`, `ui.keys`, `model:cheap` or `model:code`, plus one line per `[[provider]]` (`provider:<name> <base_url> key=<env>`), `[[mcp]]` (`mcp:<name> <command args | url>`) `[[external_agents]]` entry (`agent:<name> <argv> key=<env>`) and `[[agents]]` entry (`subagent:<name> <file>`, T45.3). The model tier is the one ordered entry: a `model:code` grant covers a `model:cheap` request. A row whose `capabilities` is not such an array grants nothing, and a store read error counts as no grant. `Disabled` wins over the digest check. A project `.cox/config.toml` may turn `plugins.enabled` off but never on (the project-config guard list).
 
 By surface:
 
@@ -423,7 +441,6 @@ The compilation cache uses `with_cache_config` (P7), pointed at `~/.cox/cache/wa
 **Out of scope.**
 
 - A marketplace or registry.
-- Install from a URL (with a sha256) or from git (with a tag).
 - Signatures.
 - The component model and WIT.
 - Plugin-to-plugin calls.
@@ -484,3 +501,4 @@ The creator resolved every open question this design and the Jev use case (A25/A
 12. **T32.15 (`cox-provider-jev`) is dropped.** After parity, `jev.rs` is deleted outright rather than extracted into its own crate; see `plan.md` §6 A52 and `done.md`.
 13. **The ABI fix from the Jev research.** Writing the Jev plugin against `api = 1` as first drafted exposed a deadlock/ledger-bypass gap (T33.40.1, §4 above): `cox_decide` now returns either an `Advice` or a `ModelCall`, the host runs the call through the plugin's own provider with the budget gate and ledger, then calls `cox_decide_resume`; `cox_http` to a provider host is allowed only inside `cox_provider_stream`; `Question` is batched. The example provider throughout this document is named `typesafe`, not `jev` — the plugin id stays `jev`, the provider section it declares is `typesafe` (§2).
 14. **No prebuilt Jev plugin archive ships with the release.** Users build it from `plugins/jev` (`just plugin jev`) and install it with `cox plugin install <dir>` (§1).
+15. **Plugin agent definitions are grant-gated, local definitions win** (T45.3, 2026-09-29). An `[[agents]]` file is loaded only for a `Granted` plugin, and each file is its own approval line, so an update that adds or renames one asks again. A `.cox/agents/*.md` or `~/.cox/agents/*.md` definition of the same name wins over the plugin's, with a notice (T45.4). The definition's `permissionMode` can only narrow the parent's mode (T45.2).

@@ -160,7 +160,7 @@ fn new_scaffold_builds_offline_and_its_smoke_test_passes() {
     let cargo_toml = std::fs::read_to_string(&cargo_toml_path).unwrap();
     let sdk_dir = repo_root().join("plugins/sdk");
     let patched = cargo_toml.replace(
-        r#"cox-plugin-sdk = { git = "https://github.com/listepo/cox" }"#,
+        r#"cox-plugin-sdk = { git = "https://github.com/pyrlyn/cox" }"#,
         &format!(r#"cox-plugin-sdk = {{ path = {:?} }}"#, sdk_dir),
     );
     assert_ne!(

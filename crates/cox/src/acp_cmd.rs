@@ -1,16 +1,16 @@
 //! `cox acp` (T11.1): Agent Client Protocol server on stdio for Zed,
-//! JetBrains and neovim. Builds live sessions through the same config,
-//! provider, store and tools as every other surface; only the file/shell
-//! tools are client-backed when the client offers `fs`/`terminal`.
+//! JetBrains and neovim. Opens each session through `cox_session::open`
+//! (T37.2), so an ACP session gets the same tools, MCP servers, skills,
+//! hooks and plugins as the TUI; only the file/shell tools are
+//! client-backed when the client offers `fs`/`terminal`.
 
 use std::path::Path;
 use std::sync::Arc;
 
-use cox_protocol::traits::Store as _;
 use cox_protocol::types::Level;
 
 use crate::cli::Cli;
-use crate::{config_load, session};
+use crate::config_load;
 
 /// A [`cox_acp::SessionFactory`] over this machine's config and store.
 struct AcpFactory {
@@ -18,52 +18,49 @@ struct AcpFactory {
     answer: Option<String>,
 }
 
+#[async_trait::async_trait]
 impl cox_acp::SessionFactory for AcpFactory {
-    fn create(&self, req: cox_acp::FactoryRequest) -> anyhow::Result<cox_core::Session> {
-        let mut loaded = config_load::load(&req.cwd, &self.cli)?;
-        if loaded.config.core.workspace_roots.is_empty() {
-            loaded.config.core.workspace_roots = vec![req.cwd.clone()];
+    async fn create(&self, req: cox_acp::FactoryRequest) -> anyhow::Result<cox_core::Session> {
+        let mut config = config_load::load(&req.cwd, &self.cli)?.config;
+        // The client's extra directories join the default root rather than
+        // replace it (§1.6: the git root of cwd, else cwd).
+        if !req.roots.is_empty() && config.core.workspace_roots.is_empty() {
+            config.core.workspace_roots =
+                vec![config_load::find_git_root(&req.cwd).unwrap_or_else(|| req.cwd.clone())];
         }
-        loaded
-            .config
+        config
             .core
             .workspace_roots
             .extend(req.roots.iter().cloned());
-        let config = loaded.config.clone();
-        let provider = session::provider_for(&config)?;
-        let home = self.cli.home.clone().unwrap_or_else(config_load::cox_home);
-        let store = Arc::new(cox_store::Store::open(&home)?);
-        let mdir = session::memory_dir_for(&config, &home, &req.cwd);
-        let tools = session::tools(self.answer.clone(), &store, mdir);
-        let tools = session::with_client_tools(tools, req.link, req.client_fs, req.client_terminal);
-        let claude_home = config_load::home_dir().join(".claude");
-        let budget = config.context.instruction_budget_tokens;
-        let chain = session::instructions(&home, Some(&claude_home), &req.cwd, budget);
-        let warnings = session::plugin_notices(&config, &home, &req.cwd, store.clone());
-        let warnings: Vec<String> = chain.notices.into_iter().chain(warnings).collect();
-        let session =
-            cox_core::Session::new(config, provider, tools, store.clone(), store, req.cwd)?;
-        // T7.8: this factory builds its session without `session::open`,
-        // so it hands the core the same instruction chain `open` does.
-        session.set_instructions(chain.block);
-        // `create` is sync but runs on the ACP server's runtime; the
-        // notices queue in the session's event channel ahead of any prompt.
-        if !warnings.is_empty() {
-            let notify = session.clone();
-            match tokio::runtime::Handle::try_current() {
-                Ok(rt) => {
-                    rt.spawn(async move {
-                        for text in warnings {
-                            let _ = notify.notice(Level::Warn, text).await;
-                        }
-                    });
-                }
-                Err(_) => warnings
-                    .iter()
-                    .for_each(|text| eprintln!("cox: warning: {text}")),
-            }
+        let opened = cox_session::open(cox_session::SessionSpec {
+            config,
+            cwd: req.cwd,
+            home: self.cli.home.clone().unwrap_or_else(config_load::cox_home),
+            worktree: false,
+            answer: self.answer.clone(),
+            questions: false,
+            resume: None,
+            // No terminal to print a login URL on: a 401 is a notice.
+            mcp_login: None,
+            plugin_ui: None,
+            client: Some(cox_session::ClientTools {
+                link: req.link,
+                fs: req.client_fs,
+                terminal: req.client_terminal,
+            }),
+            surface: "acp".into(),
+            tools: Vec::new(),
+        })
+        .await?;
+        // stdout carries the protocol: warnings reach the client as notices,
+        // queued in the session's event channel ahead of any prompt.
+        for warning in opened.warnings {
+            opened
+                .session
+                .notice(Level::Warn, warning.to_string())
+                .await?;
         }
-        Ok(session)
+        Ok(opened.session)
     }
 }
 

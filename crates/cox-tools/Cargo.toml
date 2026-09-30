@@ -29,12 +29,22 @@ tokio-util = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# T41.2: `LspError`, the first error enum this crate owns.
+thiserror = { workspace = true }
 schemars = { workspace = true }
 # T3.4 (`edit`): unified diffs + closest-line ratio for NotFound suggestions.
 similar = { workspace = true }
+# T41.3: path <-> `file://` URI conversion for the LSP wire (A81).
+url = { workspace = true }
+
+# T57.7: `bash`'s pty, `setsid`, `killpg`, poll and termios are Unix-only;
+# Windows gets its own spawn path in T57.8.
+[target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["signal", "process", "poll", "term"] }
 
 [dev-dependencies]
+# T41.4: paused time, so the LSP quiet-period tests are exact, not timed.
+tokio = { workspace = true, features = ["test-util"] }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 proptest = { workspace = true }

@@ -8,7 +8,7 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use cox_ext::{agents, commands, skills};
+use cox_ext::{agents, commands, instructions, skills};
 
 use crate::cli::Cli;
 use crate::config_load::{self, cox_home, find_git_root, home_dir};
@@ -93,9 +93,10 @@ pub fn report(cli: &Cli, cwd: &Path) -> String {
         .unwrap_or_default();
     let cox_home = cli.home.clone().unwrap_or_else(cox_home);
     let claude_home = home_dir().join(".claude");
-    let project = find_git_root(cwd).unwrap_or_else(|| cwd.to_path_buf());
+    let roots = cox_session::instruction_roots(&cox_home, &claude_home, cwd);
+    let project = roots.git_root.clone().unwrap_or_else(|| cwd.to_path_buf());
     let mut out = String::new();
-    let loaded = crate::session::instructions(&cox_home, Some(&claude_home), cwd, u32::MAX);
+    let loaded = instructions::load(&roots, u32::MAX);
     section(
         &mut out,
         "instructions",

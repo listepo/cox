@@ -372,6 +372,70 @@ fn session_grant_does_not_cover_chained_command() {
     assert_eq!(judge(&e, "git log $(date); rm x", &opaque), Want::Ask);
 }
 
+/// File tools and `web_fetch` never fill `segments`, so a session grant used
+/// to be a raw `starts_with`: approving `/repo/secret.txt` also approved
+/// `/repo/secret.txt.bak`, and `https://example.com` approved
+/// `https://example.com.evil`. The grant is a word-boundary prefix, the
+/// same rule a split command already uses.
+#[test]
+fn session_grant_without_segments_stops_at_a_word_boundary() {
+    let e = engine(&[], &[], &[]);
+    let judge = |tool: &str, subject: &str, risk: Risk, grant: &str| {
+        let grants = vec![(tool.to_string(), grant.to_string())];
+        want(&e.decide(
+            &call(tool, subject, risk),
+            M::Default,
+            P::OnRequest,
+            SandboxMode::WorkspaceWrite,
+            &grants,
+        ))
+    };
+    assert_eq!(judge("bash", "npm test", Risk::Exec, "npm"), Want::Allow);
+    assert_eq!(judge("bash", "npmish", Risk::Exec, "npm"), Want::Ask);
+    assert_eq!(
+        judge("edit", "/repo/secret.txt", Risk::Write, "/repo/secret.txt"),
+        Want::Allow
+    );
+    assert_eq!(
+        judge(
+            "edit",
+            "/repo/secret.txt.bak",
+            Risk::Write,
+            "/repo/secret.txt"
+        ),
+        Want::Ask
+    );
+    assert_eq!(
+        judge(
+            "web_fetch",
+            "https://example.com/a",
+            Risk::Exec,
+            "https://example.com/a"
+        ),
+        Want::Allow
+    );
+    assert_eq!(
+        judge(
+            "web_fetch",
+            "https://example.com.evil/a",
+            Risk::Exec,
+            "https://example.com"
+        ),
+        Want::Ask
+    );
+    assert_eq!(
+        judge(
+            "web_fetch",
+            "https://example.com/a/secret",
+            Risk::Exec,
+            "https://example.com/a"
+        ),
+        Want::Ask
+    );
+    // `starts_with("")` is true for every string; an empty grant is not.
+    assert_eq!(judge("edit", "/repo/a.rs", Risk::Write, ""), Want::Ask);
+}
+
 #[rstest]
 #[case::dollar("git log $(rm x)")]
 #[case::backticks("git log `rm x`")]

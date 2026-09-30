@@ -1,5 +1,5 @@
 ---
-source: crates/cox-provider/src/openai/chat.rs
+source: crates/cox-provider-openai/src/chat.rs
 expression: events
 ---
 [
@@ -14,7 +14,10 @@ expression: events
   },
   {
     "type": "tool_use_input_delta",
-    "text": "{\"path\":\"a.rs\"}"
+    "text": "{\"path\":\"a.rs\"} more"
+  },
+  {
+    "type": "tool_use_end"
   },
   {
     "type": "tool_use_start",
@@ -26,8 +29,7 @@ expression: events
     "text": "{\"path\":\"b.rs\"}"
   },
   {
-    "type": "tool_use_input_delta",
-    "text": " more"
+    "type": "tool_use_end"
   },
   {
     "type": "stop",

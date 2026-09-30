@@ -4,6 +4,7 @@
 //! capabilities (TERM, true colour, size), prices table age, whether every
 //! configured model has a catalog price (T30.27), what LM Studio runs when
 //! it is the code tier's provider (T30.16), `.claude/settings.json`,
+//! each `[lsp.servers]` program on PATH (T41.7), push-to-talk (T54.7),
 //! one OAuth row per HTTP MCP server (T22.5), and one row per granted
 //! `[[external_agents]]` entry (EA§7, T35.8), and one row per discovered
 //! plugin: loaded, skipped (with reason), not granted, or dev, plus
@@ -12,6 +13,9 @@
 //! the same per-plugin state through `check_plugins`, so the two surfaces
 //! never disagree.
 //! Outputs human-readable lines or `--json` array of `{check, status, detail, fix}`.
+//! The API-key, sandbox and git checks and the row type live in
+//! `cox_session::doctor` (T37.31), shared with the desktop app's first-run
+//! checklist.
 
 use std::collections::HashMap;
 use std::env;
@@ -22,52 +26,11 @@ use std::process::Stdio;
 #[cfg(feature = "plugins")]
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
-
 use cox_protocol::Store as _;
 use cox_protocol::config::McpServerConfig;
 use cox_provider::usage::{Price, load_price_table};
-
-/// One check result.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CheckResult {
-    pub check: String,
-    pub status: String,
-    pub detail: String,
-    pub fix: String,
-}
-
-impl CheckResult {
-    /// Create an `ok` result.
-    fn ok(check: &str, detail: String) -> Self {
-        CheckResult {
-            check: check.to_string(),
-            status: "ok".to_string(),
-            detail,
-            fix: String::new(),
-        }
-    }
-
-    /// Create a `warn` result.
-    fn warn(check: &str, detail: String, fix: String) -> Self {
-        CheckResult {
-            check: check.to_string(),
-            status: "warn".to_string(),
-            detail,
-            fix,
-        }
-    }
-
-    /// Create a `fail` result.
-    fn fail(check: &str, detail: String, fix: String) -> Self {
-        CheckResult {
-            check: check.to_string(),
-            status: "fail".to_string(),
-            detail,
-            fix,
-        }
-    }
-}
+pub use cox_session::doctor::CheckResult;
+use cox_session::doctor::{check_api_keys, check_git, check_sandbox};
 
 /// Run all doctor checks. Returns exit code 0 when no `fail`, 1 otherwise.
 /// `tui_theme` is `config.tui.theme`, shown (and queried when `"auto"`) by
@@ -141,6 +104,12 @@ pub fn run(
 
     // One row naming every stdio server opted out of the sandbox (T33.42).
     results.push(check_mcp_sandbox(mcp));
+
+    // Each `[lsp.servers]` program found on PATH or missing (T41.7).
+    results.push(check_lsp(config));
+
+    // Push-to-talk: built, enabled, model present, input device (T54.7).
+    results.push(check_voice(config, &home));
 
     // One row per granted `[[external_agents]]` entry: CLI on PATH (+
     // `--version`, best-effort), `key_env` set, sandboxed or refused
@@ -227,126 +196,26 @@ fn check_home_writable(home: &std::path::Path) -> CheckResult {
 }
 
 fn check_db(home: &std::path::Path) -> CheckResult {
-    match cox_store::Store::open(home) {
-        Ok(_) => CheckResult::ok("db", "database opens and schema is valid".to_string()),
+    db_result(cox_store::Store::open(home).map(drop), home)
+}
+
+/// The `db` row for one open attempt. A newer schema (T37.36) gets its own
+/// fix: the file is sound and a newer `cox` still uses it, so the generic
+/// "remove cox.db" advice would throw away that `cox`'s sessions and ledger.
+fn db_result(opened: Result<(), cox_protocol::StoreError>, home: &std::path::Path) -> CheckResult {
+    match opened {
+        Ok(()) => CheckResult::ok("db", "database opens and schema is valid".to_string()),
+        Err(cox_protocol::StoreError::SchemaNewer { db, binary }) => CheckResult::fail(
+            "db",
+            format!("cox.db schema {db} is newer than this cox ({binary}); a newer cox wrote it"),
+            "update this cox (e.g. `brew upgrade cox`, or the app's own update) or run the \
+             newer one; keep cox.db"
+                .to_string(),
+        ),
         Err(e) => CheckResult::fail(
             "db",
             format!("cannot open database: {}", e),
             format!("remove {} and retry", home.join("cox.db").display()),
-        ),
-    }
-}
-
-/// What the `code` tier's provider needs for a key (T30.21).
-#[derive(Debug, PartialEq)]
-enum KeyRequirement<'a> {
-    /// The section's name, the env var its `api_key_env` names, and whether
-    /// a missing key is fatal: Anthropic and Jev fail without one;
-    /// OpenAI-shaped sections run keyless against a local server.
-    Key(&'a str, &'a str, bool),
-    /// `local` never sends a key.
-    None,
-    /// No `[providers.<name>]` section: the session refuses to start, so
-    /// doctor must not call this "needs no key".
-    UnknownProvider(&'a str),
-}
-
-fn key_requirement(config: &cox_protocol::Config) -> KeyRequirement<'_> {
-    let section = config.tiers.code.provider.as_str();
-    let p = &config.providers;
-    match section {
-        "anthropic" => KeyRequirement::Key(section, p.anthropic.api_key_env.as_str(), true),
-        "typesafe" => KeyRequirement::Key(section, p.typesafe.api_key_env.as_str(), true),
-        "openai" => KeyRequirement::Key(section, p.openai.api_key_env.as_str(), false),
-        "local" => KeyRequirement::None,
-        // T30.15: same optional-key shape as `openai` — LM Studio runs
-        // keyless unless "Require Authentication" is on.
-        "lmstudio" => KeyRequirement::Key(section, p.lmstudio.api_key_env.as_str(), false),
-        _ => match p.custom.get(section) {
-            Some(c) => KeyRequirement::Key(section, c.api_key_env.as_str(), false),
-            None => KeyRequirement::UnknownProvider(section),
-        },
-    }
-}
-
-/// [`check_api_keys`]'s body with the credential lookup injected, so a test
-/// can exercise every branch (unknown provider, keyless, found, missing)
-/// without ever touching the real keyring (A49, T30.28).
-fn check_api_keys_with(
-    config: &cox_protocol::Config,
-    resolve: impl FnOnce(&str, &str) -> Result<String, cox_protocol::errors::ProviderError>,
-) -> CheckResult {
-    let (section, env_var, required) = match key_requirement(config) {
-        KeyRequirement::Key(section, env_var, required) => (section, env_var, required),
-        KeyRequirement::None => {
-            return CheckResult::ok(
-                "API keys",
-                "the code tier's provider needs no key".to_string(),
-            );
-        }
-        KeyRequirement::UnknownProvider(section) => {
-            return CheckResult::fail(
-                "API keys",
-                format!("tiers.code.provider `{section}` has no [providers.{section}] section"),
-                format!(
-                    "add [providers.{section}] or point tiers.code.provider at a configured provider"
-                ),
-            );
-        }
-    };
-    if resolve(env_var, section).is_ok() {
-        return CheckResult::ok("API keys", format!("{section} key found"));
-    }
-    let detail = format!("{env_var} is not set and keyring entry 'cox/{section}' not found");
-    let fix = format!(
-        "set {env_var} or run `security add-generic-password -s cox -a {section} -w` (macOS) or your platform's keyring equivalent"
-    );
-    if required {
-        CheckResult::fail("API keys", detail, fix)
-    } else {
-        CheckResult::warn(
-            "API keys",
-            format!("{detail}; requests go out without a key"),
-            fix,
-        )
-    }
-}
-
-/// Resolves the key exactly as the provider will (`cox_provider::http::resolve_key`:
-/// the section's env var, then keyring `cox/<section>`), so doctor and the
-/// session never disagree about whether a key exists.
-fn check_api_keys(config: &cox_protocol::Config) -> CheckResult {
-    check_api_keys_with(config, cox_provider::http::resolve_key)
-}
-
-fn check_sandbox() -> CheckResult {
-    match cox_tools::sandbox::backend(cox_protocol::LinuxBackend::Auto) {
-        Some(backend) => CheckResult::ok("sandbox", backend.name().to_string()),
-        None => CheckResult::warn(
-            "sandbox",
-            "none: shell commands run unconfined".to_string(),
-            match env::consts::OS {
-                "macos" => "sandbox-exec is part of macOS; check your installation".to_string(),
-                "linux" => {
-                    "install bubblewrap: apt install bubblewrap (Debian/Ubuntu) or equivalent"
-                        .to_string()
-                }
-                _ => "sandbox is not supported on this platform".to_string(),
-            },
-        ),
-    }
-}
-
-fn check_git() -> CheckResult {
-    match ProcessCommand::new("git").arg("--version").output() {
-        Ok(output) if output.status.success() => {
-            let version = String::from_utf8_lossy(&output.stdout);
-            CheckResult::ok("git", version.trim().to_string())
-        }
-        _ => CheckResult::fail(
-            "git",
-            "git not found on PATH".to_string(),
-            "install git from https://git-scm.com/".to_string(),
         ),
     }
 }
@@ -445,6 +314,113 @@ fn check_mcp_sandbox(mcp: &HashMap<String, McpServerConfig>) -> CheckResult {
             format!("unsandboxed by config: {}", names.join(", ")),
             "sandbox = false was set on purpose; drop it to re-enable the wrap".to_string(),
         )
+    }
+}
+
+/// One row for `[lsp]` (T41.7): each configured server's program, found on
+/// PATH or missing, by the lookup the `diagnostics` tool starts it by. A
+/// missing server is not a problem while another one runs; with none,
+/// `diagnostics` can only point the model at `bash`.
+fn check_lsp(config: &cox_protocol::Config) -> CheckResult {
+    check_lsp_with(&config.lsp, |command| {
+        cox_tools::lsp::on_path(command).is_some()
+    })
+}
+
+fn check_lsp_with(
+    lsp: &cox_protocol::config::LspConfig,
+    found: impl Fn(&str) -> bool,
+) -> CheckResult {
+    const CHECK: &str = "LSP servers";
+    if !lsp.enabled {
+        return CheckResult::ok(CHECK, "disabled (lsp.enabled = false)".to_string());
+    }
+    if lsp.servers.is_empty() {
+        return CheckResult::ok(CHECK, "none configured".to_string());
+    }
+    let rows: Vec<(bool, &str)> = lsp
+        .servers
+        .values()
+        .map(|s| (found(&s.command), s.command.as_str()))
+        .collect();
+    let detail = rows
+        .iter()
+        .map(|(ok, command)| format!("{command} {}", if *ok { "ok" } else { "missing" }))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if rows.iter().any(|(ok, _)| *ok) {
+        CheckResult::ok(CHECK, detail)
+    } else {
+        CheckResult::warn(
+            CHECK,
+            detail,
+            "install a language server for your project, or set lsp.enabled = false; \
+             without one, `diagnostics` tells the model to run the project's checker with `bash`"
+                .to_string(),
+        )
+    }
+}
+
+const VOICE: &str = "voice";
+
+#[cfg(not(feature = "voice"))]
+fn check_voice(_: &cox_protocol::Config, _: &std::path::Path) -> CheckResult {
+    CheckResult::ok(
+        VOICE,
+        "not built (`cargo build --features voice`)".to_string(),
+    )
+}
+
+#[cfg(feature = "voice")]
+fn check_voice(config: &cox_protocol::Config, home: &std::path::Path) -> CheckResult {
+    check_voice_with(
+        &config.voice,
+        crate::voice_cmd::model_path(home, &config.voice.model),
+        cox_voice::input_device,
+    )
+}
+
+/// `device` names the default input device; it is asked only once the
+/// feature is on and the model is there, and it never opens a stream.
+#[cfg(feature = "voice")]
+fn check_voice_with(
+    voice: &cox_protocol::config::VoiceConfig,
+    model: Option<PathBuf>,
+    device: impl Fn() -> Option<String>,
+) -> CheckResult {
+    let name = &voice.model;
+    if !voice.enabled {
+        return CheckResult::ok(VOICE, "built; off (voice.enabled = false)".to_string());
+    }
+    let Some(model) = model else {
+        return CheckResult::warn(
+            VOICE,
+            format!("built, enabled; {name} is not a pinned model"),
+            "set voice.model to a name `cox voice model list` shows".to_string(),
+        );
+    };
+    if !model.is_file() {
+        return CheckResult::warn(
+            VOICE,
+            format!("built, enabled; model {name} missing"),
+            format!("run `cox voice model download {name}`"),
+        );
+    }
+    match device() {
+        Some(mic) => CheckResult::ok(
+            VOICE,
+            format!(
+                "built, enabled, model {name} present, input {}",
+                cox_sanitize::sanitize(&mic)
+            ),
+        ),
+        None => CheckResult::warn(
+            VOICE,
+            format!("built, enabled, model {name} present; no input device"),
+            "connect a microphone; on macOS allow this terminal under System Settings > \
+             Privacy & Security > Microphone"
+                .to_string(),
+        ),
     }
 }
 
@@ -746,7 +722,7 @@ fn check_plugins_with(
     // Granted plugins' `[[models]]` feed the catalog so a price or field
     // conflict with the built-in table (T33.16) shows up per plugin below;
     // `check_catalog_prices` still passes `&[]` for the top-level catalog
-    // check until session.rs keeps loaded manifests around to share (that
+    // check until `cox-session` keeps loaded manifests around to share (that
     // wiring is T33.16's own "Left").
     let mut granted: Vec<(&str, &cox_plugin_api::PluginManifest)> = Vec::new();
     for p in &found.plugins {
@@ -835,29 +811,8 @@ fn check_plugins_with(
 #[cfg(feature = "plugins")]
 fn check_plugin_cache(home: &std::path::Path) -> CheckResult {
     let dir = home.join("cache").join("wasmtime");
-    let bytes = dir_size(&dir);
+    let bytes = cox_tools::git::dir_size(&dir);
     CheckResult::ok("plugin cache", format!("{} ({bytes} bytes)", dir.display()))
-}
-
-/// Best-effort recursive byte total; an unreadable entry is skipped rather
-/// than failing the whole check (fail open on extensions).
-#[cfg(feature = "plugins")]
-fn dir_size(dir: &std::path::Path) -> u64 {
-    let mut total = 0u64;
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&d) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            match entry.metadata() {
-                Ok(meta) if meta.is_dir() => stack.push(entry.path()),
-                Ok(meta) => total += meta.len(),
-                _ => {}
-            }
-        }
-    }
-    total
 }
 
 fn parse_iso_date(s: &str) -> Option<(u32, u32, u32)> {
@@ -891,7 +846,9 @@ fn ymd_to_days(date: (u32, u32, u32)) -> Option<u32> {
 fn days_between(from: &str, to: (u32, u32, u32)) -> Option<u32> {
     let from_days = ymd_to_days(parse_iso_date(from)?)?;
     let to_days = ymd_to_days(to)?;
-    Some(to_days - from_days)
+    // `cox-vendor` stamps the local date, which runs ahead of the UTC `today`
+    // near midnight: a date after today is as fresh as today, not a panic.
+    Some(to_days.saturating_sub(from_days))
 }
 
 fn today_ymd() -> (u32, u32, u32) {
@@ -1226,84 +1183,6 @@ mod tests {
     }
 
     #[test]
-    fn doctor_checks_the_key_the_code_tier_provider_names() {
-        let mut config = cox_protocol::Config::default();
-        config.tiers.code.provider = "anthropic".into();
-        config.providers.anthropic.api_key_env = "MY_ANTHROPIC_KEY".into();
-        assert_eq!(
-            key_requirement(&config),
-            KeyRequirement::Key("anthropic", "MY_ANTHROPIC_KEY", true)
-        );
-        config.tiers.code.provider = "local".into();
-        assert_eq!(key_requirement(&config), KeyRequirement::None);
-        config.tiers.code.provider = "lmstudio".into();
-        config.providers.lmstudio.api_key_env = "LM_API_TOKEN".into();
-        assert_eq!(
-            key_requirement(&config),
-            KeyRequirement::Key("lmstudio", "LM_API_TOKEN", false)
-        );
-        config.tiers.code.provider = "deepseek".into();
-        config.providers.custom.insert(
-            "deepseek".into(),
-            cox_protocol::config::CompatibleProviderConfig {
-                api_key_env: "DEEPSEEK_API_KEY".into(),
-                ..Default::default()
-            },
-        );
-        assert_eq!(
-            key_requirement(&config),
-            KeyRequirement::Key("deepseek", "DEEPSEEK_API_KEY", false)
-        );
-    }
-
-    #[test]
-    fn doctor_fails_when_the_code_tier_names_an_unknown_provider() {
-        // The session refuses this config ("unknown provider"); doctor must
-        // not report it as a provider that needs no key. Returns before any
-        // keyring lookup — enforced here by a lookup that panics if called
-        // (A49, T30.28).
-        let mut config = cox_protocol::Config::default();
-        config.tiers.code.provider = "nosuch".into();
-        let result = check_api_keys_with(&config, |_, _| {
-            panic!("an unknown provider must fail before any key is resolved")
-        });
-        assert_eq!(result.status, "fail", "{}", result.detail);
-        assert!(
-            result.detail.contains("[providers.nosuch]"),
-            "{}",
-            result.detail
-        );
-    }
-
-    #[test]
-    fn doctor_warns_not_fails_when_a_keyless_section_has_no_key() {
-        // A section name no keyring holds and an env var nobody sets —
-        // simulated with an injected lookup rather than the real keyring
-        // (A49, T30.28).
-        let section = "cox-doctor-test-keyless";
-        let mut config = cox_protocol::Config::default();
-        config.tiers.code.provider = section.into();
-        config.providers.custom.insert(
-            section.into(),
-            cox_protocol::config::CompatibleProviderConfig {
-                api_key_env: "COX_DOCTOR_TEST_UNSET_KEY".into(),
-                ..Default::default()
-            },
-        );
-        let result = check_api_keys_with(&config, |_, _| {
-            Err(cox_protocol::errors::ProviderError::Auth)
-        });
-        assert_eq!(result.status, "warn", "{}", result.detail);
-        // The keyring hint names service `cox`, account `<section>` — the
-        // order `keyring::Entry::new("cox", section)` reads.
-        assert!(
-            result.fix.contains(&format!("-s cox -a {section}")),
-            "{:?}",
-            result.fix
-        );
-    }
-
-    #[test]
     fn doctor_results_serialize_to_json() {
         let result = CheckResult::ok("test", "detail".to_string());
         let json = serde_json::to_string(&result).unwrap();
@@ -1352,7 +1231,7 @@ mod tests {
     #[test]
     fn doctor_human_output() {
         let results = vec![
-            CheckResult::ok("toolchain", "rustc 1.97.1".to_string()),
+            CheckResult::ok("toolchain", "rustc 1.98.1".to_string()),
             CheckResult::ok("COX_HOME writable", "/home/user/.cox".to_string()),
             CheckResult::ok("db", "database opens and schema is valid".to_string()),
             CheckResult::ok("API keys", "Anthropic API key found".to_string()),
@@ -1396,11 +1275,95 @@ mod tests {
         insta::assert_snapshot!(output);
     }
 
+    /// T41.7: the LSP row lists each server's program as found or missing,
+    /// warns only when none is found, and says so when `[lsp]` is off.
+    #[test]
+    fn doctor_lsp_row() {
+        let lsp = cox_protocol::config::LspConfig::default();
+        let some = check_lsp_with(&lsp, |command| command == "rust-analyzer");
+        let none = check_lsp_with(&lsp, |_| false);
+        let off = check_lsp_with(
+            &cox_protocol::config::LspConfig {
+                enabled: false,
+                ..lsp.clone()
+            },
+            |_| true,
+        );
+        let rows = [some, none, off];
+        assert_eq!(
+            rows.iter().map(|r| r.status.as_str()).collect::<Vec<_>>(),
+            ["ok", "warn", "ok"]
+        );
+        insta::assert_snapshot!(rows.iter().map(human).collect::<String>());
+    }
+
+    /// T54.7: enabled with the model not downloaded warns and names the
+    /// download command, without asking for the input device; the other
+    /// rows are off, present with a device, and present without one.
+    #[cfg(feature = "voice")]
+    #[test]
+    fn doctor_reports_voice_model_missing() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let voice = cox_protocol::config::VoiceConfig {
+            enabled: true,
+            ..Default::default()
+        };
+        let model = crate::voice_cmd::model_path(home.path(), "base.en");
+        let missing = check_voice_with(&voice, model.clone(), || unreachable!("no device probe"));
+        assert_eq!(missing.status, "warn");
+        assert!(
+            human(&missing).contains("cox voice model download base.en"),
+            "{}",
+            human(&missing)
+        );
+
+        let path = model.clone().expect("pinned");
+        std::fs::create_dir_all(path.parent().expect("dir")).expect("mkdir");
+        std::fs::write(&path, b"ggml").expect("model");
+        let with = check_voice_with(&voice, model.clone(), || Some("Built-in Mic".into()));
+        let without = check_voice_with(&voice, model.clone(), || None);
+        let off = check_voice_with(&Default::default(), model, || None);
+        assert_eq!(
+            [&with, &without, &off].map(|r| r.status.as_str()),
+            ["ok", "warn", "ok"]
+        );
+        assert!(human(&with).contains("Built-in Mic"));
+    }
+
+    /// T37.36: a `cox.db` a newer `cox` migrated fails the `db` row with
+    /// both versions and an update fix, never "remove cox.db".
+    #[test]
+    fn doctor_reports_a_newer_schema() {
+        let row = db_result(
+            Err(cox_protocol::StoreError::SchemaNewer {
+                db: "99991231000000".into(),
+                binary: "00000000000004".into(),
+            }),
+            std::path::Path::new("/home/user/.cox"),
+        );
+        insta::assert_snapshot!(human(&row));
+    }
+
     #[test]
     fn doctor_prices_embedded_table_is_ok() {
         let result = check_prices();
         assert_eq!(result.status, "ok");
         assert!(result.detail.starts_with("oldest verified_on "));
+    }
+
+    #[test]
+    fn doctor_prices_verified_after_today_is_fresh() {
+        let ahead = Price {
+            id: "claude-haiku-4-5".to_string(),
+            input: 1.0,
+            output: 5.0,
+            cache_write: 1.25,
+            cache_read: 0.1,
+            verified_on: "2026-09-13".to_string(),
+            source_url: "https://example.com".to_string(),
+        };
+        let result = prices_status(&[ahead], (2026, 9, 12));
+        assert_eq!(result.status, "ok", "{}", result.detail);
     }
 
     #[test]

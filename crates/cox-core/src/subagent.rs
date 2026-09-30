@@ -9,7 +9,7 @@
 //! like `explore`/`shell`. `AgentDef`/`tier_for` live in
 //! `cox_protocol::agent`, not `cox-ext` (which reads the filesystem and
 //! this crate may not depend on): the surface
-//! (`crates/cox/src/session.rs`) runs discovery once at session build and
+//! (`crates/cox-session`'s `open`) runs discovery once at session build and
 //! hands the result to `Session::set_agent_defs`, keeping this crate
 //! I/O-free. A custom preset's usage rows are tagged `Job::Agent`; its own
 //! `tier`/`model` decides the actual tier, not the job.
@@ -30,13 +30,14 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use async_trait::async_trait;
+use cox_permission::narrower;
 use cox_protocol::errors::{CoreError, ToolError};
-use cox_protocol::ids::{ItemId, SessionId, TaskId};
+use cox_protocol::ids::{CallId, ItemId, SessionId, TaskId};
 use cox_protocol::traits::{ExternalAgent, Relay, Tool, ToolCx, Worktree};
 use cox_protocol::types::{
     Concurrency, Content, DecidedBy, Decision, Event, HookEvent, HookOutcome, Job, Level, Message,
-    ModelId, ProviderEvent, Request, Risk, Role, Source, Submission, SystemBlock, Tier, ToolCall,
-    ToolOutput, ToolSpec, Why,
+    ModelId, PermissionMode, ProviderEvent, Request, Risk, Role, Source, Submission, SystemBlock,
+    Tier, ToolCall, ToolOutput, ToolSpec, Why,
 };
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
@@ -118,6 +119,9 @@ struct Resolved {
     /// The driver an external-agent preset runs on (T35.5); `None` for a
     /// model-driven one.
     external: Option<Arc<dyn ExternalAgent>>,
+    /// The mode an `AgentDef`'s `permissionMode` asks for (T45.2); `call`
+    /// runs the child in the narrower of it and the parent's live mode.
+    permission: Option<PermissionMode>,
 }
 
 impl std::fmt::Debug for Resolved {
@@ -146,6 +150,47 @@ pub struct AgentTool {
     spawned: AtomicU32,
 }
 
+/// Discovered names not already shadowed by a built-in preset, and not
+/// `disabled: true` (T34.10) — used in the tool description, the "unknown
+/// preset" error and `Session::agent_names`, so none of them disagrees
+/// about what is dispatchable. A disabled def still discovers (`cox ext
+/// list` shows it, marked); it just never appears here.
+fn custom_names(session: &Session) -> Vec<String> {
+    session
+        .agent_defs()
+        .iter()
+        .filter(|d| !d.disabled)
+        .map(|d| d.name.clone())
+        .filter(|n| !PRESETS.iter().any(|p| p.name == n))
+        .collect()
+}
+
+/// Granted external-agent names (T35.5) not shadowed by a built-in or
+/// discovered preset, which resolve first.
+fn external_names(session: &Session) -> Vec<String> {
+    let custom = custom_names(session);
+    session
+        .external_agents()
+        .iter()
+        .map(|a| a.name().to_string())
+        .filter(|n| !PRESETS.iter().any(|p| p.name == n) && !custom.contains(n))
+        .collect()
+}
+
+impl Session {
+    /// Every name `agent(preset: …)` resolves, in resolution order:
+    /// built-in presets, enabled definitions, granted external agents. A
+    /// surface offers these for `@name task` (T45.6).
+    pub fn agent_names(&self) -> Vec<String> {
+        PRESETS
+            .iter()
+            .map(|p| p.name.to_string())
+            .chain(custom_names(self))
+            .chain(external_names(self))
+            .collect()
+    }
+}
+
 impl AgentTool {
     pub(crate) fn new(parent: Session) -> Self {
         Self {
@@ -154,31 +199,12 @@ impl AgentTool {
         }
     }
 
-    /// Discovered names not already shadowed by a built-in preset, and not
-    /// `disabled: true` (T34.10) — used both in the tool description and in
-    /// the "unknown preset" error, so the two never disagree about what is
-    /// dispatchable. A disabled def still discovers (`cox ext list` shows
-    /// it, marked); it just never appears here.
     fn custom_names(&self) -> Vec<String> {
-        self.parent
-            .agent_defs()
-            .iter()
-            .filter(|d| !d.disabled)
-            .map(|d| d.name.clone())
-            .filter(|n| !PRESETS.iter().any(|p| p.name == n))
-            .collect()
+        custom_names(&self.parent)
     }
 
-    /// Granted external-agent names (T35.5) not shadowed by a built-in or
-    /// discovered preset, which resolve first.
     fn external_names(&self) -> Vec<String> {
-        let custom = self.custom_names();
-        self.parent
-            .external_agents()
-            .iter()
-            .map(|a| a.name().to_string())
-            .filter(|n| !PRESETS.iter().any(|p| p.name == n) && !custom.contains(n))
-            .collect()
+        external_names(&self.parent)
     }
 
     /// Built-in `PRESETS` first (unchanged behaviour for `explore`/`shell`,
@@ -199,6 +225,7 @@ impl AgentTool {
                 result_cap_tokens: p.result_cap_tokens,
                 natural_tier: self.parent.config.jobs.tier_for(p.job),
                 external: None,
+                permission: None,
             });
         }
         if let Some(def) = self
@@ -217,6 +244,7 @@ impl AgentTool {
                 natural_tier: cox_protocol::agent::tier_for(def.model.as_deref())
                     .unwrap_or(self.parent.tier),
                 external: None,
+                permission: def.permission_mode,
             });
         }
         if let Some(agent) = self
@@ -236,11 +264,10 @@ impl AgentTool {
                 result_cap_tokens: CUSTOM_RESULT_CAP_TOKENS,
                 natural_tier: self.parent.tier,
                 external: Some(agent.clone()),
+                permission: None,
             });
         }
-        let mut names: Vec<String> = PRESETS.iter().map(|p| p.name.to_string()).collect();
-        names.extend(self.custom_names());
-        names.extend(self.external_names());
+        let names = self.parent.agent_names();
         Err(ToolError::Denied {
             why: format!(
                 "unknown agent preset {name:?}; available presets: {}",
@@ -379,6 +406,11 @@ impl Tool for AgentTool {
         let Ok(resolved) = self.resolve(input) else {
             return Risk::Exec;
         };
+        // `git worktree add` changes the repository whatever the child's
+        // tools are, so it must ask even for a read-only preset (T44.1).
+        if input.get("isolation").and_then(Value::as_str) == Some("worktree") {
+            return Risk::Destructive;
+        }
         // Its own tools are invisible to cox, so it counts as running
         // anything (the same class `StreamJsonMapper` gives its calls).
         if resolved.external.is_some() {
@@ -423,6 +455,30 @@ impl Tool for AgentTool {
         let tools = self.tools_for(&preset, &input);
         let tier = self.resolve_tier(&preset, &input)?;
         let mut config = self.parent.config.clone();
+        // T45.1: the parent's live mode, not the configured one, so a child
+        // spawned after Shift+Tab to plan is never wider than its parent.
+        // Session grants stay the parent's own. T45.2: a def's
+        // `permissionMode` may narrow that, never widen it; the child's own
+        // `cox_permission::Engine` then decides every call as usual.
+        let live = self.parent.permission_mode().await;
+        config.permissions.mode = match preset.permission {
+            Some(asked) if narrower(live, asked) != asked => {
+                let name = |mode: PermissionMode| format!("{mode:?}").to_lowercase();
+                let text = format!(
+                    "`{}` asked for `{}`, runs as `{}`",
+                    preset.name,
+                    name(asked),
+                    name(live)
+                );
+                self.parent
+                    .notice(Level::Info, text)
+                    .await
+                    .map_err(core_error)?;
+                live
+            }
+            Some(asked) => asked,
+            None => live,
+        };
         config.budget.session_usd = slice(
             config.budget.session_usd,
             self.parent.spent().await,
@@ -641,6 +697,28 @@ async fn relay_approval(parent: &Session, child: &Session, call: ToolCall, why: 
     });
 }
 
+/// DT G4: a child's `QuestionAsked` has no surface either, so the parent
+/// raises it on its own stream (the tool already labelled `source`) and
+/// hands the parent's `Submission::Answer` back to the child.
+fn relay_question(
+    parent: &Session,
+    child: &Session,
+    call_id: CallId,
+    question: String,
+    options: Vec<String>,
+    source: Option<Source>,
+) {
+    let (parent, child) = (parent.clone(), child.clone());
+    tokio::spawn(async move {
+        let text = parent
+            .raise_question(call_id, &question, &options, source)
+            .await
+            .ok()
+            .flatten();
+        let _ = child.submit(Submission::Answer { call_id, text }).await;
+    });
+}
+
 /// What one child run produced, foreground or background.
 struct TaskOutcome {
     answer: String,
@@ -810,7 +888,14 @@ async fn restart(
         .store
         .rollout_read(&dormant.session)
         .map_err(|error| CoreError::Store { error })?;
-    let history = History::from_events(&events);
+    let mut history = History::from_events(&events);
+    // T50.2: the parent may have narrowed since the child ran (Shift+Tab to
+    // Plan); a woken child must not come back wider than the parent is now.
+    let live = parent.permission_mode().await;
+    let mode = history
+        .permission_mode
+        .map_or(live, |own| narrower(live, own));
+    history.permission_mode = Some(mode);
     let child = spawn(
         parent,
         task,
@@ -896,6 +981,17 @@ pub(crate) async fn relay(
 /// call is hop 0, direct, no relay hop-count.
 #[async_trait]
 impl Relay for Session {
+    async fn ask(
+        &self,
+        call_id: CallId,
+        question: &str,
+        options: &[String],
+        source: Option<Source>,
+    ) -> Result<Option<String>, ToolError> {
+        self.raise_question(call_id, question, options, source)
+            .await
+    }
+
     async fn send_message(&self, to: &str, text: &str) -> Result<(), ToolError> {
         match self.self_task() {
             Some(me) => {
@@ -999,6 +1095,12 @@ async fn run_task(
                 Some(Event::ApprovalRequired { call, why, .. }) => {
                     relay_approval(parent, &child, call, why, io).await;
                 }
+                Some(Event::QuestionAsked {
+                    call_id,
+                    question,
+                    options,
+                    source,
+                }) => relay_question(parent, &child, call_id, question, options, source),
                 // Closes the prompt the relay opened on the parent's surface;
                 // a rule's verdict never opened one.
                 Some(ev @ Event::ApprovalDecided { by: DecidedBy::User, .. }) => {
@@ -1199,6 +1301,67 @@ mod tests {
         assert!(tool.resolve(&json!({"preset": "nope"})).is_err());
     }
 
+    /// T44.1: what the Engine concludes for an `explore` child with worktree
+    /// isolation — the call the turn loop builds from `risk`/`subject`.
+    fn worktree_isolation_outcome(mode: PermissionMode, allow: &[&str]) -> crate::Outcome {
+        let tool = test_agent_tool(vec![]);
+        let input = json!({"task": "look around", "isolation": "worktree"});
+        let call = ToolCall {
+            id: cox_protocol::CallId::new(),
+            name: "agent".into(),
+            risk: tool.risk(&input),
+            subject: tool.subject(&input),
+            input,
+            segments: None,
+        };
+        let cfg = cox_protocol::config::PermissionsConfig {
+            allow: allow.iter().map(|r| (*r).to_string()).collect(),
+            ..Default::default()
+        };
+        let engine = crate::Engine::compile(&cfg, None, std::path::Path::new("/repo"))
+            .expect("rules compile");
+        engine.decide(
+            &call,
+            mode,
+            cox_protocol::types::ApprovalPolicy::OnRequest,
+            cox_protocol::types::SandboxMode::WorkspaceWrite,
+            &[],
+        )
+    }
+
+    #[test]
+    fn worktree_isolation_asks_in_default_mode() {
+        for mode in [PermissionMode::Default, PermissionMode::Auto] {
+            assert_eq!(
+                worktree_isolation_outcome(mode, &[]),
+                crate::Outcome::Ask(Why::Risk {
+                    risk: Risk::Destructive
+                }),
+                "{mode:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn worktree_isolation_is_denied_in_plan_mode() {
+        assert!(matches!(
+            worktree_isolation_outcome(PermissionMode::Plan, &[]),
+            crate::Outcome::Deny { .. }
+        ));
+        let plain = test_agent_tool(vec![]).risk(&json!({"task": "x", "isolation": "none"}));
+        assert_eq!(plain, Risk::ReadOnly, "no isolation keeps the tools' risk");
+    }
+
+    #[test]
+    fn worktree_isolation_respects_an_allow_rule() {
+        assert_eq!(
+            worktree_isolation_outcome(PermissionMode::Default, &["agent(explore)"]),
+            crate::Outcome::Allow {
+                by: DecidedBy::Rule
+            }
+        );
+    }
+
     /// T34.1: an unrecognised name is denied, and the error names both the
     /// built-in presets and whatever `.cox/agents`/`.claude/agents`
     /// discovered. Unit-level (like the test above), not a full turn: a
@@ -1216,6 +1379,7 @@ mod tests {
             path: PathBuf::from("<test>/.cox/agents/reviewer.md"),
             body: "You review changes for correctness.".into(),
             disabled: false,
+            permission_mode: None,
         }]);
         let err = tool
             .resolve(&json!({"preset": "nope"}))
@@ -1244,6 +1408,7 @@ mod tests {
             path: PathBuf::from("<test>/.cox/agents/blocked.md"),
             body: "internal only".into(),
             disabled: true,
+            permission_mode: None,
         }]);
         assert!(
             !tool.spec().description.contains("blocked"),
@@ -1274,16 +1439,19 @@ mod tests {
 
     use cox_protocol::errors::ProviderError;
     use cox_protocol::traits::Provider;
-    use cox_protocol::types::{Caps, ProviderId, Usage};
+    use cox_protocol::types::{Caps, PermissionMode, ProviderId, Usage};
     use cox_provider::scripted::Scripted;
 
     use crate::tasks::Child;
 
     /// The script, plus each request's tier and text parts, so a test can
-    /// see exactly what history a child turn was sent with.
+    /// see exactly what history a child turn was sent with, and each
+    /// request's system blocks joined, for what the child was told about
+    /// itself.
     struct Recording {
         script: Scripted,
         seen: StdMutex<Vec<(Tier, Vec<String>)>>,
+        system: StdMutex<Vec<(Tier, String)>>,
     }
 
     #[async_trait]
@@ -1307,6 +1475,9 @@ mod tests {
             });
             let row = (req.tier, texts.collect());
             self.seen.lock().expect("lock").push(row);
+            let system = req.system.iter().map(|b| b.text.as_str());
+            let system = (req.tier, system.collect::<Vec<_>>().join("\n"));
+            self.system.lock().expect("lock").push(system);
             self.script.stream(req, sink, cancel).await
         }
         async fn count_tokens(&self, req: &Request) -> Result<u32, ProviderError> {
@@ -1369,15 +1540,28 @@ mod tests {
     }
 
     fn parent_with(toml: &str) -> (Session, Arc<Recording>, mpsc::Receiver<Event>) {
+        parent_in(toml, PermissionMode::Default)
+    }
+
+    /// `parent_with`, configured with permission mode `mode`.
+    fn parent_in(
+        toml: &str,
+        mode: PermissionMode,
+    ) -> (Session, Arc<Recording>, mpsc::Receiver<Event>) {
         let script = Scripted::from_toml(toml, "").expect("scenario");
-        let seen = StdMutex::new(Vec::new());
-        let provider = Arc::new(Recording { script, seen });
+        let (seen, system) = (StdMutex::new(Vec::new()), StdMutex::new(Vec::new()));
+        let provider = Arc::new(Recording {
+            script,
+            seen,
+            system,
+        });
         let store = Arc::new(crate::MemoryStore::new());
         let slot = Arc::new(OnceLock::new());
         let tools: Vec<Arc<dyn Tool>> = vec![Arc::new(Poke(slot.clone()))];
         let cwd = PathBuf::from("/tmp/cox-subagent-unit");
         let mut config = cox_protocol::Config::default();
         config.core.workspace_roots = vec![cwd.clone()];
+        config.permissions.mode = mode;
         let session = Session::new(config, provider.clone(), tools, store.clone(), store, cwd)
             .expect("session");
         let _ = slot.set(session.clone());
@@ -1414,6 +1598,107 @@ mod tests {
         let events = until(rx, |e| matches!(e, Event::TurnDone { .. })).await;
         running.await.expect("join").expect("turn");
         events
+    }
+
+    /// T45.1: a child takes the parent's live mode, not the configured
+    /// one — after Shift+Tab to plan, an `auto`-configured parent spawns a
+    /// plan-mode child. The child's volatile system block renders the mode
+    /// its `Session::build` also seeds the engine with.
+    #[tokio::test]
+    async fn child_inherits_parent_live_plan_mode() {
+        let toml = r#"
+[[turn]]
+tool_calls = [{ name = "agent", input = { task = "look around" } }]
+[[turn]]
+text = "found it"
+[[turn]]
+text = "done"
+"#;
+        let (parent, provider, mut rx) = parent_in(toml, PermissionMode::Auto);
+        let mode = Submission::SetPermissionMode {
+            mode: PermissionMode::Plan,
+        };
+        parent.submit(mode).await.expect("set mode");
+        parent_turn(&parent, &mut rx).await;
+        let system = provider.system.lock().expect("lock").clone();
+        let child: Vec<_> = system.iter().filter(|(t, _)| *t == Tier::Cheap).collect();
+        assert_eq!(child.len(), 1, "one child request: {system:?}");
+        assert!(
+            child[0].1.contains("permission_mode=Plan"),
+            "{}",
+            child[0].1
+        );
+    }
+
+    /// A read-only `AgentDef` on the cheap tier that asks for `mode`.
+    fn def_asking(name: &str, mode: PermissionMode) -> AgentDef {
+        AgentDef {
+            name: name.into(),
+            description: "d".into(),
+            tools: vec!["poke".into()],
+            model: Some("haiku".into()),
+            path: PathBuf::from(format!("<test>/.cox/agents/{name}.md")),
+            body: "b".into(),
+            disabled: false,
+            permission_mode: Some(mode),
+        }
+    }
+
+    /// One `agent` call to `preset` from `parent`: the parent's events and
+    /// the child's (cheap-tier) volatile system block.
+    async fn run_preset(
+        parent: &Session,
+        provider: &Recording,
+        rx: &mut mpsc::Receiver<Event>,
+    ) -> (Vec<Event>, String) {
+        let events = parent_turn(parent, rx).await;
+        let system = provider.system.lock().expect("lock").clone();
+        let child: Vec<_> = system.iter().filter(|(t, _)| *t == Tier::Cheap).collect();
+        assert_eq!(child.len(), 1, "one child request: {system:?}");
+        (events, child[0].1.clone())
+    }
+
+    const PRESET_TURN: &str = r#"
+[[turn]]
+tool_calls = [{ name = "agent", input = { task = "look around", preset = "asker" } }]
+[[turn]]
+text = "found it"
+[[turn]]
+text = "done"
+"#;
+
+    /// T45.2: a def asking for `bypass` under a `default` parent runs as
+    /// `default`, and the clamp is said once as an Info notice.
+    #[tokio::test]
+    async fn agent_permission_mode_never_widens_parent() {
+        let (parent, provider, mut rx) = parent_in(PRESET_TURN, PermissionMode::Default);
+        parent.set_agent_defs(vec![def_asking("asker", PermissionMode::Bypass)]);
+        let (events, child) = run_preset(&parent, &provider, &mut rx).await;
+        assert!(child.contains("permission_mode=Default"), "{child}");
+        let clamps: Vec<_> = events
+            .iter()
+            .filter(|e| {
+                matches!(e, Event::Notice { level: Level::Info, text }
+                    if text == "`asker` asked for `bypass`, runs as `default`")
+            })
+            .collect();
+        assert_eq!(clamps.len(), 1, "{events:?}");
+    }
+
+    /// T45.2: a def asking for `plan` under an `auto` parent runs in plan,
+    /// with no clamp notice (narrowing is what the field is for).
+    #[tokio::test]
+    async fn agent_permission_mode_can_narrow_to_plan() {
+        let (parent, provider, mut rx) = parent_in(PRESET_TURN, PermissionMode::Auto);
+        parent.set_agent_defs(vec![def_asking("asker", PermissionMode::Plan)]);
+        let (events, child) = run_preset(&parent, &provider, &mut rx).await;
+        assert!(child.contains("permission_mode=Plan"), "{child}");
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::Notice { text, .. } if text.contains("asked for"))),
+            "{events:?}"
+        );
     }
 
     #[tokio::test]

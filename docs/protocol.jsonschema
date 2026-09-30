@@ -142,6 +142,31 @@
         ]
       },
       {
+        "description": "A streamed `Thinking` item stopped growing (A91): how long the model\nthought, from its first to its last reasoning delta. Kept in the\nrollout, so a replay shows the duration the live run measured.",
+        "type": "object",
+        "properties": {
+          "item": {
+            "description": "The `Thinking` item that ended.",
+            "$ref": "#/$defs/ItemId"
+          },
+          "duration_ms": {
+            "description": "Milliseconds from the first to the last delta.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "type": {
+            "type": "string",
+            "const": "thinking_done"
+          }
+        },
+        "required": [
+          "type",
+          "item",
+          "duration_ms"
+        ]
+      },
+      {
         "description": "The model requested a tool call.",
         "type": "object",
         "properties": {
@@ -194,6 +219,47 @@
         ]
       },
       {
+        "description": "`ask_user` waits for the person (DT G4); a `Submission::Answer`\nwith the same `call_id` resumes it.",
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "description": "The `ask_user` call asking.",
+            "$ref": "#/$defs/CallId"
+          },
+          "question": {
+            "description": "The question text.",
+            "type": "string"
+          },
+          "options": {
+            "description": "Suggested answers, possibly empty.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "description": "The subagent asking; `None` for the session the person talks to.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Source"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "type": "string",
+            "const": "question_asked"
+          }
+        },
+        "required": [
+          "type",
+          "call_id",
+          "question"
+        ]
+      },
+      {
         "description": "A pending approval was decided.",
         "type": "object",
         "properties": {
@@ -219,6 +285,29 @@
           "call_id",
           "decision",
           "by"
+        ]
+      },
+      {
+        "description": "An `AllowForSession` grant was revoked (`Submission::RevokeGrant`).",
+        "type": "object",
+        "properties": {
+          "tool": {
+            "description": "The grant's tool.",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The grant's subject prefix.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "grant_revoked"
+          }
+        },
+        "required": [
+          "type",
+          "tool",
+          "subject"
         ]
       },
       {
@@ -309,6 +398,29 @@
         ]
       },
       {
+        "description": "A request was assembled and is about to be sent (A98): the window\nand how the request fills it. Output only; the request is unchanged.",
+        "type": "object",
+        "properties": {
+          "turn": {
+            "description": "The turn the request belongs to.",
+            "$ref": "#/$defs/TurnId"
+          },
+          "breakdown": {
+            "description": "The window and the split.",
+            "$ref": "#/$defs/ContextBreakdown"
+          },
+          "type": {
+            "type": "string",
+            "const": "context_breakdown"
+          }
+        },
+        "required": [
+          "type",
+          "turn",
+          "breakdown"
+        ]
+      },
+      {
         "description": "Compaction ran and replaced older items with a summary.",
         "type": "object",
         "properties": {
@@ -351,6 +463,36 @@
           "dropped",
           "before_tokens",
           "after_tokens"
+        ]
+      },
+      {
+        "description": "The repo map now in system[2] (P43). Its text is archived before\nthis is emitted; resume reads the last one back instead of\nrebuilding, so the replayed request carries the same bytes.",
+        "type": "object",
+        "properties": {
+          "archive": {
+            "description": "The archived map text.",
+            "$ref": "#/$defs/ArchiveId"
+          },
+          "bytes": {
+            "description": "Its size in bytes.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "reason": {
+            "description": "What built it.",
+            "$ref": "#/$defs/RepoMapReason"
+          },
+          "type": {
+            "type": "string",
+            "const": "repo_map_built"
+          }
+        },
+        "required": [
+          "type",
+          "archive",
+          "bytes",
+          "reason"
         ]
       },
       {
@@ -416,10 +558,10 @@
             }
           },
           "skipped": {
-            "description": "Paths whose pre-image was too large to keep, left as they are.",
+            "description": "Paths left as they are, each with why.",
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/$defs/SkippedFile"
             }
           },
           "type": {
@@ -538,6 +680,81 @@
           "tier",
           "from",
           "to"
+        ]
+      },
+      {
+        "description": "The session's permission mode or effort override changed\n(`SetPermissionMode`, `SetEffort`); carries both, as they now stand,\nso a surface sets its state from the event instead of echoing its\nown request (DT G5). Also recorded when a top-level session opens\n(T50.4), so resume and a woken subagent rebuild the mode the session\nlast ran under instead of falling back to `Default` (T50.2).",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "description": "The permission mode now in force.",
+            "$ref": "#/$defs/PermissionMode"
+          },
+          "effort": {
+            "description": "The effort override; `None` means each tier's default.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Effort"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "type": "string",
+            "const": "state_changed"
+          }
+        },
+        "required": [
+          "type",
+          "mode"
+        ]
+      },
+      {
+        "description": "The session's mode changed (`/mode`, P42), or a top-level session\nopened under a non-default one; carries the permission mode the\npreset left in force so a surface needs no second event.",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "description": "The mode now in force.",
+            "$ref": "#/$defs/Mode"
+          },
+          "permission_mode": {
+            "description": "The permission mode now in force, after the preset narrowed it.",
+            "$ref": "#/$defs/PermissionMode"
+          },
+          "type": {
+            "type": "string",
+            "const": "mode_changed"
+          }
+        },
+        "required": [
+          "type",
+          "mode",
+          "permission_mode"
+        ]
+      },
+      {
+        "description": "The session got a title (DT G6), for the sessions list and a window\nor tab title.",
+        "type": "object",
+        "properties": {
+          "title": {
+            "description": "The title, one line.",
+            "type": "string"
+          },
+          "by_user": {
+            "description": "Set by `Submission::Rename`: the store keeps it over any later\ngenerated title (A113). Absent in rollouts before T37.22.9.",
+            "type": "boolean",
+            "default": false
+          },
+          "type": {
+            "type": "string",
+            "const": "title_set"
+          }
+        },
+        "required": [
+          "type",
+          "title"
         ]
       },
       {
@@ -1106,6 +1323,9 @@
                 "type": "null"
               }
             ]
+          },
+          "structured": {
+            "description": "The tool's machine-readable payload (`ToolOutput.structured`), so a\nsurface reads data instead of re-parsing `visible` (DT G3). Absent\nfrom rollouts written before it existed. Boxed: it is rare, and every\n`Event::ToolCallDone` would otherwise carry its full width."
           }
         },
         "required": [
@@ -1462,6 +1682,65 @@
           "latency_ms"
         ]
       },
+      "ContextBreakdown": {
+        "description": "Where the context of the request about to be sent goes (A98): the\nmodel's window and the request's estimated tokens split into the four\nparts both surfaces draw. Emitted before the reply, so it cannot ride on\n`Usage`, which only exists after it.",
+        "type": "object",
+        "properties": {
+          "window": {
+            "description": "The model's context window in tokens; `None` when neither the model\ncatalog nor the provider knows it.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 0
+          },
+          "total": {
+            "description": "The request's estimated tokens; the four parts sum to it exactly.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "system": {
+            "description": "The system prompt and the volatile environment block.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "tools": {
+            "description": "The tool schemas.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "instructions": {
+            "description": "Instruction files and the skills index.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "history": {
+            "description": "The conversation: verbatim turns, archive pointers and summaries.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "cached": {
+            "description": "Tokens the last call served from cache, as its usage reported.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "total",
+          "system",
+          "tools",
+          "instructions",
+          "history",
+          "cached"
+        ]
+      },
       "CompactReason": {
         "description": "Why `Event::Compacted` happened (plan.md §1.10, T28.3).",
         "oneOf": [
@@ -1484,6 +1763,26 @@
             "description": "The provider rejected a request as too long; the call retries once.",
             "type": "string",
             "const": "context-too-long"
+          }
+        ]
+      },
+      "RepoMapReason": {
+        "description": "Why `Event::RepoMapBuilt` happened (P43): the only three moments the\nrepo map in system[2] is built.",
+        "oneOf": [
+          {
+            "description": "Before the first request of a session.",
+            "type": "string",
+            "const": "session_start"
+          },
+          {
+            "description": "`/repomap refresh` produced different bytes.",
+            "type": "string",
+            "const": "refresh"
+          },
+          {
+            "description": "Compaction rebuilt it with the prefix it already restarts.",
+            "type": "string",
+            "const": "compaction"
           }
         ]
       },
@@ -1530,10 +1829,142 @@
           }
         ]
       },
+      "SkippedFile": {
+        "description": "A file a code rewind left as it is (`Event::Rewound`), and why (A101).",
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "The confined absolute path.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why it was not restored.",
+            "$ref": "#/$defs/SkipReason"
+          }
+        },
+        "required": [
+          "path",
+          "reason"
+        ]
+      },
+      "SkipReason": {
+        "description": "Why a rewind could not restore a file.",
+        "oneOf": [
+          {
+            "description": "Its pre-image was over the size cap, so no bytes were kept.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "too_large"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "description": "The path no longer confines to the workspace roots.",
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "outside_roots"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          {
+            "description": "Reading the pre-image or writing the file failed.",
+            "type": "object",
+            "properties": {
+              "error": {
+                "description": "The error, as shown to the user.",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "const": "failed"
+              }
+            },
+            "required": [
+              "kind",
+              "error"
+            ]
+          }
+        ]
+      },
       "TaskId": {
         "description": "TaskId: a 26-character Crockford-base32 ULID.",
         "type": "string",
         "pattern": "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+      },
+      "PermissionMode": {
+        "description": "`permissions.mode` (plan.md §1.6/§1.8).",
+        "oneOf": [
+          {
+            "description": "Rules and risk decide as usual.",
+            "type": "string",
+            "const": "default"
+          },
+          {
+            "description": "Only `Risk::ReadOnly` is allowed; everything else denies without asking.",
+            "type": "string",
+            "const": "plan"
+          },
+          {
+            "description": "`Write` is allowed automatically; `Exec`/`Destructive` still ask unless a safe-command match.",
+            "type": "string",
+            "const": "auto"
+          },
+          {
+            "description": "Everything is allowed; flag-only, banner shown.",
+            "type": "string",
+            "const": "bypass"
+          }
+        ]
+      },
+      "Effort": {
+        "description": "Reasoning effort passed to the provider.\n\nOrdered `Low < Medium < High < Xhigh` so the router can clamp a tier's\neffort to the greatest level a model supports (`docs/design/providers.md`).\nThe four levels are models.dev's own, so a catalog row maps without loss\n(T30.26).",
+        "oneOf": [
+          {
+            "description": "Cheapest, fastest; used for `cheap`-tier jobs.",
+            "type": "string",
+            "const": "low"
+          },
+          {
+            "description": "Between `Low` and `High`: models.dev's and the wires' `medium`.",
+            "type": "string",
+            "const": "medium"
+          },
+          {
+            "description": "Default for `code`/`think` tiers.",
+            "type": "string",
+            "const": "high"
+          },
+          {
+            "description": "User-selected for a flagged large refactor.",
+            "type": "string",
+            "const": "xhigh"
+          }
+        ]
+      },
+      "Mode": {
+        "description": "`core.mode` / `--mode` / `/mode` (P42, A73): a named preset over the\npermission mode and the main tier only. It never filters tools, so the\ncache prefix stays byte-stable, and it only narrows `permissions.mode`.",
+        "oneOf": [
+          {
+            "description": "The configured permission mode and main tier, unchanged.",
+            "type": "string",
+            "const": "editor"
+          },
+          {
+            "description": "`Plan` (read-only tools only) and the `think` main tier, confirmed.",
+            "type": "string",
+            "const": "architect"
+          }
+        ]
       },
       "DecidePoint": {
         "description": "A decision point (PL§4 \"Decision points\").",
@@ -2460,6 +2891,29 @@
             "required": [
               "type"
             ]
+          },
+          {
+            "description": "`cox.db` holds a migration this binary does not embed: a newer `cox`\n(the app's bundled one, or a Homebrew one of another version) wrote\nit, and this older one must not read or write it (T37.36).",
+            "type": "object",
+            "properties": {
+              "db": {
+                "description": "The newest migration version in `cox.db` this binary does not know.",
+                "type": "string"
+              },
+              "binary": {
+                "description": "The newest migration version this binary embeds.",
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "const": "schema_newer"
+              }
+            },
+            "required": [
+              "type",
+              "db",
+              "binary"
+            ]
           }
         ]
       }
@@ -2486,7 +2940,7 @@
             }
           },
           "confirm_think": {
-            "description": "Required to be `true` for the turn to route to `Tier::Think` (plan.md invariant #9).",
+            "description": "`true` runs this one turn on `Tier::Think` (`/think`, the think\ntoggle, `--deep`), confirming its gate (plan.md invariant #9); the\nnext turn without it goes back to the session's tier (D5, A103).",
             "type": "boolean"
           },
           "type": {
@@ -2522,6 +2976,31 @@
           "type",
           "call_id",
           "decision"
+        ]
+      },
+      {
+        "description": "The person's reply to a `QuestionAsked` (DT G4).",
+        "type": "object",
+        "properties": {
+          "call_id": {
+            "description": "The `ask_user` call being answered.",
+            "$ref": "#/$defs/CallId"
+          },
+          "text": {
+            "description": "The answer; `None` dismisses the question unanswered.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "const": "answer"
+          }
+        },
+        "required": [
+          "type",
+          "call_id"
         ]
       },
       {
@@ -2629,6 +3108,29 @@
         ]
       },
       {
+        "description": "Revoke an `AllowForSession` grant (T37.45.3): the next call it\ncovered goes back through the rules and asks. The core answers with\n`GrantRevoked`, which resume replays, so the grant stays gone.",
+        "type": "object",
+        "properties": {
+          "tool": {
+            "description": "The grant's tool, as `grants_for` recorded it.",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The grant's subject prefix.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "revoke_grant"
+          }
+        },
+        "required": [
+          "type",
+          "tool",
+          "subject"
+        ]
+      },
+      {
         "description": "A slash command the surface parsed but did not resolve itself.",
         "type": "object",
         "properties": {
@@ -2713,6 +3215,68 @@
         ]
       },
       {
+        "description": "Revert one file (T37.28.3, A101): write back its pre-image from\nbefore `to_turn` first touched it, checkpointing its current bytes\nfirst so the revert can itself be undone. Nothing else changes.",
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "Relative to the session's cwd or absolute; confined to the\nworkspace roots like a tool's path.",
+            "type": "string"
+          },
+          "to_turn": {
+            "description": "The turn to go back before.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "type": {
+            "type": "string",
+            "const": "revert_file"
+          }
+        },
+        "required": [
+          "type",
+          "path",
+          "to_turn"
+        ]
+      },
+      {
+        "description": "Put one of Review's hunks back (T51.19, A101): hunk `hunk` of the\nfile's net diff, from its first pre-image since `to_turn` to its\nbytes on disk, written back to the pre-image's lines alone. The\ncurrent bytes are checkpointed first so the revert can itself be\nundone; a file whose [`content_digest`] is no longer `now_digest` is\nleft as it is, with a Notice.",
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "Relative to the session's cwd or absolute; confined to the\nworkspace roots like a tool's path.",
+            "type": "string"
+          },
+          "to_turn": {
+            "description": "The turn whose pre-image the diff starts from.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "hunk": {
+            "description": "The hunk's index in Review's diff, from 0.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "now_digest": {
+            "description": "[`content_digest`] of the bytes Review diffed.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "revert_hunk"
+          }
+        },
+        "required": [
+          "type",
+          "path",
+          "to_turn",
+          "hunk",
+          "now_digest"
+        ]
+      },
+      {
         "description": "`Ctrl+B` (T27.1): detach a running `bash` or `agent` call into a\nbackground task; the model gets a pointer result and the turn goes on.",
         "type": "object",
         "properties": {
@@ -2754,6 +3318,29 @@
         ]
       },
       {
+        "description": "A composer `@name task` line (T45.5): runs subagent `name` through the\n`agent` tool on the model's own path (hooks, permission engine,\nbudget, agent slots). The line and the answer join history at its\ntail, so the next model turn sees them.",
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "A preset, agent definition or external agent name.",
+            "type": "string"
+          },
+          "task": {
+            "description": "What the subagent is asked to do.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "user_agent"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "task"
+        ]
+      },
+      {
         "description": "Wind down the session cleanly.",
         "type": "object",
         "properties": {
@@ -2764,6 +3351,24 @@
         },
         "required": [
           "type"
+        ]
+      },
+      {
+        "description": "`/rename`, or a rename in the app (A113, T37.22.9): the session's\ntitle, set by the user. The core answers with a `TitleSet` marked\n`by_user`, which a generated title never replaces.",
+        "type": "object",
+        "properties": {
+          "title": {
+            "description": "The new title; the core keeps its first line, sanitized.",
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "rename"
+          }
+        },
+        "required": [
+          "type",
+          "title"
         ]
       },
       {

@@ -19,7 +19,7 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use cox_protocol::errors::ProviderError;
 use cox_protocol::traits::Provider;
-use cox_protocol::types::{Caps, Content, ModelId, ProviderEvent, ProviderId, Request, Usage};
+use cox_protocol::types::{Caps, Content, Job, ModelId, ProviderEvent, ProviderId, Request, Usage};
 pub use cox_provider_testkit::scripted::{ToolCallSpec, TurnSpec, events_for, parse_scenario};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -142,6 +142,12 @@ impl Provider for Scripted {
         }
     }
 
+    /// Stands in for a vision wire (T40.7), so an attached or tool image
+    /// reaches the request a test inspects instead of being held back.
+    fn accepts_images(&self, _model: &str) -> bool {
+        true
+    }
+
     async fn stream(
         &self,
         req: Request,
@@ -156,14 +162,30 @@ impl Provider for Scripted {
             // ahead of it claims this request, so a still-unclaimed tagged
             // turn is never stolen by an unrelated caller's plain FIFO ask
             // (`scripted.rs`'s module doc, `cox-provider-testkit`).
+            // A113: `TurnSpec::job` keeps a `title` side request from
+            // taking a turn the scenario wrote for the conversation.
+            let serves = |t: &TurnSpec| match &t.job {
+                Some(job) => *job == req.job,
+                None => req.job != Job::Title,
+            };
             let picked = turns
                 .iter()
-                .position(|t| is_marked(t) && claims(t, &req))
-                .or_else(|| turns.iter().position(|t| !is_marked(t)));
+                .position(|t| serves(t) && is_marked(t) && claims(t, &req))
+                .or_else(|| turns.iter().position(|t| serves(t) && !is_marked(t)));
             let index = picked.ok_or_else(|| ProviderError::Unsupported {
                 feature: "scripted scenario ran out".into(),
             })?;
             turns.remove(index).expect("index just found by position")
+        };
+        let turn = if turn.echo_tools {
+            let mut names: Vec<&str> = req.tools.iter().map(|t| t.name.as_str()).collect();
+            names.sort_unstable();
+            TurnSpec {
+                text: Some(names.join("\n")),
+                ..turn
+            }
+        } else {
+            turn
         };
         let usage = Self::usage_for(&turn, &req);
         let model = if self.model.is_empty() {
@@ -307,6 +329,32 @@ mod tests {
             .await
             .expect_err("scenario is exhausted");
         assert!(matches!(err, ProviderError::Unsupported { .. }));
+    }
+
+    /// A113: a `title` request never takes a conversation turn, and a
+    /// turn pinned to `title` never answers the conversation.
+    #[tokio::test]
+    async fn scripted_title_request_takes_only_a_title_turn() {
+        let toml = "[[turn]]\ntext = \"main\"\n[[turn]]\njob = \"title\"\ntext = \"Named\"\n";
+        let provider = Scripted::from_toml(toml, "").expect("scenario");
+        let title = || Request {
+            job: Job::Title,
+            ..req()
+        };
+        let named = drain(&provider, title()).await.expect("title turn");
+        assert!(named.iter().any(|e| matches!(
+            e,
+            ProviderEvent::TextDelta { text } if text == "Named"
+        )));
+        let err = drain(&provider, title())
+            .await
+            .expect_err("no title turn left");
+        assert!(matches!(err, ProviderError::Unsupported { .. }));
+        let main = drain(&provider, req()).await.expect("main turn");
+        assert!(main.iter().any(|e| matches!(
+            e,
+            ProviderEvent::TextDelta { text } if text == "main"
+        )));
     }
 
     /// A request whose transcript carries one plain user text block, the

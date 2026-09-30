@@ -97,8 +97,6 @@ pub(crate) fn read_lines(path: &Path) -> io::Result<(Vec<Event>, bool)> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write as _;
-
     use cox_protocol::{StopReason, TurnId};
 
     use super::*;

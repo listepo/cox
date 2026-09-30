@@ -1,0 +1,9 @@
+---
+source: crates/cox-tui/src/picker.rs
+expression: "crate::view::buffer_to_string(&buf)"
+---
+ @
+ ▸ explore · agent
+   reviewer · agent
+   src/main.rs
+   README.md

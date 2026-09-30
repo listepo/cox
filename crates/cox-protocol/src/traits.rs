@@ -171,6 +171,14 @@ pub trait Provider: Send + Sync {
     /// What this provider implementation can do, so `cox-core` can avoid
     /// sending it a request shape it does not support.
     fn capabilities(&self) -> Caps;
+    /// Whether `model` on this wire takes `Content::Image` in a user
+    /// message (T37.6). Per model because one Chat server hosts vision and
+    /// text-only models side by side; `false` by default so a wire that
+    /// never said so gets a notice instead of an image it would reject.
+    fn accepts_images(&self, model: &str) -> bool {
+        let _ = model;
+        false
+    }
     /// Streams a response, forwarding `ProviderEvent`s on `sink` as they
     /// arrive; returns the call's final `Usage` once the stream ends, or
     /// stops early if `cancel` fires.
@@ -256,6 +264,14 @@ pub trait Tool: Send + Sync {
     /// Runs the tool. `text` in the returned `ToolOutput` is untruncated;
     /// the core archives it and truncates what the model sees.
     async fn call(&self, input: Value, cx: &ToolCx) -> Result<ToolOutput, ToolError>;
+    /// Releases what the tool holds across calls — a process such as a
+    /// language server (T41.5). Runs once, from `Session::end` of the
+    /// session that owns the tool list, never from a child that shares it.
+    /// Sync because `end` is: a tool that owns a process kills it here
+    /// rather than awaiting a polite exit. A tool must still work after
+    /// it, starting again on its next call, since a surface may reuse its
+    /// tool list for a new session. Default: nothing to release.
+    fn shutdown(&self) {}
 }
 
 /// The persistence layer: `~/.cox/cox.db` plus the JSONL rollouts
@@ -400,6 +416,16 @@ pub trait Archive: Send + Sync {
     async fn get(&self, id: &ArchiveId) -> Result<Vec<u8>, StoreError>;
 }
 
+/// Puts one hunk of a file's net diff back (T51.19): cox-render's
+/// `diffmodel::revert_hunk`, installed by the surface like the
+/// `Checkpointer`, because cox-core may not depend on cox-render
+/// (`deps.rs`). Pure: no file is read or written here.
+pub trait HunkReverter: Send + Sync {
+    /// `now` with hunk `index` of the line diff from `before` put back to
+    /// `before`'s lines; `None` when the diff has no such hunk.
+    fn revert(&self, before: &str, now: &str, index: usize) -> Option<String>;
+}
+
 /// Where the loop gets a file's bytes before a call changes it (T26.1).
 /// Implemented by `cox-tools` (`checkpoint::GitCheckpointer`), which is
 /// the crate allowed to read files and run git; `cox-core` only decides
@@ -438,6 +464,38 @@ pub struct Worktree {
     pub main: PathBuf,
 }
 
+/// One checkout of a repository as `Worktrees::list` reports it (T37.10):
+/// what the desktop's worktree list shows next to its prune action.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorktreeInfo {
+    /// The checkout's directory.
+    pub path: PathBuf,
+    /// The branch checked out there; `None` when detached.
+    pub branch: Option<String>,
+    /// The main checkout rather than a linked worktree.
+    pub main: bool,
+    /// The lock reason; `Some("")` when locked without one.
+    pub locked: Option<String>,
+    /// Git reports it prunable: its directory is gone.
+    pub stale: bool,
+    /// Its branch is already merged into the main checkout's `HEAD`.
+    pub merged: bool,
+    /// Bytes on disk under `path`, best effort.
+    pub bytes: u64,
+}
+
+/// One file a worktree changed against the commit it was cut from, with
+/// its line counts (T52.10): a best-of-n candidate's column.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileStat {
+    /// Relative to the worktree.
+    pub path: PathBuf,
+    /// Lines added.
+    pub added: u32,
+    /// Lines removed.
+    pub removed: u32,
+}
+
 /// Where the loop gets a worktree for `agent(isolation: "worktree")`
 /// (T27.3). Implemented by `cox-tools` (`git::GitWorktrees`), the crate
 /// allowed to run git; `cox-core` only decides which task gets one.
@@ -447,6 +505,54 @@ pub trait Worktrees: Send + Sync {
     /// per the workspace `worktrees` skill and locked for `owner`, or the
     /// existing one when it is already registered under a cox owner.
     async fn add(&self, from: &Path, name: &str, owner: &str) -> Result<Worktree, WorktreeError>;
+
+    /// Every checkout of the repository around `from`, main first (T37.10).
+    /// The default lists none: a source that only creates worktrees (a test
+    /// fake) has nothing to report.
+    async fn list(&self, from: &Path) -> Result<Vec<WorktreeInfo>, WorktreeError> {
+        let _ = from;
+        Ok(Vec::new())
+    }
+
+    /// What the worktree at `path` changed against the commit it was cut
+    /// from, committed or not, untracked files included (T52.10). The
+    /// default reports nothing.
+    async fn diffstat(&self, path: &Path) -> Result<Vec<FileStat>, WorktreeError> {
+        let _ = path;
+        Ok(Vec::new())
+    }
+
+    /// Removes the worktree at `path`, which must be locked for `owner`
+    /// (T52.10). A tree with uncommitted or untracked files is refused
+    /// (`WorktreeError::Dirty`) unless `discard`, which the person gives
+    /// only by confirming a second time that its changes go. The default
+    /// removes nothing: a source that only creates worktrees has none of
+    /// its own to remove.
+    async fn remove(&self, path: &Path, owner: &str, discard: bool) -> Result<(), WorktreeError> {
+        let _ = (owner, discard);
+        Err(WorktreeError::NotRegistered {
+            path: path.to_path_buf(),
+        })
+    }
+}
+
+/// Where the session gets its repo map (P43): a ranked outline of the
+/// workspace at `root`, cut at `budget_bytes`, showing only files `admit`
+/// accepts. Implemented over `cox-tools::repomap`, the crate allowed to walk
+/// the tree and run git; `cox-core` decides when to build and passes the
+/// permission engine as `admit`. Infallible: a map it cannot build is empty.
+#[async_trait]
+pub trait RepoMapper: Send + Sync {
+    /// The map text, a pure function of the files, git order and budget.
+    async fn build(
+        &self,
+        root: &Path,
+        budget_bytes: usize,
+        // An explicit `for<'p>`: `#[async_trait]` names every elided lifetime,
+        // the one inside `Fn(&Path)` too, which would tie the argument to the
+        // call and reject `admit(&root.join(rel))`.
+        admit: &(dyn for<'p> Fn(&'p Path) -> bool + Send + Sync),
+    ) -> String;
 }
 
 /// A hook source (`cox-ext`'s shell hooks, `cox-plugin`'s plugin hooks, or
@@ -476,16 +582,32 @@ pub trait Hook: Send + Sync {
     ) -> crate::types::HookOutcome;
 }
 
-/// Where `send_message` (T34.6, SM§4) delivers a follow-up: implemented by
-/// `Session` (`cox-core`) so `cox-tools` needs no handle to it, only this
-/// narrow hook — the same shape as `Archive`/`Worktrees` (AGENTS.md's
-/// trust-boundary rule: anything reaching outside this crate goes through
-/// a trait defined here).
+/// The session a tool talks back to: where `send_message` (T34.6, SM§4)
+/// delivers a follow-up and where `ask_user` raises its question (DT G4).
+/// Implemented by `Session` (`cox-core`) so `cox-tools` needs no handle to
+/// it, only this narrow hook — the same shape as `Archive`/`Worktrees`
+/// (AGENTS.md's trust-boundary rule: anything reaching outside this crate
+/// goes through a trait defined here).
 #[async_trait]
 pub trait Relay: Send + Sync {
     /// Sends `text` to `to` (`"parent"`, a sibling's registry name, or a
     /// `TaskId`), stamped with the caller's own task if it is a subagent.
     async fn send_message(&self, to: &str, text: &str) -> Result<(), ToolError>;
+
+    /// Emits `Event::QuestionAsked` and waits for the matching
+    /// `Submission::Answer`; `Ok(None)` means the person dismissed it.
+    async fn ask(
+        &self,
+        call_id: CallId,
+        question: &str,
+        options: &[String],
+        source: Option<crate::types::Source>,
+    ) -> Result<Option<String>, ToolError> {
+        let _ = (call_id, question, options, source);
+        Err(ToolError::Denied {
+            why: "no surface is listening for questions".into(),
+        })
+    }
 }
 
 /// Where a session's events go besides its surface (PL§5, T33.10): the
@@ -581,6 +703,33 @@ pub trait Advisor: Send + Sync {
     ) -> Option<crate::plugin::Advice>;
 }
 
+/// Why a push-to-talk press produced no transcript (T54.4). Each carries
+/// the one line the TUI shows the user.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum DictationError {
+    /// Recording could not start or run: no microphone, the OS denied
+    /// access, or the stream failed.
+    #[error("{0}")]
+    Capture(String),
+    /// The model could not be loaded or the audio could not be transcribed.
+    #[error("{0}")]
+    Transcribe(String),
+}
+
+/// Push-to-talk dictation (P54, A123): the TUI starts and stops a recording
+/// and receives text, never audio. Defined here so `cox-tui` depends on this
+/// trait and never on `cox-voice`, which implements it behind `crates/cox`'s
+/// `voice` feature.
+#[async_trait]
+pub trait Dictation: Send {
+    /// Starts recording from the microphone.
+    fn start(&mut self) -> Result<(), DictationError>;
+    /// Stops recording and returns the transcript of what was said.
+    async fn stop(&mut self) -> Result<String, DictationError>;
+    /// Stops recording and discards the audio untranscribed.
+    fn cancel(&mut self);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -601,5 +750,6 @@ mod tests {
         assert_object_safe::<dyn EventTap>();
         assert_object_safe::<dyn ModelCaller>();
         assert_object_safe::<dyn ToolInvoker>();
+        assert_object_safe::<dyn Dictation>();
     }
 }

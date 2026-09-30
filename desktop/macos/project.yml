@@ -1,0 +1,64 @@
+# The macOS app's Xcode project (DT§6, DT§7, A106), for XcodeGen (the mise.toml pin):
+# `just desktop-app` generates the gitignored Cox.xcodeproj from this spec and builds it. Only
+# the app target lives here — `@main`, scenes, entitlements, Info.plist, assets under App/ —
+# and every other line of Swift lives in the local packages, so the project stays a few lines
+# of spec and never merge-conflicts.
+#
+# Debug is ad-hoc signed (`-`): no signing identity, no team, no Keychain. Developer ID,
+# Hardened Runtime for a shipped build, notarization and Sparkle are T37.32.2.
+name: Cox
+options:
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.2"
+    CURRENT_PROJECT_VERSION: "1"
+packages:
+  CoxCore:
+    path: Packages/CoxCore
+  CoxModel:
+    path: Packages/CoxModel
+  CoxPlatform:
+    path: Packages/CoxPlatform
+  CoxTranscript:
+    path: Packages/CoxTranscript
+  CoxUI:
+    path: Packages/CoxUI
+  # T51.15: the global hotkeys' registration, recorder and storage (DT§4.6); MIT.
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    exactVersion: 3.1.0
+targets:
+  Cox:
+    type: application
+    platform: macOS
+    sources:
+      - App
+    dependencies:
+      - package: CoxCore
+      - package: CoxModel
+        products: [CoxClient, CoxModel]
+      - package: CoxPlatform
+      - package: CoxTranscript
+      - package: CoxUI
+      - package: KeyboardShortcuts
+    settings:
+      base:
+        PRODUCT_NAME: Cox
+        # Derived from the repository (github.com/pyrlyn/cox); T37.32.2 confirms it before the
+        # first signed build, after which it is fixed.
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.listepo.cox
+        INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/Cox.entitlements
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: NO
+      configs:
+        Release:
+          ENABLE_HARDENED_RUNTIME: YES
+    scheme: {}
