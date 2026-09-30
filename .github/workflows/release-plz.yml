@@ -1,12 +1,12 @@
 # release-plz (A17, `release-plz.toml`): on every push to main, open or refresh
-# the release PR through the shared listepo/infra workflow. Nothing here tags
+# the release PR through the shared pyrlyn/infra workflow. Nothing here tags
 # anything and nothing is dispatched (`release-workflow: ""`): release.yml runs
 # on the push itself, publishes the built binaries first and only then creates
 # `v<version>`. While that tag is missing (a release in flight) the release PR
 # is left alone.
 #
 # RELEASE_PLZ_TOKEN is a fine-grained PAT (contents: write, pull requests:
-# write) stored as a repository secret. It cannot be the default GITHUB_TOKEN:
+# write) stored as an organization secret. It cannot be the default GITHUB_TOKEN:
 # a PR opened with GITHUB_TOKEN never triggers another workflow run, so CI
 # would not run on the release PR that merging publishes.
 name: release-plz
@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   release-plz:
-    uses: listepo/infra/.github/workflows/release-plz.yml@189816ac5a375e18e0235044970efcbc40e3cabd
+    uses: pyrlyn/infra/.github/workflows/release-plz.yml@863d8960601216eec62d4aa78924f84ce61d72b9
     permissions:
       contents: write
       pull-requests: write
