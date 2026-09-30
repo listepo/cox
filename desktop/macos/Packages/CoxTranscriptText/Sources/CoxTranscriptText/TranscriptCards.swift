@@ -267,22 +267,47 @@ extension TranscriptTextView {
   /// blank gap until the next full re-layout, such as a window resize (T37.22.10).
   ///
   /// The SDK declares this on `NSTextView` only from macOS 27, and the package targets 26
-  /// (T37.22.14). The protocol method is optional from macOS 12 and the controller asks its
-  /// delegate, the text view, whether it answers, so the override runs on 26 as well; there
-  /// `NSTextView` may have no method for `super` to reach.
-  public override func textViewportLayoutControllerDidLayout(
-    _ controller: NSTextViewportLayoutController
-  ) {
-    viewportDidLayout(controller, superLaysOut: Self.superLaysOut)
-  }
+  /// (T37.22.14). The protocol method is optional from macOS 12, so the controller still
+  /// calls it on 26. That SDK has no method to override; the compiler that ships with the
+  /// 27 SDK does, and requires `override`.
+  #if compiler(>=6.4)
+    public override func textViewportLayoutControllerDidLayout(
+      _ controller: NSTextViewportLayoutController
+    ) {
+      viewportDidLayout(controller, superLaysOut: Self.superLaysOut)
+    }
 
-  /// Whether `NSTextView` implements `textViewportLayoutControllerDidLayout` on this system.
-  static let superLaysOut = NSTextView.instancesRespond(
-    to: #selector(NSTextView.textViewportLayoutControllerDidLayout(_:)))
+    static let superLaysOut = NSTextView.instancesRespond(
+      to: #selector(NSTextView.textViewportLayoutControllerDidLayout(_:)))
+
+    private func invokeSuperLayout(_ controller: NSTextViewportLayoutController) {
+      super.textViewportLayoutControllerDidLayout(controller)
+    }
+  #else
+    @objc(textViewportLayoutControllerDidLayout:)
+    func textViewportLayoutControllerDidLayout(_ controller: NSTextViewportLayoutController) {
+      viewportDidLayout(controller, superLaysOut: Self.superLaysOut)
+    }
+
+    /// Named as a string: the 26 SDK has no method to form a `#selector` from.
+    static let layoutSelector = NSSelectorFromString("textViewportLayoutControllerDidLayout:")
+
+    static let superLaysOut = NSTextView.instancesRespond(to: layoutSelector)
+
+    private func invokeSuperLayout(_ controller: NSTextViewportLayoutController) {
+      guard let method = class_getInstanceMethod(NSTextView.self, Self.layoutSelector) else {
+        return
+      }
+      unsafeBitCast(
+        method_getImplementation(method),
+        to: (@convention(c) (AnyObject, Selector, NSTextViewportLayoutController) -> Void).self
+      )(self, Self.layoutSelector, controller)
+    }
+  #endif
 
   /// The pass after each viewport layout: `NSTextView`'s own where it has one, then `placeCards`.
   func viewportDidLayout(_ controller: NSTextViewportLayoutController, superLaysOut: Bool) {
-    if superLaysOut { super.textViewportLayoutControllerDidLayout(controller) }
+    if superLaysOut { invokeSuperLayout(controller) }
     placeCards()
   }
 

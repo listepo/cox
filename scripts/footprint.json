@@ -14,6 +14,7 @@
     "rss_mib": 24.0,
     "binary_bytes": 77764992,
     "turns": 30,
-    "calls": 60
+    "calls": 60,
+    "calib_ms": 3.3
   }
 }
