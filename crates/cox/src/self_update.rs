@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use crate::plugin_fetch::{fetch, http_client, sha256_hex, untar};
 
-/// `listepo/cox` releases carry `cox-<target>.tar.xz` built by
+/// `pyrlyn/cox` releases carry `cox-<target>.tar.xz` built by
 /// `scripts/package.sh` and published by `.github/workflows/release.yml`.
-const REPO: &str = "listepo/cox";
+const REPO: &str = "pyrlyn/cox";
 
 /// This platform's release target triple, if releases build it.
 fn target() -> anyhow::Result<&'static str> {

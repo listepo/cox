@@ -10,7 +10,7 @@ Rust is pinned with [mise](https://mise.jdx.dev/). Prefer `mise exec -- cargo â€
 over a global toolchain.
 
 ```bash
-git clone https://github.com/listepo/cox && cd cox
+git clone https://github.com/pyrlyn/cox && cd cox
 mise exec -- cargo build -p cox
 export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY
 ./target/debug/cox doctor         # green except prices? you are good

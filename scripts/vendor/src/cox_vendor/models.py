@@ -100,7 +100,7 @@ _HEADER_MARKER = "# Type-2 provider rows verified on"
 
 def download(url: str = API_URL) -> bytes:
     # models.dev 403s the default urllib User-Agent; any identifiable one works.
-    req = urllib.request.Request(url, headers={"User-Agent": "cox-dev (https://github.com/listepo/cox)"})
+    req = urllib.request.Request(url, headers={"User-Agent": "cox-dev (https://github.com/pyrlyn/cox)"})
     with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - fixed https URL
         return resp.read()
 
