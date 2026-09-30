@@ -272,6 +272,10 @@ jobs:
             [ "$archs" = arm64 ] || { echo "expected arm64 only" >&2; exit 1; }
           done
 
+      # Xcode 27 ships without the Metal toolchain; SwiftTerm (CoxPlatform) compiles a shader.
+      - name: Metal toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
       - name: swift test
         run: |
           set -euo pipefail
