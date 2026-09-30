@@ -48,7 +48,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Cox
-        # Derived from the repository (github.com/listepo/cox); T37.32.2 confirms it before the
+        # Derived from the repository (github.com/pyrlyn/cox); T37.32.2 confirms it before the
         # first signed build, after which it is fixed.
         PRODUCT_BUNDLE_IDENTIFIER: io.github.listepo.cox
         INFOPLIST_FILE: App/Info.plist

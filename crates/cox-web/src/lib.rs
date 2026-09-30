@@ -38,7 +38,7 @@ pub fn client() -> Client {
     reqwest::Client::builder()
         .timeout(TIMEOUT)
         .redirect(reqwest::redirect::Policy::limited(5))
-        .user_agent("cox (+https://github.com/listepo/cox)")
+        .user_agent("cox (+https://github.com/pyrlyn/cox)")
         .build()
         // The builder only fails on a broken TLS backend; a bare client
         // still fetches, just without the timeout, and `fetch` bounds the

@@ -33,7 +33,7 @@ fuzz nightly (see `fuzz/` and `.github/workflows/nightly.yml`).
 ## Reporting a vulnerability
 
 Open a private security advisory at
-<https://github.com/listepo/cox/security/advisories/new> — do not file a
+<https://github.com/pyrlyn/cox/security/advisories/new> — do not file a
 public issue for anything that leaks credentials, escapes the sandbox or
 the workspace, or runs code outside an approved tool call. Say which guard
 above you believe failed and how to reproduce it; you will hear back within
