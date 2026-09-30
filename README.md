@@ -6,12 +6,12 @@
 
 **cox** is named for the coxswain: it steers the work while models, tools, and extensions row. It is being built as one reliable, testable agent core with several ways to use it: an interactive terminal UI, headless automation, editor integration through ACP, and MCP tools for other agents.
 
-[Documentation](https://listepo.github.io/cox/) · [Getting started](docs/getting-started.md) · [Architecture](https://listepo.github.io/cox/docs/architecture/) · [Configuration](https://listepo.github.io/cox/docs/configuration/)
+[Documentation](https://pyrlyn.github.io/cox/) · [Getting started](docs/getting-started.md) · [Architecture](https://pyrlyn.github.io/cox/docs/architecture/) · [Configuration](https://pyrlyn.github.io/cox/docs/configuration/)
 
 ## 60-second start
 
 ```bash
-git clone https://github.com/listepo/cox && cd cox
+git clone https://github.com/pyrlyn/cox && cd cox
 mise exec -- cargo build -p cox
 export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY
 ./target/debug/cox doctor          # green except prices? you are good
@@ -66,7 +66,7 @@ npm run build:css
 hugo --minify --destination public
 ```
 
-GitHub Actions builds and deploys the site from `main` to [GitHub Pages](https://listepo.github.io/cox/).
+GitHub Actions builds and deploys the site from `main` to [GitHub Pages](https://pyrlyn.github.io/cox/).
 
 ## Project layout
 
