@@ -85,8 +85,9 @@ public struct Status: Equatable, Sendable, Decodable {
     queued: UInt32 = 0, mode: PermissionMode? = nil, nextMode: PermissionMode? = nil,
     model: String? = nil, effort: Effort? = nil, modelName: String? = nil, shortName: String? = nil
   ) {
-    (self.queued, self.mode, self.nextMode, self.model, self.effort, self.modelName, self.shortName)
-      = (queued, mode, nextMode, model, effort, modelName, shortName)
+    (
+      self.queued, self.mode, self.nextMode, self.model, self.effort, self.modelName, self.shortName
+    ) = (queued, mode, nextMode, model, effort, modelName, shortName)
   }
 
   enum CodingKeys: String, CodingKey {

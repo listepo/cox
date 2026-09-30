@@ -302,13 +302,38 @@ jobs:
             [ "$archs" = arm64 ] || { echo "expected arm64 only" >&2; exit 1; }
           done
 
+      # Serial: the UI tests share one NSApplication (key window, appearance, main run loop),
+      # and the benchmark times the main thread, so tests running alongside break both. Every
+      # package runs before the step fails; snapshots that do not match are uploaded.
       - name: swift test
+        # A hung test (the run loop waiting on a window) would otherwise hold the runner for 6 h.
+        timeout-minutes: 60
+        env:
+          SNAPSHOT_ARTIFACTS: ${{ runner.temp }}/snapshots
         run: |
           set -euo pipefail
           shopt -s nullglob
+          failed=()
           for manifest in desktop/macos/Packages/*/Package.swift; do
-            swift test --package-path "$(dirname "$manifest")"
+            # swiftbuild emits ColorResource symbols for Colors.xcassets. The native
+            # build system copies the catalog and leaves those symbols missing, so
+            # `Color(.surfaceWindow)` does not type-check (SwiftPM #9655).
+            package=$(dirname "$manifest")
+            swift test --no-parallel --build-system swiftbuild --package-path "$package" \
+              || failed+=("$(basename "$package")")
           done
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "swift test failed in: ${failed[*]}" >&2
+            exit 1
+          fi
+
+      - name: snapshots that did not match
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-macos-snapshots
+          path: ${{ runner.temp }}/snapshots
+          if-no-files-found: ignore
 
       # The app target over those packages (T37.32.1): XcodeGen's Cox.xcodeproj, a Debug build
       # with signing off — no identity or secret in this job.

@@ -10,7 +10,8 @@ import Testing
 @testable import CoxUI
 
 @MainActor
-@Suite(.serialized) struct ApprovalCardEditTests {
+@Suite(.serialized, .enabled(if: syntheticMouse, "synthesized mouse events need macOS 27"))
+struct ApprovalCardEditTests {
   /// The action row's buttons, leading first: pending, then editing.
   private let edit = 2
   private let runEdited = 0
@@ -114,3 +115,10 @@ private func descendants(of view: NSView?) -> [NSView] {
   }
   return found
 }
+
+/// Whether views can be driven by synthesized mouse events. Before macOS 27, NSTextView and
+/// SwiftUI's controls track a press in a modal loop that pulls the drag and the release from the
+/// application's queue: sent after the press they never arrive and the test hangs; queued ahead
+/// of it, they end the test runner's main run loop and the process exits 0 mid-run.
+let syntheticMouse = ProcessInfo.processInfo.isOperatingSystemAtLeast(
+  OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0))
