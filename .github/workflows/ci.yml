@@ -199,11 +199,38 @@ jobs:
       - name: footprint regression check
         run: bash scripts/footprint.sh --check
 
+  # Which suites this change needs, from the shared pyrlyn/infra classification
+  # (changes.yml): per ecosystem, whether anything changed and whether a
+  # dependency manifest or lock changed (`*_deps`, which forces that full suite).
+  # Only the macOS jobs below read it. The Rust jobs above always run in full on
+  # every pull request (the `docs` test reads docs/, so no path filter is safe
+  # there), which already covers any Cargo.toml or Cargo.lock change.
+  # The Swift suite counts desktop/ and scripts/desktop/ as Swift, and the app
+  # links CoxFFI.xcframework, so a Rust change (crates/, Cargo manifests or
+  # lock) runs it too. A failed `changes` job runs the macOS jobs rather than
+  # skipping them. A skipped macOS job reports `skipped` under its own name,
+  # which a required check treats as passed.
+  changes:
+    # TODO(ci/deps-gating): pin to the pyrlyn/infra commit that adds changes.yml.
+    uses: pyrlyn/infra/.github/workflows/changes.yml@0000000000000000000000000000000000000000
+    permissions:
+      contents: read
+    with:
+      rust-paths: |
+        ^crates/
+      swift-paths: |
+        ^desktop/
+        ^scripts/desktop/
+
   # SwiftLint's no-literal rules and swift-format for the macOS app (T37.18,
   # DS§9). The fixtures prove the custom rules still reject what DS§9 bans; the
   # packages are linted by the SwiftLintPlugins build-tool plugin during
   # desktop-macos' `swift test`. SwiftLint is the mise.toml pin.
   desktop-macos-lint:
+    needs: changes
+    if: >-
+      !cancelled()
+      && (needs.changes.result != 'success' || needs.changes.outputs.swift == 'true')
     runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -246,8 +273,14 @@ jobs:
   # The macOS app (T37.15, DT§7): CoxFFI.xcframework for Apple Silicon only
   # (A67), then `swift test` for every package under desktop/macos/Packages,
   # then the app target, unsigned (T37.32.1). macos-26 is the arm64 image
-  # whose Xcode 26 carries the macOS 26 SDK the app targets.
+  # whose Xcode 26 carries the macOS 26 SDK the app targets. Always the full
+  # build: every package and the app, never only the changed ones.
   desktop-macos:
+    needs: changes
+    if: >-
+      !cancelled()
+      && (needs.changes.result != 'success'
+      || needs.changes.outputs.swift == 'true' || needs.changes.outputs.rust == 'true')
     runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -285,6 +318,18 @@ jobs:
           set -euo pipefail
           mise install aqua:yonaskolb/XcodeGen
           mise exec -- bash scripts/desktop/app.sh CODE_SIGNING_ALLOWED=NO
+
+      # A Swift dependency change (Package.swift, Package.resolved, project.yml):
+      # the full build above must have resolved exactly the committed pins, so a
+      # stale or hand-edited Package.resolved fails here instead of drifting.
+      - name: Swift pins unchanged by the build
+        if: needs.changes.outputs.swift_full == 'true'
+        run: |
+          set -euo pipefail
+          if ! git diff --exit-code -- '*.resolved' desktop/macos/project.yml; then
+            echo "the build rewrote the Swift dependency pins above: commit the resolved files" >&2
+            exit 1
+          fi
 
   # The desktop design tokens (T37.17, DS§2): regenerate Tokens.swift,
   # Colors.xcassets and tokens.css from desktop/design/tokens/*.json and fail
