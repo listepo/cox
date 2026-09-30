@@ -25,7 +25,7 @@ env:
 jobs:
   desktop-macos-diag:
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: CoxTranscript tests with a watchdog
@@ -34,21 +34,23 @@ jobs:
         run: |
           set -uo pipefail
           sw_vers; xcodebuild -version
-          swift build --build-tests --build-system swiftbuild --package-path desktop/macos/Packages/CoxTranscript
           (
-            sleep 420
+            sleep 900
             for round in 1 2; do
-              echo "=== WATCHDOG round $round"; ps -axo pid,etime,command | grep -Ei "swiftpm|xctest|PackageTests|CoxTranscript" | grep -v grep
-              for pid in $(pgrep -f "PackageTests|swiftpm-testing|xctest"); do
-                echo "=== sample $pid"; sample "$pid" 3 2>&1 | head -400
+              echo "=== WATCHDOG round $round"; ps -axo pid,etime,command | grep -Ei "swiftpm|xctest|PackageTests" | grep -v grep
+              for pid in $(pgrep -f "swiftpm-testing-helper"); do
+                echo "=== sample $pid"; sample "$pid" 3 2>&1 | grep -E "^ +[+ ]*[0-9]+ " | head -120
               done
               sleep 60
             done
-            pkill -f "PackageTests|swiftpm-testing|xctest"
+            pkill -f "swiftpm-testing-helper"
           ) &
-          script -q /dev/null swift test --no-parallel --build-system swiftbuild \
-            --package-path desktop/macos/Packages/CoxTranscript 2>&1 | cat
-          echo "exit ${PIPESTATUS[0]}"
+          for p in CoxTranscriptText CoxUI CoxTranscript; do
+            echo "=== PACKAGE $p"
+            script -q /dev/null swift test --no-parallel --build-system swiftbuild \
+              --package-path desktop/macos/Packages/$p 2>&1 | cat
+            echo "=== PACKAGE $p exit ${PIPESTATUS[0]}"
+          done
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

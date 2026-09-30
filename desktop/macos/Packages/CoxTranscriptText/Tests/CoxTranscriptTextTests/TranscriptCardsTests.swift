@@ -90,7 +90,7 @@ final class Offscreen {
   /// One drag of real mouse events, as AppKit delivers a hand drag.
   func drag(from start: NSPoint, to end: NSPoint) {
     let steps = 8
-    for step in 0...steps + 1 {
+    let events = (0...steps + 1).compactMap { step in
       let type: NSEvent.EventType =
         step == 0 ? .leftMouseDown : step > steps ? .leftMouseUp : .leftMouseDragged
       let share = CGFloat(min(step, steps)) / CGFloat(steps)
@@ -100,8 +100,9 @@ final class Offscreen {
         with: type, location: point, modifierFlags: [],
         timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
         context: nil, eventNumber: step, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
-      event.map(window.sendEvent)
+      return event
     }
+    window.sendMouse(events)
   }
 
   func close() {

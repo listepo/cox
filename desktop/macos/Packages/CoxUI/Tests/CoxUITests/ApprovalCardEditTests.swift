@@ -69,13 +69,14 @@ private final class EditedCard {
       .sorted { $0.minX < $1.minX }
     let frame = try #require(rings.indices.contains(index) ? rings[index] : nil)
     let point = NSPoint(x: frame.midX, y: frame.midY)
-    for (number, type) in [NSEvent.EventType.leftMouseDown, .leftMouseUp].enumerated() {
-      let event = NSEvent.mouseEvent(
+    let types = [NSEvent.EventType.leftMouseDown, .leftMouseUp]
+    let events = types.enumerated().compactMap { number, type in
+      NSEvent.mouseEvent(
         with: type, location: point, modifierFlags: [],
         timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
         context: nil, eventNumber: number, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
-      if let event { window.sendEvent(event) }
     }
+    window.sendMouse(events)
     settle()
   }
 
@@ -113,4 +114,27 @@ private func descendants(of view: NSView?) -> [NSView] {
     stack.append(contentsOf: next.subviews)
   }
   return found
+}
+
+extension NSWindow {
+  /// Sends a click's or a drag's mouse events as AppKit delivers a hand's. Before macOS 27,
+  /// NSTextView tracks the mouse inside its `mouseDown`, pulling the drag and the mouse-up from
+  /// the application's queue until the mouse goes up, so there the rest wait in that queue before
+  /// the mouse-down is sent; sent one by one after it, they would never come. Whatever the view
+  /// leaves in the queue is sent after.
+  func sendMouse(_ events: [NSEvent]) {
+    if #available(macOS 27, *) {
+      events.forEach(sendEvent)
+      return
+    }
+    guard let first = events.first else { return }
+    for event in events.dropFirst() { NSApplication.shared.postEvent(event, atStart: false) }
+    sendEvent(first)
+    while let next = NSApplication.shared.nextEvent(
+      matching: [.leftMouseDragged, .leftMouseUp], until: .distantPast, inMode: .default,
+      dequeue: true)
+    {
+      sendEvent(next)
+    }
+  }
 }
