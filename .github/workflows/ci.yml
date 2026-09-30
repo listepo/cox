@@ -275,7 +275,10 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           for manifest in desktop/macos/Packages/*/Package.swift; do
-            swift test --package-path "$(dirname "$manifest")"
+            # swiftbuild emits ColorResource symbols for Colors.xcassets. The native
+            # build system copies the catalog and leaves those symbols missing, so
+            # `Color(.surfaceWindow)` does not type-check (SwiftPM #9655).
+            swift test --build-system swiftbuild --package-path "$(dirname "$manifest")"
           done
 
       # The app target over those packages (T37.32.1): XcodeGen's Cox.xcodeproj, a Debug build
