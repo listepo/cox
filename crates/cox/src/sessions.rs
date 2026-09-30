@@ -33,6 +33,9 @@ pub struct Row {
     /// `0` for a root; a fork or handoff sits one deeper than its parent
     /// (T26.3). `--grep` results are flat.
     pub depth: usize,
+    /// T44.3: `cwd` is a linked git worktree (`cox --worktree`), shown
+    /// with `⧉` before the directory.
+    pub worktree: bool,
 }
 
 /// One session's stored record: the `sessions` row plus what the ledger
@@ -144,8 +147,28 @@ pub fn list_rows<'a>(
             age: age_of(&info.updated_at, now_secs),
             turns: info.turns,
             cost_usd: info.cost_usd,
+            worktree: is_linked_worktree(Path::new(&info.cwd)),
         })
         .collect()
+}
+
+/// T44.3: `dir` is a linked worktree: its `.git` is a file pointing into
+/// the main repository's `worktrees/` (a submodule's `.git` file points into
+/// `modules/` instead). A directory that is gone reads as not one.
+pub(crate) fn is_linked_worktree(dir: &Path) -> bool {
+    std::fs::read_to_string(dir.join(".git")).is_ok_and(|text| {
+        text.strip_prefix("gitdir:")
+            .is_some_and(|target| target.replace('\\', "/").contains("/worktrees/"))
+    })
+}
+
+/// The listing's CWD column: `⧉ ` marks a worktree session (T44.3).
+fn cwd_cell(row: &Row) -> String {
+    if row.worktree {
+        format!("⧉ {}", truncate(&row.cwd, 22))
+    } else {
+        truncate(&row.cwd, 24)
+    }
 }
 
 /// Coarse human age of an RFC 3339 timestamp; `?` when unparseable.
@@ -310,7 +333,7 @@ fn print_sessions(rows: &[Row], hits: Option<&[RolloutHit]>, json: bool) -> anyh
             "{:<30} {:<20} {:<24} {:<6} {:<5} ${:.4}",
             format!("{}{}", cox_tui::picker::tree_prefix(row.depth), row.id),
             truncate(&row.title, 20),
-            truncate(&row.cwd, 24),
+            cwd_cell(row),
             row.age,
             row.turns,
             row.cost_usd,
@@ -431,6 +454,42 @@ mod tests {
         let value: serde_json::Value =
             serde_json::from_str(&serde_json::to_string(&rows).unwrap()).unwrap();
         assert_eq!(value[0]["turns"], 3);
+    }
+
+    #[test]
+    fn sessions_marks_worktree_sessions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (linked, main, submodule) = (
+            tmp.path().join("linked"),
+            tmp.path().join("main"),
+            tmp.path().join("sub"),
+        );
+        std::fs::create_dir_all(main.join(".git")).unwrap();
+        std::fs::create_dir_all(&linked).unwrap();
+        std::fs::write(
+            linked.join(".git"),
+            "gitdir: /r/repo/.git/worktrees/repo-t9\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(&submodule).unwrap();
+        std::fs::write(submodule.join(".git"), "gitdir: ../.git/modules/sub\n").unwrap();
+        let gone = tmp.path().join("gone");
+        let infos: Vec<SessionInfo> = [&linked, &main, &submodule, &gone]
+            .iter()
+            .map(|dir| SessionInfo {
+                cwd: dir.display().to_string(),
+                ..info("abc", "2026-09-03T11:00:00Z")
+            })
+            .collect();
+        let rows = list_rows(infos.iter().map(|i| (i, 0)), 0);
+        let marked: Vec<bool> = rows.iter().map(|r| r.worktree).collect();
+        assert_eq!(marked, [true, false, false, false]);
+        assert!(
+            cwd_cell(&rows[0]).starts_with("⧉ "),
+            "{}",
+            cwd_cell(&rows[0])
+        );
+        assert!(!cwd_cell(&rows[1]).contains('⧉'));
     }
 
     fn session_row(id: SessionId) -> SessionRow {

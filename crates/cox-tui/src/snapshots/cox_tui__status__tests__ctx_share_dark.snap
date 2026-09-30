@@ -1,0 +1,15 @@
+---
+source: crates/cox-tui/src/status.rs
+expression: "format!(\"{buf:?}\")"
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 60, height: 1 },
+    content: [
+        "sonnet-5 · ctx ▰▰▰▱▱ 7% · $0.00/5 · [default]               ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+        x: 15, y: 0, fg: Magenta, bg: Reset, underline: Reset, modifier: DIM,
+        x: 18, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+    ]
+}

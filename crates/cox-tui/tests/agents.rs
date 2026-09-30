@@ -95,6 +95,22 @@ fn agents_overlay_lists_one_row_per_card() {
     insta::assert_snapshot!(rows.join("\n"));
 }
 
+/// T44.3: a sibling session running in a worktree says which one, by the
+/// worktree's directory name behind the status line's `⧉`; one on the main
+/// tree keeps the plain row.
+#[test]
+fn agents_overlay_shows_worktree() {
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    let mut agents = two();
+    agents[0].worktree = Some("/w/_worktrees/w-t44".into());
+    update(&mut state, Msg::Agents(agents));
+    common::type_line(&mut state, "/agents");
+    let Some(Modal::Agents { rows, .. }) = &state.modal else {
+        panic!("no agents overlay");
+    };
+    insta::assert_snapshot!(rows.join("\n"));
+}
+
 /// T34.7/SM§6: a delivered `Event::TaskMessage` updates that task's narrow
 /// `/agents` card with a `last:` line instead of a new progress event
 /// stream — the row keeps its `preset`/`tier`/`cost`/`elapsed`/`running`

@@ -40,6 +40,10 @@ pub struct Cli {
     /// Override `permissions.mode`. `bypass` is flag-only and shows a persistent banner.
     #[arg(long = "permission-mode", global = true, value_name = "MODE")]
     pub permission_mode: Option<String>,
+    /// Override `core.mode`: `architect` (plan + think tier) or `editor`.
+    /// In `cox run`, `--mode architect` is also the think-tier consent.
+    #[arg(long = "mode", global = true, value_name = "MODE", value_parser = ["architect", "editor"])]
+    pub mode: Option<String>,
     /// Override `permissions.approval`.
     #[arg(long, global = true, value_name = "POLICY")]
     pub approve: Option<String>,
@@ -105,6 +109,9 @@ pub enum Command {
     Mcp(McpArgs),
     /// Agent Client Protocol server on stdio.
     Acp,
+    /// Serve this machine's sessions to a remote desktop app (T52.19).
+    #[cfg(feature = "app-server")]
+    AppServer(AppServerArgs),
     /// Scaffold an AGENTS.md for the repo.
     Init(InitArgs),
     /// Instruction files, skills, commands, agents, hooks, MCP servers in effect.
@@ -115,6 +122,53 @@ pub enum Command {
     /// Self-update the binary.
     #[command(name = "self")]
     SelfUpdate(SelfUpdateArgs),
+    /// Push-to-talk dictation: the local whisper models (T54.5).
+    #[cfg(feature = "voice")]
+    Voice(VoiceArgs),
+}
+
+/// `cox voice model list|download <name>` (T54.5).
+#[cfg(feature = "voice")]
+#[derive(Args, Debug, Clone)]
+pub struct VoiceArgs {
+    #[command(subcommand)]
+    pub action: VoiceAction,
+}
+
+/// `cox voice` subcommands.
+#[cfg(feature = "voice")]
+#[derive(Subcommand, Debug, Clone)]
+pub enum VoiceAction {
+    /// The whisper models cox can download and use.
+    #[command(subcommand)]
+    Model(VoiceModelAction),
+}
+
+/// `cox voice model` subcommands.
+#[cfg(feature = "voice")]
+#[derive(Subcommand, Debug, Clone)]
+pub enum VoiceModelAction {
+    /// Every pinned model with its size and whether it is downloaded.
+    List,
+    /// Download one pinned model and verify its SHA-256.
+    Download {
+        /// Model name from `cox voice model list` (`base.en`).
+        name: String,
+        /// Download without asking (required when stdin is not a terminal).
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+/// `cox app-server --stdio` (T52.19, DT§4.4): the app-server protocol for
+/// one client on stdin and stdout; stdio is the only transport, so the flag
+/// is required and a later transport gets its own.
+#[cfg(feature = "app-server")]
+#[derive(Args, Debug, Clone)]
+pub struct AppServerArgs {
+    /// Serve on stdin and stdout (what `ssh <host> cox app-server --stdio` runs).
+    #[arg(long, required = true)]
+    pub stdio: bool,
 }
 
 /// `cox self update [--version v]` (plan.md §1.12/T12.2).
@@ -180,6 +234,10 @@ pub struct RunArgs {
     /// Stop `--loop` after this many turns; required together with `--loop`.
     #[arg(long = "max-iterations", value_name = "N")]
     pub max_iterations: Option<u32>,
+    /// Attach an image (PNG, JPEG, GIF or WebP, at most 3.75 MB) to the
+    /// first turn; repeat for more. Checked before any request (T40.7).
+    #[arg(long = "image", value_name = "PATH")]
+    pub images: Vec<PathBuf>,
 }
 
 /// `cox stats` (plan.md §1.12/T1.7). Print usage and cost statistics.
@@ -349,11 +407,26 @@ pub enum PluginAction {
         #[arg(long)]
         json: bool,
     },
-    /// Validate `<dir>`, copy it into `versions/<digest12>/`, write
-    /// `current`, then ask for its capabilities (PL§1).
+    /// Validate a package, copy it into `versions/<digest12>/`, write
+    /// `current`, then ask for its capabilities (PL§1). An https URL is
+    /// downloaded and unpacked, and a git repository cloned, into staging
+    /// first.
     Install {
-        /// A local plugin package directory (the only v1 source).
-        dir: PathBuf,
+        /// A local plugin package directory, an `https://` URL of a
+        /// `.tar.gz` package archive (needs `--sha256`), or `git+<url>`
+        /// (needs `--rev`).
+        source: String,
+        /// The archive's SHA-256; required with a URL. A mismatch is
+        /// refused before anything is unpacked.
+        #[arg(long, value_name = "HEX", conflicts_with_all = ["rev", "path"])]
+        sha256: Option<String>,
+        /// The tag or full commit hash to install from a `git+<url>`; a
+        /// branch is refused.
+        #[arg(long, value_name = "TAG|COMMIT")]
+        rev: Option<String>,
+        /// The package's directory inside the git repository.
+        #[arg(long, value_name = "SUBDIR", requires = "rev")]
+        path: Option<String>,
         /// Skip the stdin prompt and grant what the manifest asks for.
         #[arg(long)]
         yes: bool,

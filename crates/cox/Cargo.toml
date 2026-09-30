@@ -19,7 +19,16 @@ path = "tests/support/fake_agent.rs"
 test = false
 doc = false
 
-# T35.7: without this, dist puts `fake_agent` in every release archive next
+# T41.8: the test-only language server `tests/lsp.rs` points
+# `lsp.servers.rust.command` at; same shape and dist exclusion as
+# `fake_agent`, and its only dependency is `serde_json` too.
+[[bin]]
+name = "fake_lsp"
+path = "tests/support/fake_lsp.rs"
+test = false
+doc = false
+
+# T35.7: without this, dist puts `fake_agent` (and, T41.8, `fake_lsp`) in every release archive next
 # to `cox` (checked with `dist plan`). One row per `targets` entry in
 # dist-workspace.toml; a new target needs its row here too.
 [package.metadata.dist.binaries]
@@ -29,7 +38,7 @@ x86_64-unknown-linux-gnu = ["cox"]
 aarch64-unknown-linux-gnu = ["cox"]
 
 [features]
-default = ["otel", "plugins"]
+default = ["otel", "plugins", "app-server"]
 # T32.9: the five otel crates moved to cox-telemetry; this forwards the
 # feature rather than gating a dependency declared here.
 otel = ["cox-telemetry/otel"]
@@ -37,7 +46,15 @@ otel = ["cox-telemetry/otel"]
 # wasmtime) to the release binary. On by default; a slim build drops it with
 # `--no-default-features --features otel`. Plugin code sits behind
 # `#[cfg(feature = "plugins")]`.
-plugins = ["dep:cox-plugin", "dep:cox-plugin-api"]
+plugins = ["dep:cox-plugin", "dep:cox-plugin-api", "cox-session/plugins"]
+# T52.19: `cox app-server --stdio` serves the desktop app's `cox-app` over
+# the wire. cox-app builds on cox-session's plugin host, so this implies
+# `plugins`; the slim build drops both.
+app-server = ["dep:cox-app", "plugins"]
+# T54.5 (A123): push-to-talk dictation and `cox voice`. Off by default:
+# whisper.cpp is a C++ build (cmake) and audio capture links the platform's
+# sound stack (ALSA headers on Linux). `--features voice` turns it on.
+voice = ["dep:cox-voice"]
 
 [dependencies]
 clap = { workspace = true }
@@ -47,6 +64,9 @@ cox-plugin = { path = "../cox-plugin", version = "0.1.2", optional = true }
 # summarise a plugin without running it; `cox-plugin` (the extism host)
 # does not re-export the manifest/ABI types.
 cox-plugin-api = { path = "../cox-plugin-api", version = "0.1.2", optional = true }
+# T54.5: the pinned whisper model table (`cox voice model`); T54.7 adds
+# the dictation the TUI receives.
+cox-voice = { path = "../cox-voice", version = "0.1.2", optional = true }
 cox-core = { path = "../cox-core", version = "0.1.2" }
 cox-provider = { path = "../cox-provider", version = "0.1.2" }
 cox-tools = { path = "../cox-tools", version = "0.1.2" }
@@ -67,9 +87,17 @@ cox-models = { path = "../cox-models", version = "0.1.2" }
 # cox-config (figment and toml_edit with them); this crate keeps the flag
 # layer built from `Cli` and the printing.
 cox-config = { path = "../cox-config", version = "0.1.2" }
+# T37.1: session assembly (provider, tools, MCP, skills, hooks, plugins);
+# this crate keeps the flags, the TUI loop and the printing. Its `plugins`
+# feature follows this crate's.
+cox-session = { path = "../cox-session", version = "0.1.2", default-features = false }
+# T52.19: the app-server surface; optional behind `app-server`.
+cox-app = { path = "../cox-app", version = "0.1.2", optional = true }
 # anyhow at the cox-crate boundary (AGENTS.md: "anyhow only in crates/cox"),
 # serde_json to build the CLI-flag override layer and `--json` output.
 anyhow = { workspace = true }
+# T37.2: `cox_acp::SessionFactory` is an async trait (`acp_cmd`).
+async-trait = { workspace = true }
 # T33.29: `plugin_new::PluginNewError`, so the TUI's future `/plugin new`
 # (T33.30) gets a typed error to match on instead of anyhow's text.
 thiserror = { workspace = true }
@@ -87,17 +115,11 @@ reqwest = { workspace = true }
 sha2 = { workspace = true }
 # T5.8: the binary owns the async runtime the TUI and core loop run on.
 tokio = { workspace = true }
-# T35.13: the external-agent drivers implement `ExternalAgent`
-# (`#[async_trait]`, its `CancellationToken`) and hand the spawned CLI's
-# tokio stdio to the ACP client, which reads `futures` I/O (`compat`).
-# Both were already dev-dependencies here and ship in the workspace.
-async-trait = { workspace = true }
-tokio-util = { workspace = true, features = ["compat"] }
-# T35.13: the ACP driver sends `session/new`/`session/prompt` and frames
-# the CLI's stdio (`ByteStreams`); already `cox-acp`'s dependency.
-agent-client-protocol = { workspace = true }
 
 [dev-dependencies]
+# T37.1: the plugin and scripted-session fixtures `session.rs`'s render test
+# shares with cox-session's own tests.
+cox-session = { path = "../cox-session", version = "0.1.2", default-features = false, features = ["test-util"] }
 tempfile = { workspace = true }
 # T32.16: the shared env-var lock (`temp_env`) for env-mutating tests.
 cox-config = { path = "../cox-config", version = "0.1.2", features = ["test-util"] }
@@ -107,6 +129,8 @@ toml_edit = { workspace = true }
 # T6.1: `cox run -p` per output format against the real binary.
 assert_cmd = { workspace = true }
 predicates = { workspace = true }
+# T48.1: the full `cox run -p` output as reviewed `tests/cmd/*.toml` fixtures.
+trycmd = { workspace = true }
 insta = { workspace = true }
 # T5.8: PTY end-to-end of the real binary (plan D10).
 portable-pty = { workspace = true }

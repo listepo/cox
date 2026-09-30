@@ -33,6 +33,9 @@ diesel::table! {
         turns -> Integer,
         cost_usd -> Double,
         state -> Text,
+        title_source -> Nullable<Text>,
+        agent -> Nullable<Text>,
+        agent_session -> Nullable<Text>,
     }
 }
 
@@ -125,3 +128,7 @@ diesel::table! {
         updated_at -> Text,
     }
 }
+
+// `usage` joins `sessions` on `session_id` (no foreign key in the DDL, so no
+// `joinable!`): the project spend in `queries.rs` groups by the session's cwd.
+diesel::allow_tables_to_appear_in_same_query!(sessions, usage);

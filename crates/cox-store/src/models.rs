@@ -64,6 +64,14 @@ pub(crate) struct NewArchive {
     pub created_at: String,
 }
 
+/// The external agent behind a session (T52.6): `sessions.agent` and
+/// `sessions.agent_session`, both `NULL` for a cox session.
+#[derive(Queryable)]
+pub(crate) struct SessionAgentDb {
+    pub agent: Option<String>,
+    pub agent_session: Option<String>,
+}
+
 /// The columns `Store::archive_get` needs to resolve and verify a payload;
 /// selected explicitly rather than the whole row (nothing reads the rest).
 #[derive(Queryable)]

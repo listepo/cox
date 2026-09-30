@@ -1,6 +1,7 @@
 //! T26.2: `/rewind` restores pre-images through the checkpointer, cuts the
 //! in-memory history without editing the rollout, and resume honours the
-//! `Rewound` marker.
+//! `Rewound` marker. T51.19: a hunk revert is checkpointed, confined,
+//! refused on a stale digest and undone by `/redo`.
 
 mod common;
 
@@ -13,8 +14,10 @@ use common::{drain, open, scenario, spawn_turn};
 use cox_core::History;
 use cox_protocol::errors::ToolError;
 use cox_protocol::traits::{Archive, Store};
-use cox_protocol::types::{CheckpointKind, Event, Level, Role, Submission};
-use cox_protocol::{Before, Change, Checkpointer, PreImage, Snapshot};
+use cox_protocol::types::{CheckpointKind, Event, Level, Role, Submission, content_digest};
+use cox_protocol::{
+    Before, Change, Checkpointer, HunkReverter, PreImage, SkipReason, SkippedFile, Snapshot,
+};
 
 /// `a.rs` held "old" when the turn touched it and "now" by the time the
 /// rewind looks; every restore is recorded.
@@ -324,6 +327,12 @@ impl Checkpointer for Disk {
         let files = self.files.lock().expect("lock");
         paths
             .iter()
+            // An escape is dropped, as `confine` drops it; an absolute path
+            // inside the root (what `/redo` passes back) is kept.
+            .filter(|p| {
+                let path = Path::new(p);
+                !p.starts_with("..") && (!path.is_absolute() || path.starts_with(&roots[0]))
+            })
             .map(|p| {
                 let path = roots[0].join(p);
                 let before = match files.get(&path) {
@@ -406,4 +415,232 @@ async fn undo_then_redo_is_identity() {
         edited,
         "a second redo does not undo the first"
     );
+}
+
+/// `a.rs` is over the size cap and `new.rs` cannot be written back.
+struct Stuck;
+
+#[async_trait]
+impl Checkpointer for Stuck {
+    async fn preimages(&self, roots: &[PathBuf], _cwd: &Path, paths: &[String]) -> Vec<PreImage> {
+        paths
+            .iter()
+            .map(|p| PreImage {
+                path: roots[0].join(p),
+                before: if p.ends_with("a.rs") {
+                    Before::TooLarge
+                } else {
+                    Before::Bytes(b"x".to_vec())
+                },
+            })
+            .collect()
+    }
+    async fn snapshot(&self, _roots: &[PathBuf]) -> Result<Snapshot, ToolError> {
+        Ok(Snapshot::default())
+    }
+    async fn changes(&self, _b: &Snapshot, _a: &Snapshot) -> Result<Vec<Change>, ToolError> {
+        Ok(vec![])
+    }
+    async fn restore(
+        &self,
+        _roots: &[PathBuf],
+        _cwd: &Path,
+        _path: &Path,
+        _bytes: Option<&[u8]>,
+    ) -> Result<(), ToolError> {
+        Err(ToolError::Io)
+    }
+}
+
+/// A101: each file a rewind could not restore says why, and the notice
+/// counts them by reason instead of calling every failure too large.
+#[tokio::test]
+async fn a_skipped_restore_carries_its_reason() {
+    let (session, _store, mut rx) = open(&scenario("checkpoint_edit"), allow_all());
+    session.set_checkpointer(Arc::new(Stuck));
+    turn(&session, &mut rx, "edit a.rs and new.rs").await;
+    session
+        .submit(Submission::Rewind {
+            to_turn: 1,
+            code: true,
+            conversation: false,
+        })
+        .await
+        .expect("rewind");
+    let events = until_rewound(&mut rx).await;
+    let Some(Event::Rewound { skipped, .. }) =
+        events.iter().find(|e| matches!(e, Event::Rewound { .. }))
+    else {
+        panic!("no Rewound: {events:?}");
+    };
+    assert_eq!(
+        skipped,
+        &vec![
+            SkippedFile {
+                path: PathBuf::from("/tmp/cox-turn/a.rs"),
+                reason: SkipReason::TooLarge,
+            },
+            SkippedFile {
+                path: PathBuf::from("/tmp/cox-turn/new.rs"),
+                reason: SkipReason::Failed {
+                    error: "io error".into()
+                },
+            },
+        ]
+    );
+    let Some(Event::Notice { text, .. }) = events.last() else {
+        panic!("no notice: {events:?}");
+    };
+    assert_eq!(
+        text,
+        "rewound to T1: 0 files restored, 1 too large to restore, 1 failed: io error"
+    );
+}
+
+/// T37.28.3: a revert of a file no turn from `to_turn` on touched writes
+/// nothing and says so; one it did touch goes back alone.
+#[tokio::test]
+async fn revert_file_restores_only_that_file() {
+    let (session, _store, mut rx) = open(&scenario("checkpoint_edit"), allow_all());
+    let disk = Arc::new(Disk::default());
+    disk.set(&[("a.rs", "old")]);
+    session.set_checkpointer(disk.clone());
+    turn(&session, &mut rx, "edit a.rs and new.rs").await;
+    disk.set(&[("a.rs", "now"), ("new.rs", "fresh")]);
+
+    let revert = |path: &str| Submission::RevertFile {
+        path: path.into(),
+        to_turn: 1,
+    };
+    session.submit(revert("other.rs")).await.expect("revert");
+    assert_eq!(
+        notice(&mut rx).await,
+        "revert: other.rs has no checkpoint from T1 on; left as it is"
+    );
+    session.submit(revert("a.rs")).await.expect("revert");
+    assert_eq!(notice(&mut rx).await, "reverted a.rs to before T1");
+    assert_eq!(
+        disk.snapshot(),
+        [
+            (PathBuf::from("/tmp/cox-turn/a.rs"), b"old".to_vec()),
+            (PathBuf::from("/tmp/cox-turn/new.rs"), b"fresh".to_vec()),
+        ]
+        .into()
+    );
+}
+
+/// Every change is one hunk, index 0: enough to drive the core, whose job
+/// is the checks and the checkpoint, not the diff (cox-render's).
+struct OneHunk;
+
+impl HunkReverter for OneHunk {
+    fn revert(&self, before: &str, now: &str, index: usize) -> Option<String> {
+        (index == 0 && before != now).then(|| before.to_owned())
+    }
+}
+
+/// A session whose turn changed `a.rs` from "old" to "now" and created
+/// `new.rs`, with the disk it wrote.
+async fn edited(
+    session: &cox_core::Session,
+    rx: &mut tokio::sync::mpsc::Receiver<Event>,
+) -> Arc<Disk> {
+    let disk = Arc::new(Disk::default());
+    disk.set(&[("a.rs", "old")]);
+    session.set_checkpointer(disk.clone());
+    session.set_hunk_reverter(Arc::new(OneHunk));
+    turn(session, rx, "edit a.rs and new.rs").await;
+    disk.set(&[("a.rs", "now"), ("new.rs", "fresh")]);
+    disk
+}
+
+/// Hunk 0 of `path` as Review showed it over `shown`.
+fn revert_hunk(path: &str, shown: &str) -> Submission {
+    Submission::RevertHunk {
+        path: path.into(),
+        to_turn: 1,
+        hunk: 0,
+        now_digest: content_digest(shown.as_bytes()),
+    }
+}
+
+fn a_rs() -> PathBuf {
+    PathBuf::from("/tmp/cox-turn/a.rs")
+}
+
+#[tokio::test]
+async fn revert_hunk_checkpoints_before_writing() {
+    let (session, store, mut rx) = open(&scenario("checkpoint_edit"), allow_all());
+    let disk = edited(&session, &mut rx).await;
+    session
+        .submit(revert_hunk("a.rs", "now"))
+        .await
+        .expect("revert");
+    assert_eq!(notice(&mut rx).await, "reverted hunk 0 of a.rs");
+    assert_eq!(disk.snapshot()[&a_rs()], b"old");
+    // The bytes it overwrote are kept under a turn of the revert's own.
+    let rows = store.checkpoint_list(&session.id()).expect("rows");
+    let own: Vec<_> = rows.iter().filter(|r| r.turn == 2).collect();
+    assert_eq!(own[0].kind, CheckpointKind::Turn);
+    assert_eq!(own[1].path, a_rs());
+    assert!(own[1].call.is_none());
+    let kept = store
+        .get(&own[1].archive.expect("archived"))
+        .await
+        .expect("bytes");
+    assert_eq!(kept, b"now");
+}
+
+#[tokio::test]
+async fn revert_hunk_outside_the_workspace_is_refused() {
+    let (session, _store, mut rx) = open(&scenario("checkpoint_edit"), allow_all());
+    let disk = edited(&session, &mut rx).await;
+    let before = disk.snapshot();
+    session
+        .submit(revert_hunk("../etc/passwd", ""))
+        .await
+        .expect("revert");
+    assert_eq!(
+        notice(&mut rx).await,
+        "revert hunk: ../etc/passwd is outside the workspace roots or cannot be read"
+    );
+    assert_eq!(disk.snapshot(), before);
+}
+
+#[tokio::test]
+async fn revert_hunk_with_a_stale_digest_is_refused() {
+    let (session, store, mut rx) = open(&scenario("checkpoint_edit"), allow_all());
+    let disk = edited(&session, &mut rx).await;
+    let before = disk.snapshot();
+    // Review diffed bytes the file no longer holds.
+    session
+        .submit(revert_hunk("a.rs", "what Review saw"))
+        .await
+        .expect("revert");
+    assert_eq!(
+        notice(&mut rx).await,
+        "revert hunk: a.rs changed since Review showed it; review it again"
+    );
+    assert_eq!(disk.snapshot(), before);
+    let rows = store.checkpoint_list(&session.id()).expect("rows");
+    assert!(
+        rows.iter().all(|r| r.turn < 2),
+        "a refusal checkpoints nothing"
+    );
+}
+
+#[tokio::test]
+async fn revert_hunk_is_undone_by_redo() {
+    let (session, _store, mut rx) = open(&scenario("checkpoint_edit"), allow_all());
+    let disk = edited(&session, &mut rx).await;
+    let before = disk.snapshot();
+    session
+        .submit(revert_hunk("a.rs", "now"))
+        .await
+        .expect("revert");
+    notice(&mut rx).await;
+    assert_eq!(disk.snapshot()[&a_rs()], b"old");
+    session.submit(Submission::Redo).await.expect("redo");
+    assert!(notice(&mut rx).await.starts_with("rewound"));
+    assert_eq!(disk.snapshot(), before);
 }

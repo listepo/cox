@@ -1,0 +1,12 @@
+# One step reads, greps and reads again: the three calls fold into one
+# `ToolGroup` (T37.38).
+[[turn]]
+text = "looking around"
+tool_calls = [
+  { name = "read", input = { path = "a.rs" } },
+  { name = "grep", input = { pattern = "fn main" } },
+  { name = "read", input = { path = "b.rs" } },
+]
+
+[[turn]]
+text = "found it"

@@ -6,7 +6,9 @@ mod common;
 use common::{drain, open, spawn_turn};
 use cox_core::Session;
 use cox_core::router::{Overrides, RouteError, Router};
-use cox_protocol::types::{Effort, Event, Job, ModelId, StopReason, Submission, Tier};
+use cox_protocol::types::{
+    Effort, Event, Job, ModelId, PermissionMode, StopReason, Submission, Tier,
+};
 use cox_protocol::{Config, ProviderId};
 
 fn table() -> Vec<(Job, Tier)> {
@@ -173,6 +175,48 @@ async fn router_switch_gates_and_runs_think() {
     assert_eq!(rows[0].model.0, "claude-fable-5-1");
 }
 
+#[tokio::test]
+async fn confirm_think_runs_one_turn_on_think_then_the_session_tier_again() {
+    // Turn 1 is a tool call and its follow-up, so every request of the
+    // confirmed turn is checked, not just the first.
+    let toml = "[[turn]]\ntext = \"look\"\ntool_calls = [{ name = \"echo\", input = { text = \"x\" } }]\n\
+                [[turn]]\ntext = \"planned\"\n[[turn]]\ntext = \"coded\"\n";
+    let (session, store, mut rx) = open(toml, Config::default());
+    let running = spawn_turn_confirmed(&session, "plan it");
+    let events = drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+    assert!(events.iter().any(|e| matches!(
+        e,
+        Event::TurnStarted {
+            tier: Tier::Think,
+            ..
+        }
+    )));
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, Event::ModelSwitched { .. })),
+        "the session tier is not switched"
+    );
+
+    let running = spawn_turn(&session, "now code it");
+    drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+    let rows: Vec<(Job, Tier, String)> = store
+        .usage_rows()
+        .into_iter()
+        .map(|r| (r.job, r.tier, r.model.0))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (Job::Main, Tier::Think, "claude-fable-5-1".to_string()),
+            (Job::Main, Tier::Think, "claude-fable-5-1".to_string()),
+            (Job::Main, Tier::Code, "claude-sonnet-5".to_string()),
+        ]
+    );
+}
+
 fn spawn_turn_confirmed(
     session: &Session,
     text: &str,
@@ -211,9 +255,50 @@ async fn router_set_effort_changes_the_next_request_and_is_clamped() {
         assert!(
             events
                 .iter()
-                .any(|e| matches!(e, Event::Notice { text, .. } if text.starts_with("effort:")))
+                .any(|e| matches!(e, Event::StateChanged { effort, .. } if *effort == set))
         );
         let rows = store.usage_rows();
         assert_eq!(rows.last().expect("a usage row").effort, Some(want));
     }
+}
+
+#[tokio::test]
+async fn set_mode_and_effort_each_emit_state_changed_with_both_values() {
+    let (session, _store, mut rx) = open("[[turn]]\ntext = \"a\"\n", Config::default());
+    session
+        .submit(Submission::SetPermissionMode {
+            mode: PermissionMode::Plan,
+        })
+        .await
+        .expect("set mode");
+    session
+        .submit(Submission::SetEffort {
+            effort: Some(Effort::Low),
+        })
+        .await
+        .expect("set effort");
+    let running = spawn_turn(&session, "go");
+    let events = drain(&mut rx).await;
+    running.await.expect("join").expect("turn");
+    let changed: Vec<&Event> = events
+        .iter()
+        .filter(|e| matches!(e, Event::StateChanged { .. }))
+        .collect();
+    assert_eq!(
+        changed,
+        [
+            &Event::StateChanged {
+                mode: PermissionMode::Plan,
+                effort: None,
+            },
+            &Event::StateChanged {
+                mode: PermissionMode::Plan,
+                effort: Some(Effort::Low),
+            },
+        ]
+    );
+    assert!(
+        !events.iter().any(|e| matches!(e, Event::Notice { .. })),
+        "the change is not echoed as a notice"
+    );
 }

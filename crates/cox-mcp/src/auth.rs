@@ -326,7 +326,9 @@ impl fmt::Display for Status {
     }
 }
 
-fn human(d: Duration) -> String {
+/// `3h`, `12m`, `40s`: how long a token has left, for `doctor` and the
+/// desktop Settings screen.
+pub fn human(d: Duration) -> String {
     let s = d.as_secs();
     if s >= 3600 {
         format!("{}h", s / 3600)

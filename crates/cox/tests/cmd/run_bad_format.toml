@@ -1,0 +1,16 @@
+# An unknown output format fails before any session opens.
+bin.name = "cox"
+args = ["run", "-p", "hi", "--output-format", "yaml"]
+stdout = ""
+stderr = """
+Error: unknown --output-format `yaml` (text | json | stream-json)
+"""
+
+[status]
+code = 1
+
+[env.add]
+COX_SCENARIO = "../../../cox-core/tests/scenarios/text_only.toml"
+
+[fs]
+cwd = "."
