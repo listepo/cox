@@ -211,8 +211,7 @@ jobs:
   # skipping them. A skipped macOS job reports `skipped` under its own name,
   # which a required check treats as passed.
   changes:
-    # TODO(ci/deps-gating): pin to the pyrlyn/infra commit that adds changes.yml.
-    uses: pyrlyn/infra/.github/workflows/changes.yml@0000000000000000000000000000000000000000
+    uses: pyrlyn/infra/.github/workflows/changes.yml@f49cd4a1e9b5c0e4b70f7253f4a1de16971402ca # main
     permissions:
       contents: read
     with:
