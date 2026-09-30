@@ -125,8 +125,11 @@ fn status_text(host: &PluginHost) -> String {
 fn example_plugin_counts_turns_in_its_status_and_resets_them() {
     let home = tempfile::tempdir().unwrap();
     let dir = Path::new(EXAMPLE_DIR);
-    let (manifest, _) =
+    let (mut manifest, _) =
         cox_plugin::discover::load_manifest(dir, &dir.join("plugin.toml"), None).unwrap();
+    // A long call cap: the default 200 ms covers the whole call, host functions included, which
+    // a loaded CI runner can spend; this test is about what the calls do, not their budget.
+    manifest.limits.call_ms = Some(30_000);
     let wasm = std::fs::read(dir.join(manifest.wasm.as_deref().unwrap())).unwrap();
     let store: Arc<dyn PluginStore> = Arc::new(cox_store::Store::open(home.path()).unwrap());
     let mut live = LivePlugins::default();
