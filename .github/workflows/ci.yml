@@ -20,16 +20,16 @@ env:
   CARGO_TERM_COLOR: always
 
 # Every job installs Rust from mise.toml, the single source of the Rust
-# version: the `rust` job through the shared listepo/infra workflow, the others
+# version: the `rust` job through the shared pyrlyn/infra workflow, the others
 # through .github/actions/rust. Both fail when rustc is not that pin.
 jobs:
-  # The shared listepo/infra workflow, pinned by commit (descendant of the
+  # The shared pyrlyn/infra workflow, pinned by commit (descendant of the
   # ci-rust pin in #57; this commit also ships release-plz.yml and pipeline.yml):
   # fmt once, then per target clippy (--all-targets --all-features), check, and
   # nextest where the runner executes the target (Linux x86_64 and aarch64,
   # macOS aarch64) or a build where it does not (macOS x86_64).
   rust:
-    uses: listepo/infra/.github/workflows/ci-rust.yml@189816ac5a375e18e0235044970efcbc40e3cabd
+    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@189816ac5a375e18e0235044970efcbc40e3cabd
     with:
       # The shared matrix minus Windows: the workspace does not build there
       # yet (P57); the `windows` job below checks the crates that do.
@@ -275,7 +275,10 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           for manifest in desktop/macos/Packages/*/Package.swift; do
-            swift test --package-path "$(dirname "$manifest")"
+            # swiftbuild emits ColorResource symbols for Colors.xcassets. The native
+            # build system copies the catalog and leaves those symbols missing, so
+            # `Color(.surfaceWindow)` does not type-check (SwiftPM #9655).
+            swift test --build-system swiftbuild --package-path "$(dirname "$manifest")"
           done
 
       # The app target over those packages (T37.32.1): XcodeGen's Cox.xcodeproj, a Debug build
