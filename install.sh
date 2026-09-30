@@ -5,7 +5,7 @@
 # SHA-256 checksum first, and only then extracts the binary.
 set -eu
 
-REPO="listepo/cox"
+REPO="pyrlyn/cox"
 VERSION="${1:-latest}"
 PREFIX="${PREFIX:-$HOME/.local/bin}"
 

@@ -25,5 +25,5 @@ enableRobotsTXT = true
     weight = 35
   [[menus.main]]
     name = "GitHub ↗"
-    url = "https://github.com/listepo/cox"
+    url = "https://github.com/pyrlyn/cox"
     weight = 40

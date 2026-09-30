@@ -10,7 +10,7 @@ cox is a modular terminal coding agent in Rust. One core state machine turns sub
 Rust is pinned with [mise](https://mise.jdx.dev/). Prefer `mise exec -- cargo …` over a global toolchain.
 
 ```bash
-git clone https://github.com/listepo/cox && cd cox
+git clone https://github.com/pyrlyn/cox && cd cox
 mise exec -- cargo build -p cox
 export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY
 export ANTHROPIC_WORKSPACE_ID=wrkspc_...  # only for a key not scoped to a workspace
