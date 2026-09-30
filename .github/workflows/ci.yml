@@ -245,10 +245,12 @@ jobs:
 
   # The macOS app (T37.15, DT§7): CoxFFI.xcframework for Apple Silicon only
   # (A67), then `swift test` for every package under desktop/macos/Packages,
-  # then the app target, unsigned (T37.32.1). macos-26 is the arm64 image
-  # whose Xcode 26 carries the macOS 26 SDK the app targets.
+  # then the app target, unsigned (T37.32.1). The packages build with the
+  # Xcode 27 SDK (NSTextView's viewport-layout override, package asset
+  # symbols), which Xcode 26 on macos-26 rejects; xcode-27 is the arm64 image
+  # that carries it. The deployment target stays macOS 26.
   desktop-macos:
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
