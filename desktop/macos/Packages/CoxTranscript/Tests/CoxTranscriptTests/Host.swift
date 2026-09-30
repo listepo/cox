@@ -148,7 +148,7 @@ final class Host {
   /// sends a hand drag's events.
   func drag(from start: NSPoint, to end: NSPoint) {
     let steps = 8
-    let events = (0...steps + 1).compactMap { step in
+    for step in 0...steps + 1 {
       let type: NSEvent.EventType =
         step == 0 ? .leftMouseDown : step > steps ? .leftMouseUp : .leftMouseDragged
       let share = CGFloat(min(step, steps)) / CGFloat(steps)
@@ -158,9 +158,8 @@ final class Host {
         with: type, location: point, modifierFlags: [],
         timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
         context: nil, eventNumber: step, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
-      return event
+      if let event { window.sendEvent(event) }
     }
-    window.sendMouse(events)
   }
 
   /// The blocks the selection touches, in order.
@@ -237,25 +236,9 @@ func descendants<T: NSView>(of view: NSView, as type: T.Type) -> [T] {
   return found
 }
 
-extension NSWindow {
-  /// Sends a click's or a drag's mouse events as AppKit delivers a hand's. Before macOS 27,
-  /// NSTextView tracks the mouse inside its `mouseDown`, pulling the drag and the mouse-up from
-  /// the application's queue until the mouse goes up, so there the rest wait in that queue before
-  /// the mouse-down is sent; sent one by one after it, they would never come. Whatever the view
-  /// leaves in the queue is sent after.
-  func sendMouse(_ events: [NSEvent]) {
-    if #available(macOS 27, *) {
-      events.forEach(sendEvent)
-      return
-    }
-    guard let first = events.first else { return }
-    for event in events.dropFirst() { NSApplication.shared.postEvent(event, atStart: false) }
-    sendEvent(first)
-    while let next = NSApplication.shared.nextEvent(
-      matching: [.leftMouseDragged, .leftMouseUp], until: .distantPast, inMode: .default,
-      dequeue: true)
-    {
-      sendEvent(next)
-    }
-  }
-}
+/// Whether views can be driven by synthesized mouse events. Before macOS 27, NSTextView and
+/// SwiftUI's controls track a press in a modal loop that pulls the drag and the release from the
+/// application's queue: sent after the press they never arrive and the test hangs; queued ahead
+/// of it, they end the test runner's main run loop and the process exits 0 mid-run.
+let syntheticMouse = ProcessInfo.processInfo.isOperatingSystemAtLeast(
+  OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0))

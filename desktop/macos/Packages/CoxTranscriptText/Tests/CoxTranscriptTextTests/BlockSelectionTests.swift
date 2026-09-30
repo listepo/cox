@@ -25,13 +25,13 @@ extension Host {
   func clickGutter(_ block: BlockID, shift: Bool = false) {
     let gutter = view.convert(NSPoint(x: view.textContainerOrigin.x / 2, y: 0), to: nil)
     let location = NSPoint(x: gutter.x, y: point(block, 0).y)
-    let events = [NSEvent.EventType.leftMouseDown, .leftMouseUp].compactMap { type in
-      NSEvent.mouseEvent(
+    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+      let event = NSEvent.mouseEvent(
         with: type, location: location, modifierFlags: shift ? [.shift] : [],
         timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
         context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
+      if let event { window.sendEvent(event) }
     }
-    window.sendMouse(events)
   }
 
   /// The range from the start of `first` to the end of `last`.
@@ -42,7 +42,7 @@ extension Host {
 }
 
 @MainActor
-@Suite(.serialized)
+@Suite(.serialized, .enabled(if: syntheticMouse, "synthesized mouse events need macOS 27"))
 struct BlockSelectionTests {
   @Test func shiftClickInTheGutterFromBlockTwoToFourSelectsExactlyThoseThree() {
     let host = Host(style: gutterStyle)

@@ -90,7 +90,7 @@ final class Offscreen {
   /// One drag of real mouse events, as AppKit delivers a hand drag.
   func drag(from start: NSPoint, to end: NSPoint) {
     let steps = 8
-    let events = (0...steps + 1).compactMap { step in
+    for step in 0...steps + 1 {
       let type: NSEvent.EventType =
         step == 0 ? .leftMouseDown : step > steps ? .leftMouseUp : .leftMouseDragged
       let share = CGFloat(min(step, steps)) / CGFloat(steps)
@@ -100,9 +100,8 @@ final class Offscreen {
         with: type, location: point, modifierFlags: [],
         timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
         context: nil, eventNumber: step, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
-      return event
+      event.map(window.sendEvent)
     }
-    window.sendMouse(events)
   }
 
   func close() {
@@ -195,7 +194,8 @@ struct TranscriptCardsTests {
     #expect(screen.wait { host.window != nil && !host.placing }, "the card's view is back")
   }
 
-  @Test func dragAcrossACardSelectsTheWholeCard() throws {
+  @Test(.enabled(if: syntheticMouse, "synthesized mouse events need macOS 27"))
+  func dragAcrossACardSelectsTheWholeCard() throws {
     let screen = Offscreen(TranscriptTextView.make(), blocks: blocks)
     defer { screen.close() }
     let card = try #require(screen.view.range(of: "c"))
