@@ -1,29 +1,32 @@
-//! Lowers the embedded Fluent sources to the native apps' resource formats:
+//! Lowers the embedded gettext catalogs to the native apps' resource formats:
 //! Apple `<code>.lproj/Localizable.strings` (plain messages) and
-//! `Localizable.stringsdict` (plural selects) for `desktop/macos`, and Windows
-//! `Strings/<tag>/Resources.resw` for the planned WinUI app (`desktop/windows`).
+//! `Localizable.stringsdict` (plural messages) for `desktop/macos`, and
+//! Windows `Strings/<tag>/Resources.resw` for the planned WinUI app
+//! (`desktop/windows`).
 //!
-//! Separate from the runtime because it reads the Fluent AST (`fluent-syntax`)
-//! rather than formatting messages, and because the formats have limits the
-//! runtime does not: the subset it accepts is documented in `docs/i18n.md`.
-//! Messages a translation lacks are filled from `en`, so the native apps see
-//! the same per-message fallback as the Rust side.
+//! Messages a translation lacks (missing, empty or fuzzy) are filled from
+//! `en` (its `msgstr`, else the `msgid`), so the native apps see the same
+//! per-message fallback as the Rust side. gettext plural forms are
+//! positional (`msgstr[0..nplurals]`); [`Locale::plural_categories`] names
+//! the CLDR category of each, and CLDR `other` (fractions, which gettext
+//! cannot count) comes from the translator's `# cldr-other:` comment or the
+//! [`Locale::other_form`] form (`docs/i18n.md`).
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use fluent_syntax::ast;
+use crate::catalog::{Catalog, Entry};
+use crate::format::{self, Piece};
+use crate::{BRAND_NAME, DEFAULT_LOCALE, I18nError, LOCALES, Locale};
 
-use crate::{DEFAULT_LOCALE, LOCALES, Locale};
-
-/// The CLDR plural categories a variant key may name.
-const CATEGORIES: [&str; 6] = ["zero", "one", "two", "few", "many", "other"];
+/// The variable that selects a plural form, and so the one `%lld` argument.
+const COUNT: &str = "count";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExportError {
-    #[error("locale `{code}`: Fluent syntax error: {detail}")]
-    Syntax { code: String, detail: String },
+    #[error(transparent)]
+    Catalog(#[from] I18nError),
     #[error("locale `{code}`, message `{id}`: {reason}")]
     Unsupported {
         code: String,
@@ -37,57 +40,43 @@ pub enum ExportError {
     },
 }
 
-/// A piece of a lowered pattern.
-#[derive(Debug, Clone, PartialEq)]
-enum Piece {
-    Text(String),
-    Var(String),
-}
-
 #[derive(Debug, Clone, PartialEq)]
 enum Shape {
     Simple(Vec<Piece>),
-    /// One select on `selector`, with text around it. Variants keep source
-    /// order and name a CLDR category each.
-    Plural {
-        selector: String,
-        prefix: Vec<Piece>,
-        variants: Vec<(String, Vec<Piece>)>,
-        suffix: Vec<Piece>,
-    },
+    /// One complete text per CLDR category, in form order, `other` last.
+    Plural(Vec<(&'static str, Vec<Piece>)>),
 }
 
 #[derive(Debug, Clone)]
 struct Message {
     id: String,
     shape: Shape,
-    comment: Option<String>,
-    /// Filled from `en` because the locale lacks it.
+    comment: String,
+    /// Filled from `en` because the locale lacks a usable translation.
     fallback: bool,
 }
 
-/// One locale ready to render, messages in `en` source order.
+/// One locale ready to render, messages in `en` catalog order.
 struct Lowered {
     locale: &'static Locale,
     messages: Vec<Message>,
-    numeric: Vec<String>,
 }
 
 /// Writes every locale under `out`: `apple/<code>.lproj/…` and
 /// `windows/Strings/<tag>/Resources.resw`. Returns the files written.
 pub fn export_all(out: &Path) -> Result<Vec<PathBuf>, ExportError> {
-    let lowered = lower_all()?;
-    let en = lowered
+    let lowered = lower_all(LOCALES)?;
+    let order = lowered
         .iter()
         .find(|l| l.locale.code == DEFAULT_LOCALE)
-        .map(|l| &l.messages);
-    let order = en.map(|m| arg_order(m)).unwrap_or_default();
+        .map(|l| arg_order(&l.messages))
+        .unwrap_or_default();
     let mut written = Vec::new();
     for l in &lowered {
         let lproj = out.join("apple").join(format!("{}.lproj", l.locale.code));
-        let strings = render_strings(&l.messages, &order, &l.numeric);
+        let strings = render_strings(&l.messages, &order);
         written.push(write(&lproj.join("Localizable.strings"), &strings)?);
-        let dict = render_stringsdict(&l.messages, &order, &l.numeric);
+        let dict = render_stringsdict(&l.messages, &order);
         written.push(write(&lproj.join("Localizable.stringsdict"), &dict)?);
         let resw_dir = out.join("windows").join("Strings").join(l.locale.windows);
         let resw = render_resw(&l.messages, &order);
@@ -108,65 +97,163 @@ fn write(path: &Path, contents: &str) -> Result<PathBuf, ExportError> {
     Ok(path.to_owned())
 }
 
-/// Lowers every locale and fills each translation's gaps from `en`.
-fn lower_all() -> Result<Vec<Lowered>, ExportError> {
-    let mut per_locale = Vec::new();
-    for locale in LOCALES {
-        per_locale.push((locale, lower_source(locale.code, locale.source)?));
+fn unsupported(code: &str, id: &str, reason: impl Into<String>) -> ExportError {
+    ExportError::Unsupported {
+        code: code.to_owned(),
+        id: id.to_owned(),
+        reason: reason.into(),
     }
-    let en: Vec<Message> = per_locale
-        .iter()
-        .find(|(l, _)| l.code == DEFAULT_LOCALE)
-        .map(|(_, m)| m.clone())
-        .unwrap_or_default();
-    let en_vars = arg_order(&en);
-    let mut out = Vec::new();
-    for (locale, messages) in per_locale {
-        let mut by_id: HashMap<String, Message> =
-            messages.into_iter().map(|m| (m.id.clone(), m)).collect();
-        let mut filled = Vec::new();
-        for source in &en {
-            match by_id.remove(&source.id) {
-                Some(m) => filled.push(m),
-                None => filled.push(Message {
-                    fallback: true,
-                    ..source.clone()
-                }),
-            }
+}
+
+/// Parses a template with `{brand}` inlined as text: the product name is
+/// fixed in every format.
+fn lower_text(code: &str, id: &str, text: &str) -> Result<Vec<Piece>, ExportError> {
+    format::validate(text).map_err(|e| unsupported(code, id, e))?;
+    let mut out: Vec<Piece> = Vec::new();
+    for p in format::pieces(text) {
+        let p = match p {
+            Piece::Var(v) if v == "brand" => Piece::Text(BRAND_NAME.to_owned()),
+            p => p,
+        };
+        match (out.last_mut(), p) {
+            (Some(Piece::Text(t)), Piece::Text(more)) => t.push_str(&more),
+            (_, p) => out.push(p),
         }
-        if let Some(extra) = by_id.into_keys().next() {
-            return Err(unsupported(
-                locale.code,
-                &extra,
-                "the id is not defined in en",
-            ));
-        }
-        for m in &filled {
-            let allowed = en_vars.get(&m.id).cloned().unwrap_or_default();
-            if let Some(v) = vars(&m.shape).into_iter().find(|v| !allowed.contains(v)) {
-                let reason = format!("`${v}` is not a variable of the en message");
-                return Err(unsupported(locale.code, &m.id, &reason));
-            }
-        }
-        let numeric = numeric_vars(locale.source);
-        out.push(Lowered {
-            locale,
-            messages: filled,
-            numeric,
-        });
     }
     Ok(out)
 }
 
-fn unsupported(code: &str, id: &str, reason: &str) -> ExportError {
-    ExportError::Unsupported {
-        code: code.to_owned(),
-        id: id.to_owned(),
-        reason: reason.to_owned(),
+/// The shape of `entry`'s own translation in `locale`, or `None` when it has
+/// none and must be filled from `en`.
+fn own_shape(
+    locale: &Locale,
+    catalog: &Catalog,
+    entry: &Entry,
+) -> Result<Option<Shape>, ExportError> {
+    let (code, id) = (locale.code, entry.key.as_str());
+    let Some(forms) = entry.translated(catalog.rule.nplurals()) else {
+        if !entry.fuzzy && entry.forms.iter().any(|f| !f.is_empty()) {
+            let reason = format!(
+                "{} plural form(s) where Plural-Forms says nplurals={}",
+                entry.forms.len(),
+                catalog.rule.nplurals()
+            );
+            return Err(unsupported(code, id, reason));
+        }
+        return Ok(None);
+    };
+    if entry.msgid_plural.is_none() {
+        return Ok(Some(Shape::Simple(lower_text(code, id, &forms[0])?)));
     }
+    let mut variants = Vec::new();
+    for (category, text) in locale.plural_categories.iter().zip(forms) {
+        variants.push((*category, lower_text(code, id, text)?));
+    }
+    if !locale.plural_categories.contains(&"other") {
+        let text = entry
+            .other
+            .as_ref()
+            .or_else(|| forms.get(locale.other_form))
+            .ok_or_else(|| unsupported(code, id, "other_form is not a form index"))?;
+        variants.push(("other", lower_text(code, id, text)?));
+    }
+    Ok(Some(Shape::Plural(variants)))
 }
 
-/// Positional argument order per message id: variables in order of first
+/// `en`'s shape for `entry`: its translation, else the `msgid`/`msgid_plural`.
+fn en_shape(en: &Locale, catalog: &Catalog, entry: &Entry) -> Result<Shape, ExportError> {
+    if let Some(shape) = own_shape(en, catalog, entry)? {
+        return Ok(shape);
+    }
+    let id = entry.key.as_str();
+    Ok(match &entry.msgid_plural {
+        None => Shape::Simple(lower_text(en.code, id, &entry.msgid)?),
+        Some(plural) => Shape::Plural(vec![
+            ("one", lower_text(en.code, id, &entry.msgid)?),
+            ("other", lower_text(en.code, id, plural)?),
+        ]),
+    })
+}
+
+/// Lowers every locale and fills each translation's gaps from `en`.
+fn lower_all(locales: &'static [Locale]) -> Result<Vec<Lowered>, ExportError> {
+    let en_locale = locales
+        .iter()
+        .find(|l| l.code == DEFAULT_LOCALE)
+        .ok_or_else(|| unsupported(DEFAULT_LOCALE, "", "no en locale"))?;
+    let en = Catalog::parse(en_locale.code, en_locale.source)?;
+    let mut en_messages = Vec::new();
+    for entry in en.entries() {
+        if entry
+            .msgid_plural
+            .as_ref()
+            .is_some_and(|p| !p.contains("{count}"))
+        {
+            return Err(unsupported(
+                "en",
+                &entry.key,
+                "a plural message must use {count}",
+            ));
+        }
+        en_messages.push(Message {
+            id: entry.key.clone(),
+            shape: en_shape(en_locale, &en, entry)?,
+            comment: entry.comment.clone(),
+            fallback: false,
+        });
+    }
+    let en_vars = arg_order(&en_messages);
+    let mut out = Vec::new();
+    for locale in locales {
+        let catalog = Catalog::parse(locale.code, locale.source)?;
+        if catalog.rule.nplurals() != locale.plural_categories.len() {
+            let reason = format!(
+                "Plural-Forms has nplurals={}, LOCALES names {} categories",
+                catalog.rule.nplurals(),
+                locale.plural_categories.len()
+            );
+            return Err(unsupported(locale.code, "", reason));
+        }
+        if let Some(extra) = catalog.entries().iter().find(|e| en.get(&e.key).is_none()) {
+            return Err(unsupported(
+                locale.code,
+                &extra.key,
+                "the id is not defined in en",
+            ));
+        }
+        let mut messages = Vec::new();
+        for source in &en_messages {
+            let own = match catalog.get(&source.id) {
+                Some(entry) => own_shape(locale, &catalog, entry)?,
+                None => None,
+            };
+            let message = match own {
+                Some(shape) => Message {
+                    shape,
+                    fallback: false,
+                    ..source.clone()
+                },
+                None => Message {
+                    fallback: locale.code != DEFAULT_LOCALE,
+                    ..source.clone()
+                },
+            };
+            let allowed = en_vars.get(&message.id).cloned().unwrap_or_default();
+            if let Some(v) = vars(&message.shape)
+                .into_iter()
+                .find(|v| !allowed.contains(v))
+            {
+                let reason = format!("`{{{v}}}` is not a placeholder of the en message");
+                return Err(unsupported(locale.code, &message.id, reason));
+            }
+            messages.push(message);
+        }
+        out.push(Lowered { locale, messages });
+    }
+    Ok(out)
+}
+
+/// Positional argument order per message id: placeholders in order of first
 /// appearance in the `en` message. Translations reuse it, so `{0}`/`%1$@`
 /// mean the same argument in every locale even when a translation reorders.
 fn arg_order(en: &[Message]) -> HashMap<String, Vec<String>> {
@@ -186,354 +273,19 @@ fn vars(shape: &Shape) -> Vec<String> {
     };
     match shape {
         Shape::Simple(p) => push(p),
-        Shape::Plural {
-            selector,
-            prefix,
-            variants,
-            suffix,
-        } => {
-            push(prefix);
-            push(&[Piece::Var(selector.clone())]);
+        Shape::Plural(variants) => {
             for (_, v) in variants {
                 push(v);
             }
-            push(suffix);
         }
     }
     seen
 }
 
-/// Variables the source uses as numbers: select selectors and `NUMBER()`
-/// arguments. They become `%lld` on Apple; every other variable is `%@`.
-fn numeric_vars(source: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut i = 0;
-    let bytes = source.as_bytes();
-    while let Some(pos) = source[i..].find('$') {
-        let start = i + pos + 1;
-        let end = source[start..]
-            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
-            .map_or(source.len(), |e| start + e);
-        let name = &source[start..end];
-        let rest = source[end..].trim_start();
-        let before = source[..i + pos].trim_end();
-        let is_selector = rest.starts_with("->");
-        let in_number = before.ends_with("NUMBER(") || before.ends_with("NUMBER( ");
-        if (is_selector || in_number) && !name.is_empty() && !out.iter().any(|n| n == name) {
-            out.push(name.to_owned());
-        }
-        i = end.max(start);
-        if i >= bytes.len() {
-            break;
-        }
-    }
-    out
-}
-
-/// Parses one `.ftl` source into export messages.
-fn lower_source(code: &str, source: &str) -> Result<Vec<Message>, ExportError> {
-    let resource =
-        fluent_syntax::parser::parse(source).map_err(|(_, errors)| ExportError::Syntax {
-            code: code.to_owned(),
-            detail: format!("{:?}", errors.first()),
-        })?;
-    let mut terms = HashMap::new();
-    let mut messages = HashMap::new();
-    for entry in &resource.body {
-        match entry {
-            ast::Entry::Term(t) => {
-                terms.insert(t.id.name, &t.value);
-            }
-            ast::Entry::Message(m) => {
-                if let Some(value) = &m.value {
-                    messages.insert(m.id.name, value);
-                }
-            }
-            _ => {}
-        }
-    }
-    let cx = Cx {
-        code,
-        terms: &terms,
-        messages: &messages,
-    };
-    let mut out = Vec::new();
-    for entry in &resource.body {
-        let ast::Entry::Message(m) = entry else {
-            continue;
-        };
-        // Attributes (`.tooltip = …`) have no counterpart here yet; a message
-        // with only attributes is skipped rather than exported empty.
-        let Some(value) = &m.value else { continue };
-        out.push(Message {
-            id: m.id.name.to_owned(),
-            shape: cx.shape(m.id.name, value)?,
-            comment: m.comment.as_ref().map(|c| c.content.join(" ")),
-            fallback: false,
-        });
-    }
-    Ok(out)
-}
-
-struct Cx<'a> {
-    code: &'a str,
-    terms: &'a HashMap<&'a str, &'a ast::Pattern<&'a str>>,
-    messages: &'a HashMap<&'a str, &'a ast::Pattern<&'a str>>,
-}
-
-impl Cx<'_> {
-    fn err(&self, id: &str, reason: &str) -> ExportError {
-        unsupported(self.code, id, reason)
-    }
-
-    fn shape(&self, id: &str, pattern: &ast::Pattern<&str>) -> Result<Shape, ExportError> {
-        let mut prefix = Vec::new();
-        let mut select = None;
-        let mut suffix = Vec::new();
-        for element in &pattern.elements {
-            let target = if select.is_some() {
-                &mut suffix
-            } else {
-                &mut prefix
-            };
-            match element {
-                ast::PatternElement::TextElement { value } => push_text(target, value),
-                ast::PatternElement::Placeable {
-                    expression: ast::Expression::Select { selector, variants },
-                } => {
-                    if select.is_some() {
-                        return Err(self.err(id, "more than one select in a message"));
-                    }
-                    select = Some(self.select(id, selector, variants)?);
-                }
-                ast::PatternElement::Placeable {
-                    expression: ast::Expression::Inline(inline),
-                } => self.inline(id, inline, target, 0)?,
-            }
-        }
-        Ok(match select {
-            None => Shape::Simple(prefix),
-            Some((selector, variants)) => Shape::Plural {
-                selector,
-                prefix,
-                variants,
-                suffix,
-            },
-        })
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn select(
-        &self,
-        id: &str,
-        selector: &ast::InlineExpression<&str>,
-        variants: &[ast::Variant<&str>],
-    ) -> Result<(String, Vec<(String, Vec<Piece>)>), ExportError> {
-        let selector = variable_of(selector)
-            .ok_or_else(|| self.err(id, "a select must be on a variable or NUMBER($var)"))?;
-        let mut out = Vec::new();
-        for variant in variants {
-            let category = match &variant.key {
-                ast::VariantKey::Identifier { name } if CATEGORIES.contains(name) => {
-                    (*name).to_owned()
-                }
-                ast::VariantKey::NumberLiteral { value: "0" } => "zero".to_owned(),
-                ast::VariantKey::Identifier { name }
-                | ast::VariantKey::NumberLiteral { value: name } => {
-                    let reason = format!("variant `[{name}]` is not a CLDR plural category");
-                    return Err(self.err(id, &reason));
-                }
-            };
-            if variant.default && category != "other" {
-                return Err(self.err(id, "the default variant must be *[other]"));
-            }
-            let mut pieces = Vec::new();
-            for element in &variant.value.elements {
-                match element {
-                    ast::PatternElement::TextElement { value } => push_text(&mut pieces, value),
-                    ast::PatternElement::Placeable {
-                        expression: ast::Expression::Inline(inline),
-                    } => self.inline(id, inline, &mut pieces, 0)?,
-                    ast::PatternElement::Placeable { .. } => {
-                        return Err(self.err(id, "a select nested in a variant"));
-                    }
-                }
-            }
-            out.push((category, pieces));
-        }
-        Ok((selector.to_owned(), out))
-    }
-
-    /// Inlines literals, terms and message references (their values are
-    /// fixed text in every format); keeps variables as placeholders.
-    fn inline(
-        &self,
-        id: &str,
-        expr: &ast::InlineExpression<&str>,
-        out: &mut Vec<Piece>,
-        depth: usize,
-    ) -> Result<(), ExportError> {
-        if depth > 8 {
-            return Err(self.err(id, "references nest too deep (a cycle?)"));
-        }
-        match expr {
-            ast::InlineExpression::StringLiteral { value }
-            | ast::InlineExpression::NumberLiteral { value } => push_text(out, value),
-            ast::InlineExpression::VariableReference { id: var } => {
-                out.push(Piece::Var(var.name.to_owned()));
-            }
-            ast::InlineExpression::FunctionReference { .. } => match variable_of(expr) {
-                Some(var) => out.push(Piece::Var(var.to_owned())),
-                None => return Err(self.err(id, "only NUMBER($var) is supported")),
-            },
-            ast::InlineExpression::TermReference {
-                id: term,
-                attribute: None,
-                arguments: None,
-            } => {
-                let pattern = self
-                    .terms
-                    .get(term.name)
-                    .ok_or_else(|| self.err(id, &format!("unknown term -{}", term.name)))?;
-                self.inline_pattern(id, pattern, out, depth)?;
-            }
-            ast::InlineExpression::MessageReference {
-                id: other,
-                attribute: None,
-            } => {
-                let pattern = self
-                    .messages
-                    .get(other.name)
-                    .ok_or_else(|| self.err(id, &format!("unknown message {}", other.name)))?;
-                self.inline_pattern(id, pattern, out, depth)?;
-            }
-            ast::InlineExpression::Placeable { expression } => match &**expression {
-                ast::Expression::Inline(inner) => self.inline(id, inner, out, depth + 1)?,
-                ast::Expression::Select { .. } => {
-                    return Err(self.err(id, "a select nested in a placeable"));
-                }
-            },
-            _ => return Err(self.err(id, "term arguments and attributes are not supported")),
-        }
-        Ok(())
-    }
-
-    fn inline_pattern(
-        &self,
-        id: &str,
-        pattern: &ast::Pattern<&str>,
-        out: &mut Vec<Piece>,
-        depth: usize,
-    ) -> Result<(), ExportError> {
-        for element in &pattern.elements {
-            match element {
-                ast::PatternElement::TextElement { value } => push_text(out, value),
-                ast::PatternElement::Placeable {
-                    expression: ast::Expression::Inline(inner),
-                } => self.inline(id, inner, out, depth + 1)?,
-                ast::PatternElement::Placeable { .. } => {
-                    return Err(self.err(id, "a referenced term or message has a select"));
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-fn variable_of<'s>(expr: &ast::InlineExpression<&'s str>) -> Option<&'s str> {
-    match expr {
-        ast::InlineExpression::VariableReference { id } => Some(id.name),
-        ast::InlineExpression::FunctionReference { id, arguments }
-            if id.name == "NUMBER" && arguments.named.is_empty() =>
-        {
-            match arguments.positional.as_slice() {
-                [ast::InlineExpression::VariableReference { id }] => Some(id.name),
-                _ => None,
-            }
-        }
-        _ => None,
-    }
-}
-
-fn push_text(out: &mut Vec<Piece>, text: &str) {
-    match out.last_mut() {
-        Some(Piece::Text(t)) => t.push_str(text),
-        _ => out.push(Piece::Text(text.to_owned())),
-    }
-}
-
-// ---- Apple ------------------------------------------------------------------
-
-/// Apple format text: `%` doubled, variables as `%@` (strings) or `%lld`
-/// (numbers), positional (`%2$@`) once a message has more than one argument.
-fn apple(pieces: &[Piece], order: &[String], numeric: &[String]) -> String {
-    let mut s = String::new();
-    for p in pieces {
-        match p {
-            Piece::Text(t) => s.push_str(&t.replace('%', "%%")),
-            Piece::Var(v) => s.push_str(&apple_spec(v, order, numeric, "")),
-        }
-    }
-    s
-}
-
-fn apple_spec(var: &str, order: &[String], numeric: &[String], infix: &str) -> String {
-    let kind = if numeric.iter().any(|n| n == var) {
-        "lld"
-    } else {
-        "@"
-    };
-    let kind = if infix.is_empty() { kind } else { "" };
-    match order.iter().position(|v| v == var) {
-        Some(i) if order.len() > 1 => format!("%{}${infix}{kind}", i + 1),
-        _ => format!("%{infix}{kind}"),
-    }
-}
-
-/// A plist-safe name for `%#@name@`: Fluent ids may contain `-`.
-fn apple_var_name(var: &str) -> String {
-    var.chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-        .collect()
-}
-
-fn strings_escape(s: &str) -> String {
-    s.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-}
-
-fn render_strings(
-    messages: &[Message],
-    order: &HashMap<String, Vec<String>>,
-    numeric: &[String],
-) -> String {
-    let mut s = String::from(
-        "/* Generated by ftl-export (cox-i18n) from the Fluent sources. Do not edit. */\n",
-    );
-    for m in messages {
-        let Shape::Simple(pieces) = &m.shape else {
-            continue;
-        };
-        let args = order.get(&m.id).map(Vec::as_slice).unwrap_or_default();
-        let note = comment_text(m);
-        if !note.is_empty() {
-            let _ = write!(s, "\n/* {} */", note.replace("*/", "* /"));
-        }
-        let _ = write!(
-            s,
-            "\n\"{}\" = \"{}\";\n",
-            strings_escape(&m.id),
-            strings_escape(&apple(pieces, args, numeric))
-        );
-    }
-    s
-}
-
 fn comment_text(m: &Message) -> String {
     let mut parts = Vec::new();
-    if let Some(c) = &m.comment {
-        parts.push(c.clone());
+    if !m.comment.is_empty() {
+        parts.push(m.comment.clone());
     }
     if m.fallback {
         parts.push(format!("fallback: {DEFAULT_LOCALE}"));
@@ -548,39 +300,76 @@ fn xml_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
-fn render_stringsdict(
-    messages: &[Message],
-    order: &HashMap<String, Vec<String>>,
-    numeric: &[String],
-) -> String {
+// ---- Apple ------------------------------------------------------------------
+
+/// Apple format text: `%` doubled, placeholders as `%@`, and `{count}` in a
+/// plural message as `%lld`; positional (`%2$@`) once a message has more
+/// than one argument.
+fn apple(pieces: &[Piece], order: &[String], plural: bool) -> String {
+    let mut s = String::new();
+    for p in pieces {
+        match p {
+            Piece::Text(t) => s.push_str(&t.replace('%', "%%")),
+            Piece::Var(v) => {
+                let kind = if plural && v == COUNT { "lld" } else { "@" };
+                s.push_str(&apple_spec(v, order, kind));
+            }
+        }
+    }
+    s
+}
+
+fn apple_spec(var: &str, order: &[String], kind: &str) -> String {
+    match order.iter().position(|v| v == var) {
+        Some(i) if order.len() > 1 => format!("%{}${kind}", i + 1),
+        _ => format!("%{kind}"),
+    }
+}
+
+fn strings_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+}
+
+const GENERATED: &str = "Generated by po-export (cox-i18n) from the gettext catalogs. Do not edit.";
+
+fn render_strings(messages: &[Message], order: &HashMap<String, Vec<String>>) -> String {
+    let mut s = format!("/* {GENERATED} */\n");
+    for m in messages {
+        let Shape::Simple(pieces) = &m.shape else {
+            continue;
+        };
+        let args = order.get(&m.id).map(Vec::as_slice).unwrap_or_default();
+        let note = comment_text(m);
+        if !note.is_empty() {
+            let _ = write!(s, "\n/* {} */", note.replace("*/", "* /"));
+        }
+        let _ = write!(
+            s,
+            "\n\"{}\" = \"{}\";\n",
+            strings_escape(&m.id),
+            strings_escape(&apple(pieces, args, false))
+        );
+    }
+    s
+}
+
+fn render_stringsdict(messages: &[Message], order: &HashMap<String, Vec<String>>) -> String {
     let mut s = String::from(concat!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
         "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" ",
         "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n",
-        "<!-- Generated by ftl-export (cox-i18n) from the Fluent sources. Do not edit. -->\n",
-        "<plist version=\"1.0\">\n<dict>\n",
     ));
+    let _ = writeln!(s, "<!-- {GENERATED} -->\n<plist version=\"1.0\">\n<dict>");
     for m in messages {
-        let Shape::Plural {
-            selector,
-            prefix,
-            variants,
-            suffix,
-        } = &m.shape
-        else {
+        let Shape::Plural(variants) = &m.shape else {
             continue;
         };
         let args = order.get(&m.id).map(Vec::as_slice).unwrap_or_default();
-        // The selector is numeric by construction, whatever the source said.
-        let mut numeric = numeric.to_vec();
-        numeric.push(selector.clone());
-        let name = apple_var_name(selector);
-        let format_key = format!(
-            "{}{}{}",
-            apple(prefix, args, &numeric),
-            apple_spec(selector, args, &numeric, &format!("#@{name}@")),
-            apple(suffix, args, &numeric),
-        );
+        // Each variant is the whole text (gettext forms are complete
+        // strings), so the format key is just the plural placeholder.
+        let format_key = apple_spec(COUNT, args, &format!("#@{COUNT}@"));
         let note = comment_text(m);
         if !note.is_empty() {
             let _ = writeln!(s, "  <!-- {} -->", xml_escape(&note).replace("--", "- -"));
@@ -591,7 +380,7 @@ fn render_stringsdict(
             "    <key>NSStringLocalizedFormatKey</key>\n    <string>{}</string>",
             xml_escape(&format_key)
         );
-        let _ = writeln!(s, "    <key>{name}</key>\n    <dict>");
+        let _ = writeln!(s, "    <key>{COUNT}</key>\n    <dict>");
         s.push_str("      <key>NSStringFormatSpecTypeKey</key>\n");
         s.push_str("      <string>NSStringPluralRuleType</string>\n");
         s.push_str("      <key>NSStringFormatValueTypeKey</key>\n      <string>lld</string>\n");
@@ -599,7 +388,7 @@ fn render_stringsdict(
             let _ = writeln!(
                 s,
                 "      <key>{category}</key>\n      <string>{}</string>",
-                xml_escape(&apple(pieces, args, &numeric))
+                xml_escape(&apple(pieces, args, true))
             );
         }
         s.push_str("    </dict>\n  </dict>\n");
@@ -610,8 +399,8 @@ fn render_stringsdict(
 
 // ---- Windows ----------------------------------------------------------------
 
-/// .NET composite format text: `{`/`}` doubled, variables as `{0}`, `{1}` in
-/// the `en` argument order.
+/// .NET composite format text: `{`/`}` doubled, placeholders as `{0}`,
+/// `{1}` in the `en` argument order.
 fn dotnet(pieces: &[Piece], order: &[String]) -> String {
     let mut s = String::new();
     for p in pieces {
@@ -627,8 +416,6 @@ fn dotnet(pieces: &[Piece], order: &[String]) -> String {
 }
 
 const RESW_HEADER: &str = concat!(
-    "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n",
-    "<!-- Generated by ftl-export (cox-i18n) from the Fluent sources. Do not edit. -->\n",
     "<root>\n",
     "  <resheader name=\"resmimetype\">\n    <value>text/microsoft-resx</value>\n  </resheader>\n",
     "  <resheader name=\"version\">\n    <value>2.0</value>\n  </resheader>\n",
@@ -642,10 +429,12 @@ const RESW_HEADER: &str = concat!(
     "  </resheader>\n",
 );
 
-/// `.resw` has no plural rules: a select becomes one entry per category,
-/// `<id>_<category>`, and the app picks the category (`docs/i18n.md`).
+/// `.resw` has no plural rules: a plural message becomes one entry per CLDR
+/// category, `<id>_<category>`, and the app picks the category
+/// (`docs/i18n.md`).
 fn render_resw(messages: &[Message], order: &HashMap<String, Vec<String>>) -> String {
-    let mut s = String::from(RESW_HEADER);
+    let mut s = format!("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<!-- {GENERATED} -->\n");
+    s.push_str(RESW_HEADER);
     let mut entry = |name: &str, value: &str, note: &str| {
         let _ = writeln!(
             s,
@@ -663,20 +452,13 @@ fn render_resw(messages: &[Message], order: &HashMap<String, Vec<String>>) -> St
         let note = comment_text(m);
         match &m.shape {
             Shape::Simple(pieces) => entry(&m.id, &dotnet(pieces, args), &note),
-            Shape::Plural {
-                prefix,
-                variants,
-                suffix,
-                ..
-            } => {
+            Shape::Plural(variants) => {
                 for (category, pieces) in variants {
-                    let value = format!(
-                        "{}{}{}",
-                        dotnet(prefix, args),
-                        dotnet(pieces, args),
-                        dotnet(suffix, args)
+                    entry(
+                        &format!("{}_{category}", m.id),
+                        &dotnet(pieces, args),
+                        &note,
                     );
-                    entry(&format!("{}_{category}", m.id), &value, &note);
                 }
             }
         }
@@ -690,7 +472,7 @@ mod tests {
     use super::*;
 
     fn lowered(code: &str) -> Lowered {
-        lower_all()
+        lower_all(LOCALES)
             .expect("lowers")
             .into_iter()
             .find(|l| l.locale.code == code)
@@ -722,12 +504,13 @@ mod tests {
                 .expect("own");
             assert!(!own.fallback);
         }
+        assert!(lowered("en").messages.iter().all(|m| !m.fallback));
     }
 
     #[test]
-    fn apple_strings_inline_terms_and_map_variables() {
+    fn apple_strings_inline_the_brand_and_map_variables() {
         let l = lowered("uk");
-        let s = render_strings(&l.messages, &en_order(), &l.numeric);
+        let s = render_strings(&l.messages, &en_order());
         assert!(s.contains("\"quit-app\" = \"Вийти з Cox\";"), "{s}");
         assert!(
             s.contains("\"welcome-user\" = \"Ласкаво просимо до Cox, %@!\";"),
@@ -746,18 +529,20 @@ mod tests {
     #[test]
     fn stringsdict_uses_positional_arguments_for_two_variables() {
         let l = lowered("ru");
-        let s = render_stringsdict(&l.messages, &en_order(), &l.numeric);
+        let s = render_stringsdict(&l.messages, &en_order());
+        assert!(s.contains("<string>%2$#@count@</string>"), "{s}");
         assert!(
-            s.contains("<string>%1$@ изменяет %2$#@count@</string>"),
-            "{s}"
-        );
-        assert!(
-            s.contains("<key>many</key>\n      <string>%2$lld файлов</string>"),
+            s.contains("<key>many</key>\n      <string>%1$@ изменяет %2$lld файлов</string>"),
             "{s}"
         );
         assert!(s.contains("<string>%#@count@</string>"), "{s}");
         assert!(
             s.contains("<key>few</key>\n      <string>%lld сессии</string>"),
+            "{s}"
+        );
+        // `other` (fractions) repeats the few form unless overridden.
+        assert!(
+            s.contains("<key>other</key>\n      <string>%lld сессии</string>"),
             "{s}"
         );
     }
@@ -773,10 +558,15 @@ mod tests {
             );
         }
         assert!(s.contains("<value>{0} змінює {1} файлів</value>"), "{s}");
+        // The `# cldr-other:` override in uk.po.
+        assert!(s.contains("name=\"files-changed_other\" xml:space=\"preserve\">\n    <value>{0} змінює {1} файлу</value>"), "{s}");
         assert!(
             s.contains("<value>Ласкаво просимо до Cox, {0}!</value>"),
             "{s}"
         );
+        let en = render_resw(&lowered("en").messages, &en_order());
+        assert!(en.contains("name=\"session-count_one\""), "{en}");
+        assert!(!en.contains("session-count_few"), "{en}");
     }
 
     #[test]
@@ -785,7 +575,7 @@ mod tests {
         let l = lowered("ru");
         for xml in [
             render_resw(&l.messages, &en_order()),
-            render_stringsdict(&l.messages, &en_order(), &l.numeric),
+            render_stringsdict(&l.messages, &en_order()),
         ] {
             for comment in xml.split("<!--").skip(1) {
                 let body = comment.split("-->").next().unwrap_or_default();
@@ -796,19 +586,44 @@ mod tests {
 
     #[test]
     fn literal_braces_and_percent_are_escaped() {
-        let pieces = vec![Piece::Text("100% {x}".into()), Piece::Var("n".into())];
-        let order = vec!["n".to_owned()];
-        assert_eq!(apple(&pieces, &order, &["n".to_owned()]), "100%% {x}%lld");
-        assert_eq!(dotnet(&pieces, &order), "100% {{x}}{0}");
+        let pieces = lower_text("en", "m", "100% {{x}} {count}").expect("valid");
+        let order = vec!["count".to_owned()];
+        assert_eq!(apple(&pieces, &order, true), "100%% {x} %lld");
+        assert_eq!(apple(&pieces, &order, false), "100%% {x} %@");
+        assert_eq!(dotnet(&pieces, &order), "100% {{x}} {0}");
+    }
+
+    const RU_HDR: &str = "msgid \"\"\nmsgstr \"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\\n\"\n\n";
+
+    fn with_ru(ru_body: &str) -> &'static [Locale] {
+        let source: &'static str = Box::leak(format!("{RU_HDR}{ru_body}").into_boxed_str());
+        Box::leak(Box::new([
+            LOCALES[0],
+            Locale {
+                source,
+                ..LOCALES[1]
+            },
+        ]))
     }
 
     #[test]
-    fn non_category_variant_keys_are_rejected() {
-        let src = "m = { $n ->\n    [7] seven\n   *[other] many\n}\n";
-        let err = lower_source("en", src).expect_err("rejects [7]");
-        assert!(
-            err.to_string().contains("not a CLDR plural category"),
-            "{err}"
-        );
+    fn a_plural_with_the_wrong_number_of_forms_is_rejected() {
+        let body = "msgctxt \"session-count\"\nmsgid \"{count} session\"\nmsgid_plural \"{count} sessions\"\nmsgstr[0] \"{count} сессия\"\nmsgstr[1] \"{count} сессии\"\n";
+        let err = lower_all(with_ru(body)).err().expect("rejects two forms");
+        assert!(err.to_string().contains("nplurals=3"), "{err}");
+    }
+
+    #[test]
+    fn unknown_ids_and_placeholders_are_rejected() {
+        let err = lower_all(with_ru("msgctxt \"nope\"\nmsgid \"x\"\nmsgstr \"y\"\n"))
+            .err()
+            .expect("rejects an id en lacks");
+        assert!(err.to_string().contains("not defined in en"), "{err}");
+        let body = "msgctxt \"settings-title\"\nmsgid \"Settings\"\nmsgstr \"{user}\"\n";
+        let err = lower_all(with_ru(body)).err().expect("rejects {user}");
+        assert!(err.to_string().contains("not a placeholder"), "{err}");
+        let body = "msgctxt \"settings-title\"\nmsgid \"Settings\"\nmsgstr \"{0}\"\n";
+        let err = lower_all(with_ru(body)).err().expect("rejects {0}");
+        assert!(err.to_string().contains("literal braces"), "{err}");
     }
 }

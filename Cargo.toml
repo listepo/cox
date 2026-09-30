@@ -172,17 +172,12 @@ cpal = "0.18"
 rubato = "5"
 
 # cox-i18n
-# Fluent localization (en default, ru, uk; docs/i18n.md): the runtime bundles,
-# locale negotiation and language identifiers. fluent-syntax is used only by
-# the `ftl-export` bin that writes the macOS and Windows resource files, and
-# sys-locale reads the OS UI languages when no env var names one.
-fluent-bundle = "0.16"
-# 0.13, not the current 0.14: 0.14 moved to icu_locid identifiers, while
-# fluent-bundle 0.16 (the current release) still takes unic-langid ones and
-# depends on 0.13 itself, so 0.13 is the one that interoperates.
-fluent-langneg = "0.13"
+# gettext localization (en default, ru, uk; docs/i18n.md). polib parses the
+# embedded .po catalogs in pure Rust (no libintl, so nothing to install on
+# macOS or Windows); unic-langid validates the language tags negotiation
+# matches on; sys-locale reads the OS UI languages when no env var names one.
+polib = "0.3"
 unic-langid = "0.9"
-fluent-syntax = "0.12"
 sys-locale = "0.3"
 
 # dev-deps

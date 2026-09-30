@@ -142,10 +142,22 @@ desktop-xcframework:
 desktop-app: desktop-xcframework
     mise exec -- bash scripts/desktop/app.sh
 
-# The native apps' string resources from crates/cox-i18n/locales (docs/i18n.md):
+# The native apps' string resources from crates/cox-i18n/po (docs/i18n.md):
 # Apple .strings/.stringsdict and Windows .resw under target/i18n/ (gitignored).
 i18n-export *args:
-    mise exec -- cargo run -q -p cox-i18n --bin ftl-export {{args}}
+    mise exec -- cargo run -q -p cox-i18n --bin po-export {{args}}
+
+# Merges crates/cox-i18n/po/messages.pot into every <code>.po after the
+# template changes (GNU gettext's msgmerge; `brew install gettext`).
+i18n-update:
+    for po in crates/cox-i18n/po/*.po; do msgmerge --quiet --update --backup=none "$po" crates/cox-i18n/po/messages.pot || exit 1; done
+
+# Validates the catalogs with GNU gettext: msgfmt --check on each .po (header,
+# plural forms, {name} placeholders), format checks on the template, and
+# msgcmp that each .po holds exactly the template's messages.
+i18n-check:
+    msgfmt --check-format --output-file=/dev/null crates/cox-i18n/po/messages.pot
+    for po in crates/cox-i18n/po/*.po; do msgfmt --check --output-file=/dev/null "$po" && msgcmp --use-untranslated "$po" crates/cox-i18n/po/messages.pot || exit 1; done
 
 # The desktop design tokens (T37.17, DS§2): Style Dictionary regenerates CoxUI's
 # Tokens.swift and Colors.xcassets and the mockups' tokens.css from

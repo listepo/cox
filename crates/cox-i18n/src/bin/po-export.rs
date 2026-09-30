@@ -1,9 +1,9 @@
-//! `ftl-export`: writes the native apps' string resources from the embedded
-//! Fluent sources (`cox_i18n::export`). Output defaults to `target/i18n/`
+//! `po-export`: writes the native apps' string resources from the embedded
+//! gettext catalogs (`cox_i18n::export`). Output defaults to `target/i18n/`
 //! under the workspace root, which is gitignored; the macOS and Windows
 //! builds run this and copy from there (`docs/i18n.md`).
 //!
-//!     cargo run -p cox-i18n --bin ftl-export [-- --out <dir>]
+//!     cargo run -p cox-i18n --bin po-export [-- --out <dir>]
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -17,7 +17,7 @@ fn main() -> ExitCode {
         }
         (Some("--out"), Some(dir)) => PathBuf::from(dir),
         _ => {
-            eprintln!("usage: ftl-export [--out <dir>]");
+            eprintln!("usage: po-export [--out <dir>]");
             return ExitCode::from(2);
         }
     };
@@ -29,7 +29,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("ftl-export: {e}");
+            eprintln!("po-export: {e}");
             ExitCode::FAILURE
         }
     }
