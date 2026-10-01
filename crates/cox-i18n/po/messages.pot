@@ -1,0 +1,64 @@
+# Message template for cox-i18n: every message, English source, no
+# translations. Edit this file first, then run `just i18n-update` to merge it
+# into en.po, ru.po and uk.po (po/README.md, docs/i18n.md).
+#
+# Conventions: msgctxt is the stable message id the code passes to t()/tr!;
+# placeholders are {name} (python-brace-format), {{ and }} are literal braces;
+# {brand} is filled in by cox-i18n; a plural message selects on {count}.
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: cox\n"
+"Report-Msgid-Bugs-To: https://github.com/pyrlyn/cox/issues\n"
+"POT-Creation-Date: 2026-09-29 00:00+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
+
+#. The window and app title: the product name.
+#, python-brace-format
+msgctxt "app-title"
+msgid "{brand}"
+msgstr ""
+
+msgctxt "settings-title"
+msgid "Settings"
+msgstr ""
+
+#. Menu item that quits the app.
+#, python-brace-format
+msgctxt "quit-app"
+msgid "Quit {brand}"
+msgstr ""
+
+#. {name} (string): the user's display name.
+#, python-brace-format
+msgctxt "welcome-user"
+msgid "Welcome to {brand}, {name}!"
+msgstr ""
+
+#. {count} (number): open sessions in the sidebar.
+#, python-brace-format
+msgctxt "session-count"
+msgid "{count} session"
+msgid_plural "{count} sessions"
+msgstr[0] ""
+msgstr[1] ""
+
+#. {name} (string): who made the change; {count} (number): changed files.
+#, python-brace-format
+msgctxt "files-changed"
+msgid "{name} changed {count} file"
+msgid_plural "{name} changed {count} files"
+msgstr[0] ""
+msgstr[1] ""
+
+#. Deliberately untranslated in ru and uk: exercises the per-message fallback.
+msgctxt "send-feedback"
+msgid "Send feedback"
+msgstr ""

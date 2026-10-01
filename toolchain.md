@@ -29,6 +29,7 @@ Programs the project uses and the direct packages from its manifests.
 | swift-format | Xcode toolchain (`xcrun swift-format`) | Formats the macOS app's Swift (research.md §9.5.5); CI's `desktop-macos-lint` job runs `lint --strict` | https://github.com/swiftlang/swift-format |
 | XcodeGen | mise (`mise.toml`, aqua) | Generates the macOS app's thin `desktop/macos/Cox.xcodeproj` from `desktop/macos/project.yml`, so only the spec is in git and the project never merge-conflicts (`just desktop-app`, T37.32.1); CI's `desktop-macos` job | https://github.com/yonaskolb/XcodeGen |
 | cmake | mise (`mise.toml`) | Builds whisper.cpp for `cox-voice` through `whisper-rs-sys` (T54.2, A123); 3.31.12, the version sibling projects already pin (apps/bindsmith) | https://github.com/Kitware/CMake |
+| GNU gettext (`msgfmt`, `msgmerge`, `msginit`, `msgcmp`) | brew (`brew install gettext`); optional | Maintains and validates the `cox-i18n` catalogs: `just i18n-update` (msgmerge the template into each `.po`), `just i18n-check` (msgfmt --check, msgcmp), `msginit` for a new locale (`docs/i18n.md`). The runtime does not use it; the `cox-i18n` test that runs msgfmt skips when it is absent | https://www.gnu.org/software/gettext/ |
 
 ## ketch
 
@@ -64,6 +65,7 @@ Programs the project uses and the direct packages from its manifests.
 | extism | local (default features off) | https://github.com/extism/extism | cox-plugin: the WASM plugin host (A52, T33.3); no ureq, no URL or file module loading |
 | extism-pdk | local, `plugins/` guest workspace (default features off) | https://github.com/extism/rust-pdk | cox-plugin-sdk: the official Rust PDK the guest SDK wraps (exports, `cox:host/v1` imports, extism memory; T33.27) |
 | figment | local | https://crates.io/crates/figment | Config loading |
+| polib | local | https://crates.io/crates/polib | cox-i18n: parses the embedded gettext `.po` catalogs in pure Rust (no libintl; `docs/i18n.md`) |
 | futures | local | https://crates.io/crates/futures | Rust dependency |
 | globset | local | https://crates.io/crates/globset | Rust dependency |
 | grep-regex | local | https://crates.io/crates/grep-regex | T3.3: plan.md names "grep-regex + grep-searcher sinks"; grep-regex (the RegexMatcher grep-searcher needs) was missing from this list. |
@@ -102,6 +104,7 @@ Programs the project uses and the direct packages from its manifests.
 | shlex | local | https://crates.io/crates/shlex | Rust dependency |
 | similar | local | https://crates.io/crates/similar | Rust dependency |
 | syntect | local | https://crates.io/crates/syntect | Rust dependency Lives in `cox-render` (T32.2). |
+| sys-locale | local | https://crates.io/crates/sys-locale | cox-i18n: the OS UI languages when the env names none |
 | two-face | local | https://crates.io/crates/two-face | T24.3: extended syntax definitions Lives in `cox-render` (T32.2). |
 | terminal-colorsaurus | local | https://crates.io/crates/terminal-colorsaurus | T22.6: OSC 11 background colour query for `tui.theme = "auto"` Lives in `cox-render` (T32.2). |
 | tempfile | local | https://crates.io/crates/tempfile | Rust dependency |
@@ -123,6 +126,7 @@ Programs the project uses and the direct packages from its manifests.
 | tui-textarea-2 | local | https://crates.io/crates/tui-textarea-2 | Rust dependency |
 | typify | local (build-dependency) | https://github.com/oxidecomputer/typify | cox-provider `build.rs`: Anthropic request and stream types generated from the vendored `schema/anthropic-openapi.json` (T30.10, T30.12) |
 | ulid | local | https://crates.io/crates/ulid | Identifiers |
+| unic-langid | local | https://crates.io/crates/unic-langid | cox-i18n: BCP 47 language identifiers for locale negotiation |
 | unicode-width | local | https://crates.io/crates/unicode-width | Rust dependency |
 | vt100 | local | https://crates.io/crates/vt100 | Rust dependency |
 | wasmtime | local (`anyhow` feature only) | https://github.com/bytecodealliance/wasmtime | cox-plugin: the runtime under extism; declared only to enable the `anyhow` feature extism 1.30.0 needs with its default features off (T33.3) |
