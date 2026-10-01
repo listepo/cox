@@ -258,3 +258,91 @@ pub fn why_text(why: &Why) -> String {
         Why::Policy { policy } => format!("approval policy {policy:?} requires approval"),
     }
 }
+
+/// `Shift+Tab`: default → plan → auto → default (§1.13); bypass is never
+/// cycled into, only left. Here, beside the modes' meaning, so the TUI and
+/// the desktop composer (T37.24.7) cycle in the same order.
+pub fn next_mode(mode: PermissionMode) -> PermissionMode {
+    match mode {
+        PermissionMode::Default => PermissionMode::Plan,
+        PermissionMode::Plan => PermissionMode::Auto,
+        PermissionMode::Auto | PermissionMode::Bypass => PermissionMode::Default,
+    }
+}
+
+/// The narrower of two permission modes (P42, A73): a mode preset may only
+/// tighten what `permissions.mode` allows, never widen it.
+pub fn narrower(a: PermissionMode, b: PermissionMode) -> PermissionMode {
+    if rank(a) <= rank(b) { a } else { b }
+}
+
+/// How much a mode lets through without asking: `Plan < Default < Auto <
+/// Bypass`. The one definition of that order, so `narrower` cannot drift.
+fn rank(mode: PermissionMode) -> u8 {
+    match mode {
+        PermissionMode::Plan => 0,
+        PermissionMode::Default => 1,
+        PermissionMode::Auto => 2,
+        PermissionMode::Bypass => 3,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL_MODES: [PermissionMode; 4] = [
+        PermissionMode::Plan,
+        PermissionMode::Default,
+        PermissionMode::Auto,
+        PermissionMode::Bypass,
+    ];
+
+    #[test]
+    fn narrower_never_returns_the_wider_mode() {
+        for a in ALL_MODES {
+            for b in ALL_MODES {
+                let n = narrower(a, b);
+                assert!(n == a || n == b, "{a:?} ∧ {b:?} gave a third mode {n:?}");
+                assert_eq!(rank(n), rank(a).min(rank(b)), "{a:?} ∧ {b:?} gave {n:?}");
+            }
+        }
+        assert_eq!(
+            narrower(PermissionMode::Bypass, PermissionMode::Plan),
+            PermissionMode::Plan
+        );
+        assert_eq!(
+            narrower(PermissionMode::Auto, PermissionMode::Default),
+            PermissionMode::Default
+        );
+    }
+
+    #[test]
+    fn narrower_is_commutative() {
+        for a in ALL_MODES {
+            for b in ALL_MODES {
+                assert_eq!(narrower(a, b), narrower(b, a), "{a:?}, {b:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn shift_tab_cycles_default_plan_auto_and_leaves_bypass() {
+        let from = [
+            PermissionMode::Default,
+            PermissionMode::Plan,
+            PermissionMode::Auto,
+            PermissionMode::Bypass,
+        ];
+        let to = from.map(next_mode);
+        assert_eq!(
+            to,
+            [
+                PermissionMode::Plan,
+                PermissionMode::Auto,
+                PermissionMode::Default,
+                PermissionMode::Default,
+            ]
+        );
+    }
+}

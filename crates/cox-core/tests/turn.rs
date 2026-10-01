@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use common::{drain, open, run_with, scenario, spawn_turn, tool_results};
 use cox_core::{MemoryStore, Session};
-use cox_protocol::traits::Tool;
+use cox_protocol::traits::{Store as _, Tool};
 use cox_protocol::types::{Content, DecidedBy, Decision, Event, StopReason, Submission};
 use tokio::sync::mpsc;
 
@@ -46,6 +46,16 @@ fn redact(value: &mut serde_json::Value) {
                     *v = serde_json::json!(0);
                 } else if k == "cost_usd" {
                     *v = serde_json::json!(0.0);
+                } else if k == "breakdown" {
+                    // A98: the split is a byte heuristic over the prompt and
+                    // tool schemas, so any wording change would move it; the
+                    // numbers are checked in `turn_every_request_emits_its_context_breakdown`.
+                    if let serde_json::Value::Object(parts) = v {
+                        parts
+                            .iter_mut()
+                            .filter(|(part, _)| *part != "window")
+                            .for_each(|(_, n)| *n = serde_json::json!(0));
+                    }
                 } else {
                     redact(v);
                 }
@@ -309,6 +319,63 @@ async fn turn_allow_for_session_covers_the_next_call() {
 }
 
 #[tokio::test]
+async fn turn_a_revoked_grant_asks_again() {
+    let (session, store, mut rx) = open(&scenario("revoke_grant"), cox_protocol::Config::default());
+    let first = spawn_turn(&session, "write");
+    let events = until(&mut rx, |e| matches!(e, Event::ApprovalRequired { .. })).await;
+    let call_id = events
+        .iter()
+        .find_map(|e| match e {
+            Event::ApprovalRequired { call, .. } => Some(call.id),
+            _ => None,
+        })
+        .expect("prompt");
+    session
+        .submit(Submission::Approve {
+            call_id,
+            decision: Decision::AllowForSession,
+        })
+        .await
+        .expect("approve");
+    first.await.expect("join").expect("turn");
+    let covered = drain(&mut rx).await;
+    assert!(
+        !covered
+            .iter()
+            .any(|e| matches!(e, Event::ApprovalRequired { .. }))
+    );
+    let grant = ("touch".to_string(), "a".to_string());
+    assert_eq!(session.grants().await, std::slice::from_ref(&grant));
+
+    session
+        .submit(Submission::RevokeGrant {
+            tool: grant.0.clone(),
+            subject: grant.1.clone(),
+        })
+        .await
+        .expect("revoke");
+    assert_eq!(
+        rx.recv().await,
+        Some(Event::GrantRevoked {
+            tool: grant.0.clone(),
+            subject: grant.1.clone(),
+        })
+    );
+    assert!(session.grants().await.is_empty());
+
+    let third = spawn_turn(&session, "write again");
+    let asked = until(&mut rx, |e| matches!(e, Event::ApprovalRequired { .. })).await;
+    assert!(matches!(asked.last(), Some(Event::ApprovalRequired { .. })));
+    session.interrupt();
+    let _ = third.await;
+
+    // Resume replays the revoke: the grant does not come back.
+    let rollout = store.rollout_read(&session.id()).expect("rollout");
+    let history = cox_core::History::from_events(&rollout);
+    assert!(history.grants.is_empty());
+}
+
+#[tokio::test]
 async fn turn_edited_input_goes_back_through_the_rules() {
     let mut config = cox_protocol::Config::default();
     config.permissions.ask = vec!["echo(hi)".into()];
@@ -397,6 +464,45 @@ async fn turn_every_request_has_a_usage_row() {
         .count();
     assert_eq!(usage_events, store.usage_rows().len());
     assert_eq!(usage_events, 2);
+}
+
+/// A98: each request is preceded by its window, taken from the model
+/// catalog, and a split that is not empty and sums to its total.
+#[tokio::test]
+async fn turn_every_request_emits_its_context_breakdown() {
+    let config = cox_protocol::Config::default();
+    let catalog = cox_models::Catalog::load(&config, &[], None).expect("catalog");
+    let window = catalog
+        .get(&config.tiers.code.model)
+        .and_then(|row| row.context_window);
+    assert!(window.is_some(), "the default code model has a catalog row");
+    let (events, _, _) = run("one_tool").await;
+    let splits: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            Event::ContextBreakdown { breakdown, .. } => Some(*breakdown),
+            _ => None,
+        })
+        .collect();
+    let usages = events
+        .iter()
+        .filter(|e| matches!(e, Event::Usage { .. }))
+        .count();
+    assert_eq!((splits.len(), usages), (2, 2), "one per request");
+    for b in &splits {
+        assert_eq!(b.window, window);
+        assert!(b.system > 0 && b.tools > 0 && b.history > 0, "{b:?}");
+        assert_eq!(b.system + b.tools + b.instructions + b.history, b.total);
+    }
+    assert!(
+        splits[1].history > splits[0].history,
+        "the tool round grew it"
+    );
+    let first_split = events
+        .iter()
+        .position(|e| matches!(e, Event::ContextBreakdown { .. }));
+    let first_usage = events.iter().position(|e| matches!(e, Event::Usage { .. }));
+    assert!(first_split < first_usage, "emitted before the reply");
 }
 
 #[tokio::test]

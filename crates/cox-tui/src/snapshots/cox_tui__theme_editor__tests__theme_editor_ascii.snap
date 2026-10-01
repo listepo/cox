@@ -1,0 +1,16 @@
+---
+source: crates/cox-tui/src/theme_editor.rs
+expression: "render(&editor(), &ASCII)"
+---
+ theme cox-dark | dark
+ > text        ## reset_
+   dim         ## darkgray
+   accent      ## magenta
+   user        ## blue
+   agent       ## green
+   tool        ## cyan
+   ok          ## green
+   warn        ## yellow
+   error       ## red
+   diff_add    ## green
+ Up/Down move | Enter save | Esc revert

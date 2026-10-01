@@ -240,6 +240,19 @@ pub enum StoreError {
     /// plugin across all its keys).
     #[error("plugin kv quota exceeded")]
     QuotaExceeded,
+    /// `cox.db` holds a migration this binary does not embed: a newer `cox`
+    /// (the app's bundled one, or a Homebrew one of another version) wrote
+    /// it, and this older one must not read or write it (T37.36).
+    #[error(
+        "cox.db was migrated by a newer cox (schema {db}; this cox knows up to {binary}): \
+         update this cox (e.g. `brew upgrade cox`, or the app's own update) or run the newer one"
+    )]
+    SchemaNewer {
+        /// The newest migration version in `cox.db` this binary does not know.
+        db: String,
+        /// The newest migration version this binary embeds.
+        binary: String,
+    },
 }
 
 /// Failures from `cox-ext` (instruction files, skills, hooks, commands).

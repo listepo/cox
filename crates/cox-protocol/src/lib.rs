@@ -21,6 +21,7 @@
 #![warn(missing_docs)]
 
 pub mod agent;
+pub mod commands;
 pub mod config;
 pub mod errors;
 pub mod ids;
@@ -36,17 +37,18 @@ pub use errors::{
 };
 pub use ids::{ArchiveId, CallId, ItemId, SessionId, TaskId, TurnId};
 pub use traits::{
-    Archive, ArchivePut, Before, Change, CheckpointRow, Checkpointer, GrantScope, Hook, MemoryHit,
-    PluginGrant, PluginStore, PreImage, Provider, Relay, SessionRow, Snapshot, Store, Tool, ToolCx,
-    UsageRow,
+    Archive, ArchivePut, Before, Change, CheckpointRow, Checkpointer, GrantScope, Hook,
+    HunkReverter, MemoryHit, PluginGrant, PluginStore, PreImage, Provider, Relay, SessionRow,
+    Snapshot, Store, Tool, ToolCx, UsageRow,
 };
 pub use types::ArchiveRef;
 pub use types::{
     ApprovalPolicy, Attachment, Caps, CheckpointFile, CheckpointKind, Concurrency, Content,
-    DecidedBy, Decision, Diff, Effort, Event, HookEvent, HookOutcome, Item, ItemKind, Job, Level,
-    LinuxBackend, Message, ModelId, PermissionMode, ProviderEvent, ProviderId, Request, Risk, Role,
-    SandboxMode, SandboxPolicy, Segments, SlashCommand, StopReason, Submission, SystemBlock,
-    Thinking, Tier, ToolCall, ToolOutput, ToolResult, ToolSpec, Usage, Why,
+    ContextBreakdown, DecidedBy, Decision, Diff, Effort, Event, HookEvent, HookOutcome, Item,
+    ItemKind, Job, Level, LinuxBackend, Message, ModelId, PermissionMode, ProviderEvent,
+    ProviderId, Request, Risk, Role, SandboxMode, SandboxPolicy, Segments, SkipReason, SkippedFile,
+    SlashCommand, StopReason, Submission, SystemBlock, Thinking, Tier, TodoItem, TodoState,
+    ToolCall, ToolOutput, ToolResult, ToolSpec, Usage, Why,
 };
 
 #[cfg(test)]

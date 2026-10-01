@@ -139,6 +139,15 @@ fn tool(state: &mut State, name: &str, subject: &str, risk: Risk, output: &str) 
 }
 
 fn tool_done(state: &mut State, call_id: CallId, visible: &str) {
+    tool_done_with(state, call_id, visible, None);
+}
+
+fn tool_done_with(
+    state: &mut State,
+    call_id: CallId,
+    visible: &str,
+    structured: Option<Box<serde_json::Value>>,
+) {
     ev(
         state,
         Event::ToolCallDone {
@@ -150,6 +159,7 @@ fn tool_done(state: &mut State, call_id: CallId, visible: &str) {
                 bytes: u64::try_from(visible.len()).unwrap_or(u64::MAX),
                 duration_ms: 12,
                 diff: None,
+                structured,
             },
         },
     );
@@ -405,10 +415,15 @@ fn screen_todo_panel_after_the_todo_tool() {
     user(&mut state, "plan the ledger work");
     let turn = start_turn(&mut state);
     let call = tool(&mut state, "todo", "3 items", Risk::ReadOnly, "");
-    tool_done(
+    tool_done_with(
         &mut state,
         call,
         "[x] 1: read the cost ledger\n[~] 2: add the cache-write column\n[ ] 3: snapshot the status line",
+        Some(Box::new(serde_json::json!([
+            {"id": "1", "text": "read the cost ledger", "state": "done"},
+            {"id": "2", "text": "add the cache-write column", "state": "in_progress"},
+            {"id": "3", "text": "snapshot the status line", "state": "pending"},
+        ]))),
     );
     reply(&mut state, "Three steps; starting the second.", true);
     end_turn(&mut state, turn);
@@ -599,6 +614,7 @@ fn screen_tool_card_error() {
                 bytes: u64::try_from(body.len()).unwrap_or(u64::MAX),
                 duration_ms: 41,
                 diff: None,
+                structured: None,
             },
         },
     );
@@ -625,12 +641,12 @@ fn screen_question_modal() {
     start_turn(&mut state);
     update(
         &mut state,
-        Msg::Question {
-            call: CallId::new(),
+        Msg::Event(Event::QuestionAsked {
+            call_id: CallId::new(),
             question: "which environment?".into(),
             options: vec!["staging".into(), "production".into()],
-            agent: None,
-        },
+            source: None,
+        }),
     );
     insta::assert_snapshot!(shot("question_modal", &mut state));
 }

@@ -6,7 +6,7 @@
 //! shell hooks and plugin hooks behind one `Hook` (PL§6, T33.11).
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,6 +22,10 @@ use tokio::process::Command;
 pub struct ShellHooks {
     events: HashMap<String, Vec<HookConfig>>,
     cwd: PathBuf,
+    /// The program that runs each command with `-c`: `sh` from `PATH`
+    /// unless the session passes the host's shell (T57.2: Git Bash or
+    /// PowerShell on Windows, the same program a `!` line runs in).
+    shell: PathBuf,
 }
 
 impl ShellHooks {
@@ -29,7 +33,13 @@ impl ShellHooks {
         Self {
             events: config.events.clone(),
             cwd,
+            shell: PathBuf::from("sh"),
         }
+    }
+
+    pub fn with_shell(mut self, shell: PathBuf) -> Self {
+        self.shell = shell;
+        self
     }
 }
 
@@ -46,7 +56,7 @@ impl Hook for ShellHooks {
             .unwrap_or_default()
             .to_string();
         chain(hooks, payload, |hook, payload| {
-            let (tool, cwd) = (&tool, &self.cwd);
+            let (tool, cwd, shell) = (&tool, &self.cwd, &self.shell);
             async move {
                 match matches(hook.matcher.as_deref(), tool) {
                     Ok(true) => {}
@@ -65,7 +75,7 @@ impl Hook for ShellHooks {
                 let limit = hook
                     .timeout_s
                     .map_or(timeout, |s| Duration::from_secs(u64::from(s)));
-                run_one(&hook.command, &payload, limit, cwd).await
+                run_one(shell, &hook.command, &payload, limit, cwd).await
             }
         })
         .await
@@ -151,9 +161,15 @@ fn matches(matcher: Option<&str>, tool: &str) -> Result<bool, regex::Error> {
     }
 }
 
-async fn run_one(command: &str, payload: &Value, limit: Duration, cwd: &PathBuf) -> HookOutcome {
+async fn run_one(
+    shell: &Path,
+    command: &str,
+    payload: &Value,
+    limit: Duration,
+    cwd: &PathBuf,
+) -> HookOutcome {
     let failed = |error: String| HookOutcome::Failed { error };
-    let mut child = match Command::new("sh")
+    let mut child = match Command::new(shell)
         .arg("-c")
         .arg(command)
         .current_dir(cwd)

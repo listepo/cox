@@ -1,0 +1,11 @@
+# Turn 1 only answers; turn 2 edits `a.rs` (a checkpoint). The test then
+# rewinds code and conversation to turn 2, which removes its blocks (T37.38).
+[[turn]]
+text = "first reply"
+
+[[turn]]
+text = "editing"
+tool_calls = [{ name = "touch", input = { path = "a.rs" } }]
+
+[[turn]]
+text = "edited"

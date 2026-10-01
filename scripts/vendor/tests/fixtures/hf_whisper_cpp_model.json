@@ -1,0 +1,14 @@
+{
+  "id": "ggerganov/whisper.cpp",
+  "sha": "5359861c739e955e79d9a303bcbc70fb988958b1",
+  "lastModified": "2024-10-29T18:25:17.000Z",
+  "tags": [
+    "automatic-speech-recognition",
+    "license:mit",
+    "region:us"
+  ],
+  "cardData": {
+    "license": "mit",
+    "pipeline_tag": "automatic-speech-recognition"
+  }
+}

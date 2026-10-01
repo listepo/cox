@@ -28,6 +28,7 @@ fn reviewer_def(model: Option<&str>) -> AgentDef {
         path: PathBuf::from("<test>/.cox/agents/reviewer.md"),
         body: "You review changes for correctness.".into(),
         disabled: false,
+        permission_mode: None,
     }
 }
 

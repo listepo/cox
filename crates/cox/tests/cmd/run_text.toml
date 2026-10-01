@@ -1,0 +1,12 @@
+# `cox run -p` in the default text format prints the final assistant text.
+bin.name = "cox"
+args = ["run", "-p", "hi"]
+stdout = """
+hello from scripted
+"""
+
+[env.add]
+COX_SCENARIO = "../../../cox-core/tests/scenarios/text_only.toml"
+
+[fs]
+cwd = "."

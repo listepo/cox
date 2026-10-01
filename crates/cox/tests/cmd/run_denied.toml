@@ -1,0 +1,18 @@
+# A write in the default mode with nobody to approve it is denied: exit 2,
+# `denied: 1`, and `run_denied.out/` holds only the scenario. The scenario
+# is copied into `run_denied.in/` because a sandboxed case runs in a temp
+# copy of that directory, where a path back into the crate does not resolve.
+bin.name = "cox"
+args = ["run", "-p", "hi", "--output-format", "json"]
+stdout = """
+{"session":"[..]","result":"done","usage":{"input_tokens":[..],"output_tokens":[..],"cache_read_tokens":0,"cache_write_tokens":0},"cost_usd":0.0,"turns":2,"stop":{"type":"end_turn"},"denied":1,"exit_code":2}
+"""
+
+[status]
+code = 2
+
+[env.add]
+COX_SCENARIO = "write_then_done.toml"
+
+[fs]
+sandbox = true

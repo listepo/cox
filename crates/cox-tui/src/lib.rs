@@ -16,8 +16,10 @@ pub mod state;
 pub mod status;
 pub mod tasks;
 pub mod term;
+pub mod theme_editor;
 pub mod view;
 pub mod vim;
+pub mod voice;
 
 /// T32.2: the renderers moved to `cox-render` (dependency rule (a) in
 /// `docs/design/crates.md`: syntect, two-face, pulldown-cmark and

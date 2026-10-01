@@ -1,0 +1,6 @@
+---
+source: crates/cox/src/doctor.rs
+expression: human(&row)
+---
+db: ✗ cox.db schema 99991231000000 is newer than this cox (00000000000004); a newer cox wrote it
+  fix: update this cox (e.g. `brew upgrade cox`, or the app's own update) or run the newer one; keep cox.db

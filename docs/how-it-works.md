@@ -181,6 +181,28 @@ keeps it compiling. A matching doctest on
 call without prompting, so the model learns to describe the change
 instead of making it.
 
+### Modes: architect and editor
+
+A mode is a named preset over two things only: the permission mode and
+the tier main turns run on. `/mode architect|editor` in the TUI, `--mode`
+on the command line and `core.mode` in config all set the same value.
+
+| | architect | editor (default) |
+| --- | --- | --- |
+| permission mode | the narrower of `permissions.mode` and `plan` | `permissions.mode` |
+| main tier | think, confirmed | the configured tier |
+| writes and non-read-only `bash` | denied by `plan` | per policy |
+
+A mode never widens permissions: architect over a `plan` config is still
+`plan`, and `/mode editor` goes back to `permissions.mode`, never past it.
+Tools are not filtered by mode, so the tool list and system blocks stay
+byte-identical across a switch and the prompt cache survives; `plan` does
+the narrowing through the same `cox_permission::Engine` as every other
+call. The think tier still needs consent: the TUI asks its price once per
+architect stretch, and in `cox run` only the explicit `--mode architect`
+flag (or `--deep`) counts, so `core.mode = architect` from a config file
+alone makes the run refuse with the flag to pass.
+
 ## Example 4: big output is lossless, not lost
 
 Tools return their **full** output; the core archives it *before* the
@@ -306,7 +328,9 @@ An HTTP MCP server may answer the handshake with `401` and a `WWW-Authenticate` 
 
 `cox --worktree t42` runs the session in `_worktrees/<repo>-t42` on branch `t42`, creating both when they do not exist. The location and the name follow the workspace `worktrees` rule: the nearest ancestor of the repository that already holds `_worktrees/` (else a new one next to the repository, or `WT_ROOT`), a lower-case branch cut from a freshly fetched `origin/<default>` with no upstream, and a lock whose reason names the owner (`cox / pid 123 | t42 | 2026-09-22`). The main checkout stays a second workspace root, so the model can read it but every edit lands in the worktree; the status line shows `⎇ t42 +3 −1 · ⧉ t42`, and the presence record carries the worktree path. `/quit` on a clean worktree asks whether to remove it; a dirty one is kept and said so. The branch is never deleted — merging is the user's action. A subagent gets the same thing with `agent(isolation: "worktree")`: its worktree is named after the task id, its answer ends with `[worktree <path>, branch <name>]`, and the worktree outlives the task. Another owner's lock (`Cursor / grok | …`) is never reused or removed.
 
-## The four surfaces (one stream each)
+A worktree is one session's place. Starting a second session in a worktree another live session of the project already holds prints `cox: warning: session <id> (pid <n>) is already working in worktree <path>` and starts anyway — a warning, not a lock. Every session's model is told which worktree each other session works in, `/agents` shows `⧉ <worktree>` on those rows, `cox sessions` marks worktree sessions with `⧉`, and asking for `agent(isolation: "worktree")` is Destructive (it asks, and plan mode refuses it). `cox --resume <id>` of a worktree session reopens it in its worktree with the same roots as `--worktree`; if the worktree has been removed, cox refuses and points at `git worktree list` and `cox --worktree <name> --resume <id>` rather than creating it again.
+
+## The four surfaces, and the macOS app (one stream each)
 
 | Surface | Command | What it does with `Event`s |
 |---|---|---|
@@ -314,6 +338,8 @@ An HTTP MCP server may answer the handshake with `401` and a `WWW-Authenticate` 
 | Headless | `cox run -p … --output-format text\|json\|stream-json` | prints the stream for scripts |
 | Editor | `cox acp` | maps `Event` → ACP `session/update` (see `docs/ide.md`) |
 | Other agents | `cox mcp [--allow-write] [--tools a,b]` | serves built-in tools, not the loop (see `docs/compat.md`) |
+| macOS app | `Cox.app` (links `cox-ffi` as a static library) | `cox-app` folds them into keyed blocks; Swift pulls `TimelinePatch` batches through UniFFI (see `docs/design/desktop.md`) |
+| Remote host | `cox app-server --stdio` (run by the app over your own `ssh`) | serves the same calls and `TimelinePatch` batches as JSON lines, so a host's sessions show in the app; keys and the ssh agent never cross (see `docs/app-server.md`) |
 
 Useful companions: `cox sessions --grep <q>` (find a rollout),
 `cox doctor` (keys, sandbox, stale price rows, a configured model with no
