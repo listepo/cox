@@ -1,0 +1,5 @@
+# T7.8: the only turn answers a request whose system blocks carry the
+# workspace AGENTS.md marker; without it the scenario runs out.
+[[turn]]
+text = "followed AGENTS.md"
+when_system_contains = "cox-e2e-agents-md-marker"

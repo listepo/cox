@@ -94,6 +94,11 @@ pub struct TurnSpec {
     /// skipped; a pinned turn never answers another job.
     #[serde(default)]
     pub job: Option<Job>,
+    /// T7.8: pins this turn to a request whose system blocks contain this
+    /// substring, so an e2e run answers only when, say, an `AGENTS.md`
+    /// marker reached the prompt. Combined with `when_contains`, both hold.
+    #[serde(default)]
+    pub when_system_contains: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -184,6 +189,9 @@ tool_calls = [
         let turns = parse_scenario(toml).expect("parses");
         assert_eq!(turns[0].when_contains.as_deref(), Some("MARKER"));
         assert_eq!(turns[1].when_contains, None);
+        let toml = "[[turn]]\ntext = \"a\"\nwhen_system_contains = \"RULE\"\n";
+        let turns = parse_scenario(toml).expect("system marker");
+        assert_eq!(turns[0].when_system_contains.as_deref(), Some("RULE"));
     }
 
     #[test]
@@ -198,6 +206,7 @@ tool_calls = [
             when_contains: None,
             echo_tools: false,
             job: None,
+            when_system_contains: None,
         };
         let usage = Usage {
             input_tokens: 1,

@@ -231,6 +231,41 @@ Found 0 violations, 0 serious in 217 files
 ```
 Deviation: the dark frosted panes were not compared again against renders 31/32 on 2026-09-29. One earlier `swift test` run failed a single unnamed test and the next two runs passed with no snapshot change.
 
+#### T7.8 The instruction chain reaches the model
+
+Model: Claude Code / claude-opus-5-5 · Status: done 2026-09-28 · Depends: T7.1 · Size: ~200 · Priority: P1 · Complexity: 3
+Goal: the `AGENTS.md`/`CLAUDE.md` chain `cox_ext::instructions::load` builds (T7.1) is the `system[2]` text of every request in every surface (TUI, `run -p`, ACP) and of the session's subagents, byte-stable within a session; today `system[2]` is the stub `"Follow repository instruction files when present."` and the loader runs only for `cox ext list`.
+Files: `crates/cox-core/src/context.rs`, `crates/cox-core/src/session.rs` (`set_instructions`, copied to children), `crates/cox/src/session.rs` (one `instructions` helper, called by `open`), `crates/cox/src/acp_cmd.rs` (the factory bypasses `open`), `crates/cox/src/ext_cmd.rs` (reuses the helper), `cox-provider-testkit`/`cox-provider` scripted (`when_system_contains`), `crates/cox/tests/run_cli.rs` + one scenario.
+Steps: (1) `assemble_with_skills` takes the loaded block; an empty block keeps the stub, so a workspace without instruction files keeps its exact prefix bytes; the `minimal` profile keeps the block (it drops only the skills and memory indexes). (2) `Session::set_instructions` stores it once (like `set_agent_defs`), `spawn_child` shares it, and the turn passes it to assembly — `cox-core` still reads no file (D2). (3) The surface loads the chain once per session build with `context.instruction_budget_tokens`; budget and include notices become `Warn` notices. (4) The scripted provider's `when_system_contains` pins a turn to a request whose system blocks carry a marker.
+Check:
+```bash
+mise exec -- cargo nextest run -p cox-core -E 'test(instructions)'
+mise exec -- cargo nextest run -p cox -E 'test(agents_md)'
+```
+Done when: a unit test proves the loaded block is `system[2]` and byte-identical between turns and in a child; a session test proves a workspace `AGENTS.md` reaches the recorded request's `system[2]`; an e2e `cox run -p` with the scripted provider answers only because the request's system blocks carry the `AGENTS.md` marker.
+Out of scope: re-reading instruction files after compaction (§1.10 step 5), threading the skills index (T22.2's recorded split), a provider-counted token budget.
+
+What landed: `cox_core::Session::set_instructions` stores the block once (a second call is ignored, like `set_agent_defs`) and `spawn_child` shares it; the turn passes it to `assemble_with_skills`, which now takes the chain before the skills index. An empty chain keeps the old stub (`NO_INSTRUCTIONS`), so a workspace with no instruction file sends the same prefix bytes as before; `minimal` keeps the chain and drops only the skills index. `crates/cox/src/session.rs::instructions` builds the `Roots` (cwd canonicalized, so a symlinked tempdir keeps the directories between it and the git root) and is called by `open`, the ACP factory and `cox ext list`; its notices join the session's `Warn` notices. The scripted provider gained `when_system_contains` (turns with any marker are served only to a request meeting every marker it sets). The card touched more than three source files, as A67 records.
+Not done: re-reading instruction files after compaction (§1.10 step 5) and threading the skills index through `Session` (T22.2's split) stay open; neither has a card yet.
+```
+$ mise exec -- cargo nextest run -p cox-core -E 'test(instructions)'
+        PASS cox-core context::tests::instructions_block_is_system_2_and_byte_stable
+        PASS cox-core session::tests::instructions_are_set_once_and_shared_with_children
+     Summary 2 tests run: 2 passed, 254 skipped
+$ mise exec -- cargo nextest run -p cox -E 'test(agents_md)'
+        PASS cox::bin/cox session::tests::agents_md_in_the_workspace_reaches_system_2
+        PASS cox::run_cli agents_md_in_the_workspace_reaches_the_system_prompt
+     Summary 2 tests run: 2 passed, 170 skipped
+$ mise exec -- cargo nextest run --workspace --no-fail-fast
+     Summary 1315 tests run: 1315 passed, 4 skipped
+$ mise exec -- cargo clippy --workspace --all-targets -- -D warnings   # also -p cox --no-default-features
+clean.
+$ mise exec -- cargo fmt --check
+clean.
+```
+
+Merge note (2026-09-30, on merging main into PR #79): main's T50.1 (818c44c3, via `cox-session`) had already landed the same wiring — the chain in `system[2]` for every surface, including ACP, shared with subagents. Main's code was kept for `crates/cox-core/src/{context,session}.rs`, `crates/cox/src/{session,acp_cmd,ext_cmd}.rs`; this card's `set_instructions`/`instructions` helper and their unit tests (`instructions_are_set_once_and_shared_with_children`, `agents_md_in_the_workspace_reaches_system_2`) were dropped in favour of T50.1's. What remains from this card: the scripted provider's `when_system_contains` (both `scripted.rs`, combined with A113's `job` pin) and the `agents_md_marker` e2e (`crates/cox/tests/run_cli.rs`, `crates/cox/tests/scenarios/agents_md_marker.toml`). Its plan amendment was renumbered A67 → A131 (A67 is main's P37 amendment).
+
 #### T35.14 Sandboxed plugin and external-agent programs may live under `/tmp`
 
 Model: Cursor / grok 4.7 · Status: done 2026-09-27 · Depends: none · Size: ~200 · Priority: P2 · Complexity: 3
@@ -9247,3 +9282,64 @@ Deviations: none.
 Check: cox-p51 at p37-desktop: `cargo nextest run -p cox-app -p cox-ffi` 212 passed; clippy -D warnings clean; CoxModel `swift test` 128 tests in 6 suites passed; `just desktop-app` built (2026-09-29). Commit 467acfee.
 
 Not done: nothing.
+
+#### T47.5 The browser opener runs no shell on Windows
+
+- Model: Claude Code / opus-5.5
+- Depends: -
+- Size: ~50
+- Priority: P1
+- Complexity: 2
+- Goal: `cox_mcp::auth::open_browser` (T22.5) ran `cmd /C start "" <url>` on Windows, so a URL from an MCP server (OAuth or a T47.4 URL elicitation) carrying `& | ^ < > " %` was read by cmd.exe as syntax — command injection. The opener hands the URL to the platform as one argument with no shell in between, on every platform, and refuses anything that is not an `http(s)` URL (a URL protocol handler also runs `file:` paths, and a leading `-` would read as an option to `open`/`xdg-open`).
+- Files: `crates/cox-mcp/src/auth.rs`.
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-mcp opener_passes_the_url
+  ```
+- Result:
+  - No crate: `open`/`webbrowser` are in neither `Cargo.lock` nor `rust.md`, and the stdlib covers it. Windows now runs `rundll32 url.dll,FileProtocolHandler <url>` (no cmd.exe, so nothing in the URL is syntax; `%` is not expanded); macOS `open <url>` and Linux `xdg-open <url>` are unchanged, as is the `DISPLAY`/`WAYLAND_DISPLAY` check.
+  - A pure `opener(os, url) -> Option<Command>` builds the argv; `open_browser` runs it. A non-`http(s)` URL gives `None`, so `open_browser` returns `false` and the printed URL is all the person has.
+- Tests: `opener_passes_the_url_as_one_argument_without_a_shell` — for `https://example.com/cb?a=1&b=2|calc^x<y>"%PATH%` the Windows argv is exactly `rundll32`, `url.dll,FileProtocolHandler`, the URL (fails with the `cmd /C start` form, whose program is `cmd`); macOS/Linux argv is `open`/`xdg-open` plus the URL; `file:`, `javascript:` and `-a Calculator` give `None`.
+- Follow-up: T47.4 (branch `t47.1`, another owner, not touched here) declines a URL with `CMD_SYNTAX` on Windows in `elicit::url_prompt`; that decline and its `docs/tools.md` clause ("would not survive the opener unchanged") can go once this is merged.
+- Check output: not run. Since 2026-09-28 task agents run no builds or tests; `cargo fmt -p cox-mcp --check` is clean. Pending the verification pass: the Check, `cargo nextest run -p cox-mcp`, clippy. Not exercised on Windows.
+- Status: done 2026-09-29
+
+### T50.8. `scrub` redacts Anthropic `sk-ant-…` keys in full
+
+Renumbered from T50.7 on merge: main took T50.7 for `just test` runs only what a change can break.
+
+Model: mid-tier · Status: done 2026-09-28 · Depends: — · Size: ~20 · Files: `crates/cox-sanitize/src/redact.rs`
+
+Goal: `cox_sanitize::redact::scrub` redacts an Anthropic-shaped key (`sk-ant-api03-…`) whole. Today the `sk-` body is alphanumeric only, so the scan stops at the first `-` after `sk-`: `ant` is below the 8-byte floor and the key leaks verbatim into rollouts, logs and headless output. Other `sk-` keys (`sk-abc…`, `sk-proj-…`) keep being redacted and short `sk-` words stay verbatim.
+
+Plan:
+1. `redact.rs`: let `prefixed` take the body predicate; the `sk-` arm accepts ASCII alphanumerics plus `-` and `_` (the Anthropic and OpenAI project-key alphabets), the other arms stay alphanumeric only.
+2. Regression test `scrub_redacts_an_anthropic_key_whole` in the same file's `mod tests`: a `sk-ant-api03-…` key with `-` and `_` in its body, embedded in a line, becomes one `«redacted»` with the surrounding text intact.
+
+Check: `mise exec -- cargo nextest run -p cox-sanitize` (the new test fails on current `main`), clippy for the crate with `-D warnings`, `cargo fmt --check`.
+
+Done when: the Check passes.
+
+Out of scope: the separate cassette redactor in `cox-provider-testkit/src/replay.rs`.
+
+- Result: `crates/cox-sanitize/src/redact.rs`: `prefixed` takes the body predicate; the `sk-` arm accepts ASCII alphanumerics plus `-` and `_`, `AKIA` and `ghp_` stay alphanumeric only. Before the fix a `sk-ant-…` key matched nothing at all (`ant` is below the 8-byte floor), so the whole key survived.
+- Tests: `scrub_redacts_an_anthropic_key_whole` fails on the old code (the line comes back unchanged); `redact_table` still passes, so `sk-abc…` keys stay redacted and `sk-shrt` stays verbatim.
+- Check output summary: `cargo nextest run -p cox-sanitize` 6 passed; `cargo clippy -p cox-sanitize --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+
+### T50.8. Cassette redaction removes an Anthropic `sk-ant-…` key whole
+
+Model: mid-tier · Status: done 2026-09-28 · Depends: — · Size: ~20 · Files: `crates/cox-provider-testkit/src/replay.rs`
+
+Goal: `cox_provider_testkit::replay::redact_secrets` (the cassette redactor `cox record` and the scripted fixtures' secret scan use) redacts an Anthropic-shaped key (`sk-ant-api03-…`) whole. Today the `sk-` body is ASCII alphanumeric only with an 8-byte floor, so the scan stops at `ant` and the key is written into a cassette verbatim — the bug T50.7 fixed in `cox_sanitize::redact::scrub`. Calling `scrub` instead is ruled out: `crates/cox/tests/deps.rs` keeps `cox-provider-testkit` a pure leaf that may depend only on `cox-protocol`.
+
+Plan:
+1. `replay.rs`: the `sk-` arm counts ASCII alphanumerics plus `-` and `_` (the same body alphabet as T50.7's `scrub`); the 8-byte floor and the `Bearer ` arm stay.
+2. Regression test `cassette_redaction_removes_an_anthropic_key_whole` in the same file's `mod tests`: a `sk-ant-api03-…` key with `-` and `_` in its body, embedded in a line, becomes one `«redacted»` with the surrounding text intact.
+
+Check: `mise exec -- cargo nextest run -p cox-provider-testkit` (the new test fails on current `main`), `cargo nextest run -p cox-provider` (its committed-fixtures secret scan still finds nothing), clippy for the crate with `-D warnings`, `cargo fmt --check`.
+
+Done when: the Check passes.
+
+- Result: `crates/cox-provider-testkit/src/replay.rs`: the `sk-` arm of `redact_secrets` counts ASCII alphanumerics plus `-` and `_`, the body alphabet T50.7 gave `scrub`; the 8-byte floor and the `Bearer ` arm are unchanged. Before the fix a `sk-ant-…` key matched nothing (`ant` is below the floor), so the whole key reached the cassette.
+- Tests: `cassette_redaction_removes_an_anthropic_key_whole` fails on the old code (the line came back unchanged); `redact_strips_sk_and_bearer` and `redact_preserves_non_ascii` still pass; `cox-provider`'s `no_secrets_in_fixtures` still finds no secret in the committed fixtures under the wider alphabet.
+- Check output summary: `cargo nextest run -p cox-provider-testkit` 9 passed; `cargo nextest run -p cox-provider` 28 passed; `cargo clippy -p cox-provider-testkit --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
