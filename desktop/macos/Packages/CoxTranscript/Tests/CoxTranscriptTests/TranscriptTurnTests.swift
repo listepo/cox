@@ -47,7 +47,8 @@ struct TranscriptTurnTests {
       testName: "promptWithAnAttachmentAndAFoldedAndAnOpenThought")
   }
 
-  @Test func dragFromThePromptIntoTheReplyCopiesBothAsMarkdownInOrder() throws {
+  @Test(.enabled(if: syntheticMouse, "synthesized mouse events need macOS 27"))
+  func dragFromThePromptIntoTheReplyCopiesBothAsMarkdownInOrder() throws {
     let host = Host(turn, size: size)
     defer { host.close() }
     host.text.setThought("k2", open: true)

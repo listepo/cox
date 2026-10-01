@@ -6,7 +6,7 @@
 # is left alone.
 #
 # RELEASE_PLZ_TOKEN is a fine-grained PAT (contents: write, pull requests:
-# write) stored as a repository secret. It cannot be the default GITHUB_TOKEN:
+# write) stored as an organization secret. It cannot be the default GITHUB_TOKEN:
 # a PR opened with GITHUB_TOKEN never triggers another workflow run, so CI
 # would not run on the release PR that merging publishes.
 name: release-plz
@@ -20,11 +20,14 @@ permissions:
 
 jobs:
   release-plz:
-    uses: pyrlyn/infra/.github/workflows/release-plz.yml@189816ac5a375e18e0235044970efcbc40e3cabd
+    # Pinned to pyrlyn/infra ci/notify-release-failure (a failed run opens a release-failure
+    # issue; needs issues: write); repin to its merge commit.
+    uses: pyrlyn/infra/.github/workflows/release-plz.yml@d709124d53dd4923eff8f594b3155842508b0049
     permissions:
       contents: write
       pull-requests: write
       actions: write
+      issues: write # notify-failure: a failed run opens a release-failure issue
     with:
       package: cox
       release-workflow: ""

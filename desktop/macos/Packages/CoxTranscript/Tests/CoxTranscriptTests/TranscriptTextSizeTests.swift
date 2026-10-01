@@ -49,7 +49,8 @@ struct TranscriptTextSizeTests {
     return (font as? NSFont)?.pointSize
   }
 
-  @Test func aNewTextSizeRestylesTheTextAndKeepsTheSelection() throws {
+  @Test(.enabled(if: syntheticMouse, "synthesized mouse events need macOS 27"))
+  func aNewTextSizeRestylesTheTextAndKeepsTheSelection() throws {
     let host = Host(blocks, size: size)
     defer { host.close() }
     host.settle()
