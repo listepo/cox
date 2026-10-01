@@ -79,10 +79,12 @@ public struct ReviewPane: View {
 
   let state: State
   let send: @MainActor (Intent) -> Void
-  @State private var text = ""
+  // `State` above is this pane's model. Spell the property wrapper out so that name
+  // is not what `@State` resolves to.
+  @SwiftUI.State private var text = ""
   @FocusState private var typing: Bool
   /// The hunk whose revert waits for the person's yes.
-  @State private var confirming: Int?
+  @SwiftUI.State private var confirming: Int?
 
   public init(state: State, send: @escaping @MainActor (Intent) -> Void) {
     (self.state, self.send) = (state, send)

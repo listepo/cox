@@ -86,7 +86,8 @@ import Testing
 private enum Scratch {
   static func make(directory: Bool) throws -> URL {
     let url = FileManager.default.temporaryDirectory.appending(
-      path: "cox-drop-\(UUID().uuidString)", directoryHint: directory ? .isDirectory : .notDirectory)
+      path: "cox-drop-\(UUID().uuidString)", directoryHint: directory ? .isDirectory : .notDirectory
+    )
     if directory {
       try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     } else {

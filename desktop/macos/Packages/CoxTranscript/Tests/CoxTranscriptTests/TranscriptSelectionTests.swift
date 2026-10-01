@@ -43,7 +43,8 @@ private let size = NSSize(width: 760, height: 600)
 @MainActor
 @Suite(.serialized)
 struct TranscriptSelectionTests {
-  @Test func dragAcrossThreeBlocksCopiesTheirMarkdownInOrder() throws {
+  @Test(.enabled(if: syntheticMouse, "synthesized mouse events need macOS 27"))
+  func dragAcrossThreeBlocksCopiesTheirMarkdownInOrder() throws {
     let host = Host(transcript, size: size)
     defer { host.close() }
     host.settle()
@@ -61,7 +62,8 @@ struct TranscriptSelectionTests {
     #expect(!copied.contains("Next turn"))
   }
 
-  @Test func withTheSettingOffTheSameDragSelectsOneBlock() throws {
+  @Test(.enabled(if: syntheticMouse, "synthesized mouse events need macOS 27"))
+  func withTheSettingOffTheSameDragSelectsOneBlock() throws {
     let host = Host(transcript, size: size)
     defer { host.close() }
     host.settle()
