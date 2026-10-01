@@ -120,7 +120,9 @@ func everyFixtureBlockMapsToItsRangeAndBack(url: URL) throws {
   let padding = try #require(view.textContainer?.lineFragmentPadding)
   let lines = { (view.textContainer?.size.width ?? 0) - 2 * padding }
   #expect(lines() == column)
-  #expect(view.textContainerInset == NSSize(width: (wide - column) / 2 - padding, height: edge))
+  // A legacy scroller (a Mac without a trackpad, as CI runners are) takes its width from the view.
+  let visible = scroll.contentSize.width
+  #expect(view.textContainerInset == NSSize(width: (visible - column) / 2 - padding, height: edge))
   scroll.setFrameSize(NSSize(width: wide * 2, height: tall))
   #expect(lines() == column)
   // Narrower than the column plus the insets, the lines take what the insets leave.

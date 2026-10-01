@@ -20,16 +20,16 @@ env:
   CARGO_TERM_COLOR: always
 
 # Every job installs Rust from mise.toml, the single source of the Rust
-# version: the `rust` job through the shared listepo/infra workflow, the others
+# version: the `rust` job through the shared pyrlyn/infra workflow, the others
 # through .github/actions/rust. Both fail when rustc is not that pin.
 jobs:
-  # The shared listepo/infra workflow, pinned by commit (descendant of the
+  # The shared pyrlyn/infra workflow, pinned by commit (descendant of the
   # ci-rust pin in #57; this commit also ships release-plz.yml and pipeline.yml):
   # fmt once, then per target clippy (--all-targets --all-features), check, and
   # nextest where the runner executes the target (Linux x86_64 and aarch64,
   # macOS aarch64) or a build where it does not (macOS x86_64).
   rust:
-    uses: listepo/infra/.github/workflows/ci-rust.yml@189816ac5a375e18e0235044970efcbc40e3cabd
+    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@189816ac5a375e18e0235044970efcbc40e3cabd
     with:
       # The shared matrix minus Windows: the workspace does not build there
       # yet (P57); the `windows` job below checks the crates that do.
@@ -199,11 +199,37 @@ jobs:
       - name: footprint regression check
         run: bash scripts/footprint.sh --check
 
+  # Which suites this change needs, from the shared pyrlyn/infra classification
+  # (changes.yml): per ecosystem, whether anything changed and whether a
+  # dependency manifest or lock changed (`*_deps`, which forces that full suite).
+  # Only the macOS jobs below read it. The Rust jobs above always run in full on
+  # every pull request (the `docs` test reads docs/, so no path filter is safe
+  # there), which already covers any Cargo.toml or Cargo.lock change.
+  # The Swift suite counts desktop/ and scripts/desktop/ as Swift, and the app
+  # links CoxFFI.xcframework, so a Rust change (crates/, Cargo manifests or
+  # lock) runs it too. A failed `changes` job runs the macOS jobs rather than
+  # skipping them. A skipped macOS job reports `skipped` under its own name,
+  # which a required check treats as passed.
+  changes:
+    uses: pyrlyn/infra/.github/workflows/changes.yml@f49cd4a1e9b5c0e4b70f7253f4a1de16971402ca # main
+    permissions:
+      contents: read
+    with:
+      rust-paths: |
+        ^crates/
+      swift-paths: |
+        ^desktop/
+        ^scripts/desktop/
+
   # SwiftLint's no-literal rules and swift-format for the macOS app (T37.18,
   # DS§9). The fixtures prove the custom rules still reject what DS§9 bans; the
   # packages are linted by the SwiftLintPlugins build-tool plugin during
   # desktop-macos' `swift test`. SwiftLint is the mise.toml pin.
   desktop-macos-lint:
+    needs: changes
+    if: >-
+      !cancelled()
+      && (needs.changes.result != 'success' || needs.changes.outputs.swift == 'true')
     runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -246,8 +272,14 @@ jobs:
   # The macOS app (T37.15, DT§7): CoxFFI.xcframework for Apple Silicon only
   # (A67), then `swift test` for every package under desktop/macos/Packages,
   # then the app target, unsigned (T37.32.1). macos-26 is the arm64 image
-  # whose Xcode 26 carries the macOS 26 SDK the app targets.
+  # whose Xcode 26 carries the macOS 26 SDK the app targets. Always the full
+  # build: every package and the app, never only the changed ones.
   desktop-macos:
+    needs: changes
+    if: >-
+      !cancelled()
+      && (needs.changes.result != 'success'
+      || needs.changes.outputs.swift == 'true' || needs.changes.outputs.rust == 'true')
     runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -270,13 +302,38 @@ jobs:
             [ "$archs" = arm64 ] || { echo "expected arm64 only" >&2; exit 1; }
           done
 
+      # Serial: the UI tests share one NSApplication (key window, appearance, main run loop),
+      # and the benchmark times the main thread, so tests running alongside break both. Every
+      # package runs before the step fails; snapshots that do not match are uploaded.
       - name: swift test
+        # A hung test (the run loop waiting on a window) would otherwise hold the runner for 6 h.
+        timeout-minutes: 60
+        env:
+          SNAPSHOT_ARTIFACTS: ${{ runner.temp }}/snapshots
         run: |
           set -euo pipefail
           shopt -s nullglob
+          failed=()
           for manifest in desktop/macos/Packages/*/Package.swift; do
-            swift test --package-path "$(dirname "$manifest")"
+            # swiftbuild emits ColorResource symbols for Colors.xcassets. The native
+            # build system copies the catalog and leaves those symbols missing, so
+            # `Color(.surfaceWindow)` does not type-check (SwiftPM #9655).
+            package=$(dirname "$manifest")
+            swift test --no-parallel --build-system swiftbuild --package-path "$package" \
+              || failed+=("$(basename "$package")")
           done
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "swift test failed in: ${failed[*]}" >&2
+            exit 1
+          fi
+
+      - name: snapshots that did not match
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-macos-snapshots
+          path: ${{ runner.temp }}/snapshots
+          if-no-files-found: ignore
 
       # The app target over those packages (T37.32.1): XcodeGen's Cox.xcodeproj, a Debug build
       # with signing off — no identity or secret in this job.
@@ -285,6 +342,18 @@ jobs:
           set -euo pipefail
           mise install aqua:yonaskolb/XcodeGen
           mise exec -- bash scripts/desktop/app.sh CODE_SIGNING_ALLOWED=NO
+
+      # A Swift dependency change (Package.swift, Package.resolved, project.yml):
+      # the full build above must have resolved exactly the committed pins, so a
+      # stale or hand-edited Package.resolved fails here instead of drifting.
+      - name: Swift pins unchanged by the build
+        if: needs.changes.outputs.swift_full == 'true'
+        run: |
+          set -euo pipefail
+          if ! git diff --exit-code -- '*.resolved' desktop/macos/project.yml; then
+            echo "the build rewrote the Swift dependency pins above: commit the resolved files" >&2
+            exit 1
+          fi
 
   # The desktop design tokens (T37.17, DS§2): regenerate Tokens.swift,
   # Colors.xcassets and tokens.css from desktop/design/tokens/*.json and fail

@@ -158,7 +158,9 @@ extism = { version = "1.30.0", default-features = false, features = ["wasmtime-e
 # only its `wasmtime-default-features` turns on, together with the whole
 # wasmtime default set (component model, async, threads, ...). This enables
 # that one feature by feature unification; the version follows extism's pin.
-wasmtime = { version = "49", default-features = false, features = ["anyhow"] }
+# It must stay on extism's wasmtime major: any other major resolves to a second
+# wasmtime that extism never sees, and extism stops compiling (#68, 49.0.1).
+wasmtime = { version = "43", default-features = false, features = ["anyhow"] }
 
 # cox-voice
 # T54.2 (A123): whisper.cpp bindings for local push-to-talk transcription.
@@ -170,6 +172,15 @@ whisper-rs = "0.16"
 cpal = "0.18"
 # T54.3 (A123): the device rate (often 44.1/48 kHz) to whisper's 16 kHz.
 rubato = "5"
+
+# cox-i18n
+# gettext localization (en default, ru, uk; docs/i18n.md). polib parses the
+# embedded .po catalogs in pure Rust (no libintl, so nothing to install on
+# macOS or Windows); unic-langid validates the language tags negotiation
+# matches on; sys-locale reads the OS UI languages when no env var names one.
+polib = "0.3"
+unic-langid = "0.9"
+sys-locale = "0.3"
 
 # dev-deps
 insta = { version = "1.48", features = ["json"] }

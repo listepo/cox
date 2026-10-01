@@ -1,0 +1,59 @@
+# English (en) catalog for cox-i18n: the source and fallback locale. msgstr
+# repeats the msgid; change it here to fix English wording without touching
+# the id or the template. Kept in sync with `just i18n-update` (msgmerge).
+msgid ""
+msgstr ""
+"Project-Id-Version: cox\n"
+"Report-Msgid-Bugs-To: https://github.com/pyrlyn/cox/issues\n"
+"POT-Creation-Date: 2026-09-29 00:00+0000\n"
+"PO-Revision-Date: 2026-09-29 00:00+0000\n"
+"Last-Translator: \n"
+"Language-Team: English\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#. The window and app title: the product name.
+#, python-brace-format
+msgctxt "app-title"
+msgid "{brand}"
+msgstr "{brand}"
+
+msgctxt "settings-title"
+msgid "Settings"
+msgstr "Settings"
+
+#. Menu item that quits the app.
+#, python-brace-format
+msgctxt "quit-app"
+msgid "Quit {brand}"
+msgstr "Quit {brand}"
+
+#. {name} (string): the user's display name.
+#, python-brace-format
+msgctxt "welcome-user"
+msgid "Welcome to {brand}, {name}!"
+msgstr "Welcome to {brand}, {name}!"
+
+#. {count} (number): open sessions in the sidebar.
+#, python-brace-format
+msgctxt "session-count"
+msgid "{count} session"
+msgid_plural "{count} sessions"
+msgstr[0] "{count} session"
+msgstr[1] "{count} sessions"
+
+#. {name} (string): who made the change; {count} (number): changed files.
+#, python-brace-format
+msgctxt "files-changed"
+msgid "{name} changed {count} file"
+msgid_plural "{name} changed {count} files"
+msgstr[0] "{name} changed {count} file"
+msgstr[1] "{name} changed {count} files"
+
+#. Deliberately untranslated in ru and uk: exercises the per-message fallback.
+msgctxt "send-feedback"
+msgid "Send feedback"
+msgstr "Send feedback"
