@@ -35,6 +35,9 @@ pub struct ModelChoice {
     /// What the catalog calls it (`Claude Sonnet 5`, A111); `None` when it
     /// has no name, and the popover shows the id.
     pub display_name: Option<String>,
+    /// `display_name` as the desktop shows it, `Sonnet 5` (A129,
+    /// `status::shorten`); `None` with it.
+    pub short_name: Option<String>,
     /// The efforts it takes; empty means any.
     pub efforts: Vec<Effort>,
     /// Its window in tokens, when the config knows it.
@@ -54,6 +57,7 @@ pub fn choices(config: &Config) -> Vec<ModelChoice> {
             provider: t.provider.clone(),
             id: id.to_owned(),
             display_name: names.get(id).cloned(),
+            short_name: names.short(id).cloned(),
             efforts,
             context_window,
         };
@@ -88,6 +92,9 @@ pub struct MenuModel {
     pub id: String,
     /// What the catalog calls it; `None` when it has no name.
     pub display_name: Option<String>,
+    /// What the row shows, `Sonnet 5` (A129); `None` with `display_name`,
+    /// and the row shows the id.
+    pub short_name: Option<String>,
     /// `low · high`: the efforts it takes; empty when it takes any.
     pub efforts: String,
 }
@@ -111,6 +118,7 @@ pub fn menu(choices: Vec<ModelChoice>) -> Vec<ModelSection> {
                 .join(" · "),
             id: choice.id,
             display_name: choice.display_name,
+            short_name: choice.short_name,
         };
         match out.iter_mut().find(|s| s.tier == choice.tier) {
             Some(section) => section.models.push(model),
@@ -293,6 +301,9 @@ mod tests {
         );
         let tiers: Vec<Tier> = choices(&config).iter().map(|c| c.tier).collect();
         assert_eq!(tiers.first(), Some(&Tier::Code));
+        let rows = &menu(choices(&config))[0].models;
+        let shown: Vec<_> = rows.iter().map(|m| m.short_name.as_deref()).collect();
+        assert_eq!(shown, [None, Some("Sonnet 5")], "a menu row's short name");
     }
 
     fn choice(tier: Tier, id: &str, efforts: Vec<Effort>) -> ModelChoice {
@@ -301,6 +312,7 @@ mod tests {
             provider: "anthropic".into(),
             id: id.into(),
             display_name: None,
+            short_name: None,
             efforts,
             context_window: None,
         }
