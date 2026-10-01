@@ -31,6 +31,29 @@ const WRITE: &str = concat!(
     "/tests/scenarios/write_then_done.toml"
 );
 
+/// T7.8: the workspace `AGENTS.md` reaches the model's system blocks — the
+/// scenario's one turn answers only a request that carries its marker, so
+/// the same run without the file finds no turn and fails.
+#[test]
+fn agents_md_in_the_workspace_reaches_the_system_prompt() {
+    let marker = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/scenarios/agents_md_marker.toml"
+    );
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::create_dir(work.path().join(".git")).unwrap();
+    cox(work.path(), home.path(), marker).assert().failure();
+    std::fs::write(
+        work.path().join("AGENTS.md"),
+        "Rule: cox-e2e-agents-md-marker.\n",
+    )
+    .unwrap();
+    cox(work.path(), home.path(), marker)
+        .assert()
+        .success()
+        .stdout("followed AGENTS.md\n");
+}
+
 #[test]
 fn stream_json_lists_every_event_and_the_claude_aliases() {
     let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
