@@ -105,6 +105,25 @@ fn request_says(req: &Request, pat: &str) -> bool {
         .any(|c| matches!(c, Content::Text { text } if text.contains(pat)))
 }
 
+/// Whether `turn` carries a marker at all: a marked turn is served only
+/// to a request that `claims` it, never by FIFO order.
+fn is_marked(turn: &TurnSpec) -> bool {
+    turn.when_contains.is_some() || turn.when_system_contains.is_some()
+}
+
+/// Whether `req` meets every marker `turn` sets: `when_contains` in its
+/// spoken text (`request_says`), `when_system_contains` in a system block
+/// (T7.8).
+fn claims(turn: &TurnSpec, req: &Request) -> bool {
+    turn.when_contains
+        .as_deref()
+        .is_none_or(|pat| request_says(req, pat))
+        && turn
+            .when_system_contains
+            .as_deref()
+            .is_none_or(|pat| req.system.iter().any(|b| b.text.contains(pat)))
+}
+
 #[async_trait]
 impl Provider for Scripted {
     fn id(&self) -> ProviderId {
@@ -151,17 +170,8 @@ impl Provider for Scripted {
             };
             let picked = turns
                 .iter()
-                .position(|t| {
-                    serves(t)
-                        && t.when_contains
-                            .as_deref()
-                            .is_some_and(|pat| request_says(&req, pat))
-                })
-                .or_else(|| {
-                    turns
-                        .iter()
-                        .position(|t| serves(t) && t.when_contains.is_none())
-                });
+                .position(|t| serves(t) && is_marked(t) && claims(t, &req))
+                .or_else(|| turns.iter().position(|t| serves(t) && !is_marked(t)));
             let index = picked.ok_or_else(|| ProviderError::Unsupported {
                 feature: "scripted scenario ran out".into(),
             })?;
@@ -386,6 +396,30 @@ mod tests {
         assert!(b_events.iter().any(|e| matches!(
             e,
             ProviderEvent::TextDelta { text } if text == "for B"
+        )));
+    }
+
+    /// T7.8: a `when_system_contains` turn answers only a request whose
+    /// system blocks carry the marker; the same words in the transcript do
+    /// not count.
+    #[tokio::test]
+    async fn when_system_contains_matches_system_blocks_only() {
+        let toml = "[[turn]]\ntext = \"ruled\"\nwhen_system_contains = \"RULE-7\"\n";
+        let provider = Scripted::from_toml(toml, "").expect("scenario");
+        drain(&provider, req_with_text("RULE-7"))
+            .await
+            .expect_err("a transcript mention is not a system block");
+        let ruled = Request {
+            system: vec![cox_protocol::types::SystemBlock {
+                text: "# Instructions\nRULE-7".into(),
+                cache: true,
+            }],
+            ..req()
+        };
+        let events = drain(&provider, ruled).await.expect("system turn");
+        assert!(events.iter().any(|e| matches!(
+            e,
+            ProviderEvent::TextDelta { text } if text == "ruled"
         )));
     }
 

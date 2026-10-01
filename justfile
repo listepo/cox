@@ -23,7 +23,7 @@ check-all: && dunnage
 # The crates that build for Windows (P57, T57.1): the one list `just
 # windows-check` and CI's `windows` job use. Each P57 card adds the crates it
 # ports; T57.11 replaces the list with the whole workspace.
-windows_crates := "cox-plugin-api cox-protocol cox-sanitize cox-models cox-permission cox-config cox-tokens cox-patch cox-search cox-syntax cox-web cox-sandbox cox-render cox-telemetry cox-provider-http cox-provider-testkit cox-provider-anthropic cox-provider-openai cox-provider cox-store cox-plugin cox-core cox-tui cox-tools cox-acp"
+windows_crates := "cox-plugin-api cox-protocol cox-sanitize cox-i18n cox-models cox-permission cox-config cox-tokens cox-patch cox-search cox-syntax cox-web cox-sandbox cox-render cox-telemetry cox-provider-http cox-provider-testkit cox-provider-anthropic cox-provider-openai cox-provider cox-store cox-plugin cox-core cox-tui cox-tools cox-acp"
 
 # `cargo check` and clippy over `windows_crates` for x64 and ARM64 Windows
 # (A128 (4)), library targets only (tests join in T57.11). On Windows cargo
@@ -141,6 +141,23 @@ desktop-xcframework:
 # `desktop/macos/build/Cox.app/Contents/MacOS/Cox -CoxFixture desktop/macos/Fixtures/edit.json`.
 desktop-app: desktop-xcframework
     mise exec -- bash scripts/desktop/app.sh
+
+# The native apps' string resources from crates/cox-i18n/po (docs/i18n.md):
+# Apple .strings/.stringsdict and Windows .resw under target/i18n/ (gitignored).
+i18n-export *args:
+    mise exec -- cargo run -q -p cox-i18n --bin po-export {{args}}
+
+# Merges crates/cox-i18n/po/messages.pot into every <code>.po after the
+# template changes (GNU gettext's msgmerge; `brew install gettext`).
+i18n-update:
+    for po in crates/cox-i18n/po/*.po; do msgmerge --quiet --update --backup=none "$po" crates/cox-i18n/po/messages.pot || exit 1; done
+
+# Validates the catalogs with GNU gettext: msgfmt --check on each .po (header,
+# plural forms, {name} placeholders), format checks on the template, and
+# msgcmp that each .po holds exactly the template's messages.
+i18n-check:
+    msgfmt --check-format --output-file=/dev/null crates/cox-i18n/po/messages.pot
+    for po in crates/cox-i18n/po/*.po; do msgfmt --check --output-file=/dev/null "$po" && msgcmp --use-untranslated "$po" crates/cox-i18n/po/messages.pot || exit 1; done
 
 # The desktop design tokens (T37.17, DS§2): Style Dictionary regenerates CoxUI's
 # Tokens.swift and Colors.xcassets and the mockups' tokens.css from
