@@ -9325,3 +9325,21 @@ Out of scope: the separate cassette redactor in `cox-provider-testkit/src/replay
 - Result: `crates/cox-sanitize/src/redact.rs`: `prefixed` takes the body predicate; the `sk-` arm accepts ASCII alphanumerics plus `-` and `_`, `AKIA` and `ghp_` stay alphanumeric only. Before the fix a `sk-ant-…` key matched nothing at all (`ant` is below the 8-byte floor), so the whole key survived.
 - Tests: `scrub_redacts_an_anthropic_key_whole` fails on the old code (the line comes back unchanged); `redact_table` still passes, so `sk-abc…` keys stay redacted and `sk-shrt` stays verbatim.
 - Check output summary: `cargo nextest run -p cox-sanitize` 6 passed; `cargo clippy -p cox-sanitize --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+
+### T50.8. Cassette redaction removes an Anthropic `sk-ant-…` key whole
+
+Model: mid-tier · Status: done 2026-09-28 · Depends: — · Size: ~20 · Files: `crates/cox-provider-testkit/src/replay.rs`
+
+Goal: `cox_provider_testkit::replay::redact_secrets` (the cassette redactor `cox record` and the scripted fixtures' secret scan use) redacts an Anthropic-shaped key (`sk-ant-api03-…`) whole. Today the `sk-` body is ASCII alphanumeric only with an 8-byte floor, so the scan stops at `ant` and the key is written into a cassette verbatim — the bug T50.7 fixed in `cox_sanitize::redact::scrub`. Calling `scrub` instead is ruled out: `crates/cox/tests/deps.rs` keeps `cox-provider-testkit` a pure leaf that may depend only on `cox-protocol`.
+
+Plan:
+1. `replay.rs`: the `sk-` arm counts ASCII alphanumerics plus `-` and `_` (the same body alphabet as T50.7's `scrub`); the 8-byte floor and the `Bearer ` arm stay.
+2. Regression test `cassette_redaction_removes_an_anthropic_key_whole` in the same file's `mod tests`: a `sk-ant-api03-…` key with `-` and `_` in its body, embedded in a line, becomes one `«redacted»` with the surrounding text intact.
+
+Check: `mise exec -- cargo nextest run -p cox-provider-testkit` (the new test fails on current `main`), `cargo nextest run -p cox-provider` (its committed-fixtures secret scan still finds nothing), clippy for the crate with `-D warnings`, `cargo fmt --check`.
+
+Done when: the Check passes.
+
+- Result: `crates/cox-provider-testkit/src/replay.rs`: the `sk-` arm of `redact_secrets` counts ASCII alphanumerics plus `-` and `_`, the body alphabet T50.7 gave `scrub`; the 8-byte floor and the `Bearer ` arm are unchanged. Before the fix a `sk-ant-…` key matched nothing (`ant` is below the floor), so the whole key reached the cassette.
+- Tests: `cassette_redaction_removes_an_anthropic_key_whole` fails on the old code (the line came back unchanged); `redact_strips_sk_and_bearer` and `redact_preserves_non_ascii` still pass; `cox-provider`'s `no_secrets_in_fixtures` still finds no secret in the committed fixtures under the wider alphabet.
+- Check output summary: `cargo nextest run -p cox-provider-testkit` 9 passed; `cargo nextest run -p cox-provider` 28 passed; `cargo clippy -p cox-provider-testkit --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
