@@ -4,7 +4,7 @@ State as of 2026-09-29. Read `AGENTS.md`, then `plan.md` (§0 decisions, the tas
 
 ## Where the work lives
 
-- Feature branch `p37-desktop`, PR https://github.com/listepo/cox/pull/65. Every task branch merges into `p37-desktop`; the creator merges the PR. Do not merge the PR, enable auto-merge, publish, or tag.
+- Feature branch `p37-desktop`, PR https://github.com/pyrlyn/cox/pull/65. Every task branch merges into `p37-desktop`; the creator merges the PR. Do not merge the PR, enable auto-merge, publish, or tag.
 - Worktrees: one per task via the `worktrees` skill (`wt.sh new <task-id>`, `wt.sh done <path>`, `wt.sh clean <path>`) under `_worktrees/cox-<task-id>`. Never `rm -rf` a worktree; never touch a worktree locked by another owner (for example `rtok-*`).
 - Git in these worktrees hangs on fsmonitor. Prefix every git command with `export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0=false;`.
 - Disk is tight (a worktree's `target/` is 15–40 GB). Run `wt.sh clean` on a worktree as soon as you stop building in it; never share one cargo target dir between worktrees.

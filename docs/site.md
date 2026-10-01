@@ -1,9 +1,9 @@
 ---
 title: cox
 tagline: A modular terminal coding agent in Rust with a safe, event-driven core.
-repo: https://github.com/listepo/cox
-homepage: https://listepo.github.io/cox/
-install: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/listepo/cox/releases/latest/download/cox-installer.sh | sh"
+repo: https://github.com/pyrlyn/cox
+homepage: https://pyrlyn.github.io/cox/
+install: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/pyrlyn/cox/releases/latest/download/cox-installer.sh | sh"
 version: "0.1.0"
 accent: "#A8E06C"
 accentLight: "#3D8B3A"
@@ -11,7 +11,7 @@ order: 3
 ---
 
 <!-- Website copy for the listepo project site. The sync-docs workflow copies this file to
-listepo/landing (main) as content/projects/cox.md on every change to main and on every v*
+pyrlyn/landing (main) as content/projects/cox.md on every change to main and on every v*
 tag; front matter follows CONTENT_CONTRACT.md in that repository.
 Sources (checked 2026-09-27): README.md, docs/ and the clap CLI in crates/cox/src/cli.rs; version
 from the latest GitHub release (v0.1.0); accent is the dark-theme --accent in
@@ -50,13 +50,13 @@ yet stable.
 Prebuilt binaries for macOS (Apple silicon and Intel) and Linux (x86-64 and arm64):
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/listepo/cox/releases/latest/download/cox-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/pyrlyn/cox/releases/latest/download/cox-installer.sh | sh
 ```
 
 From source (Rust is pinned with mise):
 
 ```bash
-git clone https://github.com/listepo/cox && cd cox
+git clone https://github.com/pyrlyn/cox && cd cox
 mise exec -- cargo build -p cox
 ```
 
@@ -113,10 +113,10 @@ cox mcp --allow-write
 
 ## Links
 
-- Repository: <https://github.com/listepo/cox>
-- Documentation: <https://listepo.github.io/cox/>
-- Getting started: <https://github.com/listepo/cox/blob/main/docs/getting-started.md>
-- Releases: <https://github.com/listepo/cox/releases>
-- Changelog: <https://github.com/listepo/cox/blob/main/CHANGELOG.md>
+- Repository: <https://github.com/pyrlyn/cox>
+- Documentation: <https://pyrlyn.github.io/cox/>
+- Getting started: <https://github.com/pyrlyn/cox/blob/main/docs/getting-started.md>
+- Releases: <https://github.com/pyrlyn/cox/releases>
+- Changelog: <https://github.com/pyrlyn/cox/blob/main/CHANGELOG.md>
 - License: your choice of GNU GPLv3, a royalty-free license for proprietary desktop, mobile and web
-  apps (with attribution), or a commercial license (see <https://github.com/listepo/cox#license>)
+  apps (with attribution), or a commercial license (see <https://github.com/pyrlyn/cox#license>)

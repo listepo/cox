@@ -42,7 +42,7 @@ extension Host {
 }
 
 @MainActor
-@Suite(.serialized)
+@Suite(.serialized, .enabled(if: syntheticMouse, "synthesized mouse events need macOS 27"))
 struct BlockSelectionTests {
   @Test func shiftClickInTheGutterFromBlockTwoToFourSelectsExactlyThoseThree() {
     let host = Host(style: gutterStyle)

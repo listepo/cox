@@ -158,7 +158,9 @@ extism = { version = "1.30.0", default-features = false, features = ["wasmtime-e
 # only its `wasmtime-default-features` turns on, together with the whole
 # wasmtime default set (component model, async, threads, ...). This enables
 # that one feature by feature unification; the version follows extism's pin.
-wasmtime = { version = "49", default-features = false, features = ["anyhow"] }
+# It must stay on extism's wasmtime major: any other major resolves to a second
+# wasmtime that extism never sees, and extism stops compiling (#68, 49.0.1).
+wasmtime = { version = "43", default-features = false, features = ["anyhow"] }
 
 # cox-voice
 # T54.2 (A123): whisper.cpp bindings for local push-to-talk transcription.

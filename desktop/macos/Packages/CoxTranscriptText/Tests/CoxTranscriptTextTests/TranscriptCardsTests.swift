@@ -194,7 +194,8 @@ struct TranscriptCardsTests {
     #expect(screen.wait { host.window != nil && !host.placing }, "the card's view is back")
   }
 
-  @Test func dragAcrossACardSelectsTheWholeCard() throws {
+  @Test(.enabled(if: syntheticMouse, "synthesized mouse events need macOS 27"))
+  func dragAcrossACardSelectsTheWholeCard() throws {
     let screen = Offscreen(TranscriptTextView.make(), blocks: blocks)
     defer { screen.close() }
     let card = try #require(screen.view.range(of: "c"))

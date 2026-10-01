@@ -20,7 +20,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # Not on crates.io yet: a path inside this repository, or
-# { git = "https://github.com/listepo/cox" } from outside it.
+# { git = "https://github.com/pyrlyn/cox" } from outside it.
 cox-plugin-sdk = { path = "../../sdk" }
 ```
 
