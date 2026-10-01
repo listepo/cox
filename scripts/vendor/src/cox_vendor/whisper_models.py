@@ -51,7 +51,7 @@ def tree_url(commit: str) -> str:
 
 
 def download(url: str) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "cox-dev (https://github.com/listepo/cox)"})
+    req = urllib.request.Request(url, headers={"User-Agent": "cox-dev (https://github.com/pyrlyn/cox)"})
     with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - fixed https URL
         return resp.read()
 
