@@ -319,6 +319,7 @@ Primary sources only. Crate facts come from the crates.io API (`https://crates.i
 | P42 | Loading that module in extism 1.30.0 with the workspace's current, unmodified pins (`default-features = false`, no `wasmtime-exceptions`) fails to *parse*, before WASI or any host-function question arises: `failed to parse WebAssembly module: exceptions proposal not enabled`. This reproduces identically with `with_wasi(false)` (`cox_plugin::host::PluginHost::load`, the real host exactly as committed, A55) and with `with_wasi(true)` (raw `extism::PluginBuilder`) — the failure has nothing to do with WASI. Confirms P33/P34 empirically for wasmtime 43.0.2: Kotlin 2.4.20's `wasmWasi` compiler output unconditionally emits the WebAssembly exception-handling proposal, and extism enables it only under its non-default `wasmtime-exceptions` feature. | local, scratch `crates/cox-plugin/examples/kotlin_spike.rs`, not committed | 2026-09-26 |
 | P43 | With `wasmtime-exceptions` turned on (a temporary, reverted edit to the workspace root `Cargo.toml`'s `extism` line, never committed): (a) the module parses and instantiates through `cox_plugin::host::PluginHost::load` with WASI **off**, exactly as the real host runs today (P41 — this module needs no WASI, so A55/T33.43 is not what blocks it); `cox_init` is found and a raw `extism::Plugin::call("cox_init", …)` succeeds. (b) The full cox `host.init()` round-trip (JSON `InitIn` → `InitOut`) fails with `plugin payload is not the expected JSON: EOF while parsing a value` — expected: this probe never calls extism's `input_*`/`output_set` host functions, so it implements none of the real PDK I/O contract a T33.36 SDK would need to. (c) Instantiating and calling succeed identically with WASI on (`extism::PluginBuilder::with_wasi(true)`, scratch only). | local, same scratch example | 2026-09-26 |
 | P44 | **Dart WASI re-check spike (T33.37, falsifier for P35/PL§13).** dart-lang/sdk#56366 is still `state: open` (8 comments, last 2026-06-21). Installed the latest stable Dart SDK, 3.13.4 (macOS arm64, from the official archive, throwaway dir, not the pinned toolchain). `dart compile wasm --help` has no flag for a non-JS/WASI target. `dart compile wasm -o main.wasm main.dart` on a one-line `print` program emits `main.wasm` plus a JS bootstrap `main.mjs` (and a source map); the `.mjs` calls `WebAssembly.compileStreaming(source, {builtins: ['js-string']})` and builds a `dart2wasm` import object of JS functions, with a `jsStringPolyfill` registered under import module `"wasm:js-string"` as fallback. Loading `main.wasm` through the workspace's pinned `extism` 1.30.0 / `wasmtime` 43.0.2 (`extism::PluginBuilder::new(manifest).with_wasi(true).build()`, a `#[ignore]` test in `cox-plugin`, not committed) fails to parse: `"failed to parse WebAssembly module: exceptions proposal not enabled (at offset 0x276)"` — extism/wasmtime 43 only turn on `wasm_exceptions` behind the non-default `wasmtime-exceptions` feature (P33), and even with that feature on, the module would still need imports extism's ABI does not supply (`wasm:js-string`, the `dart2wasm` JS function table). **Falsifier not met: refuted, `dart compile wasm` still needs a JS bootstrap.** The one new lead since P35: a third-party package outside the Dart SDK, `simolus3/wasm.dart`'s `wasm_tools` (first published 2026-06-21, per the issue thread), wraps `dart2wasm` with a hand-built WASI/component-model shim; not tried here — it is not an SDK-level fix and the issue itself is still open. Re-run this spike when #56366 closes or a `dart compile wasm` release note says it targets non-JS embedders directly. | https://api.github.com/repos/dart-lang/sdk/issues/56366 (state, comments); https://storage.googleapis.com/dart-archive/channels/stable/release/latest/VERSION (3.13.4); local `dart --version`, `dart compile wasm --help`, `dart compile wasm`, and `extism::PluginBuilder::build()` against the workspace's pinned extism/wasmtime | 2026-09-26 |
+| P45 | **Kotlin needs WASI after all (T33.36 draft).** Any Kotlin/Wasm `wasmWasi` module that does real work imports `wasi_snapshot_preview1.random_get`: Kotlin's stdlib reaches it through `Any.hashCode`/`Any.toString` → `identityHashCode` → `Random.Default` → `defaultPlatformRandom` → `wasiRandomGet` (traced in the compiler's `-Xwasm-generate-wat` output). A 10-line probe with no libraries (a string, `encodeToByteArray`, one throw/catch) imports it too; the P41 spike module had none only because it did nothing. `cox_plugin::host::PluginHost::load` (WASI off) refuses both modules: `unknown import: wasi_snapshot_preview1::random_get has not been defined`, matching extism 1.30.0 `src/plugin.rs:395-399`, which links WASI only when `with_wasi` is true. | local, Kotlin 2.4.20, Gradle 9.8.0, OpenJDK 27.0.0; draft on branch `wip/t33.36-kotlin`; `extism-1.30.0/src/plugin.rs` | 2026-09-26 |
 
 **T33.35 spike result (2026-09-26).** The card's falsifier ("the module fails to instantiate under the wasmtime 43 extism pins, or needs a feature cox will not enable") fires, but not for the reason A55 predicted going in. Kotlin/Wasm `wasmWasi` 2.4.20 needs no WASI at all for a minimal `cox_init` (P41) — it fails to *parse* under extism's default engine config because its compiled output unconditionally uses the WebAssembly exception-handling proposal, which extism 1.30.0 enables only behind its non-default `wasmtime-exceptions` feature (P33, P42). With that feature on, the module instantiates and round-trips a raw `cox_init` call cleanly, with WASI off exactly as the real host runs today (P43) — so lifting A55 (T33.43) would not by itself unblock Kotlin. **Verdict: refuted as shipped.** Per the falsifier's second clause, cox does not turn on `wasmtime-exceptions` without the creator's sign-off: it is a workspace-wide engine feature that would apply to every plugin (including T33.40's Jev plugin), not only a future Kotlin one, and this spike did not evaluate its maturity or security posture on wasmtime 43. Kotlin stays out of `--lang`; T33.36 does not proceed unless the creator turns `wasmtime-exceptions` on for the workspace. **Resolved 2026-09-26:** the creator approved `wasmtime-exceptions` for the workspace (plan.md A61), so T33.36 proceeds.
 
@@ -762,6 +763,38 @@ names. The machine ran four other agents' builds (load average 19–25 on
 16 cores), and wasmtime compiles functions in parallel, so the start row is
 the noisiest; the call rows are within budget by an order of magnitude.
 
+### 4.8 `diagnostics` with a real rust-analyzer (T41.9, checked 2026-09-29)
+
+Source: the ignored test `real_rust_analyzer_reports_a_type_error_under_the_sandbox`
+in `crates/cox/tests/lsp.rs`, run with `mise exec -- cargo nextest run -p cox
+--test lsp --run-ignored only --no-capture`, plus two manual `cox run -p`
+runs against `COX_HOME=/tmp/cox-t41-9` with the server's stdin and stdout
+tee'd to files. The host is macOS, so the sandbox backend is Seatbelt; bwrap
+was not run. Server: `rust-analyzer 1.98.1 (48a229ce 2026-09-01)`, from the
+mise-pinned toolchain, found on `PATH` through the rustup proxy with the
+real `HOME`. Scratch crate: `src/main.rs` with `mod a;`, and `src/a.rs`
+returning `"one"` from a `-> u32` fn.
+
+| Measure | Result |
+| --- | --- |
+| Sandbox | no denial: rust-analyzer loaded the crate and its sysroot and ran `cargo check` (it wrote `Cargo.lock` and `target/flycheck0` in the workspace) |
+| Push or pull | pull: the `initialize` result carries `diagnosticProvider = {identifier: "rust-analyzer", interFileDependencies: true, workspaceDiagnostics: false}` |
+| First call, cold | 279 and 1,248 ms over two test runs (manual runs: 552 and 626 ms), result `no diagnostics`: the pull is answered with `items: []` before the crate is loaded |
+| Server ready | first `workspace/diagnostic/refresh` request at 5.1 and 7.5 s, first `publishDiagnostics` push (the `cargo check` E0308) at 5.3 and 7.7 s after `cox` started |
+| Call after a 20 s wait | 3 and 5 ms: `src/a.rs:2:5: error: expected u32, found &'static str [rust-analyzer E0308]` |
+
+So the profile is not the problem; the cold start is. On a fresh server the
+first call reports the file clean when it is not. In pull mode cox asks once
+and returns what it gets. Two protocol facts explain why nothing else tells
+it to wait (LSP 3.17,
+https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/,
+checked 2026-09-29). First, a server may start its own progress only if the
+client sets `window.workDoneProgress`. cox's `initialize` does not set it, so
+rust-analyzer sent no `$/progress`. Second, a server sends
+`workspace/diagnostic/refresh` to ask the client to pull again. cox answers
+it with "method not found" and does not pull again. Fixing that is a new
+card, not part of T41.9.
+
 ## 5. Testability patterns adopted
 1. `Provider` trait with `Scripted` and `Replay` (cassette) implementations; cassettes re-recorded on demand and redacted. Temperature 0 and seeds do not give bit-exact replay across providers; replaying the event log does. [high]
 2. Golden `Event` JSONL for loop scenarios (`insta`); the rollout file and the fixture are the same format. [design]
@@ -1009,7 +1042,7 @@ Codex TUI structure worth copying (R§1.6 confirmed by two independent code read
 | Custom slash commands from files | part (`cox ext list` only) | yes | yes | yes | ? | yes | yes | yes | no |
 | MCP client | yes | yes | yes | yes | yes | yes | yes | no | part |
 | MCP OAuth | **yes** | yes | yes | ? | yes | yes | ? | no | no |
-| MCP elicitation | no | yes (CLI) | ? | ? | ? | ? | ? | no | no |
+| MCP elicitation | **yes** (TUI, plain; T47.3) | yes (CLI) | ? | ? | ? | ? | ? | no | no |
 | ACP server | **yes** | ? | ? | yes | ? | ? | ? | ? | ? |
 | `cox mcp` (tools as an MCP server) | **yes** | no | yes | no | no | no | no | no | no |
 | Headless `stream-json` | yes | yes | yes | yes | yes | yes | yes | yes (RPC) | no |
@@ -1052,3 +1085,251 @@ Reading: cox's core economics (archive, dedup, deferred tools, routing, ledger, 
 | 35 | Vendor model names quoted by reviewers (e.g. "GPT-6 Astra") and star counts (OpenCode 140–172 k, Pi 104–140 k) | [unverified] | vary by source; directional only |
 | 36 | Codex CLI checkpoints/rewind | [unverified] | no documentation found by agent D |
 | 37 | Codex's ChatGPT-plan login is sanctioned for third-party clients | [unverified] | no OpenAI document found either way (2026-09-25); `codex-rs/login` shows the flow uses Codex's own OAuth client id |
+| 38 | Claude Code matches a `Bash` rule per subcommand: separators `&&`, `||`, `;`, `|`, `|&`, `&` and newlines split the line; an allow rule must match each subcommand; deny and ask rules apply when any subcommand matches, including one nested in a subshell, a command substitution or a loop body; a dangling `&&`/`||` makes the line unparseable, so no allow rule approves it; deny matches past any leading `VAR=` assignment, allow only past known-safe ones; wrappers (`timeout`, `time`, `nice`, `nohup`, `stdbuf`, `command`, `builtin`, `noglob`, bare `xargs`) are stripped before matching; output redirect targets are checked against `Edit` rules; "don't ask again" on a compound line saves one rule per subcommand | confirmed | https://code.claude.com/docs/en/permissions (sections "Compound commands", "Wrappers", "Redirections"), checked 2026-09-26. cox (T36.1, T36.2) follows the split, the any/every rule, the substitution and parse-error cases and the per-command session grant, and (T36.2) now strips the same wrapper list before a deny/ask match and keeps a narrow known-safe assignment allow-list (`LC_ALL`, `LANG`, `TZ`, `NO_COLOR` — see row 39, the docs name no full list to match); cox still differs in being stricter: an output redirect to a path asks instead of consulting `Edit` rules, and (T36.2) a deny/ask rule now looks inside an `eval`/`sh -c`/`bash -c` string by re-parsing it, which Claude Code's own rules do not do (row 39) |
+| 39 | Re-checking the "Wrappers" section for T36.2 (`plan.md` A64): the doc's exact wording is "Claude Code also strips a leading assignment of certain known-safe environment variables, so `Bash(npm test *)` matches `NODE_ENV=test npm test`. An allow rule won't match past an assignment of any other variable." — `NODE_ENV` is the only example given; the full known-safe list is not published, so cox does not try to match it and instead keeps its own short, deliberately narrower list (locale/display variables only, which cannot change what a later command resolves to). The doc also confirms: `command -v` (a query, not a run) and zsh's `nocorrect` are *not* stripped even though they look like wrapper forms; bare `xargs` is stripped only when it carries no flag of its own (`xargs -n1 …` is matched as `xargs`, not the inner command); and exec wrappers `watch`, `setsid`, `ionice`, `flock` are never stripped, so they always prompt in Manual mode. Its own worked table shows a `deny`/`ask` rule for `rm *` stopping `rm -rf build/` and `/bin/rm -rf build/` but explicitly *not* stopping `bash -c 'rm -rf build/'` — Claude Code's compound-command split does not look inside a shell string, unlike cox's `sh -c`/`eval` re-parse (T36.2) | confirmed | https://code.claude.com/docs/en/permissions (sections "Wrappers", "What a Bash rule doesn't match"), checked 2026-09-26 |
+| 40 | Gemini through Chat Completions (P39, T39.5): the OpenAI-compatible endpoint is `https://generativelanguage.googleapis.com/v1beta/openai/` with `Authorization: Bearer $GEMINI_API_KEY`; streaming, tools, `image_url` data URIs and `reasoning_effort` are supported; reasoning cannot be turned off for Gemini 2.5 Pro or Gemini 3 models, so every `[providers.gemini]` model declares `reasoning_effort = true`; Google says OpenAI-library support is still in beta; thought signatures must be sent back exactly as received. models.dev lists the vendor as provider `google` with env `GEMINI_API_KEY`, hence `"gemini": "google"` in `cox_vendor/models.py`. The model ids `gemini-3.8-flash`, `gemini-3.1-pro-preview` and `gemini-3.5-flash-lite` come from the card; their context windows, efforts and prices are filled by `cox-vendor models`, not by hand | confirmed in the P39 gate check; not re-read in T39.5 (no network) | https://ai.google.dev/gemini-api/docs/openai (page "Last updated 2026-09-02 UTC"), https://ai.google.dev/gemini-api/docs/thinking (last updated 2026-09-25), both checked 2026-09-28 (`plan.md` P39); https://models.dev/api.json checked 2026-09-28 |
+| 41 | "Windows App SDK latest stable: v1.8.12 (2026-09-24)" (A127 brief) | corrected | v1.8.12 is the last patch of the 1.8 line, whose servicing ended on 2026-09-24 (Maintenance); the current stable line is 2.x, latest 2.5.1 (2026-09-16, servicing to 2027-04-29) — https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/release-channels (ms.date 2026-09-24, checked 2026-09-29); https://github.com/microsoft/WindowsAppSDK/releases; NuGet `microsoft.windowsappsdk` stable versions end at 2.5.1 (R10.2.5) |
+| 42 | D7 "Windows: no sandbox, loud warning, `on-request` forced" is implemented | refuted (not implemented) | `cox_sandbox::sandbox::backend` returns `None` off macOS/Linux and its doc comment says the surface "turns `None` into a security notice and forces `on-request`", but no caller does: the callers are `cox-session` doctor, external agents, MCP and plugins (which refuse to run unsandboxed), and the TUI status line; no code raises the approval policy (repo at `efd69625`, checked 2026-09-29; R10.1.9) |
+| 43 | uniffi-bindgen-cs supports the uniffi 0.32 that cox-ffi pins | refuted | latest release v0.11.0+v0.31.0 (2026-06-23) and `main` pin uniffi 0.31.0; the 0.32 upgrade is open PR #176 (R10.2.1, R10.2.2) |
+| 44 | Git Bash is required for Claude Code on native Windows | outdated | Git for Windows is optional; without it Claude Code runs commands through its PowerShell tool — https://code.claude.com/docs/en/setup "Set up on Windows" (checked 2026-09-29; R10.5.2) |
+
+## 9. Desktop clients and the Rust↔Swift stack — survey 2026-09-28 (input for `docs/design/desktop.md`)
+
+Scope: what a native macOS client for cox must match and where it can win, and which toolchain lets a SwiftUI app use cox crates as a library. Checked 2026-09-28. Rows marked **unverified** rest only on secondary sources (press, blogs, aggregators) or on a vendor page this survey could not fetch directly; do not cite them outward before re-checking the primary page. Cited below as R9.n.
+
+### 9.1 Desktop and GUI coding-agent clients
+
+| # | Product | Stack | What it ships (UX model, parallelism, review, approvals) | Source |
+|---|---|---|---|---|
+| 9.1.1 | Claude Code desktop ("Code" tab) | Electron (**unverified** — commentary, no Anthropic engineering statement found) | Sessions sidebar; git-worktree isolation per session at `<project>/.claude/worktrees/`, `.worktreeinclude`; diff viewer with line comments and a "Review code" pass; tabbed browser pane the agent drives to verify its work; terminal pane; cloud and SSH sessions; permission modes Manual / Accept edits / Plan / Auto / Bypass; context and plan usage ring; cross-session messaging | https://code.claude.com/docs/en/desktop ; stack lead: https://www.dbreunig.com/2026/02/21/why-is-claude-an-electron-app.html |
+| 9.1.2 | OpenAI Codex app (macOS first) | not documented in the pages read | Threads per project; built-in worktrees; inline diff comments or open in own editor; skills; scheduled automations (local, run only while the laptop is on); review pass before a PR; cloud tasks | https://openai.com/index/introducing-the-codex-app/ ; https://developers.openai.com/codex/app/worktrees |
+| 9.1.3 | Cursor 3.0 (2026-04-02) | VS Code fork (Electron) | "Agents Window": many agents across local, worktree, cloud and SSH; `/worktree`, `/best-of-n` (one task, several models, compared diffs); Design Mode (point at UI in a browser view); agent tabs in a grid; plans as files. **unverified** — cursor.com returned HTTP 403, facts come from cached quotes | https://cursor.com/changelog/3-0 |
+| 9.1.4 | Zed agent panel | native Rust, GPUI | Threads sidebar; ACP external agents (Claude Code, Codex, Gemini CLI) render into the same UI; `AgentDiffPane` multi-buffer review with accept/reject per hunk; per-tool allow/deny/confirm profiles | https://zed.dev/docs/ai/agent-panel ; https://zed.dev/docs/ai/external-agents ; https://zed.dev/acp |
+| 9.1.5 | Devin Desktop (ex-Windsurf, renamed 2026-06-02) | VS Code fork | "Agent Command Center" board/list of sessions, PRs, waiting tasks; "Spaces" share context and worktrees | https://cognition.com/blog/introducing-devin-desktop ; https://devin.ai/pricing |
+| 9.1.6 | Google Antigravity 2.0 (I/O 2026-05-19) | VS Code fork | Manager view with up to 5 parallel agents; Artifacts (plans, screenshots, browser recordings) as the unit of review, with feedback attached to the artifact; scheduled background tasks | https://developers.googleblog.com/build-with-google-antigravity-our-new-agentic-development-platform/ ; https://antigravity.google/product/antigravity-ide/ ; https://antigravity.google/blog/google-io-2026 |
+| 9.1.7 | JetBrains Air (2026-09-22) | IntelliJ platform, Fleet lineage (**unverified** framing) | One dashboard running Codex, Claude Agent, Gemini CLI and Junie at once, more over ACP; tasks local, in Docker or in worktrees | https://www.jetbrains.com/air/ides/ ; lead: https://www.theregister.com/software/2026/03/10/jetbrains-air-agentic-ide-built-on-abandoned-fleet/ |
+| 9.1.8 | Warp | native Rust, GPU terminal; source public (MIT/AGPLv3) | Terminal-native agent mode; Claude Code, Codex, Gemini CLI, OpenCode as first-class agents; per-command approval, directory-scoped autonomy, secret redaction; "Oz" cloud orchestrator | https://www.warp.dev/ai ; https://www.warp.dev/agents |
+| 9.1.9 | Kiro (AWS) | Code OSS fork | Spec-driven: `requirements.md` → `design.md` → `tasks.md` committed before code. GA date and pricing **unverified** | lead: https://www.developersdigest.tech/blog/aws-kiro-developer-guide-2026 |
+| 9.1.10 | Goose desktop (Block, AAIF) | Electron over a Rust core | Chat UI, 70+ MCP extensions, many providers; already in R§1 row "Goose" | https://github.com/block/goose |
+| 9.1.11 | Conductor | "native macOS app" per vendor; stack not documented | Many Claude Code / Codex sessions, each in its own worktree with branch, terminal, diff and review; bring-your-own subscription | https://docs.conductor.build/ |
+| 9.1.12 | Nimbalyst (ex-Crystal, 2026-02) | desktop macOS/Windows/Linux, MIT | Parallel agents in worktrees; visual workspace (markdown, mockups, diagrams); task tracking; mobile companion | https://github.com/nimbalyst/nimbalyst ; https://github.com/stravu/crystal |
+| 9.1.13 | Sculptor (Imbue) | open source; Apple Silicon macOS + Linux | One container per agent (moved off plain worktrees); Pairing Mode syncs an agent's live work into the user's IDE; "CI Babysitter" | https://imbue.com/blog/sculptor-announce ; https://github.com/imbue-ai/sculptor |
+| 9.1.14 | Factory desktop | native desktop app, framework not documented | Sidebar of concurrent Droid sessions on persistent machines; inline preview of outputs with point-and-comment feedback; BYOK incl. Ollama | https://factory.ai/news/working-with-droid-in-the-desktop-app |
+| 9.1.15 | Xcode 26.3 (2026-02) | native | Agentic coding with the Claude Agent SDK and Codex inside Xcode; Xcode exposes its own capabilities over MCP | https://www.apple.com/newsroom/2026/02/xcode-26-point-3-unlocks-the-power-of-agentic-coding/ |
+
+Not desktop GUIs (checked, excluded from the design's comparison): GitHub Copilot agent mode and coding agent (IDE extension + cloud PRs, https://docs.github.com/copilot/concepts/agents/coding-agent/about-coding-agent), Jules (cloud web app, https://jules.google/), Amp, Cline (editor extensions). Roo Code archived 2026-05-15 (**unverified** date).
+
+### 9.2 What the field converged on, where it is weak
+
+- **Table stakes (≥ 4 clients):** a sidebar or board of concurrent sessions (9.1.1–9.1.7, 9.1.11, 9.1.14); worktree or container isolation per session (9.1.1–9.1.3, 9.1.5, 9.1.7, 9.1.11–9.1.13); diff review with per-file or per-hunk accept and line comments (9.1.1–9.1.4); a plan / read-only mode (9.1.1, 9.1.3, 9.1.9); MCP for tools (9.1.1, 9.1.4, 9.1.8, 9.1.10, 9.1.15); cloud or remote continuation (9.1.1–9.1.3, 9.1.6, 9.1.8).
+- **Differentiators worth taking:** an agent-driven browser that verifies UI work (9.1.1, 9.1.3 Design Mode); ACP host that renders any agent in one native UI (9.1.4, 9.1.7); artifacts as the unit of review (9.1.6); spec files committed before code (9.1.9); comments on a rendered output rather than prose (9.1.14); best-of-n across models (9.1.3).
+- **Stack:** of the fifteen clients, only Zed and Warp (Rust, own GPU UI) and Xcode are documented as native; the rest are Electron or VS Code forks, or undocumented. No surveyed agent client is documented as SwiftUI. Reference native macOS apps: Ghostty (Swift/AppKit shell over a Zig core, https://ghostty.org/docs/about), Tower (https://www.git-tower.com/blog/developing-for-the-desktop-tower), Nova (https://nova.app/).
+- **Complaints (all leads, unverified):** approval fatigue — reflexive approval of nearly every prompt (https://www.developersdigest.tech/blog/approval-fatigue-agent-security-bug); stale worktrees filling disks, one report of 256 worktrees / 28 GB (https://www.gitkraken.com/blog/every-ai-agent-you-add-leaves-something-behind-to-clean-up); Electron/fork memory overhead (https://www.morphllm.com/comparisons/cursor-vs-vscode); billing-model churn (https://www.nxcode.io/resources/news/cursor-ai-pricing-plans-guide-2026). Already confirmed for Codex in R§1: "Desktop SIGKILL on update" (openai/codex#30359).
+
+### 9.3 Rust↔Swift toolchain
+
+| # | Fact | Source (checked 2026-09-28) |
+|---|---|---|
+| 9.3.1 | UniFFI newest 0.32.2, published 2026-09-23; proc-macro `#[uniffi::export]` is the maintained path, UDL legacy | https://crates.io/crates/uniffi ; https://github.com/mozilla/uniffi-rs/blob/main/CHANGELOG.md |
+| 9.3.2 | UniFFI maps Rust `async fn` to Swift `async` with `async_runtime = "tokio"`; one lazily created global runtime serves every such future | https://mozilla.github.io/uniffi-rs/latest/swift/overview.html ; https://mozilla.github.io/uniffi-rs/latest/internals/async-overview.html |
+| 9.3.3 | Foreign (Swift-implemented) traits, including async methods, are supported | https://mozilla.github.io/uniffi-rs/latest/foreign_traits.html |
+| 9.3.4 | Swift 6 `Sendable` support in generated code is partial | https://github.com/mozilla/uniffi-rs/issues/2633 |
+| 9.3.5 | swift-bridge newest 0.1.59, 2026-01-06 — no release in 8 months, no async foreign-trait story; BoltFFI is pre-1.0 and its speed claims are unbenchmarked (**unverified**) | https://crates.io/crates/swift-bridge ; https://github.com/boltffi/boltffi |
+| 9.3.6 | Production pattern: Rust → UniFFI → prebuilt versioned XCFramework consumed as an SPM `binaryTarget`: Element X (`matrix-rust-components-swift`), Bitwarden (`sdk-internal/crates/bitwarden-uniffi/swift`), Firefox (`application-services` megazord) | https://github.com/element-hq/matrix-rust-components-swift ; https://github.com/bitwarden/sdk-internal/tree/main/crates/bitwarden-uniffi/swift ; https://github.com/mozilla/application-services/blob/main/megazords/ios-rust/build-xcframework.sh |
+| 9.3.7 | Pitfall: an XCFramework built without an explicit macOS deployment target inherits the build machine's version | https://github.com/matrix-org/matrix-rust-sdk/issues/6750 |
+| 9.3.8 | matrix-rust-sdk's timeline streams list changes as diffs (`VectorDiff`) from the `eyeball-im` crate — the model for a Rust-owned list with a Swift renderer. eyeball-im newest 0.9.1, 2026-09-14 | https://crates.io/crates/eyeball-im ; https://codeberg.org/jplatte/eyeball |
+| 9.3.9 | Swift `AsyncStream` backpressure: SE-0406 | https://github.com/apple/swift-evolution/blob/main/proposals/0406-async-stream-backpressure.md |
+| 9.3.10 | Xcode 26 new app targets default to `SWIFT_DEFAULT_ACTOR_ISOLATION=MainActor` and approachable concurrency (**unverified** — secondary summaries of the Swift 6.2 notes) | lead: https://www.massicotte.org/blog/mainactor-by-default/ |
+| 9.3.11 | macOS 26 SwiftUI: Liquid Glass, floating `NavigationSplitView` sidebar, `.backgroundExtensionEffect()`; WWDC25 adds SwiftUI `WebView`/`WebPage`, `TextEditor` over `AttributedString`, a SwiftUI Instruments template | https://developer.apple.com/videos/play/wwdc2025/256/ ; https://developer.apple.com/videos/play/wwdc2025/323/ ; https://developer.apple.com/videos/play/wwdc2025/280/ |
+| 9.3.12 | WWDC26 (macOS 27): `@State` becomes a macro (source-breaking for defaults set in `init`), `.reorderable()`, toolbar overflow APIs, revised Liquid Glass | https://developer.apple.com/videos/play/wwdc2026/269/ |
+| 9.3.13 | MarkdownUI is in maintenance mode, successor Textual 0.5.0 (2026-06-15); swift-markdown is a parser only | https://github.com/gonzalezreal/swift-markdown-ui ; https://swiftpackageindex.com/gonzalezreal/textual ; https://github.com/swiftlang/swift-markdown |
+| 9.3.14 | CodeEditSourceEditor states it is not ready for production; STTextView (TextKit 2) is the maintained AppKit text view | https://github.com/CodeEditApp/CodeEditSourceEditor ; https://github.com/krzyzanowskim/STTextView |
+| 9.3.15 | SwiftTerm: pure-Swift VT100/xterm emulator used in shipped apps; libghostty embeddable only through young community wrappers | https://github.com/migueldeicaza/SwiftTerm ; https://github.com/termio-sh/libghostty-swift |
+| 9.3.16 | Hardened Runtime is required for notarization; App Sandbox is optional outside the Mac App Store | https://developer.apple.com/documentation/security/hardened-runtime ; lead: https://lapcatsoftware.com/articles/hardened-runtime-sandboxing.html |
+| 9.3.17 | Sparkle 2.10.0, MIT, EdDSA-signed appcasts | https://sparkle-project.org/ ; https://github.com/sparkle-project/Sparkle |
+| 9.3.18 | `ASWebAuthenticationSession` for OAuth; macOS pitfall: `start()` returns true with no UI when the presentation anchor is wrong | https://developer.apple.com/documentation/authenticationservices/aswebauthenticationsession ; https://developer.apple.com/forums/thread/808304 |
+| 9.3.19 | swift-snapshot-testing supports Swift Testing | https://github.com/pointfreeco/swift-snapshot-testing |
+
+### 9.4 cox facts the desktop design rests on (verified in code 2026-09-28)
+
+| # | Fact | Where |
+|---|---|---|
+| 9.4.1 | `Submission` has 15 variants and `Event` 23; `docs/design/protocol.md` still says 9 and 19 | `crates/cox-protocol/src/types.rs:840`, `:949` |
+| 9.4.2 | `Session::events()` is a bounded channel of 256 and `emit` awaits `send`: a consumer that stops draining stalls the core | `crates/cox-core/src/session.rs:409`, `:536`, `:574` |
+| 9.4.3 | `submit(UserTurn)` runs the whole turn; approvals and interrupts go through another clone | `crates/cox-core/src/session.rs:718-740`; `crates/cox/src/run.rs:310` |
+| 9.4.4 | `UserTurn.attachments` is ignored by the core | `crates/cox-core/src/session.rs:739` |
+| 9.4.5 | The todo list reaches surfaces only as text: `ToolResult` has no structured field, TUI and ACP each re-parse it | `crates/cox-tools/src/todo.rs:74-91`; `crates/cox-tui/src/status.rs:450`; `crates/cox-acp/src/map.rs:156` |
+| 9.4.6 | `ask_user` bypasses `Event`/`Submission` through an mpsc side channel | `crates/cox-tools/src/ask_user.rs:14-35` |
+| 9.4.7 | `SetEffort` and `SetPermissionMode` apply the change but report it only as a `Notice` string | `crates/cox-core/src/session.rs:761-780` |
+| 9.4.8 | Session assembly lives in the binary (`session::open`, takes `&Cli`, returns `anyhow`, warns with `eprintln!`); `cox acp` bypasses it and so has no MCP, skills, hooks or checkpoints | `crates/cox/src/session.rs:54-282`; `crates/cox/src/acp_cmd.rs:22-60` |
+| 9.4.9 | Instruction files are not in the prompt: `cox-core` sends a one-line stub; `cox_ext::instructions::load` is called only by `cox ext list` | `crates/cox-core/src/context.rs:15-16`, `:131-134`; `crates/cox/src/ext_cmd.rs:105` |
+| 9.4.10 | macOS shell sandbox is `sandbox-exec` with a Seatbelt profile, which an App-Sandboxed host cannot nest | `crates/cox-sandbox/src/sandbox/seatbelt.rs:29` |
+| 9.4.11 | MCP OAuth uses a loopback `127.0.0.1:0` redirect with a surface-supplied `Prompt` callback; tokens in the keyring | `crates/cox-mcp/src/auth.rs:179`, `crates/cox-mcp/src/client.rs:52-61` |
+| 9.4.12 | Plugin UI is a closed serde `Widget` tree (Text, List, Table, KeyValue, Gauge, Stack, Block) with theme `StyleToken`s; only cox-tui draws it | `crates/cox-plugin-api/src/ui.rs:12-112`; `crates/cox-tui/src/plugin_ui.rs` |
+| 9.4.13 | `cox-store` already answers a sessions sidebar: `list_sessions`, `session_info`, FTS `rollout_search`, `user_prompts`, `usage_for_session`, `sessions_tree`, `project_totals` | `crates/cox-store/src/fts.rs:105-163`; `crates/cox-store/src/queries.rs` |
+| 9.4.14 | No workspace crate builds a `staticlib`/`cdylib`; no uniffi or Swift anywhere | workspace `Cargo.toml` files |
+
+### 9.5 Swift dependencies for the macOS client (checked 2026-09-28, GitHub REST API and each repository's own README/LICENSE)
+
+The creator's rule (A67): take the most used, best-maintained fit; if none fits, write our own as a separate package with its own card.
+
+| # | Need | Candidate | Stars · latest release · last push · licence | Verdict |
+| --- | --- | --- | --- | --- |
+| 9.5.1 | Updates outside the App Store | https://github.com/sparkle-project/Sparkle | 9 773 · 2.10.0 (2026-09-13) · 2026-09-27 · MIT (API reports NOASSERTION; the `LICENSE` text is MIT) | Take (T37.32) |
+| 9.5.2 | Terminal view (M2) | https://github.com/migueldeicaza/SwiftTerm | 1 709 · v1.19.0 (2026-08-18) · 2026-09-27 · MIT | Take in M2; next candidate hbang/NewTerm last pushed 2024-04-01 |
+| 9.5.3 | View snapshots | https://github.com/pointfreeco/swift-snapshot-testing | 4 347 · 1.19.6 (2026-09-21) · 2026-09-21 · MIT | Take, tests only (T37.19) |
+| 9.5.4 | Lint | https://github.com/realm/SwiftLint + https://github.com/SimplyDanny/SwiftLintPlugins | 19 751 / 85 · 0.65.1 (2026-08-21) both · MIT | Take; SwiftLint's README names SwiftLintPlugins as its build-tool plugin package (T37.18) |
+| 9.5.5 | Format | `swift-format` (https://github.com/swiftlang/swift-format, 604.0.0, 2026-09-16, Apache-2.0) | ships in the Xcode toolchain: `xcrun --find swift-format` resolves inside `XcodeDefault.xctoolchain` (Swift 6.4, this machine) | Native, no dependency |
+| 9.5.6 | Ordered keyed store | https://github.com/apple/swift-collections | 4 507 · 1.7.1 (2026-09-25) · 2026-09-25 · Apache-2.0 | Take, `OrderedDictionary` for the timeline store (T37.16) |
+| 9.5.7 | Global hotkey | https://github.com/sindresorhus/KeyboardShortcuts | 2 716 · 3.1.0 (2026-09-11) · MIT | Not needed in M1; candidate for M2's menu-bar extra |
+| 9.5.8 | Keychain | https://github.com/kishikawakatsumi/KeychainAccess | 8 253 · v4.2.2 (2021-03-01) · last push 2024-05-31 | Reject (unmaintained); Security framework directly (T37.30) |
+| 9.5.9 | Cross-block selection | SwiftUI `textSelection(_:)` | Apple docs: "apply this method to an individual text view, or to a container to make each contained text view selectable" — each view on its own, not one drag across views | Not enough alone |
+| 9.5.10 | Cross-block selection | https://github.com/gonzalezreal/textual | 889 · 0.5.0 · 2026-06-15 · MIT; README: "Native text selection with proper copy-paste support", selection per document | Rejected by spike T37.37 (§9.5.13): no drag across separate block views, copy is plain text + HTML, no clamp |
+| 9.5.11 | Cross-block selection | https://github.com/krzyzanowskim/STTextView | 1 595 · 2.4.1 (2026-09-08) · 2026-09-26 · `LICENSE.md`: GPLv3 or a paid commercial licence | Reject: a GPL-only dependency would take the royalty-free option (A68) away from the app |
+| 9.5.12 | Markdown view | https://github.com/gonzalezreal/swift-markdown-ui | 3 932 · 2.4.1 (2024-10-13) · description: "Maintenance mode — new development in Textual" | Reject; markdown comes from Rust (`StyledDoc`, T37.7) anyway |
+
+#### 9.5.13 Cross-block selection spike (T37.37, measured 2026-09-28)
+
+Candidates: Textual 0.5.0 (https://github.com/gonzalezreal/textual, tag `0.5.0` = commit `01b51875`, released 2026-06-15, `LICENSE` MIT; its dependencies resolve to swiftui-math 0.1.0 and swift-concurrency-extras 1.4.1, both MIT per the GitHub API; all checked 2026-09-28) in the two shapes it allows — one Textual view per block in a `LazyVStack` (the shape T37.23 needs, tool cards as SwiftUI views) and the whole transcript as one `StructuredText` (its only cross-block shape) — against our own TextKit 2 view: one `NSTextView` over the whole transcript, tool cards as view-backed `NSTextAttachment`s. Same 2 000-block fixture (40 % prose with inline Markdown, 20 % each code, diff, tool card). Code, fixture and the tests that print every number: `desktop/macos/Spikes/Selection/` (`swift test --no-parallel --package-path desktop/macos/Spikes/Selection 2>&1 | grep MEASURE`).
+
+| Measurement (budget) | Textual, one view per block | Textual, one document | Own TextKit 2 view |
+| --- | --- | --- | --- |
+| One drag, prose → code → prose (blocks 0→2) | **Fails**: selection stays in block 0; each `StructuredText`/`InlineText` installs its own selection model and coordinator (`Sources/Textual/StructuredText/StructuredText.swift:121-122`) | Crosses blocks 0–6; code joins only with `.textual.overflowMode(.wrap)` — the default `.scroll` gives a code block its own selection and drops its text from the document's (`StructuredText/Style/Overflow.swift:73-76`); a tool card can only be Markdown, not a view | **Passes**: blocks [0, 1, 2]; drag diff → tool card → prose selects [3, 4, 5] |
+| Copy keeps block order as Markdown | **Fails** (one block only) | **Fails**: order kept, but `copy(_:)` is private and writes plain text and HTML (`Internal/TextInteraction/AppKit/NSTextInteractionView.swift:277-290`); no fences, no `**` | **Passes**: a `diff` fence, then the tool card's `> **bash** …` line, then `Block 5 …`, via `writeSelection(to:types:)` |
+| `cross_block_selection = false` clamps to one block | Always clamped; cannot be turned on | **Fails**: `.textual.textSelection(_:)` takes SwiftUI's `TextSelectability` (on/off); the selection model is internal | **Passes**: `setSelectedRanges(_:affinity:stillSelecting:)` clamps to the block the drag started in: 0→2 gives [0], 2→0 gives [2] |
+| First frame, 2 000 blocks (inside DT§1's 400 ms cold launch) | 107 ms | **5 517–5 849 ms** | 131–133 ms, of which about 126 ms builds the attributed string from Markdown (the app gets spans from Rust, T37.7); layout + draw 6 ms |
+| Scroll, 1 500 frames × 40 pt, 2 000 blocks: p50 / p99 / max, frames > 16.7 ms, hitch ratio (DT§1: ≤ 1 %) | 2.6 / 27.2–27.5 / 33.4–33.7 ms, 166–168, **3.4–3.5 %** | 123–125 / 130–136 / 175–179 ms, 1 500, **640–653 %** | 1.4 / 2.6–2.7 / 8.7–9.2 ms, 0, 0 % |
+| Same at 10 000 blocks (DT§1 scroll budget) | 2.7 / 27.5–27.7 / 34.2–34.4 ms, 166, **3.4–3.6 %**; first frame 105 ms | not run (2 000 already misses) | 1.4 / 2.6 / 4.2–11.5 ms, 0, 0 %; first frame **629–633 ms**, 623–627 ms of it building the string |
+
+How it was measured. Swift Testing on an Apple M3 Max (Mac15,9, 64 GB), macOS 27.0, Xcode 27.0 / Swift 6.4, on a shared machine (load average 6–13); two full runs, ranges above. The DT§1 budgets are for an M1 MacBook Air with 8 GB, so these numbers rank the engines; they are not the gate — T37.23 runs the gate with XCTest metrics.
+- Automated, headless: a borderless window ordered in at (−20 000, −20 000). Each drag is real `NSEvent`s through `NSWindow.sendEvent` (mouse down, 8 drags, mouse up); both engines handle `mouseDragged` per event rather than in their own tracking loop, so this is the path a hand drag takes. Selection is read from `NSTextView.selectedRange()` and from Textual's internal model (`@testable import`). Copy is read from `writeSelection(to:types:)` into a private pasteboard, and for Textual from the internal `Formatter` its `copy(_:)` uses; the general pasteboard is untouched.
+- Frame time is main-thread layout + draw + `CATransaction.flush()` per 40 pt step, timed with `CACurrentMediaTime`; render-server and GPU time and display sync are not in it. The hitch ratio is time over 16.7 ms divided by the frames' budgeted time, a stand-in for `XCTOSSignpostMetric.scrollDecelerationMetric`.
+- Not measured headlessly: a hand drag with autoscroll past the viewport edge, trackpad momentum, Liquid Glass compositing, VoiceOver reading order, and memory (the process footprint delta depends on test order: 37–277 MB); these fall to T37.23's UI test and its `XCTMemoryMetric`.
+- Risks for the TextKit 2 view: building the whole string at once misses the launch budget at 10 000 blocks, so it must build from Rust spans and append as the timeline grows; TextKit 2 estimates the height of text it has not laid out (139 885 pt for 2 000 blocks after 60 000 pt of scrolling), so the scroller can jump — not measured here.
+
+Verdict: Textual fails the drag in the shape the transcript needs, the Markdown copy and the clamp, and its one cross-block shape misses the first-frame and scroll budgets by more than 10×. The TextKit 2 view passes all four, so it becomes its own package `desktop/macos/Packages/CoxTranscriptText` (T37.37's rule); Textual is not a dependency.
+
+### 9.6 ACP host: the four agents' launch lines and the ACP surface cox consumes (checked 2026-09-29, input for DT§3.3.1)
+
+Scope: what `cox-app` needs to spawn Claude Code's, Codex's, Gemini CLI's and Cursor's ACP agents as top-level sessions (P52, T52.1), and which ACP messages it must fold. Registry rows come from the npm registry API (`https://registry.npmjs.org/<package>`, `dist-tags.latest`, that version's `bin`, `engines`, `dependencies`, `deprecated`); repository rows from the tagged release's own files. The ACP schema rows are read from the crate source `Cargo.lock` resolves (`agent-client-protocol` 2.2.0, `agent-client-protocol-schema` 1.9.1). Cited below as R9.6.n.
+
+#### 9.6.1 Launch facts per agent
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 9.6.1.1 | Claude Code's ACP adapter is npm `@agentclientprotocol/claude-agent-acp`, latest 0.84.0 (published 2026-09-28), bin `claude-agent-acp`, `engines.node` `>=22`, Apache-2.0; it depends on `@anthropic-ai/claude-agent-sdk` 0.3.284 and `@agentclientprotocol/sdk` 1.5.1 | https://registry.npmjs.org/@agentclientprotocol%2Fclaude-agent-acp ; release v0.84.0 at https://github.com/agentclientprotocol/claude-agent-acp/releases/tag/v0.84.0 |
+| 9.6.1.2 | The older names are deprecated: `@zed-industries/claude-code-acp` (0.16.2) and `@zed-industries/claude-agent-acp` (0.23.1) both carry "This package has been renamed to @agentclientprotocol/claude-agent-acp" | https://registry.npmjs.org/@zed-industries%2Fclaude-code-acp ; https://registry.npmjs.org/@zed-industries%2Fclaude-agent-acp |
+| 9.6.1.3 | `claude-agent-acp` with no arguments speaks ACP on stdio (stdout is the protocol; logs go to stderr, or to `$CLAUDE_AGENT_LOGS/agent.log`); `--cli` runs the wrapped Claude Code CLI instead; `--version` prints the adapter version | `src/index.ts` at v0.84.0: https://github.com/agentclientprotocol/claude-agent-acp/blob/v0.84.0/src/index.ts |
+| 9.6.1.4 | The Claude Code binary it drives is the Agent SDK's platform-specific optional dependency (or `$CLAUDE_CODE_EXECUTABLE`); nothing else to install | `src/acp-agent.ts` `claudeCliPath()` at v0.84.0: https://github.com/agentclientprotocol/claude-agent-acp/blob/v0.84.0/src/acp-agent.ts |
+| 9.6.1.5 | `--hide-claude-auth` hides the claude.ai login method from `initialize` and refuses any turn a claude.ai subscription would pay for; `ANTHROPIC_API_KEY`, an `apiKeyHelper` or a Console-issued key pass | `src/hide-claude-auth.ts` at v0.84.0: https://github.com/agentclientprotocol/claude-agent-acp/blob/v0.84.0/src/hide-claude-auth.ts |
+| 9.6.1.6 | Anthropic: "Unless previously approved, Anthropic does not allow third party developers to offer claude.ai login or rate limits for their products, including agents built on the Claude Agent SDK." Branding: "Claude Agent" is allowed; "Claude Code" or "Claude Code Agent" is not | https://code.claude.com/docs/en/agent-sdk/overview (Note and "Branding guidelines") |
+| 9.6.1.7 | Codex's ACP adapter is npm `@agentclientprotocol/codex-acp`, latest 2.0.0 (published 2026-09-28), bin `codex-acp`, Apache-2.0; it depends on `@openai/codex` `^0.158.0`, so the Codex binary comes with it (`CODEX_PATH` overrides) | https://registry.npmjs.org/@agentclientprotocol%2Fcodex-acp ; README at https://github.com/agentclientprotocol/codex-acp (release v2.0.0) |
+| 9.6.1.8 | `@zed-industries/codex-acp` (0.16.0) is deprecated: "replaced by @agentclientprotocol/codex-acp" | https://registry.npmjs.org/@zed-industries%2Fcodex-acp |
+| 9.6.1.9 | `codex-acp` is "a stdio ACP agent server"; install `npm install -g @agentclientprotocol/codex-acp` or run `npx -y @agentclientprotocol/codex-acp`; API-key auth reads `CODEX_API_KEY`, then `OPENAI_API_KEY`; ChatGPT login is a browser method hidden by `NO_BROWSER=1`; `INITIAL_AGENT_MODE` is one of `read-only`, `workspace-write`, `agent`, `agent-full-access` | README "Installation", "Authentication", "Runtime options": https://github.com/agentclientprotocol/codex-acp#readme |
+| 9.6.1.10 | Gemini CLI is npm `@google/gemini-cli`, latest 0.61.0 (published 2026-09-24), bin `gemini`, `engines.node` `>=20`; also `brew install gemini-cli` | https://registry.npmjs.org/@google%2Fgemini-cli ; README at v0.61.0: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/README.md |
+| 9.6.1.11 | Gemini CLI's ACP mode is `gemini --acp` (JSON-RPC 2.0 over stdio); it lists `loadSession`, `setSessionMode` and `unstable_setSessionModel`, and a file-system proxy through the client | `docs/cli/acp-mode.md` at v0.61.0: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/docs/cli/acp-mode.md |
+| 9.6.1.12 | Gemini CLI's headless auth is the `GEMINI_API_KEY` environment variable (or Vertex AI) | `docs/get-started/authentication.mdx` at v0.61.0: https://github.com/google-gemini/gemini-cli/blob/v0.61.0/docs/get-started/authentication.mdx |
+| 9.6.1.13 | Cursor's ACP mode is `agent acp` (protocol version 1); auth by `agent login`, `--api-key`/`CURSOR_API_KEY` or `--auth-token`/`CURSOR_AUTH_TOKEN`; methods `session/new`, `session/load`, `session/prompt`, `session/request_permission`, `session/cancel`; modes `agent`, `plan`, `ask` | https://cursor.com/docs/cli/acp (re-checked; R§4.3.8 first checked it 2026-09-26) |
+| 9.6.1.14 | Cursor CLI installs with `curl https://cursor.com/install -fsS \| bash` (not npm), binary `agent`, "will try to auto-update by default" | https://cursor.com/docs/cli/installation |
+| 9.6.1.15 | cox's Cursor plugin declares `command = "agent"`, `args = ["acp"]`, `mode = "acp"`, `key_env = "CURSOR_API_KEY"` | `plugins/cursor/plugin.toml` (T35.6, T35.13) |
+
+#### 9.6.2 The ACP surface cox folds (crate source, `agent-client-protocol-schema` 1.9.1)
+
+| # | Fact | Where |
+|---|---|---|
+| 9.6.2.1 | Stable `session/update` kinds: `user_message_chunk`, `agent_message_chunk`, `agent_thought_chunk`, `tool_call`, `tool_call_update`, `plan`, `available_commands_update`, `current_mode_update`, `config_option_update`, `session_info_update`, `usage_update`. `plan_update`, `plan_removed`, `notice`, `compaction_update` and `compaction_summary_chunk` exist only behind `unstable_*` features; the enum is `#[non_exhaustive]` | `src/v1/client.rs:99-169`; https://crates.io/crates/agent-client-protocol-schema/1.9.1 ; https://agentclientprotocol.com/protocol/prompt-turn |
+| 9.6.2.2 | `usage_update` carries `used` (tokens in context), `size` (window) and an optional cumulative `cost { amount, currency }`; per-turn `PromptResponse.usage` is unstable (`unstable_end_turn_token_usage`) | `src/v1/client.rs:609-629`, `:669-673`; `src/v1/agent.rs:3114-3137` |
+| 9.6.2.3 | A prompt ends with `stopReason` `end_turn`, `max_tokens`, `max_turn_requests`, `refusal` or `cancelled` | `src/v1/agent.rs:3182-3201` |
+| 9.6.2.4 | Tool-call content is `content`, `diff` or `terminal` | `src/v1/tool_call.rs:546-557` |
+| 9.6.2.5 | Agent methods include `session/load` (only when `agentCapabilities.loadSession`), `session/set_mode`, `session/set_config_option`; `session/fork` is behind `unstable_session_fork` | `src/v1/agent.rs:3813-3818`, `:4766-4787`; crate `Cargo.toml` `[features]` |
+| 9.6.2.6 | `agent-client-protocol` 2.2.0 has `default = []`, and cox enables no `unstable*` feature, so cox's client sees only the stable kinds in 9.6.2.1 | `agent-client-protocol-2.2.0/Cargo.toml` `[features]`; `Cargo.toml:145`; `crates/cox-acp/Cargo.toml:21`; `Cargo.lock:32-33` |
+| 9.6.2.7 | cox's client already advertises `fs.readTextFile` and `fs.writeTextFile`, and `terminal` only when sandboxed; the subagent driver spawns one process and one `session/new` per turn and answers every `Ask` with a refusal (`RefuseAsk`) | `crates/cox-acp/src/client.rs:84-90`; `crates/cox-session/src/external_agents.rs:274-340` |
+| 9.6.2.8 | The host wrap takes `[sandbox] network`, whose default is `false`, from the session config | `crates/cox-session/src/sandbox.rs:13-21`; `crates/cox-protocol/src/config.rs:858-872` |
+
+#### 9.6.3 Unverified
+
+- Each agent keeps state under the user's home: `~/.claude`, `~/.codex`, `~/.gemini`, `~/.cursor`. The sandbox denies writes outside the workspace (T35.2's check), so an agent may fail to save its session or login state there. **Unverified**: no vendor page or live run was checked for this. T52.4's live check settles it.
+- An unknown `sessionUpdate` tag (a newer agent's kind, or an unstable one cox does not enable) may fail deserialization in the SDK instead of arriving as an unknown value. **Unverified**: T52.3's fixture test settles it.
+
+## 10. Windows core build and desktop client — survey 2026-09-29 (input for P57, P58, A127)
+
+Scope: what stops the workspace from building on Windows today, and the stack the creator chose for the Windows desktop client (A127: WinUI 3 + C# over `cox-ffi`, bindings from uniffi-bindgen-cs, M1 parity, no sandbox per D7). Repository rows are read at `efd69625`. Registry rows come from crates.io, the NuGet flat container (`https://api.nuget.org/v3-flatcontainer/<id>/index.json`) and the .NET release index. Cited below as R10.n.
+
+### 10.1 cox on Windows today (repository at `efd69625`)
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 10.1.1 | CI drops Windows from the shared matrix on purpose: "cox is Unix-only (a pty through nix, std::os::unix in cox-tools; no Windows release target)"; the shared workflow already has a `windows-latest` / `x86_64-pc-windows-msvc` row | `.github/workflows/ci.yml:34`; `pyrlyn/infra/.github/workflows/ci-rust.yml@189816ac` line 128 |
+| 10.1.2 | cargo-dist 0.32.0 builds four targets, none for Windows | `dist-workspace.toml:13` |
+| 10.1.3 | `nix` 0.31 is an unconditional dependency of `cox-app`, `cox-ext`, `cox-session` and `cox-tools`; only `cox-sandbox` already gates it (`cfg(target_os = "linux")`, with landlock and seccompiler) | `Cargo.toml:107`; each crate's `Cargo.toml` |
+| 10.1.4 | `bash` runs on a pty from `nix::pty::openpty`, starts the child with `setsid`, kills with `killpg`, and polls and sets termios through nix; it imports `std::os::unix::process::{CommandExt, ExitStatusExt}` | `crates/cox-tools/src/bash/mod.rs` |
+| 10.1.5 | The shell is looked up only in `SHELL_DIRS` (`/bin`, `/usr/bin`, `/usr/local/bin`, `/opt/homebrew/bin`), not on `PATH`; the `Shell` enum already has a `Pwsh` variant; the risk classifier parses commands with the tree-sitter bash grammar | `crates/cox-tools/src/bash/mod.rs:92`; `crates/cox-tools/src/bash/classify.rs` |
+| 10.1.6 | Process groups (`process_group(0)`, `killpg`) are the kill path in hooks, the login-shell probe, the lsp server, external agents, the app terminal and the status line | `crates/cox-ext/src/hooks.rs:163-183`; `crates/cox-session/src/env.rs`; `crates/cox-tools/src/lsp/server.rs:70`; `crates/cox-session/src/external_agents.rs:199-213`; `crates/cox-app/src/terminal.rs`; `crates/cox/src/status_line.rs:97-113` |
+| 10.1.7 | The login-shell environment defaults to `/bin/zsh` (macOS) or `/bin/sh` and reads the output with `OsStringExt` | `crates/cox-session/src/env.rs:27-29` |
+| 10.1.8 | `cox_home()` is `COX_HOME`, else `home_dir()/.cox`; `home_dir()` reads `HOME`, then `USERPROFILE`, then `.` | `crates/cox-config/src/load.rs:61-68` |
+| 10.1.9 | `cox_sandbox::sandbox::backend` returns `None` off macOS and Linux; its doc says the session surface turns `None` into a notice and forces `on-request`, but no caller does: doctor reports it, the status line errors (`StatusLineError::NoSandbox`), external agents, MCP and plugins refuse to start unsandboxed, and nothing raises the approval policy | `crates/cox-sandbox/src/sandbox/mod.rs:51`; callers of `backend(` across `crates/` |
+| 10.1.10 | Already portable: the session lock uses std `File::try_lock`; `cox-mcp` has Windows branches for opening the browser and the OAuth callback; `self_update.rs:116` and a dozen tests use `PermissionsExt` or `symlink` | `crates/cox-store/src/lock.rs`; `crates/cox-mcp/src/auth.rs:265`, `elicit.rs:658`; `crates/cox/src/self_update.rs:116` |
+| 10.1.11 | Workspace dependencies that already have a Windows backend: keyring 4 (4.2.0 in `Cargo.lock`), portable-pty 0.9 (0.9.0), directories 6 | `Cargo.toml:119-120,186`; `Cargo.lock` |
+
+### 10.2 Bindings, runtime and SDK versions
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 10.2.1 | uniffi-bindgen-cs (NordSecurity, MPL-2.0, not archived): latest release `v0.11.0+v0.31.0` (2026-06-23); its root `Cargo.toml` and `main` (e10ce410eb, 2026-06-23) pin uniffi 0.31.0; install is `cargo install uniffi-bindgen-cs --git https://github.com/NordSecurity/uniffi-bindgen-cs --tag v0.11.0+v0.31.0` | https://github.com/NordSecurity/uniffi-bindgen-cs/releases/tag/v0.11.0%2Bv0.31.0 ; repository `Cargo.toml` and README |
+| 10.2.2 | The upgrade to uniffi 0.32 is open PR #176 (opened 2026-07-10, last updated 2026-09-04, mergeable); issue #183 "Update for 0.32 uniffi" (2026-08-28) is open. cox-ffi pins uniffi 0.32.2 | https://github.com/NordSecurity/uniffi-bindgen-cs/pull/176 ; https://github.com/NordSecurity/uniffi-bindgen-cs/issues/183 ; `Cargo.lock` |
+| 10.2.3 | Issue #165 (open, 2026-02-24): an async callback interface generates synchronous return types instead of `Task<T>`; fix PR #166 is open. cox-ffi's foreign trait `AppHost` has async methods (`browser_load`, `browser_text`, `browser_snapshot`) | https://github.com/NordSecurity/uniffi-bindgen-cs/issues/165 ; https://github.com/NordSecurity/uniffi-bindgen-cs/pull/166 ; `crates/cox-ffi/src/host.rs` |
+| 10.2.4 | Generated C# needs .NET 8+ (or net461) and `AllowUnsafeBlocks`; v0.11.0 generates PascalCase record properties, `LibraryImport` on .NET 8+, and async methods on records and enums | README and `CHANGELOG.md` at `v0.11.0+v0.31.0` |
+| 10.2.5 | Windows App SDK: the 1.8 line is in Maintenance and its servicing ended 2026-09-24 (last patch 1.8.12); the current stable line is 2.x, 2.0 released 2026-04-29 and serviced to 2027-04-29, latest 2.5.1 (2026-09-16) | https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/release-channels (ms.date 2026-09-24); https://github.com/microsoft/WindowsAppSDK/releases ; `https://api.nuget.org/v3-flatcontainer/microsoft.windowsappsdk/index.json` |
+| 10.2.6 | .NET 10 is LTS, latest 10.0.12 (2026-09-08), end of support 2028-11-14; .NET 11 is STS at RC1; .NET 8 LTS ends 2026-11-10 | https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/releases-index.json |
+
+### 10.3 Packaging, notifications, Mica
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 10.3.1 | WinUI 3 apps are packaged (MSIX) by default; package identity is needed for background tasks, push notifications, share targets and more; "packaged with external location" gives identity while keeping your own installer; unpackaged apps have no identity | https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/packaging/ (ms.date 2026-08-29) |
+| 10.3.2 | MSIX apps typically run in a lightweight app container with file-system and registry virtualization, which the manifest can turn off | same page |
+| 10.3.3 | Deployment is self-contained or framework-dependent; `PublishSingleFile` works only for unpackaged + self-contained; `dotnet publish -r win-x64` or `win-arm64 --self-contained` | https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/deploy-overview (ms.date 2026-09-10) |
+| 10.3.4 | App notifications: `AppNotificationBuilder` with `AddButton(new AppNotificationButton(..).AddArgument(..))`, the `AppNotificationManager.Default.NotificationInvoked` event and `Register()`; not supported when the app runs elevated | https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/app-notifications-quickstart (ms.date 2026-09-10) |
+| 10.3.5 | For unpackaged apps `Register()` registers the calling process as the COM server and takes the display name and icon from the shell; `Register(displayName, iconUri)` exists since SDK 1.2 | https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.appnotifications.appnotificationmanager.register (updated 2026-07-28) |
+| 10.3.6 | Mica needs Windows 11 (build 22000+); older builds get a solid fallback; High Contrast replaces it | https://learn.microsoft.com/en-us/windows/apps/design/style/mica (ms.date 2026-07-22) |
+
+### 10.4 Processes, pty, credentials, paths
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 10.4.1 | portable-pty 0.9.0 (MIT, 2025-02-11) uses ConPTY on Windows: `#[cfg(windows)] pub type NativePtySystem = win::conpty::ConPtySystem;` | https://crates.io/crates/portable-pty/0.9.0 ; https://github.com/wezterm/wezterm/blob/main/pty/src/lib.rs |
+| 10.4.2 | Job objects: child processes join the parent's job by default; `TerminateJobObject` ends every process in the job; `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` kills them when the last handle closes; nested jobs since Windows 8 | https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects (ms.date 2025-07-14) |
+| 10.4.3 | process-wrap 10.0.1 (2026-09-23, Apache-2.0 OR MIT, watchexec) wraps `Command` with features `job-object`, `process-group`, `process-session`, `kill-on-drop`, `tokio1`, `std`; it is not in the workspace `rust.md` | https://crates.io/crates/process-wrap/10.0.1 ; https://github.com/watchexec/process-wrap |
+| 10.4.4 | Alternatives: win32job 2.0.3 (2025-05-15, Windows only); windows-sys 0.61.2 / windows 0.62.2 (raw API); command-group 5.0.1 (2023) is superseded by process-wrap | https://crates.io/crates/win32job ; https://crates.io/crates/windows-sys ; https://crates.io/crates/command-group |
+| 10.4.5 | keyring 4.2.0 (2026-08-29): the default `v1` feature pulls `windows-native-keyring-store` 1.1.0 (2026-05-24) on `cfg(target_os = "windows")`, the Windows Credential Manager store | https://crates.io/crates/keyring/4.2.0 ; https://crates.io/crates/windows-native-keyring-store/1.1.0 |
+| 10.4.6 | Windows file names: case-insensitive names and drive letters; reserved names `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, also with an extension; the `\\?\` prefix turns off parsing (so `..` is not resolved); 8.3 short aliases; alternate data streams (`name:stream`) | https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file (ms.date 2024-08-28) |
+
+### 10.5 The shell other agents use on Windows
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 10.5.1 | Codex's default user shell on Windows is PowerShell: `pwsh` first, then Windows PowerShell, with `cmd` as the last fallback | https://github.com/openai/codex/blob/c248f6d48b97/codex-rs/shell-command/src/shell_detect.rs (about lines 262-282, 350-352) |
+| 10.5.2 | Claude Code on native Windows: Git for Windows is optional; with it the Bash tool runs Git Bash (`CLAUDE_CODE_GIT_BASH_PATH` overrides the path); without it commands run through a PowerShell tool, which also exists next to Bash; native Windows sandboxing is not supported, WSL 2 is | https://code.claude.com/docs/en/setup |
+
+### 10.6 Release and CI
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 10.6.1 | cargo-dist supports `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`, `powershell` and `msi` installers; its Windows code signing (SSL.com, Azure) covers x86_64 only | https://axodotdev.github.io/cargo-dist/book/reference/config.html |
+| 10.6.2 | GitHub's `windows-latest` runner is Windows Server 2025 with Visual Studio 2026 | https://github.com/actions/runner-images (README) |
+
+### 10.7 C# test and MVVM packages
+
+| # | Fact | Source (checked 2026-09-29) |
+|---|---|---|
+| 10.7.1 | Latest stable on NuGet: xunit.v3 4.0.1, Verify.XunitV3 33.1.5, FlaUI.UIA3 5.0.0, MSTest 4.4.1, CommunityToolkit.Mvvm 8.4.2, Microsoft.Windows.CsWinRT 2.3.1 | `https://api.nuget.org/v3-flatcontainer/<id>/index.json` for each id |
+| 10.7.2 | Verify (MIT) was last pushed 2026-09-28; FlaUI (MIT, UI Automation over UIA3) was last pushed 2026-08-13, its 5.0.0 package published 2025-02-25 | https://github.com/VerifyTests/Verify ; https://github.com/FlaUI/FlaUI |
+| 10.7.3 | WinAppDriver's last release is v1.2.99 (2021-07-01): unmaintained, so it is not a candidate | https://github.com/microsoft/WinAppDriver/releases |
+
+### 10.8 Unverified
+
+- A GUI app started from the Start menu gets the user and system `PATH` from the registry, not a login shell, so `cox-session`'s login-shell probe has no Windows counterpart. **Unverified**: no vendor page was checked; T57.5 settles what the Windows session environment is.
+- WinUI 3 controls can be rendered to PNG in a test through `RenderTargetBitmap` for snapshot tests. **Unverified**: not tried; T58.30 is the spike.
+- `AppNotificationBuilder` supports a text box input for "deny with reason" from a notification. **Unverified**: not read in the API reference; T58.24 checks it.
+- A taskbar badge (count of items waiting) is available to an unpackaged app. **Unverified**: T58.24 checks it with the packaging model T58.28 picks.
+- mise and the repository's `.github/actions/rust` composite action run on a Windows runner. **Unverified**: T57.1's first run settles it.

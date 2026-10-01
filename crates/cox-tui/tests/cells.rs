@@ -266,6 +266,7 @@ fn requested(state: &mut State, name: &str, subject: &str, risk: Risk) -> CallId
                 input: serde_json::json!({}),
                 risk,
                 subject: subject.into(),
+                segments: None,
             },
         }),
     );
@@ -294,6 +295,7 @@ fn done(state: &mut State, id: CallId, ok: bool) {
                 bytes: 0,
                 duration_ms: 8,
                 diff: None,
+                structured: None,
             },
         }),
     );
@@ -410,6 +412,7 @@ fn plan_mode_denial_renders_as_planned_line() {
                 bytes: 0,
                 duration_ms: 0,
                 diff: None,
+                structured: None,
             },
         }),
     );
@@ -455,6 +458,7 @@ fn bang_line_card_reads_as_a_shell_prompt() {
                 bytes: 0,
                 duration_ms: 3,
                 diff: None,
+                structured: None,
             },
         }),
     );

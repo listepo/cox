@@ -20,6 +20,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -29,6 +30,13 @@ CHAT, MESSAGES = "openai-chat", "anthropic-messages"
 JOBS_DIR = Path.home() / ".cache" / "cox-evals" / "tb-jobs"
 # colima's name for the macOS host inside its VM; Harbor adds no host alias.
 CONTAINER_HOST = "host.lima.internal"
+# The only hosts `preflight` talks to: it checks a server on this machine.
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+# http(s) handlers only, no proxy: a `file://` or `ftp://` URL cannot be opened.
+OPENER = urllib.request.OpenerDirector()
+for _handler in (urllib.request.HTTPHandler, urllib.request.HTTPSHandler,
+                 urllib.request.HTTPDefaultErrorHandler, urllib.request.HTTPErrorProcessor):
+    OPENER.add_handler(_handler())
 
 
 @dataclass(frozen=True)
@@ -38,7 +46,9 @@ class Provider:
     shapes: dict  # API shape -> path under `url`
     key_env: dict = field(default_factory=dict)  # API shape -> key env var
     local: bool = False  # a server on this machine: dummy key, host rewrite
-    prepare: tuple = ()  # commands that start the server and load the model
+    # Commands that start the server and load the model: plain argv, split
+    # with `shlex` and run without a shell, so no pipes, `&&` or redirects.
+    prepare: tuple = ()
 
     def base(self, shape, *, in_container):
         url = self.url + self.shapes[shape]
@@ -69,14 +79,34 @@ class Run:
 
 
 def cox_run(provider, shape, model, opts):
-    cox_provider = "anthropic" if shape == MESSAGES else ("local" if provider.local else "openai")
+    # A local server on the Messages shape gets cox's dedicated
+    # `[providers.lmstudio]` section (T30.15/T30.16), not `[providers.
+    # anthropic]` with an overridden `base_url`: it is the section this
+    # provider actually ships, it reads the loaded context back from
+    # `GET /api/v1/models` on its own, and it is the fair like-for-like
+    # path for T30.13 (R§5.3). `[providers.local]` (OpenAI Chat) stays for
+    # a server that only speaks Chat: cox's Chat wire drops tool calls
+    # (ideas.md), so that path is a fallback, never preferred.
+    if shape == MESSAGES:
+        cox_provider = "lmstudio" if provider.local else "anthropic"
+    else:
+        cox_provider = "local" if provider.local else "openai"
     argv = ["-a", "cox_evals.tbench:CoxAgent", "-m", f"{cox_provider}/{model}",
             "--ak", f"budget_usd={opts['budget_usd']}", "--ak", f"max_turns={opts['max_turns']}"]
     if opts.get("cox_bin"):
         argv += ["--ak", f"cox_bin={opts['cox_bin']}"]
+    if opts.get("repomap_budget_tokens") is not None:
+        # `--ae` is Harbor's agent env; cox reads `COX_CONTEXT_REPOMAP_BUDGET_TOKENS`
+        # as `context.repomap_budget_tokens`, so the preset needs no config file
+        # and no change to `CoxAgent`. An explicit 0 is passed too, so the off
+        # arm stays off if the default ever changes.
+        argv += ["--ae", f"COX_CONTEXT_REPOMAP_BUDGET_TOKENS={int(opts['repomap_budget_tokens'])}"]
     if provider.local:
-        argv += ["--ak", f"base_url={provider.base(shape, in_container=True)}",
-                 "--ak", f"context_window={opts['context']}"]
+        argv += ["--ak", f"base_url={provider.base(shape, in_container=True)}"]
+        if cox_provider == "local":
+            # `[providers.lmstudio]` asks the server for its loaded context
+            # instead; only the generic Chat section needs it handed in.
+            argv += ["--ak", f"context_window={opts['context']}"]
     return argv, {}
 
 
@@ -112,11 +142,23 @@ PRESETS = {
     # card: plan.md at commit 855fe68) of TB 2.0 `medium` and `hard` tasks.
     "same-model": {
         "agents": ["cox", "claude-code", "terminus-2"],
-        "provider": "lmstudio", "model": "prism-ml/bonsai-27b", "context": 65536,
+        # `context` is `prism-ml/bonsai-27b`'s actual loaded context length
+        # (`GET /api/v1/models`, R§4.3.2/R§5.3), so terminus-2's `model_info`
+        # matches what the server really serves instead of guessing.
+        "provider": "lmstudio", "model": "prism-ml/bonsai-27b", "context": 251648,
         "tasks": ["build-cython-ext", "build-pmars", "compile-compcert", "mteb-leaderboard",
                   "query-optimize", "regex-log", "sanitize-git-repo", "tune-mjcf",
                   "dna-assembly", "password-recovery", "path-tracing-reverse", "regex-chess"],
     },
+}
+
+# T43.6 falsifier 1: does the repo map pay for its tokens. Two presets that
+# differ only in `context.repomap_budget_tokens`, on the same cox agent, model
+# and tasks as `same-model`; compare tool calls, input and cache-read tokens
+# and pass rate between the two job tables.
+PRESETS |= {
+    name: {**PRESETS["same-model"], "agents": ["cox"], "repomap_budget_tokens": budget}
+    for name, budget in (("repomap-off", 0), ("repomap-2k", 2000))
 }
 
 
@@ -144,13 +186,31 @@ def harbor_argv(run, tasks, *, job_name, jobs_dir, concurrency):
     return argv
 
 
+def local_url(url):
+    """`url` when it is http(s) on this machine; otherwise `ValueError`."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme not in ("http", "https") or parts.hostname not in LOCAL_HOSTS:
+        raise ValueError(f"not a local http(s) URL: {url}")
+    return url
+
+
+def prepare_argv(step, **values):
+    """One `prepare` step as argv: split first, then each arg formatted, so a
+    value never becomes extra arguments or shell syntax."""
+    return [arg.format(**values) for arg in shlex.split(step)]
+
+
 def preflight(provider, model):
     """A local server must be up and serve `model`; returns an error or None."""
     if not provider.local:
         return None
     path = provider.shapes.get(CHAT, "/v1")
     try:
-        with urllib.request.urlopen(f"{provider.url}{path}/models", timeout=5) as resp:
+        url = local_url(f"{provider.url}{path}/models")
+    except ValueError as err:
+        return f"{provider.name}: {err}"
+    try:
+        with OPENER.open(url, timeout=5) as resp:
             ids = [m.get("id") for m in json.load(resp).get("data", [])]
     except OSError as err:
         return f"{provider.name} is not reachable at {provider.url}: {err}"
@@ -232,7 +292,8 @@ def main(argv=None):
     if not (agents and provider and model and tasks):
         parser.error("give --preset or all of --agents, --provider, --model, --tasks")
     opts = {"context": args.context or preset.get("context", 32768), "max_output": args.max_output,
-            "cox_bin": args.cox_bin, "budget_usd": args.budget_usd, "max_turns": args.max_turns}
+            "cox_bin": args.cox_bin, "budget_usd": args.budget_usd, "max_turns": args.max_turns,
+            "repomap_budget_tokens": preset.get("repomap_budget_tokens")}
     runs = [plan_run(agent, provider, model, opts) for agent in agents]
     stamp = datetime.now().strftime("%Y-%m-%d__%H-%M-%S")
     jobs = [(run, f"{stamp}__{run.agent}") for run in runs]
@@ -245,7 +306,7 @@ def main(argv=None):
         return 0
     if args.prepare:
         for step in provider.prepare:
-            subprocess.run(step.format(model=model, context=opts["context"]), shell=True, check=True)
+            subprocess.run(prepare_argv(step, model=model, context=opts["context"]), check=True)
     error = preflight(provider, model)
     if error:
         raise SystemExit(error)

@@ -100,6 +100,7 @@ impl StreamJsonMapper {
             input,
             risk: Risk::Exec,
             subject: String::new(),
+            segments: None,
         };
         self.open.insert(id.to_owned(), (item, call.id));
         // Surfaces draw a call from `ToolCallRequested`, the rollout keeps
@@ -144,6 +145,7 @@ impl StreamJsonMapper {
                 archive: None,
                 duration_ms: 0,
                 diff: None,
+                structured: None,
             },
         });
         events.push(Event::ItemDone { item });

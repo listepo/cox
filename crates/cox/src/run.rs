@@ -4,14 +4,17 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use cox_core::Session;
 use cox_protocol::Event;
 use cox_protocol::ids::{CallId, ItemId, SessionId};
+use cox_protocol::image::{self, ImageError, MAX_IMAGE_BYTES};
 use cox_protocol::traits::Store as _;
-use cox_protocol::types::{ApprovalPolicy, Decision, ItemKind, StopReason, Submission, Tier};
+use cox_protocol::types::{
+    ApprovalPolicy, Attachment, Decision, ItemKind, Mode, StopReason, Submission, Tier,
+};
 use cox_store::Store;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
@@ -28,8 +31,8 @@ pub const EXIT_OK: i32 = 0;
 /// `bash` tool's own SIGTERM→SIGKILL grace (`crates/cox-tools/src/bash/
 /// mod.rs`'s `TERM_GRACE` plus its PTY-drain `REAP_GRACE`, ~2.5s) so
 /// `Session::wait_tasks_cleared` (T34.9 follow-up) cannot hang the
-/// headless exit (or the TUI's, T34.11) on a `TaskKind::Shell` task this
-/// session's own `interrupt()` cannot reach.
+/// headless exit (or the TUI's, T34.11) on a `TaskKind::Shell` task that
+/// does not die in time.
 pub(crate) const SHELL_CANCEL_GRACE: Duration = Duration::from_secs(5);
 pub const EXIT_ERROR: i32 = 1;
 pub const EXIT_DENIED: i32 = 2;
@@ -178,6 +181,15 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
         (None, None) => None,
         _ => anyhow::bail!("--loop and --max-iterations must be given together"),
     };
+    // T40.7: every `--image` is read and checked before any request, so a
+    // bad one costs nothing.
+    let attachments = match read_images(&args.images) {
+        Ok(attachments) => attachments,
+        Err(e) => {
+            eprintln!("cox: {e}");
+            return Ok(EXIT_DENIED);
+        }
+    };
     // Headless defaults to `never`: nobody is there to answer an ask.
     let approve_default = cli.approve.is_none();
     let rt = tokio::runtime::Runtime::new()?;
@@ -201,7 +213,7 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
         cli,
         cwd,
         args.answer.clone(),
-        None,
+        false,
         |config| {
             if approve_default {
                 config.permissions.approval = ApprovalPolicy::Never;
@@ -215,6 +227,11 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
     // `hooks.timeout_s`; `never` never asks, so stdin is left alone.
     let approvals = (loaded.config.permissions.approval != ApprovalPolicy::Never)
         .then(|| Duration::from_secs(u64::from(loaded.config.hooks.timeout_s)));
+    // P42, invariant 9: only an explicit flag is think consent here —
+    // `--deep`, or `--mode architect` like it. `core.mode = architect` from
+    // a config file alone never confirms: that run is refused below.
+    let confirm_think = args.deep || cli.mode.as_deref() == Some("architect");
+    let unconfirmed_architect = loaded.config.core.mode == Mode::Architect && !confirm_think;
     // The event receiver is taken once and, for `--loop`, shared across
     // every iteration's `drive` call on the same session — that is also
     // what lets the core's own `budget.session_usd` tracking (already
@@ -230,33 +247,55 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
                 interrupter.interrupt();
             }
         });
+        // T9.1: `--deep` routes the run through think; the flag itself is
+        // the confirmation the gate requires. Once per run, `--loop` too.
+        if args.deep {
+            session
+                .submit(Submission::SwitchModel {
+                    tier: Tier::Think,
+                    model: None,
+                })
+                .await?;
+        }
         let outcome = match loop_spec {
             Some(loop_spec) => {
                 run_loop(
-                    &session, &mut rx, prompt, format, approvals, args.deep, loop_spec,
+                    &session,
+                    &mut rx,
+                    (prompt, attachments),
+                    format,
+                    approvals,
+                    confirm_think,
+                    loop_spec,
                 )
                 .await
             }
-            None => drive(&session, &mut rx, prompt, format, approvals, args.deep).await,
+            None => {
+                let prompt = (prompt, attachments);
+                drive(&session, &mut rx, prompt, format, approvals, confirm_think).await
+            }
         };
         // T34.9 follow-up: `drive`/`run_loop` above already awaited
         // `session.wait_idle()`, so every `TaskKind::Agent` chain is done.
         // A `TaskKind::Shell` task (a detached `bash`) is deliberately not
         // waited for there, but leaving it running and only abandoning the
         // OS process (`shutdown_background`, in `run`) leaks it as an
-        // orphan once this process exits. `interrupt()` is the same
-        // cancellation Ctrl+B/session cancel already use; for a shell task
-        // detached in this same turn (the common case, and the only one
-        // `--loop`'s last iteration leaves outstanding) it reaches the
-        // exact token that call's `ToolCx::cancel` cloned, which trips the
-        // shell tool's own SIGTERM-then-SIGKILL logic
-        // (`crates/cox-tools/src/bash/mod.rs`) and kills its process
-        // group. `wait_tasks_cleared` then waits for that kill to actually
-        // land before `shutdown_background` runs.
-        session.interrupt();
+        // orphan once this process exits. `end()` cancels the parent of
+        // every turn token (T38.2), so it reaches the token each detached
+        // call's `ToolCx::cancel` cloned — including one from an older
+        // `--loop` iteration — which trips the shell tool's own
+        // SIGTERM-then-SIGKILL logic (`crates/cox-tools/src/bash/mod.rs`)
+        // and kills its process group. `wait_tasks_cleared` then waits for
+        // that kill to actually land before `shutdown_background` runs.
+        session.end();
         session.wait_tasks_cleared(SHELL_CANCEL_GRACE).await;
         outcome
     })?;
+    if unconfirmed_architect && matches!(outcome.stop, Some(StopReason::Refusal { .. })) {
+        eprintln!(
+            "cox: architect mode runs on the think tier; pass --mode architect to confirm it"
+        );
+    }
     let mut out = std::io::stdout().lock();
     match format {
         Format::Text => writeln!(out, "{}", outcome.result)?,
@@ -270,51 +309,67 @@ pub fn run(cli: &Cli, args: &RunArgs, cwd: &Path) -> anyhow::Result<i32> {
     }
     // By this point every `TaskKind::Agent` chain is done (`wait_idle`)
     // and any `TaskKind::Shell` task this same session could still reach
-    // has already been cancelled and killed (`interrupt` +
+    // has already been cancelled and killed (`end` +
     // `wait_tasks_cleared`, above) — so nothing meaningful is left
     // outstanding. `rt`'s own `Drop` does not know that: left to run
     // normally, it shuts down by "waiting until all [spawned] tasks have
     // completed" (`tokio::runtime::Runtime`'s own docs), which would hang
-    // this process on a genuinely unreachable leftover (an older, already-
-    // rotated turn's background shell in a `--loop` run — the one case
-    // `wait_tasks_cleared`'s own deadline gives up on). `shutdown_background`
-    // returns immediately instead, abandoning only that one, already-rare
-    // edge case rather than every ordinary exit.
+    // this process on a leftover `wait_tasks_cleared`'s own deadline gave
+    // up on (a shell that did not die in time). `shutdown_background`
+    // returns immediately instead, abandoning only that rare case rather
+    // than every ordinary exit.
     rt.shutdown_background();
     Ok(outcome.exit_code())
 }
 
+/// Reads each `--image` path and checks it with `image::attachment`. The
+/// path is the user's own argument, and the user is the trust root, so it
+/// is not confined like a path from the model. A file over the cap is
+/// refused from its size, before it is read.
+fn read_images(paths: &[PathBuf]) -> Result<Vec<Attachment>, String> {
+    paths
+        .iter()
+        .map(|path| {
+            let why = |e: &dyn std::fmt::Display| format!("--image {}: {e}", path.display());
+            let len = std::fs::metadata(path).map_err(|e| why(&e))?.len();
+            let bytes = usize::try_from(len).unwrap_or(usize::MAX);
+            if bytes > MAX_IMAGE_BYTES {
+                let cap = MAX_IMAGE_BYTES;
+                return Err(why(&ImageError::TooLarge { bytes, cap }));
+            }
+            let data = std::fs::read(path).map_err(|e| why(&e))?;
+            let name = path.file_name().map_or_else(
+                || path.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            image::attachment(name, &data).map_err(|e| why(&e))
+        })
+        .collect()
+}
+
 /// Runs one turn to completion on an already-open `session`, reading its
 /// events off the caller's `rx` (taken once — see `run`'s comment — so
-/// `--loop` can call this repeatedly on the same receiver).
+/// `--loop` can call this repeatedly on the same receiver). `prompt` is the
+/// text and its attachments (T40.7).
 async fn drive(
     session: &Session,
     rx: &mut mpsc::Receiver<Event>,
-    prompt: String,
+    prompt: (String, Vec<Attachment>),
     format: Format,
     approvals: Option<Duration>,
-    deep: bool,
+    confirm_think: bool,
 ) -> anyhow::Result<Outcome> {
-    // T9.1: `--deep` routes the run through think; the flag itself is the
-    // confirmation the gate requires.
-    if deep {
-        session
-            .submit(Submission::SwitchModel {
-                tier: Tier::Think,
-                model: None,
-            })
-            .await?;
-    }
     // The core runs the turn inside `submit`, so it must live on its own
     // task or nothing could answer an `ApprovalRequired` mid-turn.
+    let (text, attachments) = prompt;
     let turn = tokio::spawn({
         let session = session.clone();
         async move {
             session
                 .submit(Submission::UserTurn {
-                    text: prompt,
-                    attachments: Vec::new(),
-                    confirm_think: deep,
+                    text,
+                    attachments,
+                    confirm_think,
                 })
                 .await
         }
@@ -411,22 +466,26 @@ async fn drive(
 /// stop reason is `StopReason::Budget` (the core already tracks
 /// `budget.session_usd` cumulatively per session, so this needs no
 /// second cap) or fails fatally, or when `Ctrl+C` fires during the wait
-/// between iterations — that exit is clean, not an error.
+/// between iterations — that exit is clean, not an error. The attachments
+/// go with the first turn only (T40.7); later turns already have them in
+/// history.
 async fn run_loop(
     session: &Session,
     rx: &mut mpsc::Receiver<Event>,
-    prompt: String,
+    prompt: (String, Vec<Attachment>),
     format: Format,
     approvals: Option<Duration>,
-    deep: bool,
+    confirm_think: bool,
     // `(interval, max_iterations)`, bundled so the function stays under
     // clippy's 7-argument limit.
     loop_spec: (Duration, u32),
 ) -> anyhow::Result<Outcome> {
     let (interval, max_iterations) = loop_spec;
+    let (text, mut attachments) = prompt;
     let mut total = Outcome::default();
     for i in 0..max_iterations {
-        let iteration = drive(session, rx, prompt.clone(), format, approvals, deep).await?;
+        let prompt = (text.clone(), std::mem::take(&mut attachments));
+        let iteration = drive(session, rx, prompt, format, approvals, confirm_think).await?;
         total.merge(iteration);
         if total.failed || matches!(total.stop, Some(StopReason::Budget)) {
             break;
@@ -527,7 +586,7 @@ mod tests {
         let outcome = run_loop(
             &session,
             &mut rx,
-            "hi".into(),
+            ("hi".into(), vec![]),
             Format::Text,
             None,
             false,

@@ -6,6 +6,7 @@ parallel_tools = 4
 max_concurrent_subagents = 8     # cap on running TaskKind::Agent tasks, foreground + background (T34.2)
 log_level = "info"              # tracing filter; file log at ~/.cox/logs/cox.log
 profile = ""                    # "" (default) | "minimal" (T30.1: the lean prefix); also `cox --profile minimal`
+mode = "editor"                 # editor (default) | architect (P42: plan + think); also `cox --mode`, `/mode`
 
 [tiers.cheap]
 provider = "anthropic"
@@ -48,7 +49,7 @@ cache_ttl = "5m"                    # "5m" | "1h"
 fallbacks = true                    # fallbacks: "default" + beta header
 timeout_s = 120
 max_retries = 4
-models = [{id="claude-haiku-4-5", context_window=200000, efforts=["low"]}, {id="claude-sonnet-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="claude-opus-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="claude-fable-5-1", context_window=1000000, efforts=["low", "high", "xhigh"]}]   # id, context window, efforts per model (effort values from models.dev)
+models = [{id="claude-haiku-4-5", display_name="Claude Haiku 4.5 (latest)", context_window=200000, efforts=["low"], images=true}, {id="claude-sonnet-5", display_name="Claude Sonnet 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"], images=true}, {id="claude-opus-5", display_name="Claude Opus 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"], images=true}, {id="claude-fable-5-1", display_name="Claude Fable 5.1", context_window=1000000, efforts=["low", "medium", "high", "xhigh"], images=true}]   # id, context window, efforts per model (effort values from models.dev)
 
 [providers.openai]
 base_url = "https://api.openai.com/v1"
@@ -56,7 +57,7 @@ api_key_env = "OPENAI_API_KEY"      # else keyring entry "cox/openai"
 api = "responses"                   # "responses" | "chat"
 timeout_s = 120
 max_retries = 4
-models = [{id="gpt-5.1", context_window=400000, efforts=["low", "high"]}, {id="gpt-5.5", context_window=1050000, efforts=["low", "high", "xhigh"]}, {id="gpt-5.6-sol", context_window=1050000, efforts=["low", "high", "xhigh"]}]   # id, context window, efforts per model (effort values from models.dev)
+models = [{id="gpt-5.1", display_name="GPT-5.1", context_window=400000, efforts=["low", "medium", "high"], images=true}, {id="gpt-5.5", display_name="GPT-5.5", context_window=1050000, efforts=["low", "medium", "high", "xhigh"], images=true}, {id="gpt-5.6-sol", display_name="GPT-5.6 Sol", context_window=1050000, efforts=["low", "medium", "high", "xhigh"], images=true}]   # id, context window, efforts per model (effort values from models.dev)
 
 [providers.local]
 base_url = "http://localhost:11434/v1"
@@ -96,7 +97,7 @@ model = "deepseek-v4-pro"
 context_window = 1000000
 timeout_s = 120
 max_retries = 4
-models = [{id="deepseek-v4-flash", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek-v4-pro", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek-v4-flash-vision-exp", context_window=1000000, efforts=["low", "high", "xhigh"]}]   # id, context window, efforts per model (effort values from models.dev)
+models = [{id="deepseek-v4-flash", display_name="DeepSeek V4 Flash", context_window=1000000, efforts=["low", "high", "xhigh"], images=true}, {id="deepseek-v4-pro", display_name="DeepSeek V4 Pro", context_window=1000000, efforts=["low", "high", "xhigh"], images=false}, {id="deepseek-v4-flash-vision-exp", display_name="DeepSeek V4 Flash Vision Exp", context_window=1000000, efforts=["low", "high", "xhigh"], images=true}]   # id, context window, efforts per model (effort values from models.dev)
 
 [providers.openrouter]
 base_url = "https://openrouter.ai/api/v1"
@@ -106,7 +107,7 @@ model = "anthropic/claude-sonnet-5"
 context_window = 1000000
 timeout_s = 120
 max_retries = 4
-models = [{id="anthropic/claude-sonnet-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="anthropic/claude-opus-5", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="deepseek/deepseek-v4-pro", context_window=1048576, efforts=["high", "xhigh"]}, {id="qwen/qwen3-coder-plus", context_window=1000000, efforts=["low", "high", "xhigh"]}, {id="x-ai/grok-4.3", context_window=1000000, efforts=["low", "high"]}]   # curated coding subset; the full 359-model list lives in models.dev
+models = [{id="anthropic/claude-sonnet-5", display_name="Claude Sonnet 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"], images=true}, {id="anthropic/claude-opus-5", display_name="Claude Opus 5", context_window=1000000, efforts=["low", "medium", "high", "xhigh"], images=true}, {id="deepseek/deepseek-v4-pro", display_name="DeepSeek V4 Pro", context_window=1048576, efforts=["high", "xhigh"], images=false}, {id="qwen/qwen3-coder-plus", display_name="Qwen3 Coder Plus", context_window=1000000, efforts=["low", "high", "xhigh"], images=false}, {id="x-ai/grok-4.3", display_name="Grok 4.3", context_window=1000000, efforts=["low", "medium", "high"], images=true}]   # curated coding subset; the full 359-model list lives in models.dev
 
 [providers.moonshot]
 base_url = "https://api.moonshot.ai/v1"
@@ -116,7 +117,7 @@ model = "kimi-k2.6"
 context_window = 262144
 timeout_s = 120
 max_retries = 4
-models = [{id="kimi-k2.6", context_window=262144, efforts=["low", "high", "xhigh"]}, {id="kimi-k2.7-code", context_window=262144, efforts=["low", "high", "xhigh"]}]   # id, context window, efforts per model
+models = [{id="kimi-k2.6", display_name="Kimi K2.6", context_window=262144, efforts=["low", "medium", "high", "xhigh"], images=true}, {id="kimi-k2.7-code", display_name="Kimi K2.7 Code", context_window=262144, efforts=["low", "high", "xhigh"], images=true}]   # id, context window, efforts per model
 
 [providers.z-ai]
 base_url = "https://api.z.ai/api/paas/v4"
@@ -126,7 +127,20 @@ model = "glm-5.2"
 context_window = 1000000
 timeout_s = 120
 max_retries = 4
-models = [{id="glm-5.2", context_window=1000000, efforts=["high", "xhigh"]}, {id="glm-5.3", context_window=1000000, efforts=["low", "high", "xhigh"]}]   # id, context window, efforts per model
+models = [{id="glm-5.2", display_name="GLM-5.2", context_window=1000000, efforts=["high", "xhigh"], images=false}, {id="glm-5.3", display_name="GLM-5.3", context_window=1000000, efforts=["low", "high", "xhigh"], images=false}]   # id, context window, efforts per model
+
+# Gemini through Google's OpenAI-compatible endpoint (P39, A70). Google calls
+# that endpoint beta. Every Gemini 3 model always reasons, so each declares
+# `reasoning_effort`. `context_window`, `efforts` and `display_name` come from
+# `cox-vendor models` (models.dev provider `google`), never by hand.
+[providers.gemini]
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"   # client appends /chat/completions
+api_key_env = "GEMINI_API_KEY"      # else keyring entry "cox/gemini"
+api = "chat"                        # Google calls its OpenAI compatibility beta: https://ai.google.dev/gemini-api/docs/openai
+model = "gemini-3.8-flash"
+timeout_s = 120
+max_retries = 4
+models = [{id="gemini-3.8-flash", display_name="Gemini 3.8 Flash", context_window=1048576, efforts=["low", "medium", "high"], reasoning_effort=true, images=true}, {id="gemini-3.1-pro-preview", display_name="Gemini 3.1 Pro Preview", context_window=1048576, efforts=["low", "medium", "high"], reasoning_effort=true, images=true}, {id="gemini-3.5-flash-lite", display_name="Gemini 3.5 Flash Lite", context_window=1048576, efforts=["low", "medium", "high"], reasoning_effort=true, images=true}]
 
 [context]
 compact_at = 0.75                   # fraction of max_context
@@ -140,13 +154,14 @@ instruction_budget_tokens = 8000
 memory_budget_tokens = 800
 deferred_tools = true
 system_prompt = "default"       # default | minimal (T30.1); `core.profile = "minimal"` implies it
+repomap_budget_tokens = 0           # repo map in system[2] (P43); 0 = off until the T43.6 bench
 
 [permissions]
 mode = "default"                    # default | plan | auto | bypass (bypass only via flag)
 approval = "on-request"             # untrusted | on-request | on-failure | never
-allow = []                          # rule strings, §1.8
-ask = []
-deny = ["Read(~/.ssh/**)", "Read(~/.aws/**)", "Bash(rm -rf /*)"]
+allow = []                          # rule strings, §1.8; a project config cannot set allow (its list is ignored)
+ask = []                            # a project config adds rules to this list, never replaces it
+deny = ["Read(~/.ssh/**)", "Read(~/.aws/**)", "Bash(rm -rf /*)"]  # a project config adds rules to this list, never replaces it
 import_claude_settings = true
 allow_for_session_persists = false
 
@@ -180,6 +195,11 @@ notify = "auto"                     # auto | always | off — OSC 9 (OSC 777 on 
 motion = "full"                     # full | reduced — reduced draws a running tool's spinner as one still glyph and replaces its ticking elapsed time with `running` (T24.7)
 caps = {}                           # [tui.caps] name = bool overrides one detected cox_tui::term::Caps field (truecolor, kitty_keyboard, osc8, osc52, osc9, osc9_4, focus, images) for a terminal detection guesses wrong about; unset fields are auto-detected, `cox doctor` shows the source of each (T23.0)
 
+[tui.status_line]
+command = ""                        # a /bin/sh -c command fed the status JSON (Claude Code's statusLine field names) on stdin; its first output line is one row above the status line, re-run 300 ms after the status changes; runs sandboxed read-only without network, output passes sanitize (colours and links stripped); "" is off; a project config cannot set it (T46.1)
+refresh_s = 0                       # also re-run every this many seconds (0 = off, at most 3600)
+timeout_ms = 2000                   # a run that takes longer is killed and the row goes blank (100 to 10000)
+
 [hooks]
 timeout_s = 60                      # seconds per [[hooks.<Event>]] process (a hook's own timeout_s overrides); stdin carries the Claude Code JSON payload, exit 2 blocks, stdout may carry updatedInput or additionalContext
 fail_open = true                    # a hook that crashes, times out or has an invalid matcher regex is warned about and skipped, never fatal (D14). matcher is an exact tool name, or — when it carries a regex metacharacter — a regex over the tool name (T22.3). Events: UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, Stop, PreCompact, PostCompact, SessionStart (payload source: startup | resume | clear; stdout additionalContext joins the volatile system block), SessionEnd, PermissionRequest, SubagentStart, SubagentStop, Notification (observe-only kind/message/title payload on ApprovalRequired, TurnDone and ask_user)
@@ -188,6 +208,39 @@ fail_open = true                    # a hook that crashes, times out or has an i
 timeout_s = 30
 deferred = true
 servers = {}                        # [mcp.servers.<name>] command/args/url/env/sandbox — same shape as .mcp.json, plus sandbox=false to opt a named stdio server out of the sandbox wrap (default true, T33.42)
+
+[lsp]
+enabled = true                      # the deferred ReadOnly `diagnostics` tool (P41): one sandboxed stdio LSP server per language per session, killed when the session ends
+timeout_s = 30                      # seconds per diagnostics request
+quiet_ms = 500                      # after the last pushed publishDiagnostics, wait this long before taking the result as complete
+
+[lsp.servers.rust]                  # one [lsp.servers.<name>] table per language
+command = "rust-analyzer"           # program to spawn, found on PATH, under the same sandbox wrap as an MCP stdio server; [lsp.servers.<name>] is user config only — a project config cannot set lsp.servers (a repository must not choose a program cox runs)
+args = []                           # arguments to command
+extensions = ["rs"]                 # file extensions, without the dot, this server is asked about
+
+[lsp.servers.typescript]
+command = "typescript-language-server"
+args = ["--stdio"]
+extensions = ["ts", "tsx", "js", "jsx"]
+
+[lsp.servers.python]
+command = "pyright-langserver"
+args = ["--stdio"]
+extensions = ["py"]
+
+[lsp.servers.go]
+command = "gopls"
+args = []
+extensions = ["go"]
+
+[voice]
+enabled = false                     # push-to-talk dictation in the TUI (P54), transcribed on this machine with whisper; only in a cox built with the `voice` feature. User config only: a project config cannot set any voice.* key (a repository must not switch the microphone on or choose the model file)
+model = "base.en"                   # whisper model: tiny.en, base.en, small.en, tiny, base or small; fetched only by `cox voice model download <name>` after you confirm
+language = "en"                     # ISO-639-1 code for whisper, or "auto" to detect
+key = "alt+v"                       # press to record, press again to stop; where the terminal reports key releases, hold to record
+auto_submit = true                  # submit the transcript like Enter, only when the draft was empty before recording
+max_seconds = 120                   # longest recording kept in memory; audio is never written to disk
 
 [plugins]
 enabled = true                      # WASM plugins (docs/design/plugins.md); only a plugin granted for its exact package digest loads; a project config can turn this off, never on; env COX_PLUGINS_ENABLED, flag --no-plugins. A [plugins.<id>] table is that plugin's own config, passed unchanged to its cox_init as InitIn.config; the plugin validates it
@@ -208,9 +261,38 @@ extract = false                     # end-of-session extraction on cheap tier
 dir = ""                            # default ~/.cox/projects/<slug>/memory
 salience_min = 0.3                  # an extracted item scoring below this against salience's Score is dropped; the plugin cannot move this bar
 
+[session]
+auto_title = true                   # after the first turn, one cheap `title` job names the session (A113); a title the user set is never replaced
+
 [telemetry]
 otel = false
 endpoint = ""
 
 [record]
 redact = true
+
+[desktop]
+menu_bar = true                     # show cox's menu-bar extra: what needs you, what runs, today's spend (T51.14)
+remote_hosts = []                   # ssh host aliases the app connects to, each its own sidebar group (T52.21); user config only — a project config cannot set it
+
+[desktop.appearance]                # the macOS app's glass (DS§3.5); the Appearance popover (⌘⌥A) and Settings › Appearance write these
+material = "frosted"                # frosted | glossy | solid — solid is forced by Reduce Transparency
+opacity = 0.42                      # window and pane background opacity, 0 (clear) … 1 (opaque); text panels never drop below 0.8
+blur = 34                           # background blur in pt, 0 … 60 (frosted); glossy reads it as reflection
+depth = 1.0                         # elevation scale, 0 (flat, standard macOS look) … 1 (full shadows and highlights)
+tint = true                         # tint the glass from the wallpaper
+dark_highlight = "none"             # none | subtle — the top-edge highlight in dark mode: none (the dark mockup) or white at 10 % of the light one (A109)
+dark_highlight_scope = "controls"   # controls | all — dark_highlight applies to controls (e1) or every lifted level (e1–e4, the user bubble too) (A109)
+
+[desktop.transcript]
+cross_block_selection = true        # a text selection runs across blocks like one document; false clamps it to one block (A67)
+text_size = 13.5                    # the transcript's prose size in pt at 100 % text size, 10 … 24; code, headings and thoughts keep their size relative to it (A93)
+line_height = 1.55                  # the prose line height as a multiple of the text size, 1 … 2.5 (A93)
+
+[desktop.context]
+cache_hit = "turn"                  # turn | session — the Context tab's cache hit: the last turn's reads, or every call's so far (A104)
+
+[desktop.review]
+send = "queue"                      # queue | now — the Review pane's "Send to agent" while a turn runs: queue it behind the turn like a prompt, or send it at once (A108)
+
+# [external_agents.<name>]          # an ACP agent a session can be driven by (T52.2): command, args, key_env, writable; user config only — a project config cannot set any; none by default, examples in docs/config.md

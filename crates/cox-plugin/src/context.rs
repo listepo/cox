@@ -238,6 +238,7 @@ mod tests {
                 bytes: visible.len() as u64,
                 duration_ms: 1,
                 diff: None,
+                structured: None,
             },
         }
     }
@@ -249,6 +250,7 @@ mod tests {
             input,
             risk: Risk::ReadOnly,
             subject: name.into(),
+            segments: None,
         }
     }
 

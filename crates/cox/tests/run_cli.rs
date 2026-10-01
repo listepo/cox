@@ -1,5 +1,6 @@
 //! T6.1: `cox run -p` against the real binary with the scripted provider —
-//! the three output shapes and the exit codes a script relies on.
+//! what the `tests/cmd` fixtures (T48) cannot check: stdin answers mid-run,
+//! prefix rules, and that a denied write left no file on disk.
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
@@ -30,32 +31,27 @@ const WRITE: &str = concat!(
     "/tests/scenarios/write_then_done.toml"
 );
 
+/// T7.8: the workspace `AGENTS.md` reaches the model's system blocks — the
+/// scenario's one turn answers only a request that carries its marker, so
+/// the same run without the file finds no turn and fails.
 #[test]
-fn text_format_prints_the_final_assistant_text() {
+fn agents_md_in_the_workspace_reaches_the_system_prompt() {
+    let marker = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/scenarios/agents_md_marker.toml"
+    );
     let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    cox(work.path(), home.path(), TEXT_ONLY)
+    std::fs::create_dir(work.path().join(".git")).unwrap();
+    cox(work.path(), home.path(), marker).assert().failure();
+    std::fs::write(
+        work.path().join("AGENTS.md"),
+        "Rule: cox-e2e-agents-md-marker.\n",
+    )
+    .unwrap();
+    cox(work.path(), home.path(), marker)
         .assert()
         .success()
-        .stdout("hello from scripted\n");
-}
-
-#[test]
-fn json_format_reports_result_usage_cost_and_stop() {
-    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    let out = cox(work.path(), home.path(), TEXT_ONLY)
-        .args(["--output-format", "json"])
-        .assert()
-        .success()
-        .get_output()
-        .stdout
-        .clone();
-    let v: Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(v["result"], "hello from scripted");
-    assert_eq!(v["stop"]["type"], "end_turn");
-    assert_eq!(v["turns"], 1);
-    assert_eq!(v["cost_usd"], 0.0);
-    assert!(v["session"].as_str().unwrap().len() == 26, "{v}");
-    assert!(v["usage"]["input_tokens"].is_number(), "{v}");
+        .stdout("followed AGENTS.md\n");
 }
 
 #[test]
@@ -128,6 +124,53 @@ fn a_denied_write_exits_2_and_the_file_is_not_written() {
     assert!(!work.path().join("a.txt").exists());
 }
 
+const GIT_THEN_TOUCH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/scenarios/bash_git_then_touch.toml"
+);
+const ASSIGNMENT_PREFIX: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/scenarios/bash_assignment_prefix.toml"
+);
+
+/// T36.1: `Bash(git:*)` covers the `git` command, not the `touch` chained
+/// after it, so the line asks, and headless turns the ask into a deny; with
+/// a rule for each command the same line runs without asking.
+#[test]
+fn a_prefix_rule_does_not_allow_a_command_chained_after_it() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let rules = |allow: &str| format!("[permissions]\nallow = [{allow}]\n");
+    std::fs::write(home.path().join("config.toml"), rules(r#""Bash(git:*)""#)).unwrap();
+    cox(work.path(), home.path(), GIT_THEN_TOUCH)
+        .args(["--output-format", "json"])
+        .assert()
+        .code(2)
+        .stdout(predicates_str_contains("\"denied\":1"));
+    assert!(!work.path().join("chained").exists());
+
+    let both = r#""Bash(git:*)", "Bash(touch:*)""#;
+    std::fs::write(home.path().join("config.toml"), rules(both)).unwrap();
+    cox(work.path(), home.path(), GIT_THEN_TOUCH)
+        .assert()
+        .success()
+        .stdout("done\n");
+    assert!(work.path().join("chained").exists());
+}
+
+/// T36.2: an assignment prefix in front of a read-only command (`GIT_PAGER='touch
+/// x' git log`) no longer auto-allows under the default config; headless
+/// turns the ask into a deny, and the pager it names never runs.
+#[test]
+fn an_assignment_prefix_asks_instead_of_auto_allowing() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    cox(work.path(), home.path(), ASSIGNMENT_PREFIX)
+        .args(["--output-format", "json"])
+        .assert()
+        .code(2)
+        .stdout(predicates_str_contains("\"denied\":1"));
+    assert!(!work.path().join("x").exists());
+}
+
 #[test]
 fn auto_mode_writes_the_file_and_exits_0() {
     let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
@@ -142,13 +185,37 @@ fn auto_mode_writes_the_file_and_exits_0() {
     );
 }
 
+/// P42: `--mode architect` is plan plus the think tier, and the flag is the
+/// think consent; the scripted `write` is denied by plan mode, not asked.
 #[test]
-fn unknown_output_format_is_an_error() {
+fn run_architect_denies_write_with_scripted_provider() {
     let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    cox(work.path(), home.path(), TEXT_ONLY)
-        .args(["--output-format", "yaml"])
+    cox(work.path(), home.path(), WRITE)
+        .args(["--mode", "architect", "--output-format", "stream-json"])
         .assert()
-        .code(1);
+        .code(2)
+        .stdout(predicates_str_contains("\"type\":\"mode_changed\""))
+        .stdout(predicates_str_contains("plan mode"));
+    assert!(!work.path().join("a.txt").exists());
+}
+
+/// P42: `core.mode = architect` from a config file alone is not think
+/// consent headlessly; the run is refused before any provider call and
+/// names the flag that confirms it.
+#[test]
+fn run_config_architect_without_flag_asks_for_confirmation() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(
+        home.path().join("config.toml"),
+        "[core]\nmode = \"architect\"\n",
+    )
+    .unwrap();
+    cox(work.path(), home.path(), TEXT_ONLY)
+        .args(["--output-format", "json"])
+        .assert()
+        .code(2)
+        .stdout(predicates_str_contains("requires confirmation"))
+        .stderr(predicates_str_contains("--mode architect"));
 }
 
 fn predicates_str_contains(needle: &'static str) -> impl predicates::Predicate<[u8]> {
@@ -402,4 +469,99 @@ fn resume_followup_prompt_reuses_session_id() {
         .clone();
     let v2: Value = serde_json::from_slice(&out2).unwrap();
     assert_eq!(v2["session"].as_str(), Some(session_id));
+}
+
+/// T50.4: runs `TEXT_ONLY` with `start` flags, then resumes that session
+/// with `WRITE` and `resume` flags; returns whether the write landed.
+fn resumed_write_lands(start: &[&str], resume: &[&str]) -> bool {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let out = cox(work.path(), home.path(), TEXT_ONLY)
+        .args(start)
+        .args(["--output-format", "json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let first: Value = serde_json::from_slice(&out).unwrap();
+    let id = first["session"].as_str().unwrap().to_string();
+    cox(work.path(), home.path(), WRITE)
+        .args(["--resume", &id])
+        .args(resume)
+        .output()
+        .unwrap();
+    work.path().join("a.txt").exists()
+}
+
+/// T50.4: on resume an explicit `--permission-mode` wins over the mode the
+/// session recorded.
+#[test]
+fn resume_with_an_explicit_permission_mode_flag_uses_it() {
+    assert!(resumed_write_lands(
+        &["--permission-mode", "plan"],
+        &["--permission-mode", "auto"],
+    ));
+}
+
+/// T50.4: without the flag, resume keeps the mode the session started in,
+/// not the configured `Default`.
+#[test]
+fn resume_without_a_flag_keeps_the_recorded_mode() {
+    assert!(resumed_write_lands(&["--permission-mode", "auto"], &[]));
+}
+
+/// T40.7: each `--image` goes with the first turn, and the scripted
+/// provider was sent both: its usage is its own estimate of the request it
+/// received, which prices each image at `IMAGE_TOKEN_ESTIMATE` (T40.3).
+#[test]
+fn image_flag_attaches_each_image_to_the_first_turn() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(work.path().join("a.png"), b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR").unwrap();
+    std::fs::write(work.path().join("b.jpg"), b"\xff\xd8\xff\xe0\0\x10JFIF\0").unwrap();
+    let out = cox(work.path(), home.path(), TEXT_ONLY)
+        .args(["--output-format", "stream-json"])
+        .args(["--image", "a.png", "--image", "b.jpg"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines: Vec<Value> = String::from_utf8(out)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let user = lines
+        .iter()
+        .find(|v| v["type"] == "item_started" && v["kind"]["type"] == "user_message")
+        .expect("the user message");
+    let types: Vec<&str> = user["kind"]["attachments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["media_type"].as_str().unwrap())
+        .collect();
+    assert_eq!(types, ["image/png", "image/jpeg"]);
+    let result = lines.last().unwrap();
+    let floor = 2 * cox_protocol::image::IMAGE_TOKEN_ESTIMATE;
+    assert!(
+        result["usage"]["input_tokens"].as_u64().unwrap() >= floor,
+        "{result}"
+    );
+}
+
+/// T40.7: a file that is not an image stops the run with exit 2 and the
+/// `ImageError` text, before any request is made.
+#[test]
+fn image_flag_refuses_a_text_file_before_any_request() {
+    let (work, home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    std::fs::write(work.path().join("notes.txt"), "not an image").unwrap();
+    cox(work.path(), home.path(), TEXT_ONLY)
+        .args(["--output-format", "stream-json", "--image", "notes.txt"])
+        .assert()
+        .code(2)
+        .stdout("")
+        .stderr(predicates_str_contains(
+            "--image notes.txt: not a PNG, JPEG, GIF or WebP image",
+        ));
 }

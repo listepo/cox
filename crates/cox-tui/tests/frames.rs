@@ -97,6 +97,7 @@ fn frame_mono_theme_renders_notices_and_a_tool_card() {
             input: serde_json::json!({"command": "ls"}),
             risk: Risk::Exec,
             subject: "ls".into(),
+            segments: None,
         }),
         output: "README.md\n".into(),
         result: None,
@@ -126,6 +127,7 @@ fn frame_after_one_turn_replays_events() {
         input: serde_json::json!({"path": "src/main.rs"}),
         risk: Risk::ReadOnly,
         subject: "src/main.rs".into(),
+        segments: None,
     };
     let events = [
         Event::TurnStarted {
@@ -156,6 +158,7 @@ fn frame_after_one_turn_replays_events() {
                 bytes: 12,
                 duration_ms: 3,
                 diff: None,
+                structured: None,
             },
         },
         Event::ItemStarted {
@@ -281,7 +284,8 @@ fn composer_slash_palette() {
     keys(&mut state, "/mo");
     insta::assert_snapshot!(buffer_to_string(&render(&state, 40, 8)));
     update(&mut state, Msg::Key(KeyEvent::from(KeyCode::Enter)));
-    assert_eq!(state.composer.text(), "/model ");
+    // `/mode` (P42) now ranks above `/model` for `/mo`.
+    assert_eq!(state.composer.text(), "/mode ");
     // Backspacing out of an empty palette removes the `/` too.
     let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
     keys(&mut state, "/");
@@ -317,6 +321,7 @@ fn osc8_links_tool_paths_but_never_model_text() {
                 input: serde_json::json!({"path": "src/main.rs"}),
                 risk: Risk::ReadOnly,
                 subject: "src/main.rs".into(),
+                segments: None,
             },
         },
     ];
@@ -367,6 +372,7 @@ fn daltonized(name: &str) -> String {
             input: serde_json::json!({}),
             risk: Risk::Write,
             subject: subject.into(),
+            segments: None,
         }),
         output: String::new(),
         result: Some(ToolResult {
@@ -379,6 +385,7 @@ fn daltonized(name: &str) -> String {
                 path: subject.into(),
                 unified: u.into(),
             }),
+            structured: None,
         }),
         started: 0,
         user: false,

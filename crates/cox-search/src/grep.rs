@@ -121,8 +121,7 @@ pub fn search(
         None => None,
     };
 
-    let mut walker = WalkBuilder::new(root);
-    walker.hidden(false).sort_by_file_path(|a, b| a.cmp(b));
+    let walker = walker(&root.to_path_buf());
 
     let mut all: Vec<Line> = Vec::new();
     for entry in walker.build() {
@@ -164,10 +163,70 @@ pub fn search(
 /// honoured, hidden files included. `require_git(false)`: a `.gitignore`
 /// states intent whether or not a `.git` directory happens to sit above it,
 /// and a worktree the agent is handed may not be a repository at all.
+/// `filter_entry` skips a `.git` directory or file at any depth: it is
+/// git's own store (or, in a worktree, a pointer to it), never a source a
+/// blind walk should list. A path the model or user names explicitly still
+/// reaches it — `read`, `write` and friends resolve through
+/// `cox_sandbox::path::confine` directly and never call this walker.
 pub(crate) fn walker(root: &PathBuf) -> WalkBuilder {
     let mut w = WalkBuilder::new(root);
     w.hidden(false)
         .require_git(false)
-        .sort_by_file_path(|a, b| a.cmp(b));
+        .sort_by_file_path(|a, b| a.cmp(b))
+        .filter_entry(|entry| entry.file_name() != ".git");
     w
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A nested `.git` directory (hooks, objects — anything git owns) never
+    /// reaches the walk, at any depth; a sibling file with `.git` only as a
+    /// substring of its name is unaffected.
+    #[test]
+    fn walker_skips_a_git_directory_at_any_depth() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join(".git/hooks")).expect("mkdir");
+        std::fs::write(dir.path().join(".git/hooks/pre-commit"), "#!/bin/sh").expect("write");
+        std::fs::create_dir_all(dir.path().join("src/nested/.git")).expect("mkdir");
+        std::fs::write(dir.path().join("src/nested/.git/HEAD"), "ref: x").expect("write");
+        std::fs::write(dir.path().join("src/gitignore.rs"), "// not git's own file")
+            .expect("write");
+
+        let paths: Vec<String> = walker(&dir.path().to_path_buf())
+            .build()
+            .filter_map(Result::ok)
+            .map(|e| e.path().display().to_string())
+            .collect();
+
+        assert!(
+            !paths.iter().any(|p| p.contains(".git")),
+            "walk listed a .git entry: {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| p.ends_with("gitignore.rs")),
+            "walk dropped an unrelated file: {paths:?}"
+        );
+    }
+
+    /// `search`'s content search must not descend into `.git/` either — it
+    /// used to build its own `WalkBuilder` instead of the shared `walker`.
+    #[test]
+    fn search_does_not_match_inside_the_git_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join(".git")).expect("mkdir");
+        std::fs::write(dir.path().join(".git/config"), "needle").expect("write");
+        std::fs::write(dir.path().join("real.txt"), "needle").expect("write");
+
+        let lines = search(dir.path(), "needle", None, None).expect("search");
+
+        assert_eq!(
+            lines.len(),
+            1,
+            "{:?}",
+            lines.iter().map(|l| &l.text).collect::<Vec<_>>()
+        );
+        assert!(lines[0].text.contains("real.txt"), "{}", lines[0].text);
+    }
 }

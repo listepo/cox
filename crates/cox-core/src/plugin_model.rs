@@ -17,8 +17,6 @@
 //! trait. It adds no check of its own; `turn::run_tools` is the model's
 //! path, so the engine stays the one place a call is allowed.
 
-use std::sync::PoisonError;
-
 use async_trait::async_trait;
 use cox_protocol::errors::CoreError;
 use cox_protocol::ids::{CallId, TurnId};
@@ -26,7 +24,6 @@ use cox_protocol::traits::{ModelCaller, ToolInvoker};
 use cox_protocol::types::{Event, Job, Level, ProviderEvent, Request, Tier, ToolResult};
 use serde_json::Value;
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
 
 use crate::budget;
 use crate::router::{Overrides, Router};
@@ -116,7 +113,7 @@ impl ToolInvoker for Session {
         // As for `!` (`user_shell`): with no turn running, an earlier `Esc`
         // may have left the token cancelled, which would deny as interrupted.
         if self.inner.lock().await.state == State::Idle {
-            *self.cancel.lock().unwrap_or_else(PoisonError::into_inner) = CancellationToken::new();
+            self.renew_cancel();
         }
         // `ToolCallRequested` carries no origin, so the transcript and the
         // rollout say whose call follows. `name` passed the grant check,

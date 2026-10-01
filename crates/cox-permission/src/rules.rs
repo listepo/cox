@@ -96,18 +96,28 @@ impl Rule {
         match &self.subject {
             Subject::Any => true,
             Subject::Exact(s) => s == subject,
-            Subject::Prefix(p) => {
-                subject == p
-                    || subject
-                        .strip_prefix(p.as_str())
-                        .is_some_and(|rest| p.is_empty() || rest.starts_with(char::is_whitespace))
-            }
+            Subject::Prefix(p) => p.is_empty() || word_prefix(p, subject),
             Subject::Domain(d) => {
                 host(subject).is_some_and(|h| h == *d || h.ends_with(&format!(".{d}")))
             }
             Subject::Path(globs) => globs.iter().any(|g| g.is_match(subject)),
         }
     }
+
+    /// Whether this rule covers the whole command line on its own: only an
+    /// `Any` or `Exact` rule may, since a prefix says nothing about what is
+    /// chained after it (T36.1).
+    pub fn matches_line(&self, tool: &str, line: &str) -> bool {
+        matches!(self.subject, Subject::Any | Subject::Exact(_)) && self.matches(tool, line)
+    }
+}
+
+/// `subject` is `prefix` alone or `prefix` followed by whitespace, so
+/// `npm run test` covers `npm run test -- --watch` but not `npm run tests`.
+pub(crate) fn word_prefix(prefix: &str, subject: &str) -> bool {
+    subject
+        .strip_prefix(prefix)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
 }
 
 /// `mcp__server__*` matches by prefix; everything else by canonical name.

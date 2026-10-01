@@ -1,6 +1,6 @@
-//! The sandbox front door (plan.md D7): turns a shell command plus the
-//! session's `SandboxPolicy` into the `Command` that confines it on this
-//! host. Separate from `bash` so the tool only knows it runs *a* command,
+//! The sandbox front door (plan.md D7): turns a shell command, or any
+//! program argv (`argv`, the desktop terminal pane's login shell), plus the
+//! session's `SandboxPolicy` into what confines it on this host. Separate from `bash` so the tool only knows it runs *a* command,
 //! and so the backends (`seatbelt` on macOS, `bwrap` or `landlock` on
 //! Linux) share one policy-to-paths translation and `doctor` has one place
 //! to ask. Seatbelt and bwrap wrap the argv; Landlock cannot, so it hooks
@@ -46,8 +46,9 @@ impl Backend {
 
 /// The backend that will confine commands here, or `None` when nothing
 /// will (Windows, `linux_backend = none`, or a Linux host with neither
-/// namespaces nor Landlock). The surface that builds the session turns
-/// `None` into a security notice and forces `on-request`.
+/// namespaces nor Landlock). D7: `cox_session::sandbox::effective_approval`
+/// turns `None` into a security notice and forces `on-failure` to
+/// `on-request` on every session open (T57.3).
 pub fn backend(linux: LinuxBackend) -> Option<Backend> {
     if cfg!(target_os = "macos") {
         return Path::new(SANDBOX_EXEC)
@@ -89,11 +90,67 @@ pub fn command(
         "-c".to_string(),
         command.to_string(),
     ];
-    let backend = (policy.mode != SandboxMode::DangerFullAccess)
+    let backend = active(policy);
+    // Landlock confines the child in `pre_exec` below instead of wrapping
+    // the argv, so only it bypasses `wrap`'s refusal.
+    let argv = match backend {
+        Some(Backend::Landlock) => shell.to_vec(),
+        other => wrap(other, policy, roots, writable_roots, &shell)?,
+    };
+    let mut cmd = Command::new(&argv[0]);
+    cmd.args(&argv[1..]);
+    #[cfg(target_os = "linux")]
+    if backend == Some(Backend::Landlock) {
+        use std::os::unix::process::CommandExt;
+        let scratch = scratch(policy.mode);
+        let guard = landlock::prepare(policy, &writable(policy, writable_roots, &scratch))?;
+        // SAFETY: `apply` only issues syscalls on state prepared before the
+        // fork; nothing in it allocates or takes a lock.
+        unsafe { cmd.pre_exec(move || guard.apply()) };
+    }
+    Ok(cmd)
+}
+
+/// The argv that runs `program` (an absolute path and its arguments, e.g.
+/// an interactive login shell in a PTY) under `policy`: wrapped by
+/// Seatbelt or bwrap, or unchanged for `danger-full-access` and hosts
+/// without a backend, exactly as `command` wraps `<shell> -c`. Landlock is
+/// refused: it confines the child in a `pre_exec` hook, which a caller that
+/// only has an argv (a PTY spawn) cannot carry.
+pub fn argv(
+    policy: &SandboxPolicy,
+    roots: &[PathBuf],
+    writable_roots: &[PathBuf],
+    program: &[String],
+) -> io::Result<Vec<String>> {
+    wrap(active(policy), policy, roots, writable_roots, program)
+}
+
+/// The backend that confines this policy's commands: none for
+/// `danger-full-access`, otherwise the host's.
+fn active(policy: &SandboxPolicy) -> Option<Backend> {
+    (policy.mode != SandboxMode::DangerFullAccess)
         .then(|| backend(policy.linux_backend))
-        .flatten();
+        .flatten()
+}
+
+/// The one place a policy becomes an argv; `backend` is passed in so the
+/// Landlock refusal is testable on a host that has no Landlock.
+fn wrap(
+    backend: Option<Backend>,
+    policy: &SandboxPolicy,
+    roots: &[PathBuf],
+    writable_roots: &[PathBuf],
+    program: &[String],
+) -> io::Result<Vec<String>> {
+    if program.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "sandbox: empty program argv",
+        ));
+    }
     let scratch = scratch(policy.mode);
-    let argv: Vec<String> = match backend {
+    Ok(match backend {
         Some(Backend::Seatbelt) => {
             let profile = seatbelt::profile(policy, writable_roots, &scratch);
             let mut argv = vec![
@@ -102,23 +159,18 @@ pub fn command(
                 profile,
                 "--".to_string(),
             ];
-            argv.extend(shell);
+            argv.extend(program.iter().cloned());
             argv
         }
-        Some(Backend::Bwrap) => bwrap::argv(policy, roots, writable_roots, &scratch, &shell),
-        Some(Backend::Landlock) | None => shell.to_vec(),
-    };
-    let mut cmd = Command::new(&argv[0]);
-    cmd.args(&argv[1..]);
-    #[cfg(target_os = "linux")]
-    if backend == Some(Backend::Landlock) {
-        use std::os::unix::process::CommandExt;
-        let guard = landlock::prepare(policy, &writable(policy, writable_roots, &scratch))?;
-        // SAFETY: `apply` only issues syscalls on state prepared before the
-        // fork; nothing in it allocates or takes a lock.
-        unsafe { cmd.pre_exec(move || guard.apply()) };
-    }
-    Ok(cmd)
+        Some(Backend::Bwrap) => bwrap::argv(policy, roots, writable_roots, &scratch, program),
+        Some(Backend::Landlock) => {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "sandbox: landlock cannot wrap an argv; it needs the child's pre_exec",
+            ));
+        }
+        None => program.to_vec(),
+    })
 }
 
 /// Directories every command may write regardless of the workspace: the
@@ -205,7 +257,7 @@ mod tests {
         }
     }
 
-    fn argv(cmd: &Command) -> Vec<String> {
+    fn cmd_argv(cmd: &Command) -> Vec<String> {
         std::iter::once(cmd.get_program())
             .chain(cmd.get_args())
             .map(|a| a.to_string_lossy().into_owned())
@@ -222,7 +274,7 @@ mod tests {
             "echo hi",
         )
         .expect("command");
-        assert_eq!(argv(&cmd), ["/bin/sh", "-c", "echo hi"]);
+        assert_eq!(cmd_argv(&cmd), ["/bin/sh", "-c", "echo hi"]);
     }
 
     #[test]
@@ -247,11 +299,85 @@ mod tests {
             "echo hi",
         )
         .expect("command");
-        let argv = argv(&cmd);
+        let argv = cmd_argv(&cmd);
         assert_eq!(argv[0], SANDBOX_EXEC);
         assert_eq!(argv[1], "-p");
         assert!(argv[2].starts_with("(version 1)"));
         // The chosen shell is what the profile wraps, not always /bin/sh.
         assert_eq!(&argv[argv.len() - 3..], ["/bin/zsh", "-c", "echo hi"]);
+    }
+
+    fn strings(parts: &[&str]) -> Vec<String> {
+        parts.iter().map(|p| p.to_string()).collect()
+    }
+
+    #[test]
+    fn command_argv_is_unchanged_by_the_extraction() {
+        let roots = vec![PathBuf::from("/ws")];
+        for mode in [
+            SandboxMode::ReadOnly,
+            SandboxMode::WorkspaceWrite,
+            SandboxMode::DangerFullAccess,
+        ] {
+            let policy = policy(mode);
+            let shell = strings(&["/bin/zsh", "-c", "echo hi"]);
+            let cmd = command(&policy, &roots, &roots, Path::new("/bin/zsh"), "echo hi")
+                .expect("command");
+            // The argv `command` built inline before `argv` existed.
+            let scratch = scratch(mode);
+            let expected = match active(&policy) {
+                Some(Backend::Seatbelt) => {
+                    let mut v = vec![
+                        SANDBOX_EXEC.to_string(),
+                        "-p".to_string(),
+                        seatbelt::profile(&policy, &roots, &scratch),
+                        "--".to_string(),
+                    ];
+                    v.extend(shell.clone());
+                    v
+                }
+                Some(Backend::Bwrap) => bwrap::argv(&policy, &roots, &roots, &scratch, &shell),
+                Some(Backend::Landlock) | None => shell.clone(),
+            };
+            assert_eq!(cmd_argv(&cmd), expected, "{mode:?}");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn argv_wraps_an_interactive_login_shell_in_seatbelt() {
+        let roots = vec![PathBuf::from("/ws")];
+        let policy = policy(SandboxMode::WorkspaceWrite);
+        let login = strings(&["/bin/zsh", "-l", "-i"]);
+        let argv = argv(&policy, &roots, &roots, &login).expect("argv");
+        assert_eq!(argv[..2], [SANDBOX_EXEC, "-p"]);
+        assert_eq!(
+            argv[2],
+            seatbelt::profile(&policy, &roots, &scratch(policy.mode))
+        );
+        assert_eq!(argv[3], "--");
+        assert_eq!(argv[4..], login[..]);
+    }
+
+    #[test]
+    fn argv_refuses_landlock() {
+        let policy = policy(SandboxMode::WorkspaceWrite);
+        let login = strings(&["/bin/bash", "-l", "-i"]);
+        let err = wrap(Some(Backend::Landlock), &policy, &[], &[], &login)
+            .expect_err("landlock cannot wrap an argv");
+        assert_eq!(err.kind(), io::ErrorKind::Unsupported);
+    }
+
+    #[test]
+    fn argv_leaves_danger_full_access_bare() {
+        let login = strings(&["/bin/zsh", "-l", "-i"]);
+        let argv = argv(
+            &policy(SandboxMode::DangerFullAccess),
+            &[PathBuf::from("/ws")],
+            &[PathBuf::from("/ws")],
+            &login,
+        )
+        .expect("argv");
+        assert_eq!(argv, login);
     }
 }

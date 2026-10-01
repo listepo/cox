@@ -107,10 +107,20 @@ pub fn describe(others: &[Presence], now: u64) -> String {
         } else {
             format!("editing {}", r.touched.join(", "))
         };
+        // T44.2: the path is another process's record and reaches the
+        // model, so it goes through the one guard; a newline would let it
+        // forge a line of this list.
+        let worktree = r.worktree.as_ref().map_or_else(String::new, |w| {
+            format!(
+                " in worktree {}",
+                cox_sanitize::sanitize(&w.display().to_string()).replace('\n', " ")
+            )
+        });
         text.push_str(&format!(
-            "- session {} (pid {}): {}, turn {}, {}; last seen {}\n",
+            "- session {} (pid {}){}: {}, turn {}, {}; last seen {}\n",
             r.session,
             r.pid,
+            worktree,
             r.status.name(),
             r.turn,
             files,
@@ -118,6 +128,22 @@ pub fn describe(others: &[Presence], now: u64) -> String {
         ));
     }
     text
+}
+
+/// T44.2: the other live session of `project` already running in
+/// `worktree`, if any — a record silent for `STALE_SECS` does not hold it.
+/// Warn-only: the caller still starts (one session per worktree is a
+/// convention, not a lock).
+pub fn holder(
+    home: &Path,
+    project: &Path,
+    worktree: &Path,
+    me: &SessionId,
+    now: u64,
+) -> Option<Presence> {
+    others(home, project, me, now)
+        .into_iter()
+        .find(|r| r.status != PresenceStatus::Stopped && r.worktree.as_deref() == Some(worktree))
 }
 
 fn ago(secs: u64) -> String {
@@ -339,6 +365,60 @@ mod tests {
         assert!(text.contains("stopped"), "{text}");
         assert!(!text.contains(&me.to_string()), "{text}");
         assert_eq!(describe(&[], now), "");
+    }
+
+    #[test]
+    fn describe_names_other_sessions_worktree() {
+        let now = 100_000;
+        let peer = SessionId::new();
+        let mut r = record(peer, "/w", now);
+        r.worktree = Some("/_worktrees/w-t9\u{1b}[31m\nforged".into());
+        let text = describe(&[r], now);
+        assert!(
+            text.contains(&format!(
+                "session {peer} (pid 7) in worktree /_worktrees/w-t9 forged: active"
+            )),
+            "{text}"
+        );
+        assert!(!text.contains('\u{1b}'), "{text}");
+    }
+
+    #[test]
+    fn holder_finds_live_session_on_same_worktree() {
+        let home = tempfile::tempdir().unwrap();
+        let now = 100_000;
+        let (me, peer, elsewhere, main) = (
+            SessionId::new(),
+            SessionId::new(),
+            SessionId::new(),
+            SessionId::new(),
+        );
+        let on = |session, worktree: &str| Presence {
+            worktree: Some(worktree.into()),
+            ..record(session, "/w", now)
+        };
+        write(home.path(), &on(me, "/wt/a")).unwrap();
+        write(home.path(), &on(peer, "/wt/a")).unwrap();
+        write(home.path(), &on(elsewhere, "/wt/b")).unwrap();
+        write(home.path(), &record(main, "/w", now)).unwrap();
+        let found = holder(home.path(), Path::new("/w"), Path::new("/wt/a"), &me, now);
+        assert_eq!(found.map(|r| r.session), Some(peer));
+        let none = holder(home.path(), Path::new("/w"), Path::new("/wt/c"), &me, now);
+        assert!(none.is_none());
+    }
+
+    #[test]
+    fn holder_ignores_stale_records() {
+        let home = tempfile::tempdir().unwrap();
+        let now = 100_000;
+        let (me, stale) = (SessionId::new(), SessionId::new());
+        let held = Presence {
+            worktree: Some("/wt/a".into()),
+            ..record(stale, "/w", now - STALE_SECS - 1)
+        };
+        write(home.path(), &held).unwrap();
+        let found = holder(home.path(), Path::new("/w"), Path::new("/wt/a"), &me, now);
+        assert!(found.is_none());
     }
 
     #[tokio::test]

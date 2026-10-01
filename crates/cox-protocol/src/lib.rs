@@ -14,15 +14,18 @@
 //! - [`types`] — `Submission`, `Event`, the provider-neutral `Request`/`Content`, `ToolSpec`, and everything reachable from them.
 //! - [`errors`] — the error taxonomy (plan.md §1.14): `ProviderError`, `ToolError`, `CoreError`, `StoreError`, `ExtError`, `McpError`.
 //! - [`traits`] — `Provider`, `Tool`, `ToolCx`, `Store`, `Hook`, `Archive`, `PluginStore`, `Relay`: the seams every other crate implements against.
+//! - [`image`] — `sniff`, the size cap and base64 encoding for images: the one check an image passes before it becomes an `Attachment` or a tool-output payload (T40.1).
 //! - [`config`] — the `Config` struct tree mirroring `config/default.toml` (plan.md §1.6).
 //! - [`plugin`] — `cox-plugin-api` re-exported (A52): the `plugin.toml` manifest and, later, the ABI payloads. It lives in its own crate because the guest SDK builds it for wasm32.
 
 #![warn(missing_docs)]
 
 pub mod agent;
+pub mod commands;
 pub mod config;
 pub mod errors;
 pub mod ids;
+pub mod image;
 pub mod traits;
 pub mod types;
 
@@ -34,16 +37,17 @@ pub use errors::{
 };
 pub use ids::{ArchiveId, CallId, ItemId, SessionId, TaskId, TurnId};
 pub use traits::{
-    Archive, ArchivePut, Before, Change, CheckpointRow, Checkpointer, GrantScope, Hook, MemoryHit,
-    PluginGrant, PluginStore, PreImage, Provider, Relay, SessionRow, Snapshot, Store, Tool, ToolCx,
-    UsageRow,
+    Archive, ArchivePut, Before, Change, CheckpointRow, Checkpointer, GrantScope, Hook,
+    HunkReverter, MemoryHit, PluginGrant, PluginStore, PreImage, Provider, Relay, SessionRow,
+    Snapshot, Store, Tool, ToolCx, UsageRow,
 };
 pub use types::ArchiveRef;
 pub use types::{
     ApprovalPolicy, Attachment, Caps, CheckpointFile, CheckpointKind, Concurrency, Content,
-    DecidedBy, Decision, Diff, Effort, Event, HookEvent, HookOutcome, Item, ItemKind, Job, Level,
-    LinuxBackend, Message, ModelId, PermissionMode, ProviderEvent, ProviderId, Request, Risk, Role,
-    SandboxMode, SandboxPolicy, SlashCommand, StopReason, Submission, SystemBlock, Thinking, Tier,
+    ContextBreakdown, DecidedBy, Decision, Diff, Effort, Event, HookEvent, HookOutcome, Item,
+    ItemKind, Job, Level, LinuxBackend, Message, ModelId, PermissionMode, ProviderEvent,
+    ProviderId, Request, Risk, Role, SandboxMode, SandboxPolicy, Segments, SkipReason, SkippedFile,
+    SlashCommand, StopReason, Submission, SystemBlock, Thinking, Tier, TodoItem, TodoState,
     ToolCall, ToolOutput, ToolResult, ToolSpec, Usage, Why,
 };
 

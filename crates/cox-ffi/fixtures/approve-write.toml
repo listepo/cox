@@ -1,0 +1,10 @@
+# Fixture scenario (T37.27): a `write` asks for approval in the default
+# mode; the recorder allows it and the turn resumes — the pending `Approval`
+# block, the inbox note with badge 1, then the write and the reply.
+# Recorded to desktop/macos/Fixtures/approve-write.json.
+[[turn]]
+text = "Writing the summary."
+tool_calls = [{ name = "write", input = { path = "summary.md", content = "hello\n" } }]
+
+[[turn]]
+text = "Wrote `summary.md`."

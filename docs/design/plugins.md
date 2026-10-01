@@ -62,13 +62,25 @@ If both locations have the same id, the user plugin wins and the project plugin 
 
 The global switch is `plugins.enabled`, as a config key, an env var and `--no-plugins` (D13).
 
-**Install sources in v1: a local directory only.** Fewer is better:
+**Install sources: a local directory, an https URL, or a git repository (A121 §3, P53).** Fewer is better, so the added sources end in the same install this section already describes — validate the manifest, digest the tree, copy into `versions/<digest12>/`, ask for the grant — no second path, no plugin runs before its grant:
 
-- a local path needs no network, no download UX and no trust-on-first-download;
-- it is enough for the dev loop (`new` → build → `install` or `link`) and for every test;
-- a URL with a pinned `sha256` and a git tag are listed in §12 as out of scope.
+- **A local directory:** `cox plugin install <dir>`, as above. No network, no download UX, no trust-on-first-download; the dev loop (`new` → build → `install` or `link`) and every test.
+- **An https URL:** `cox plugin install <https-url> --sha256 <hex>` fetches a `.tar.gz` archive. `--sha256` is required — a URL with none, `http://`, `file://` and every other scheme are all refused before a byte is fetched — and the download is refused the moment its digest fails to match, before anything is unpacked.
+- **A git repository:** `cox plugin install git+<url> --rev <tag|commit> [--path <subdir>]`. `--rev` is required and must name a tag or a commit; a branch name is refused, so `update` (§1b) never follows a moving target silently. `--path` selects a subdirectory of the clone as the package root, confined inside the clone.
 
-`install` records `{kind: "path", path, digest}`, and `update` re-reads that path.
+Both downloads land under `~/.cox/plugins/.staging/` first, removed on every exit — success, refusal or a crash — before anything moves into `versions/<digest12>/`. A downloaded archive or a cloned repository is repository content, and repository content is untrusted (D14): nothing in it runs during install, and any symlink or path entry that resolves outside the staging directory is refused, for the archive's entries and the clone's alike.
+
+Git is shelled to exactly as `crates/cox-tools/src/git.rs` shells to it for the status line and worktrees (A13, `git_or_err`/`git`, `crates/cox-tools/src/git.rs:511-529`): `git` found on `PATH` through `Command::new("git")`, never linked in via `git2` or `gix`, and never read from a cloned repository's own config for how to run git itself. Install runs `git clone --depth 1 --no-recurse-submodules --branch <tag>` (or a fetch of a commit when `--rev` is not a tag) with `GIT_TERMINAL_PROMPT=0`, so a private repository fails instead of prompting, into the staging directory; the resolved commit is what gets recorded. Archive extraction reuses the `tar` shell-out `crates/cox/src/self_update.rs` already runs to unpack a release (`unpack_cox`, `std::process::Command::new("tar")`, `crates/cox/src/self_update.rs:118-155`) rather than adding a second extraction path.
+
+`install` records the source it used:
+
+- local: `{kind: "path", path, digest}`
+- URL: `{kind: "url", url, sha256}`
+- git: `{kind: "git", url, rev, commit, path}`
+
+`update` (§1b) re-reads that recorded source, per kind: a local path is re-read from disk, as today; a URL source is re-fetched at the same URL and the same hash — a changed file at that URL is a hash mismatch, refused, never a silent update, and a new version is a new `install` with a new hash; a git source is re-fetched at the same tag or commit — a tag that now resolves to a different commit yields a new digest and asks for the grant again with the capability diff, exactly like a bytes-changed local update. `--check` (§1b) applies to all three: fetch, compute, print, change nothing.
+
+No new dependency: the URL source reuses the `reqwest` client and the SHA-256 helper `crates/cox/src/self_update.rs` already has, archive extraction reuses its `tar` shell-out, and git is already shelled to the same way (A13).
 
 ### 1b. Update and rollback
 
@@ -151,6 +163,10 @@ price = { input = 0.042, output = 0.0 }
 name = "gh"
 command = "bin/gh-mcp-${target}" # inside the package, or a PATH program shown verbatim at approval
 args = ["--stdio"]
+
+[[agents]]                       # T45.3: a subagent definition, same format as .cox/agents/*.md
+name = "reviewer"                # dispatched as agent(preset: "reviewer")
+file = "agents/reviewer.md"
 ```
 
 Validation (T33.1 and T33.4):
@@ -160,6 +176,8 @@ Validation (T33.1 and T33.4):
 - `net` entries are host patterns, not URLs;
 - `fs` roots are `$WORKSPACE`, `$PLUGIN_DATA` or paths inside them;
 - a `ui.render` target outside the plugin's own tools needs an explicit `tool:<name>`, which approval shows as "changes how <name> looks";
+- an `[[agents]]` `file` is a relative `.md` path with no `..`, `\` or `:` component, and names are unique (T45.3);
+- `wasm` may be omitted only by a data-only package: `[[mcp]]` and/or `[[agents]]`, nothing else;
 - unknown keys are an error. The manifest is ours, so `deny_unknown_fields` applies, as in `Config` (`crates/cox-protocol/src/config.rs:35`).
 
 The capability list is the unit of approval. Each entry becomes one line in the dialog, for example "Can call the model on the cheap tier (costs appear in `cox stats` as `plugin:git-glance`)".
@@ -181,7 +199,7 @@ There is no general kv table today (`schema.rs:13-87`). A narrow `PluginStore` t
 - `NeedsApproval { added, removed }`: a new digest, or wider capabilities.
 - `Disabled`.
 
-The granted list (T33.6) is a sorted JSON array of strings, one line per capability: `events:<tag>`, `hooks:<name>`, `tools:<name>`, `invoke:<name>`, `net:<host>`, `fs.read:<root>`, `fs.write:<root>`, `decide:<point>`, `ui.render:<target>`, the flags `wasi`, `context`, `kv`, `ui.status`, `ui.panel`, `ui.overlay`, `ui.commands`, `ui.keys`, `model:cheap` or `model:code`, plus one line per `[[provider]]` (`provider:<name> <base_url> key=<env>`), `[[mcp]]` (`mcp:<name> <command args | url>`) and `[[external_agents]]` entry. The model tier is the one ordered entry: a `model:code` grant covers a `model:cheap` request. A row whose `capabilities` is not such an array grants nothing, and a store read error counts as no grant. `Disabled` wins over the digest check. A project `.cox/config.toml` may turn `plugins.enabled` off but never on (the project-config guard list).
+The granted list (T33.6) is a sorted JSON array of strings, one line per capability: `events:<tag>`, `hooks:<name>`, `tools:<name>`, `invoke:<name>`, `net:<host>`, `fs.read:<root>`, `fs.write:<root>`, `decide:<point>`, `ui.render:<target>`, the flags `wasi`, `context`, `kv`, `ui.status`, `ui.panel`, `ui.overlay`, `ui.commands`, `ui.keys`, `model:cheap` or `model:code`, plus one line per `[[provider]]` (`provider:<name> <base_url> key=<env>`), `[[mcp]]` (`mcp:<name> <command args | url>`) `[[external_agents]]` entry (`agent:<name> <argv> key=<env>`) and `[[agents]]` entry (`subagent:<name> <file>`, T45.3). The model tier is the one ordered entry: a `model:code` grant covers a `model:cheap` request. A row whose `capabilities` is not such an array grants nothing, and a store read error counts as no grant. `Disabled` wins over the digest check. A project `.cox/config.toml` may turn `plugins.enabled` off but never on (the project-config guard list).
 
 By surface:
 
@@ -400,7 +418,7 @@ Headless and ACP do not call UI exports.
 
 | Metric | Budget | Measured by |
 | --- | --- | --- |
-| release binary growth from extism and wasmtime | ≤ 20 MiB (was 10 MiB; T33.3 measured +16.8 MiB, 2026-09-26) | `scripts/footprint.sh` before and after T33.3 (R§4.3.5 P25) |
+| release binary growth from extism and wasmtime | ≤ 22 MiB (was 20 MiB, and 10 MiB before that; T33.3 measured +16.8 MiB on 2026-09-26, and the whole `plugins` feature measured +20.38 MiB on 2026-09-27, A65) | `scripts/footprint.sh` before and after T33.3 (R§4.3.5 P25) |
 | clean build growth | ≤ 60 s | `cargo build --timings` before and after T33.3 (R§4.3.5 P25) |
 | warm session start per plugin (wasmtime cache on) | ≤ 50 ms | `just bench` timing over the Rust example: open, then `cox_init` |
 | cold compile of a 1 MiB module | ≤ 500 ms | same, cache cleared |
@@ -414,7 +432,7 @@ The compilation cache uses `with_cache_config` (P7), pointed at `~/.cox/cache/wa
 
 **Falsifiers.**
 
-1. **Footprint.** If T33.3 measures more than 10 MiB of binary or 60 s of clean build for extism, the host moves behind a default-on cargo feature `plugins`, a lean build ships without it, and D1 is amended. **Fired (2026-09-26).** T33.3 measured +16.8 MiB (53 713 168 → 71 277 728 B, R§4.3.5 P25); clean-build growth could not be separated from machine load (wall time 159 s before, 139 s after; +463 CPU-s of new units). The creator's decision: the host sits behind the cargo feature `plugins` on `crates/cox`, on by default, which gates the optional `cox-plugin` dependency. The slim build is `--no-default-features --features otel`, and `crates/cox/tests/deps.rs` (`slim_build_has_no_wasm_runtime`) checks that it has no extism or wasmtime. The binary budget is now 20 MiB; the falsifier fires again above that.
+1. **Footprint.** If T33.3 measures more than 10 MiB of binary or 60 s of clean build for extism, the host moves behind a default-on cargo feature `plugins`, a lean build ships without it, and D1 is amended. **Fired (2026-09-26).** T33.3 measured +16.8 MiB (53 713 168 → 71 277 728 B, R§4.3.5 P25); clean-build growth could not be separated from machine load (wall time 159 s before, 139 s after; +463 CPU-s of new units). The creator's decision: the host sits behind the cargo feature `plugins` on `crates/cox`, on by default, which gates the optional `cox-plugin` dependency. The slim build is `--no-default-features --features otel`, and `crates/cox/tests/deps.rs` (`slim_build_has_no_wasm_runtime`) checks that it has no extism or wasmtime. The binary budget became 20 MiB. On 2026-09-27 the whole `plugins` feature measured +20.38 MiB (77 780 912 B full against 56 409 008 B slim, macOS arm64 release), and the creator raised the budget to 22 MiB (A65); the falsifier fires again above that.
 2. **Latency.** If warm start exceeds 50 ms per plugin or a status render exceeds 5 ms p95 on the example, status segments become push-only: a `cox_set_status` host function replaces `cox_render` for the status slot.
 3. **The ABI is too small.** If Jev-as-a-plugin (T33.40) needs a host function that bypasses the engine, the ledger or the sandbox, the ABI is wrong and the decision-point design is revisited before `api = 1` freezes.
 4. **The wasmtime pin.** If a wasmtime advisory affects the version extism pins (43, P3) and extism ships no fix within 30 days, embedding wasmtime directly is re-evaluated.
@@ -423,7 +441,6 @@ The compilation cache uses `with_cache_config` (P7), pointed at `~/.cox/cache/wa
 **Out of scope.**
 
 - A marketplace or registry.
-- Install from a URL (with a sha256) or from git (with a tag).
 - Signatures.
 - The component model and WIT.
 - Plugin-to-plugin calls.
@@ -455,7 +472,7 @@ The compilation cache uses `with_cache_config` (P7), pointed at `~/.cox/cache/wa
 | --- | --- | --- | --- | --- |
 | Rust | `extism-pdk` 1.4.1, official | `wasm32-unknown-unknown` | yes (P17) | the reference: SDK, example and template first |
 | Go | `github.com/extism/go-pdk` v1.1.3, official (maintained, pushed 2026-01-22) | TinyGo `-target wasip1 -buildmode=c-shared`, or Go ≥ 1.24 `GOOS=wasip1` with `//go:wasmexport` | yes by the PDK's docs, with WASI on | SDK wrapper, example and template, built in the `plugins` CI job |
-| Kotlin | none maintained (`LizAinslie/extism-kotlin-pdk`, last push 2023-11-30) | Kotlin/Wasm `wasmWasi`, Beta, WASI preview 1, needs GC and exception handling; `@WasmImport`/`@WasmExport` are experimental | **refuted (T33.35, 2026-09-26, R§4.3.5 P40–P43)**: a minimal `cox_init` module (Kotlin 2.4.20) fails to *parse* under extism 1.30.0's default engine config — `exceptions proposal not enabled` — regardless of WASI; Kotlin's `wasmWasi` output unconditionally uses the wasm exception-handling proposal, which extism enables only behind its non-default `wasmtime-exceptions` feature. With that feature on it instantiates and calls `cox_init` cleanly, with WASI off exactly as the real host runs today (A55/T33.43 is not the blocker here) | unblocked: the creator approved `wasmtime-exceptions` for every plugin on 2026-09-26 (A61, §15 decision 3); T33.36 ships the thin PDK, example, template and `--lang kotlin` |
+| Kotlin | none maintained (`LizAinslie/extism-kotlin-pdk`, last push 2023-11-30) | Kotlin/Wasm `wasmWasi`, Beta, WASI preview 1, needs GC and exception handling; `@WasmImport`/`@WasmExport` are experimental | **refuted (T33.35, 2026-09-26, R§4.3.5 P40–P43)**: a minimal `cox_init` module (Kotlin 2.4.20) fails to *parse* under extism 1.30.0's default engine config — `exceptions proposal not enabled` — regardless of WASI; Kotlin's `wasmWasi` output unconditionally uses the wasm exception-handling proposal, which extism enables only behind its non-default `wasmtime-exceptions` feature. With that feature on it instantiates and calls `cox_init` cleanly, with WASI off exactly as the real host runs today (A55/T33.43 is not the blocker here) | `wasmtime-exceptions` approved and on (A61), but any real module also imports `wasi_snapshot_preview1::random_get` from Kotlin's stdlib (R§4.3.5 P45), so Kotlin waits for WASI (T33.43, A63); the draft PDK and example are on branch `wip/t33.36-kotlin` |
 | Dart | none | `dart2wasm` targets JS environments only: "doesn't support execution in standard Wasm run-times like wasmtime" (dart.dev, Dart 3.13) | **no — refuted again 2026-09-26** (T33.37, R§4.3.5 P44): Dart 3.13.4's `dart compile wasm` still emits a JS bootstrap, and the module fails to parse under the workspace's pinned extism/wasmtime 43 (`exceptions proposal not enabled`) before even reaching its `wasm:js-string`/`dart2wasm` JS imports | documented exception: the Dart template scaffolds a plugin whose only capability is an `[[mcp]]` stdio server (`dart compile exe`, `dart_mcp` 0.5.2), so `--with` accepts only `tool` and `mcp` for Dart; dart-lang/sdk#56366 (WASI support) is still open — re-run the spike when it closes |
 
 Every language implements the same example: a status segment showing the turn count, a `PostToolUse` hook that counts failures, a `/<id>:reset` command and a `turn_started` subscription. The Dart MCP variant implements one tool, `count`.
@@ -472,7 +489,7 @@ The creator resolved every open question this design and the Jev use case (A25/A
 
 1. **SDK/API publishing.** `cox-plugin-api` and `cox-plugin-sdk` are not published while `api` may still change. Publishing them, once the ABI is stable, is a `roadmap.md` item, not a P33 card.
 2. **Dart.** Stays the documented exception (§13): its only v1 capability is an `[[mcp]]` stdio server. T33.37 re-checked dart-lang/sdk#56366 on 2026-09-26 (still open) and tried Dart 3.13.4 against the workspace's extism/wasmtime pins (R§4.3.5 P44): refuted — `dart compile wasm` still emits a JS bootstrap, and the module fails to instantiate (`exceptions proposal not enabled`) before its `wasm:js-string`/`dart2wasm` JS imports even come into play. Re-run the spike when #56366 closes.
-3. **Kotlin.** T33.35's spike (2026-09-26, R§4.3.5 P40–P43) found that a minimal Kotlin/Wasm `wasmWasi` module needs extism's non-default `wasmtime-exceptions` feature just to parse (unrelated to WASI/A55). The creator approved turning it on for the whole workspace on 2026-09-26 (A61), so it applies to every plugin, not only Kotlin ones; see "Engine features" in `docs/plugins.md`. T33.36 proceeds: a thin cox PDK, the example, the template and `--lang kotlin`.
+3. **Kotlin.** T33.35's spike (2026-09-26, R§4.3.5 P40–P43) found that a minimal Kotlin/Wasm `wasmWasi` module needs extism's non-default `wasmtime-exceptions` feature just to parse (unrelated to WASI/A55). The creator approved turning it on for the whole workspace on 2026-09-26 (A61), so it applies to every plugin, not only Kotlin ones; see "Engine features" in `docs/plugins.md`. A real Kotlin module also imports `wasi_snapshot_preview1::random_get` from Kotlin's own stdlib (R§4.3.5 P45), and the host keeps WASI off until T33.43 (A55), so T33.36 waits for that bump, like Go (A63).
 4. **Sandboxing MCP stdio servers.** Every MCP stdio server — not only ones a plugin ships — runs under `sandbox::Policy` (§7c). This resolves §7c's open question the other way from the status quo: instead of leaving existing user-configured servers unsandboxed, it wraps all of them, with a per-server opt-out in config (T33.42, its own card).
 5. **`route`.** A plugin may only downgrade the tier (D5 still holds: never up, never `think`). The core offers a downgrade to the plugin only when its own cost estimate (catalog prices, prefix size, the cache-read/write formula, T33.40.8) predicts a saving over the static pick. A plugin cannot even be asked when the core's own estimate says downgrading would cost more.
 6. **Install sources in v1.** Confirmed: local folder only (§1). Git and URL sources move to `roadmap.md`.
@@ -484,3 +501,4 @@ The creator resolved every open question this design and the Jev use case (A25/A
 12. **T32.15 (`cox-provider-jev`) is dropped.** After parity, `jev.rs` is deleted outright rather than extracted into its own crate; see `plan.md` §6 A52 and `done.md`.
 13. **The ABI fix from the Jev research.** Writing the Jev plugin against `api = 1` as first drafted exposed a deadlock/ledger-bypass gap (T33.40.1, §4 above): `cox_decide` now returns either an `Advice` or a `ModelCall`, the host runs the call through the plugin's own provider with the budget gate and ledger, then calls `cox_decide_resume`; `cox_http` to a provider host is allowed only inside `cox_provider_stream`; `Question` is batched. The example provider throughout this document is named `typesafe`, not `jev` — the plugin id stays `jev`, the provider section it declares is `typesafe` (§2).
 14. **No prebuilt Jev plugin archive ships with the release.** Users build it from `plugins/jev` (`just plugin jev`) and install it with `cox plugin install <dir>` (§1).
+15. **Plugin agent definitions are grant-gated, local definitions win** (T45.3, 2026-09-29). An `[[agents]]` file is loaded only for a `Granted` plugin, and each file is its own approval line, so an update that adds or renames one asks again. A `.cox/agents/*.md` or `~/.cox/agents/*.md` definition of the same name wins over the plugin's, with a notice (T45.4). The definition's `permissionMode` can only narrow the parent's mode (T45.2).

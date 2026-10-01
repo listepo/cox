@@ -97,8 +97,9 @@ const MODEL_CODE: &str = "model:code";
 /// The manifest's requests as one sorted line each — the unit of approval
 /// (PL§2) and the JSON array stored in `plugin_grants.capabilities`. Covers
 /// `[capabilities]` plus the sections that reach the network or run a
-/// program (`[[provider]]`, `[[mcp]]`, `[[external_agents]]`), so a diff
-/// names every one of them.
+/// program (`[[provider]]`, `[[mcp]]`, `[[external_agents]]`), plus
+/// `[[agents]]` definitions, which steer a subagent's prompt and tools, so
+/// a diff names every one of them.
 pub fn capability_list(manifest: &PluginManifest) -> Vec<String> {
     let caps = &manifest.capabilities;
     let mut out = BTreeSet::new();
@@ -157,6 +158,11 @@ pub fn capability_list(manifest: &PluginManifest) -> Vec<String> {
             .join(" ");
         out.insert(format!("agent:{} {argv} key={}", a.name, a.key_env));
     }
+    // `subagent:` so a definition file never reads as the process-spawning
+    // `agent:` line above.
+    for a in &manifest.agents {
+        out.insert(format!("subagent:{} {}", a.name, a.file));
+    }
     out.into_iter().collect()
 }
 
@@ -201,6 +207,7 @@ mod tests {
             models: Vec::new(),
             mcp: Vec::new(),
             external_agents: Vec::new(),
+            agents: Vec::new(),
         }
     }
 
@@ -291,6 +298,29 @@ mod tests {
             Verdict::NeedsApproval { added, .. }
                 if added == ["agent:cursor npx acp --trust key=CURSOR_API_KEY"]
         ));
+    }
+
+    /// T45.3: a newly declared `[[agents]]` file is an added approval line,
+    /// so an update cannot slip a subagent definition in under an old grant.
+    #[test]
+    fn grant_new_agent_needs_approval() {
+        let mut m = manifest(Capabilities {
+            kv: true,
+            ..Capabilities::default()
+        });
+        let stored = grant("d1", &["kv"]);
+        assert_eq!(check(&m, "d1", Some(&stored)), Verdict::Granted);
+        m.agents.push(cox_plugin_api::AgentDecl {
+            name: "reviewer".into(),
+            file: "agents/reviewer.md".into(),
+        });
+        assert_eq!(
+            check(&m, "d1", Some(&stored)),
+            Verdict::NeedsApproval {
+                added: vec!["subagent:reviewer agents/reviewer.md".into()],
+                removed: Vec::new(),
+            }
+        );
     }
 
     fn linked_grant(caps: &[&str]) -> PluginGrant {

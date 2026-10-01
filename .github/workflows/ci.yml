@@ -6,54 +6,54 @@ on:
     # Draft PRs get standard CI: docs-only changes finish in ~2 min and the
     # signal (fmt/clippy/nextest green) is what promotes a draft to ready.
   workflow_dispatch:
+  # Dependabot pull requests: dependabot.yml calls this workflow so they get the
+  # same jobs before its patch-only auto-merge.
+  workflow_call:
+
+# Build and test jobs need only to read the repository; a job that needs more
+# (revert-on-failure) declares its own. This also caps these jobs when
+# dependabot.yml calls this workflow with wider permissions.
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
 
+# Every job installs Rust from mise.toml, the single source of the Rust
+# version: the `rust` job through the shared pyrlyn/infra workflow, the others
+# through .github/actions/rust. Both fail when rustc is not that pin.
 jobs:
-  test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-15, ubuntu-24.04]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: dtolnay/rust-toolchain@1.97.1
-        with:
-          components: rustfmt, clippy
-          # The guest workspace `plugins/` builds for wasm32 (PL§13, T33.27).
-          targets: wasm32-unknown-unknown
-
-      - uses: Swatinem/rust-cache@v2
-
-      # Linux job A (plan.md T4.2): the sandbox must pick bubblewrap.
-      - name: bubblewrap
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bubblewrap
-          # Ubuntu 24.04 confines unprivileged user namespaces behind AppArmor
-          # and ships no profile for bwrap, so `bwrap --unshare-user` fails and
-          # `sandbox::backend` silently falls back to Landlock — which is what
-          # job B tests. Lift the restriction here, then run the exact probe
-          # cox runs so a refusal fails this step with bwrap's own message
-          # rather than a test three minutes later.
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          bwrap --unshare-user --unshare-pid --die-with-parent --ro-bind / / --proc /proc --dev /dev /bin/true
-          echo "COX_EXPECT_SANDBOX=bwrap" >> "$GITHUB_ENV"
-
-      - name: fmt
-        run: cargo fmt --check
-
-      - name: clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - uses: taiki-e/install-action@nextest
-
-      - name: test
-        run: cargo nextest run --workspace
+  # The shared pyrlyn/infra workflow, pinned by commit (descendant of the
+  # ci-rust pin in #57; this commit also ships release-plz.yml and pipeline.yml):
+  # fmt once, then per target clippy (--all-targets --all-features), check, and
+  # nextest where the runner executes the target (Linux x86_64 and aarch64,
+  # macOS aarch64) or a build where it does not (macOS x86_64).
+  rust:
+    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@189816ac5a375e18e0235044970efcbc40e3cabd
+    with:
+      # The shared matrix minus Windows: the workspace does not build there
+      # yet (P57); the `windows` job below checks the crates that do.
+      matrix: >-
+        [
+        {"os": "ubuntu-latest", "target": "x86_64-unknown-linux-gnu"},
+        {"os": "ubuntu-24.04-arm", "target": "aarch64-unknown-linux-gnu"},
+        {"os": "macos-latest", "target": "aarch64-apple-darwin"},
+        {"os": "macos-latest", "target": "x86_64-apple-darwin"}
+        ]
+      # The manifest is virtual with `default-members`; cover every member.
+      clippy-args: --workspace
+      tools: nextest
+      # Linux job A (plan.md T4.2): the sandbox must pick bubblewrap; job B
+      # (sandbox-landlock) covers the Landlock fallback. cox-voice's build
+      # packages (T54.2) for `--workspace` and `--all-features`.
+      setup-command: |
+        if [ "$RUNNER_OS" = Linux ]; then bash .github/actions/bwrap/install.sh; fi
+        bash .github/actions/voice/install.sh
+      test-command: cargo nextest run --workspace
+      build-command: cargo build --workspace --all-targets --all-features --target "$TARGET"
+      # CI runs only on pull requests, so the default-branch-only cache would
+      # never be written.
+      cache-all-refs: true
 
   # Linux job B (plan.md T4.2): no bwrap on PATH, so the sandbox must fall
   # back to Landlock + seccomp and still hold the same guarantees.
@@ -62,35 +62,58 @@ jobs:
     env:
       COX_EXPECT_SANDBOX: landlock
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: ./.github/actions/rust
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       - name: no bubblewrap
         run: |
           sudo apt-get remove -y bubblewrap || true
           if command -v bwrap; then echo "bwrap still on PATH" && exit 1; fi
 
-      - uses: taiki-e/install-action@nextest
+      - uses: taiki-e/install-action@23d41aa71228a2692ee31bb433f070fd4bdc6661 # nextest
 
       - name: sandbox tests without bwrap
         run: cargo nextest run -p cox-tools sandbox_ bash_
 
+  # P57 (T57.1): `cargo check` and clippy for x64 and ARM64 Windows over the
+  # crates that build there, listed once in the justfile (`windows_crates`);
+  # each P57 card adds its crates. Not in revert-on-failure's `needs`: it is
+  # required for a merge only once T57.11 builds the whole workspace.
+  # Off until the Windows work is built and tested on a Windows host (creator,
+  # 2026-09-29); CI comes after that.
+  windows:
+    if: false
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: ./.github/actions/rust
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - uses: taiki-e/install-action@b6a061addd82b81aaeca51bdf2c53cd707996e5a # just
+
+      - name: windows check
+        run: just windows-check
+
   # The guest workspace (plugins/, PL§9, T33.40.2): its own `cargo test`
-  # target (a separate workspace, so the root `test` job above never builds
+  # target (a separate workspace, so the root `rust` job above never builds
   # it) plus the wasm32-unknown-unknown build every plugin ships as.
   plugins:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: dtolnay/rust-toolchain@1.97.1
-        with:
-          targets: wasm32-unknown-unknown
+      # wasm32-unknown-unknown comes with the mise.toml pin.
+      - uses: ./.github/actions/rust
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       - name: plugin tests
         run: cargo test --manifest-path plugins/Cargo.toml --workspace
@@ -99,20 +122,27 @@ jobs:
         run: cargo build --manifest-path plugins/Cargo.toml --workspace --target wasm32-unknown-unknown
 
   # Guest-language examples that need a toolchain of their own (PL§13):
-  # each is `#[ignore]`d in the main `test` job with a reason naming
+  # each is `#[ignore]`d in the main `rust` job with a reason naming
   # `just plugin-examples <lang>`, so a missing toolchain here is a CI
   # failure rather than a silently skipped test. Dart (T33.38) today;
   # go/kotlin join this job once T33.34/T33.36 land.
   plugin-examples:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: dtolnay/rust-toolchain@1.97.1
+      # `cox`'s tests build cox-plugin-fixtures, whose build.rs compiles the
+      # guest workspace for wasm32 (T33.28); the target comes with the pin.
+      - uses: ./.github/actions/rust
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
-      - uses: taiki-e/install-action@nextest
+      - uses: taiki-e/install-action@23d41aa71228a2692ee31bb433f070fd4bdc6661 # nextest
+
+      # The example's `[[mcp]]` server runs under `sandboxed_argv`, which on
+      # Linux needs bwrap: Landlock cannot wrap an argv.
+      - name: bubblewrap
+        uses: ./.github/actions/bwrap
 
       - uses: dart-lang/setup-dart@v1
         with:
@@ -131,18 +161,23 @@ jobs:
   deny:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: EmbarkStudios/cargo-deny-action@v2
 
   audit:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/rust
+      # cargo-audit does not read deny.toml, so its `[advisories] ignore` list
+      # (each entry with its reason and review date) is passed as --ignore
+      # flags: one list, one place to remove an entry.
       - name: cargo audit
         run: |
           cargo install cargo-audit --locked
-          cargo audit
+          ignores=$(python3 -c 'import tomllib; print(" ".join("--ignore " + (i if isinstance(i, str) else i["id"]) for i in tomllib.load(open("deny.toml", "rb"))["advisories"]["ignore"]))')
+          # shellcheck disable=SC2086 # word splitting into flags is intended
+          cargo audit $ignores
 
   # plan.md T30.2: `bash scripts/footprint.sh --check` fails when any metric
   # regresses more than 20% against scripts/footprint.json (keyed by
@@ -155,19 +190,203 @@ jobs:
         os: [macos-15, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: ./.github/actions/rust
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
       - name: footprint regression check
         run: bash scripts/footprint.sh --check
 
+  # Which suites this change needs, from the shared pyrlyn/infra classification
+  # (changes.yml): per ecosystem, whether anything changed and whether a
+  # dependency manifest or lock changed (`*_deps`, which forces that full suite).
+  # Only the macOS jobs below read it. The Rust jobs above always run in full on
+  # every pull request (the `docs` test reads docs/, so no path filter is safe
+  # there), which already covers any Cargo.toml or Cargo.lock change.
+  # The Swift suite counts desktop/ and scripts/desktop/ as Swift, and the app
+  # links CoxFFI.xcframework, so a Rust change (crates/, Cargo manifests or
+  # lock) runs it too. A failed `changes` job runs the macOS jobs rather than
+  # skipping them. A skipped macOS job reports `skipped` under its own name,
+  # which a required check treats as passed.
+  changes:
+    uses: pyrlyn/infra/.github/workflows/changes.yml@f49cd4a1e9b5c0e4b70f7253f4a1de16971402ca # main
+    permissions:
+      contents: read
+    with:
+      rust-paths: |
+        ^crates/
+      swift-paths: |
+        ^desktop/
+        ^scripts/desktop/
+
+  # SwiftLint's no-literal rules and swift-format for the macOS app (T37.18,
+  # DS§9). The fixtures prove the custom rules still reject what DS§9 bans; the
+  # packages are linted by the SwiftLintPlugins build-tool plugin during
+  # desktop-macos' `swift test`. SwiftLint is the mise.toml pin.
+  desktop-macos-lint:
+    needs: changes
+    if: >-
+      !cancelled()
+      && (needs.changes.result != 'success' || needs.changes.outputs.swift == 'true')
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: aqua:realm/SwiftLint
+
+      - name: swiftlint fixtures
+        working-directory: desktop/macos
+        run: |
+          set -euo pipefail
+          find LintFixtures/Accepted -name '*.swift' -print0 \
+            | xargs -0 swiftlint lint --strict --no-cache --quiet
+          for fixture in LintFixtures/Rejected/*.swift; do
+            rule=$(basename "$fixture" .swift)
+            if out=$(swiftlint lint --no-cache --quiet "$fixture"); then
+              echo "$fixture: passed, expected $rule to fail it" >&2
+              exit 1
+            fi
+            if ! grep -q "($rule)\$" <<<"$out"; then
+              echo "$fixture: failed without a $rule violation:" >&2
+              echo "$out" >&2
+              exit 1
+            fi
+          done
+
+      # The app target is in no package, so no build-tool plugin lints it (T37.32.1).
+      - name: swiftlint app
+        working-directory: desktop/macos
+        run: swiftlint lint --strict --no-cache --quiet App
+
+      - name: swift-format
+        run: |
+          set -euo pipefail
+          dirs=(desktop/macos/LintFixtures desktop/macos/App)
+          if [ -d desktop/macos/Packages ]; then dirs+=(desktop/macos/Packages); fi
+          xcrun swift-format lint --strict --recursive "${dirs[@]}"
+
+  # The macOS app (T37.15, DT§7): CoxFFI.xcframework for Apple Silicon only
+  # (A67), then `swift test` for every package under desktop/macos/Packages,
+  # then the app target, unsigned (T37.32.1). macos-26 is the arm64 image
+  # whose Xcode 26 carries the macOS 26 SDK the app targets. Always the full
+  # build: every package and the app, never only the changed ones.
+  desktop-macos:
+    needs: changes
+    if: >-
+      !cancelled()
+      && (needs.changes.result != 'success'
+      || needs.changes.outputs.swift == 'true' || needs.changes.outputs.rust == 'true')
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: ./.github/actions/rust
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: CoxFFI.xcframework
+        run: bash scripts/desktop/xcframework.sh
+
+      - name: arm64 only
+        run: |
+          set -euo pipefail
+          libs=$(find desktop/macos/build/CoxFFI.xcframework -name '*.a')
+          [ -n "$libs" ] || { echo "no library in CoxFFI.xcframework" >&2; exit 1; }
+          for lib in $libs; do
+            archs=$(lipo -archs "$lib")
+            echo "$lib: $archs"
+            [ "$archs" = arm64 ] || { echo "expected arm64 only" >&2; exit 1; }
+          done
+
+      # Serial: the UI tests share one NSApplication (key window, appearance, main run loop),
+      # and the benchmark times the main thread, so tests running alongside break both. Every
+      # package runs before the step fails; snapshots that do not match are uploaded.
+      - name: swift test
+        # A hung test (the run loop waiting on a window) would otherwise hold the runner for 6 h.
+        timeout-minutes: 60
+        env:
+          SNAPSHOT_ARTIFACTS: ${{ runner.temp }}/snapshots
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          failed=()
+          for manifest in desktop/macos/Packages/*/Package.swift; do
+            # swiftbuild emits ColorResource symbols for Colors.xcassets. The native
+            # build system copies the catalog and leaves those symbols missing, so
+            # `Color(.surfaceWindow)` does not type-check (SwiftPM #9655).
+            package=$(dirname "$manifest")
+            swift test --no-parallel --build-system swiftbuild --package-path "$package" \
+              || failed+=("$(basename "$package")")
+          done
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "swift test failed in: ${failed[*]}" >&2
+            exit 1
+          fi
+
+      - name: snapshots that did not match
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-macos-snapshots
+          path: ${{ runner.temp }}/snapshots
+          if-no-files-found: ignore
+
+      # The app target over those packages (T37.32.1): XcodeGen's Cox.xcodeproj, a Debug build
+      # with signing off — no identity or secret in this job.
+      - name: Cox.app
+        run: |
+          set -euo pipefail
+          mise install aqua:yonaskolb/XcodeGen
+          mise exec -- bash scripts/desktop/app.sh CODE_SIGNING_ALLOWED=NO
+
+      # A Swift dependency change (Package.swift, Package.resolved, project.yml):
+      # the full build above must have resolved exactly the committed pins, so a
+      # stale or hand-edited Package.resolved fails here instead of drifting.
+      - name: Swift pins unchanged by the build
+        if: needs.changes.outputs.swift_full == 'true'
+        run: |
+          set -euo pipefail
+          if ! git diff --exit-code -- '*.resolved' desktop/macos/project.yml; then
+            echo "the build rewrote the Swift dependency pins above: commit the resolved files" >&2
+            exit 1
+          fi
+
+  # The desktop design tokens (T37.17, DS§2): regenerate Tokens.swift,
+  # Colors.xcassets and tokens.css from desktop/design/tokens/*.json and fail
+  # on any change, like the config-schema drift test. Node only, so Linux.
+  desktop-tokens:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: node
+
+      - name: regenerate the tokens
+        working-directory: desktop/design
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+
+      - name: no drift
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --short
+            git diff
+            echo "generated tokens drifted: run \`just desktop-tokens\` and commit" >&2
+            exit 1
+          fi
+
   revert-on-failure:
     name: revert-on-failure
     needs:
-      [test, sandbox-landlock, plugins, plugin-examples, deny, audit, footprint]
+      [rust, sandbox-landlock, plugins, plugin-examples, deny, audit, footprint]
     if: >-
       always()
       && github.event_name == 'push'
@@ -177,7 +396,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - name: Revert commits from this push

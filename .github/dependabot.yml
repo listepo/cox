@@ -1,5 +1,8 @@
-# Dependabot: weekly, one grouped PR per ecosystem for minor and patch
-# updates; a major bump gets its own PR because it is a review, not a merge.
+# Dependabot: weekly, one grouped PR per ecosystem for patch updates and one
+# for minor updates; a major bump gets its own PR because it is a review, not
+# a merge. .github/workflows/dependabot.yml runs the full CI on every one of
+# them and merges a patch update once that run is green; minor and major
+# updates are labelled `needs-review`.
 # Cargo covers the workspace and the fuzz targets (their own workspace and
 # lockfile); npm covers the Hugo site's Tailwind toolchain.
 version: 2
@@ -8,20 +11,35 @@ updates:
     directories: ["/", "/fuzz"]
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
     groups:
-      cargo-minor-patch:
-        update-types: ["minor", "patch"]
+      cargo-patch:
+        update-types: ["patch"]
+      cargo-minor:
+        update-types: ["minor"]
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
     groups:
+      actions-patch:
+        update-types: ["patch"]
       actions:
-        patterns: ["*"]
+        update-types: ["minor", "major"]
   - package-ecosystem: npm
     directory: "/website"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
     groups:
-      npm-minor-patch:
-        update-types: ["minor", "patch"]
+      npm-patch:
+        update-types: ["patch"]
+      npm-minor:
+        update-types: ["minor"]

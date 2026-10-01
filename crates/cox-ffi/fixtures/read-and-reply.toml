@@ -1,0 +1,19 @@
+# Fixture scenario (T37.14): one prompt that reads a file, then a markdown
+# reply with a code block — a `Tool` block, streamed `DocTail`s, the meter.
+# Recorded to desktop/macos/Fixtures/read-and-reply.json.
+[[turn]]
+text = "Reading the notes."
+tool_calls = [{ name = "read", input = { path = "notes.md" } }]
+
+[[turn]]
+text = """
+## Notes
+
+The file says **hello**. Run it with:
+
+```rust
+fn main() {
+    println!("hello");
+}
+```
+"""

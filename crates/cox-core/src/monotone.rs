@@ -463,6 +463,7 @@ mod tests {
             input: json!({ "command": "git push --force origin main" }),
             subject: "git push --force origin main".into(),
             risk,
+            segments: None,
         }
     }
 

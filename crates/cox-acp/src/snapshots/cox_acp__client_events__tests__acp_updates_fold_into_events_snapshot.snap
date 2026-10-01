@@ -1,0 +1,38 @@
+---
+source: crates/cox-acp/src/client_events.rs
+expression: render(&fold_fixture())
+---
+{"type":"item_started","item":"#1","kind":{"type":"thinking","text":"","signature":null}}
+{"type":"thinking_delta","item":"#1","text":"The failing test reads a fixture"}
+{"type":"thinking_delta","item":"#1","text":" from a path that moved."}
+{"type":"thinking_done","item":"#1","duration_ms":100}
+{"type":"item_done","item":"#1"}
+{"type":"item_started","item":"#2","kind":{"type":"assistant_message","text":""}}
+{"type":"text_delta","item":"#2","text":"I'll point the test at the new path"}
+{"type":"text_delta","item":"#2","text":" and run it."}
+{"type":"item_done","item":"#2"}
+{"type":"item_started","item":"#3","kind":{"type":"tool_call","call":{"id":"#4","name":"todo","input":null,"risk":"read_only","subject":"Claude Agent plan"}}}
+{"type":"tool_call_requested","call":{"id":"#4","name":"todo","input":null,"risk":"read_only","subject":"Claude Agent plan"}}
+{"type":"tool_call_done","call_id":"#4","result":{"ok":true,"visible":"Read the test\nFix the fixture path\nRun cargo test","archive":null,"bytes":49,"duration_ms":0,"diff":null,"structured":[{"id":"#5","text":"Read the test","state":"in_progress"},{"id":"#6","text":"Fix the fixture path","state":"pending"},{"id":"#7","text":"Run cargo test","state":"pending"}]}}
+{"type":"item_started","item":"#8","kind":{"type":"tool_call","call":{"id":"#9","name":"Read tests/load.rs","input":{"path":"/w/tests/load.rs"},"risk":"read_only","subject":"Read tests/load.rs"}}}
+{"type":"tool_call_requested","call":{"id":"#9","name":"Read tests/load.rs","input":{"path":"/w/tests/load.rs"},"risk":"read_only","subject":"Read tests/load.rs"}}
+{"type":"tool_call_output","call_id":"#9","delta":"let data = read(\"fixtures/old.json\");\n"}
+{"type":"tool_call_done","call_id":"#9","result":{"ok":true,"visible":"let data = read(\"fixtures/old.json\");\n","archive":null,"bytes":38,"duration_ms":100,"diff":null}}
+{"type":"item_done","item":"#8"}
+{"type":"item_started","item":"#10","kind":{"type":"tool_call","call":{"id":"#11","name":"Edit tests/load.rs","input":null,"risk":"write","subject":"Edit tests/load.rs"}}}
+{"type":"tool_call_requested","call":{"id":"#11","name":"Edit tests/load.rs","input":null,"risk":"write","subject":"Edit tests/load.rs"}}
+{"type":"tool_call_done","call_id":"#11","result":{"ok":true,"visible":"","archive":null,"bytes":0,"duration_ms":100,"diff":{"path":"/w/tests/load.rs","unified":"--- /w/tests/load.rs\n+++ /w/tests/load.rs\n@@ -1 +1 @@\n-let data = read(\"fixtures/old.json\");\n+let data = read(\"fixtures/new.json\");\n"}}}
+{"type":"item_done","item":"#10"}
+{"type":"item_started","item":"#12","kind":{"type":"tool_call","call":{"id":"#13","name":"cargo test","input":{"command":"cargo test"},"risk":"exec","subject":"cargo test"}}}
+{"type":"tool_call_requested","call":{"id":"#13","name":"cargo test","input":{"command":"cargo test"},"risk":"exec","subject":"cargo test"}}
+{"type":"tool_call_output","call_id":"#13","delta":"running 3 tests\n"}
+{"type":"tool_call_output","call_id":"#13","delta":"test result: ok. 3 passed\n"}
+{"type":"tool_call_done","call_id":"#13","result":{"ok":true,"visible":"running 3 tests\ntest result: ok. 3 passed\n","archive":null,"bytes":42,"duration_ms":200,"diff":null}}
+{"type":"item_done","item":"#12"}
+{"type":"tool_call_done","call_id":"#4","result":{"ok":true,"visible":"Read the test\nFix the fixture path\nRun cargo test","archive":null,"bytes":49,"duration_ms":0,"diff":null,"structured":[{"id":"#5","text":"Read the test","state":"done"},{"id":"#6","text":"Fix the fixture path","state":"done"},{"id":"#7","text":"Run cargo test","state":"done"}]}}
+{"type":"item_started","item":"#14","kind":{"type":"assistant_message","text":""}}
+{"type":"text_delta","item":"#14","text":"Fixed: the test reads fixtures/new.json and passes."}
+{"type":"title_set","title":"Fix the stale fixture path","by_user":false}
+{"type":"context_breakdown","turn":"#15","breakdown":{"window":200000,"total":48210,"system":0,"tools":0,"instructions":0,"history":48210,"cached":0}}
+{"type":"item_done","item":"#14"}
+{"type":"turn_done","turn":"#15","stop":{"type":"end_turn"}}

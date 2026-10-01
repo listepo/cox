@@ -181,6 +181,7 @@ mod tests {
             input: serde_json::json!({ "path": "src/lib.rs" }),
             risk: Risk::ReadOnly,
             subject: "src/lib.rs".into(),
+            segments: None,
         };
         let result = ToolResult {
             ok: true,
@@ -189,6 +190,7 @@ mod tests {
             bytes: 12,
             duration_ms: 7,
             diff: None,
+            structured: None,
         };
         let item = ItemId::new();
         let text = "Plain **markdown** reply.".to_string();

@@ -41,38 +41,57 @@ if [ -z "$BIN" ]; then
   BIN="$ROOT/target/release/cox"
 fi
 
-now_ns() { date +%s%N; }
-median_ms() { python3 -c 'import statistics,sys; print(round(statistics.median(int(x) for x in open(sys.argv[1]))/1e6,1))' "$1"; }
-
-# Cold start: median of 5 `cox --version` runs (spawn + clap + config load).
-: > "$SCRATCH/startup"
-for _ in 1 2 3 4 5; do
-  s="$(now_ns)"
-  COX_HOME="$SCRATCH/home" HOME="$SCRATCH/home" "$BIN" --version >/dev/null
-  echo "$(( $(now_ns) - s ))" >> "$SCRATCH/startup"
-done
-STARTUP_MS="$(median_ms "$SCRATCH/startup")"
-
-# First frame: spawn to first stream-json event with the scripted provider.
+# Timings (T30.4 follow-up). Measured in-process with python3's monotonic
+# clock, so no `date` spawns or `sleep` polling land inside the interval, and
+# reported as the best (minimum) of N runs, which is what --check gates on:
+# scheduler and I/O noise on a shared runner only ever adds time, so the
+# minimum is stable where a small-sample median swings 2-3x between runs of
+# the same commit. The median is printed for context.
+#
+#   calib        `/usr/bin/true`, best of 11: how fast this machine spawns a
+#                process. Shared CI runners differ from each other, so --check
+#                scales timing baselines that carry `calib_ms` by how much
+#                slower this machine is than the one that wrote the baseline
+#                (never faster: the gate only loosens).
+#   startup      `cox --version`, best of 11 (spawn + clap + config load).
+#   first frame  spawn to the first stream-json byte with the scripted
+#                provider, best of 7.
 printf '[[turn]]\ntext = "hello"\n' > "$SCRATCH/first.toml"
-: > "$SCRATCH/first"
-for _ in 1 2 3; do
-  s="$(now_ns)"
-  (cd "$ROOT" && COX_HOME="$SCRATCH/home" HOME="$SCRATCH/home" COX_PROVIDER=scripted \
-    COX_SCENARIO="$SCRATCH/first.toml" "$BIN" run -p "hi" --output-format stream-json \
-    --max-turns 2 --approve never --permission-mode auto --no-hooks --no-mcp \
-    > "$SCRATCH/first.jsonl" 2> "$SCRATCH/first.err") &
-  pid="$!"
-  for _ in $(seq 1 1000); do
-    [ -s "$SCRATCH/first.jsonl" ] && break
-    kill -0 "$pid" 2>/dev/null || break
-    sleep 0.01
-  done
-  echo "$(( $(now_ns) - s ))" >> "$SCRATCH/first"
-  wait "$pid" || { echo "first-frame run failed:" >&2; cat "$SCRATCH/first.err" >&2; exit 1; }
-  [ -s "$SCRATCH/first.jsonl" ] || { echo "first-frame run printed nothing" >&2; exit 1; }
-done
-FIRST_MS="$(median_ms "$SCRATCH/first")"
+mkdir -p "$SCRATCH/home"
+read -r CALIB_MS STARTUP_MS STARTUP_MED FIRST_MS FIRST_MED < <(python3 - "$BIN" "$SCRATCH" "$ROOT" <<'EOF'
+import os, statistics, subprocess, sys, time
+bin_, scratch, root = sys.argv[1:4]
+env = dict(os.environ, COX_HOME=scratch + '/home', HOME=scratch + '/home')
+def ms(xs): return '%.1f %.1f' % (min(xs) / 1e6, statistics.median(xs) / 1e6)
+def spawn(argv, n):
+    out = []
+    for _ in range(n):
+        t = time.perf_counter_ns()
+        subprocess.run(argv, env=env, stdout=subprocess.DEVNULL, check=True)
+        out.append(time.perf_counter_ns() - t)
+    return out
+calib = spawn(['/usr/bin/true'], 11)
+startup = spawn([bin_, '--version'], 11)
+fenv = dict(env, COX_PROVIDER='scripted', COX_SCENARIO=scratch + '/first.toml')
+argv = [bin_, 'run', '-p', 'hi', '--output-format', 'stream-json', '--max-turns', '2',
+        '--approve', 'never', '--permission-mode', 'auto', '--no-hooks', '--no-mcp']
+first = []
+for _ in range(7):
+    with open(scratch + '/first.err', 'wb') as err:
+        t = time.perf_counter_ns()
+        p = subprocess.Popen(argv, cwd=root, env=fenv, stdout=subprocess.PIPE, stderr=err)
+        byte = p.stdout.read(1)
+        first.append(time.perf_counter_ns() - t)
+        p.stdout.read()
+        rc = p.wait()
+    if rc != 0 or not byte:
+        sys.stderr.write('first-frame run failed (exit %d, %s output):\n' % (rc, 'some' if byte else 'no'))
+        sys.stderr.write(open(scratch + '/first.err').read())
+        sys.exit(1)
+print('%.1f' % (min(calib) / 1e6), ms(startup), ms(first))
+EOF
+)
+[ -n "${FIRST_MED:-}" ] || { echo "timing run failed" >&2; exit 1; }
 
 # Replay: every evals/token transcript becomes one Scripted scenario per user
 # turn; turns run back to back through --resume so context grows like a live
@@ -135,12 +154,13 @@ RSS_MIB="$(python3 -c "print(round($PEAK/1048576,1))")"
 if [ "$(uname -s)" = "Darwin" ]; then BYTES="$(stat -f%z "$BIN")"; else BYTES="$(stat -c%s "$BIN")"; fi
 BIN_MIB="$(python3 -c "print(round($BYTES/1048576,1))")"
 
-echo "cold start (cox --version, median of 5): ${STARTUP_MS} ms"
-echo "first frame (scripted stream-json, median of 3): ${FIRST_MS} ms"
+echo "process spawn (/usr/bin/true, best of 11): ${CALIB_MS} ms"
+echo "cold start (cox --version, best of 11): ${STARTUP_MS} ms (median ${STARTUP_MED} ms)"
+echo "first frame (scripted stream-json, best of 7): ${FIRST_MS} ms (median ${FIRST_MED} ms)"
 echo "replay RSS peak ($NTURNS turns, $NCALLS provider calls, max): ${RSS_MIB} MiB"
 echo "binary ($BIN): ${BIN_MIB} MiB ($BYTES bytes)"
 
-RESULT="$(python3 -c 'import json,sys; print(json.dumps({"startup_ms":float(sys.argv[1]),"first_frame_ms":float(sys.argv[2]),"rss_mib":float(sys.argv[3]),"binary_bytes":int(sys.argv[4]),"turns":int(sys.argv[5]),"calls":int(sys.argv[6])}))' "$STARTUP_MS" "$FIRST_MS" "$RSS_MIB" "$BYTES" "$NTURNS" "$NCALLS")"
+RESULT="$(python3 -c 'import json,sys; print(json.dumps({"startup_ms":float(sys.argv[1]),"first_frame_ms":float(sys.argv[2]),"rss_mib":float(sys.argv[3]),"binary_bytes":int(sys.argv[4]),"turns":int(sys.argv[5]),"calls":int(sys.argv[6]),"calib_ms":float(sys.argv[7])}))' "$STARTUP_MS" "$FIRST_MS" "$RSS_MIB" "$BYTES" "$NTURNS" "$NCALLS" "$CALIB_MS")"
 
 if [ "$MODE" = "write" ]; then
   python3 - "$BASELINE" "$OS" "$RESULT" <<'EOF'
@@ -162,8 +182,14 @@ except (OSError, KeyError):
     print('no baseline for %s — run: bash scripts/footprint.sh --write' % oskey)
     sys.exit(0)
 keys = ('startup_ms', 'first_frame_ms', 'rss_mib', 'binary_bytes')
-for k in keys: print('  %s: baseline %s, now %s' % (k, base[k], result[k]))
-bad = [k for k in keys if result[k] > base[k] * 1.2]
+timing = ('startup_ms', 'first_frame_ms')
+scale = 1.0
+if base.get('calib_ms'):
+    scale = max(1.0, result['calib_ms'] / base['calib_ms'])
+    print('  calib_ms: baseline %s, now %s (timing baselines x%.2f)' % (base['calib_ms'], result['calib_ms'], scale))
+limit = {k: base[k] * (scale if k in timing else 1.0) for k in keys}
+for k in keys: print('  %s: baseline %s, now %s' % (k, round(limit[k], 1), result[k]))
+bad = [k for k in keys if result[k] > limit[k] * 1.2]
 if bad: print('footprint: REGRESSION >20%%: %s' % ', '.join(bad)); sys.exit(1)
 print('footprint: no metric regressed >20%')
 EOF

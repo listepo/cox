@@ -228,7 +228,7 @@ async fn judge(shared: &Shared, call: &ToolCall) -> Decision {
     if matches!(decision, Decision::AllowForSession)
         && let Ok(mut g) = shared.grants.lock()
     {
-        g.push((call.name.clone(), call.subject.clone()));
+        g.extend(cox_core::permission::grants_for(call));
     }
     decision
 }
@@ -261,6 +261,7 @@ async fn create_terminal(
         name: "bash".into(),
         input: serde_json::json!({ "command": line }),
         risk: cox_tools::bash::classify(&line),
+        segments: Some(cox_tools::bash::segments(&subject)),
         subject,
     };
     match judge(shared, &call).await {
@@ -311,20 +312,27 @@ fn pick(options: &[PermissionOption], decision: &Decision) -> RequestPermissionO
         })
 }
 
-/// The agent's tool call in the shape the engine judges. Its kind picks the
-/// cox tool whose rules apply; an unknown kind cannot be shown read-only, so
-/// it is judged as `bash`. The subject is sanitized because the approval
-/// prompt shows it.
-fn tool_call_for(host: &ClientHost, req: &RequestPermissionRequest) -> ToolCall {
-    let f = &req.tool_call.fields;
-    let (name, risk) = match f.kind {
+/// The cox tool and risk an ACP tool kind stands for. Shared by the
+/// permission request here and the update fold (`client_events`), so a call
+/// is rated the same whether the agent asks about it or only reports it.
+pub(crate) fn kind_tool(kind: Option<ToolKind>) -> (&'static str, Risk) {
+    match kind {
         Some(ToolKind::Read) => ("read", Risk::ReadOnly),
         Some(ToolKind::Search) => ("grep", Risk::ReadOnly),
         Some(ToolKind::Fetch) => ("web_fetch", Risk::ReadOnly),
         Some(ToolKind::Edit | ToolKind::Move) => ("edit", Risk::Write),
         Some(ToolKind::Delete) => ("edit", Risk::Destructive),
         _ => ("bash", Risk::Exec),
-    };
+    }
+}
+
+/// The agent's tool call in the shape the engine judges. Its kind picks the
+/// cox tool whose rules apply; an unknown kind cannot be shown read-only, so
+/// it is judged as `bash`. The subject is sanitized because the approval
+/// prompt shows it.
+fn tool_call_for(host: &ClientHost, req: &RequestPermissionRequest) -> ToolCall {
+    let f = &req.tool_call.fields;
+    let (name, risk) = kind_tool(f.kind);
     let path = f
         .locations
         .as_ref()
@@ -342,12 +350,15 @@ fn tool_call_for(host: &ClientHost, req: &RequestPermissionRequest) -> ToolCall 
     }
     .or_else(|| f.title.clone())
     .unwrap_or_default();
+    let subject = cox_sanitize::sanitize(&subject);
     ToolCall {
         id: CallId::new(),
         name: name.into(),
         input: f.raw_input.clone().unwrap_or_default(),
         risk,
-        subject: cox_sanitize::sanitize(&subject),
+        // Judged as `bash`, so matched command by command like cox's own.
+        segments: (name == "bash").then(|| cox_tools::bash::segments(&subject)),
+        subject,
     }
 }
 

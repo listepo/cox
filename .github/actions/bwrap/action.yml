@@ -1,0 +1,10 @@
+name: bubblewrap
+description: >-
+  Linux job A (plan.md T4.2): install bubblewrap and let it create user
+  namespaces, so the sandbox picks bwrap and can wrap an argv (plugin MCP
+  servers, external agents), then export COX_EXPECT_SANDBOX=bwrap.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: bash "$GITHUB_ACTION_PATH/install.sh"

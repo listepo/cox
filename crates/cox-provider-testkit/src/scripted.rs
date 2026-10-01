@@ -48,7 +48,7 @@
 
 use cox_protocol::errors::ProviderError;
 use cox_protocol::ids::CallId;
-use cox_protocol::types::{ModelId, ProviderEvent, StopReason, Usage};
+use cox_protocol::types::{Job, ModelId, ProviderEvent, StopReason, Usage};
 
 use figment::Figment;
 use figment::providers::{Format, Toml};
@@ -83,6 +83,22 @@ pub struct TurnSpec {
     /// the module doc). `None` for an ordinary turn, matched by position.
     #[serde(default)]
     pub when_contains: Option<String>,
+    /// T37.2: answer with the names of the tools the request offered, one
+    /// per line and sorted, in place of `text` — so an e2e can compare the
+    /// tool lists two surfaces build for the same `COX_HOME`.
+    #[serde(default)]
+    pub echo_tools: bool,
+    /// A113: pins this turn to requests of one job (`job = "title"`). A
+    /// `title` request is answered only by a turn pinned to it, so a
+    /// scenario written without one keeps its order and the title is
+    /// skipped; a pinned turn never answers another job.
+    #[serde(default)]
+    pub job: Option<Job>,
+    /// T7.8: pins this turn to a request whose system blocks contain this
+    /// substring, so an e2e run answers only when, say, an `AGENTS.md`
+    /// marker reached the prompt. Combined with `when_contains`, both hold.
+    #[serde(default)]
+    pub when_system_contains: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -173,6 +189,9 @@ tool_calls = [
         let turns = parse_scenario(toml).expect("parses");
         assert_eq!(turns[0].when_contains.as_deref(), Some("MARKER"));
         assert_eq!(turns[1].when_contains, None);
+        let toml = "[[turn]]\ntext = \"a\"\nwhen_system_contains = \"RULE\"\n";
+        let turns = parse_scenario(toml).expect("system marker");
+        assert_eq!(turns[0].when_system_contains.as_deref(), Some("RULE"));
     }
 
     #[test]
@@ -185,6 +204,9 @@ tool_calls = [
             }],
             error: None,
             when_contains: None,
+            echo_tools: false,
+            job: None,
+            when_system_contains: None,
         };
         let usage = Usage {
             input_tokens: 1,

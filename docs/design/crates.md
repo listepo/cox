@@ -44,6 +44,7 @@ Seventeen new crates (`cox-models` comes from T30.24 (U4)), twenty-seven in tota
 | `cox-provider-testkit` | `scripted.rs`, `replay.rs` (~750) | (d) dev-dependency of every test | protocol |
 | `cox-telemetry` | `cox/telemetry.rs` | (a) five otel crates | — |
 | `cox-config` | `cox/config_load.rs`, `config_cmd.rs` (~990) | (c)(d) the one config owner; figment, toml_edit | protocol, models |
+| `cox-voice` | new (P54, A123) | (a) whisper.cpp (`whisper-rs`, a cmake C++ build), `cpal` platform audio, `rubato`; linked only behind `crates/cox`'s `voice` feature, off by default | protocol |
 
 After the split:
 

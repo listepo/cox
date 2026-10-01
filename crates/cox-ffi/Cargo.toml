@@ -1,0 +1,48 @@
+[package]
+name = "cox-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# T37.14 (DT§4.4): the macOS app's in-process surface — UniFFI exports over
+# cox-app, one tokio runtime, the Swift-implemented `Host`. The only crate
+# that depends on uniffi; among workspace crates only on cox-app and
+# cox-protocol (T37.39, `crates/cox/tests/deps.rs`).
+
+[lib]
+crate-type = ["staticlib", "lib"]
+
+[features]
+# `uniffi-bindgen`, the documented library-mode generator, only: clap and
+# the generator stay out of the static library the app links.
+bindgen = ["uniffi/cli", "uniffi/cargo-metadata"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+[dependencies]
+# Proc-macro exports, no UDL (A67). Default features off: `cargo-metadata`
+# serves only the generator above.
+uniffi = { version = "0.32.2", default-features = false }
+cox-app = { path = "../cox-app", version = "0.1.2" }
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+# The one runtime every session runs on (DT§4.5).
+tokio = { workspace = true }
+# A pull the app cancels aborts its task on the runtime (`on_runtime`).
+tokio-util = { workspace = true, features = ["rt"] }
+# T51.8: `AppHost`'s browser methods are async, and UniFFI's generated
+# foreign-trait impl names `::async_trait`; `cox-app`'s `Browser` is one too.
+async-trait = { workspace = true }
+
+[dev-dependencies]
+# `tests/forward_only.rs` parses the forwarding files as Rust (D11, A90);
+# the version the lockfile already holds.
+syn = { version = "3.0.5", default-features = false, features = ["full", "parsing"] }
+tempfile = { workspace = true }

@@ -1,0 +1,8 @@
+# Fixture scenario (T37.23.18): two prompts, each answered with a short reply,
+# so a test can Edit and resend the second prompt and rewind the conversation
+# to before its turn. Recorded to desktop/macos/Fixtures/two-prompts.json.
+[[turn]]
+text = "The notes say hello."
+
+[[turn]]
+text = "They are one line long."

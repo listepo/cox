@@ -2,7 +2,7 @@
 //! decide it — `y` allow, `s` allow for the session, `n` deny, `e` edit a
 //! bash command inline and resubmit it as `Decision::Edit`. Separate from
 //! `state` so the key table and the drawing sit together and one snapshot
-//! covers both. The `/context` modal (T25.7) lives here for the same reason.
+//! covers both. The `/context` overlay (T25.7, A98) lives here for the same reason.
 //! An `edit` call's proposed change prints through `diff::lines` (T24.5),
 //! the renderer the edit card and `Ctrl+G` use. The `?` keymap overlay
 //! (T24.6) draws here too, from the live `keymap::Keymap` (T25.5).
@@ -19,6 +19,7 @@ use crate::commands::{Context, label};
 use crate::diff;
 use crate::glyph::Glyphs;
 use crate::keymap::Keymap;
+use crate::state::Status;
 use crate::text::sanitize;
 use crate::theme::Theme;
 
@@ -497,8 +498,14 @@ impl Question {
                 .join(" ")
         };
         let bold = Style::default().add_modifier(Modifier::BOLD);
+        // T47.3: an MCP server's elicitation is not the model's `ask_user`;
+        // the label before it names the server (the spec's MUST).
+        let tool = match &self.agent {
+            Some(agent) if agent.starts_with("mcp:") => "mcp",
+            _ => "ask_user",
+        };
         let mut header = Line::styled(
-            format!(" ask_user {}", sanitize(&self.question)),
+            format!(" {tool} {}", sanitize(&self.question)),
             bold.fg(theme.warn),
         );
         if let Some(agent) = &self.agent {
@@ -518,87 +525,79 @@ impl Question {
     }
 }
 
-/// `/context` (T25.7): where the next request's tokens go — one bar per
-/// §1.9 segment scaled to `max_context`, numbers right-aligned, and the
-/// compaction threshold as a marker. Same `height`/`lines` shape as the
-/// sibling modals; bars are ASCII so both glyph sets hold (T14.1).
-#[derive(Debug, Clone, PartialEq)]
-pub struct ContextBars {
-    /// `(label, estimated tokens)` per §1.9 segment, display order — the
-    /// numbers arrive as rows because `cox-core`'s `Breakdown` is not
-    /// exported across the crate boundary and this modal only displays.
-    pub segments: Vec<(&'static str, u32)>,
-    pub total: u32,
-    pub cached: u32,
-    pub max_context: u32,
-    pub compact_at: f64,
-}
-
-/// Bar geometry, fixed so the rows and the threshold marker align; the
-/// label column is 17 so the widest label ("history verbatim") keeps a gap.
-const LABEL: usize = 17;
-const BAR: usize = 24;
-
-impl ContextBars {
-    pub fn height(&self) -> u16 {
-        // header + one row per segment + total + cached + threshold caption.
-        u16::try_from(self.segments.len() + 4).unwrap_or(u16::MAX)
-    }
-
-    pub fn lines(&self, g: &Glyphs, theme: &Theme) -> Vec<Line<'static>> {
-        let marker = ((self.compact_at.clamp(0.0, 1.0) * BAR as f64).round() as usize).min(BAR - 1);
-        let bar = |tokens: u32| {
-            let filled = u64::from(tokens) * BAR as u64 / u64::from(self.max_context.max(1));
-            (0..BAR)
-                .map(|i| match (i == marker, (i as u64) < filled) {
-                    (true, _) => '|',
-                    (false, true) => '#',
-                    (false, false) => ' ',
-                })
-                .collect::<String>()
-        };
-        let row = |label: &str, tokens: u32, style: Style| {
-            Line::from(vec![
-                Span::styled(
-                    format!(" {label:<w$}", w = LABEL),
-                    Style::default().fg(theme.dim),
-                ),
-                Span::styled(bar(tokens), Style::default().fg(theme.accent)),
-                Span::styled(format!("  {tokens:>8}"), style),
-            ])
-        };
-        let bold = Style::default().add_modifier(Modifier::BOLD);
-        let mut lines = vec![Line::styled(
-            format!(
-                " context {} {} / {} tokens {} cached {}",
-                g.sep, self.total, self.max_context, g.sep, self.cached
-            ),
+/// `/context` (T25.7, A98): the last `Event::ContextBreakdown` as the
+/// desktop popover shows it — the window and the share of it in use, one
+/// bar split into system, tools, instructions and history, and a legend
+/// row per part. The core's split is its bytes/4 estimate, so the parts are
+/// rescaled to `Status::context_used` and the bar's filled length is the
+/// share. Each part has its own ASCII fill, so the split still reads under
+/// `NO_COLOR` and the ASCII glyph set (T14.1). The colours are the theme
+/// roles nearest the desktop's `context.*` tokens: `dim` for the slate
+/// system, `accent` for the violet tools, `tool` for the cyan
+/// instructions, `user` for the blue history.
+pub fn context_lines(status: &Status, g: &Glyphs, theme: &Theme, width: u16) -> Vec<Line<'static>> {
+    let bold = Style::default().add_modifier(Modifier::BOLD);
+    let sep = g.sep;
+    let Some(b) = status.context else {
+        return vec![Line::styled(
+            format!(" context {sep} no request sent yet"),
             bold,
         )];
-        lines.extend(
-            self.segments
-                .iter()
-                .map(|(label, tokens)| row(label, *tokens, Style::default())),
-        );
-        lines.push(row("total", self.total, bold));
-        lines.push(row(
-            "cached",
-            self.cached,
-            Style::default().add_modifier(Modifier::DIM),
-        ));
-        let threshold = (self.compact_at.clamp(0.0, 1.0) * f64::from(self.max_context)) as u32;
-        lines.push(Line::styled(
-            format!(
-                " {}^ compact_at = {} = {} tokens",
-                " ".repeat(LABEL + marker),
-                self.compact_at,
-                threshold
-            ),
-            Style::default().add_modifier(Modifier::DIM),
-        ));
-        lines
+    };
+    let used = status.context_used();
+    let window = b.window.filter(|w| *w > 0);
+    let header = match window {
+        Some(w) => format!(
+            " context {sep} {used} of {w} tokens {sep} {}%",
+            u64::from(used) * 100 / u64::from(w)
+        ),
+        None => format!(" context {sep} {used} tokens {sep} window unknown"),
+    };
+    let scale = f64::from(used) / f64::from(b.total.max(1));
+    let parts = [
+        ("system", ':', theme.dim, b.system),
+        ("tools", '#', theme.accent, b.tools),
+        ("instructions", '+', theme.tool, b.instructions),
+        ("history", '=', theme.user, b.history),
+    ]
+    .map(|(label, fill, color, n)| (label, fill, color, (f64::from(n) * scale).round() as u32));
+    let cells = usize::from(width.saturating_sub(2)).min(BAR);
+    let whole = u64::from(window.unwrap_or(used).max(1));
+    let mut bar = vec![Span::raw(" ")];
+    let (mut sum, mut drawn) = (0u64, 0usize);
+    // Each part ends at its rounded running total, so the parts never
+    // overrun the bar and rounding never opens a gap between them.
+    for (_, fill, color, n) in parts {
+        sum += u64::from(n);
+        let edge = usize::try_from((sum * cells as u64 + whole / 2) / whole)
+            .unwrap_or(cells)
+            .min(cells);
+        if edge > drawn {
+            let run = fill.to_string().repeat(edge - drawn);
+            bar.push(Span::styled(run, Style::default().fg(color)));
+            drawn = edge;
+        }
     }
+    bar.push(Span::styled(
+        ".".repeat(cells - drawn),
+        Style::default().fg(theme.dim).add_modifier(Modifier::DIM),
+    ));
+    let mut lines = vec![Line::styled(header, bold), Line::from(bar)];
+    lines.extend(parts.map(|(label, fill, color, n)| {
+        Line::from(vec![
+            Span::styled(format!(" {fill} "), Style::default().fg(color)),
+            Span::raw(format!("{label:<12} {n:>9}")),
+        ])
+    }));
+    lines.push(Line::styled(
+        format!("   {:<12} {:>9}", "cached", b.cached),
+        Style::default().add_modifier(Modifier::DIM),
+    ));
+    lines
 }
+
+/// The `/context` bar's widest run of cells; a narrower terminal shrinks it.
+const BAR: usize = 48;
 
 #[cfg(test)]
 mod tests {
@@ -607,36 +606,6 @@ mod tests {
     use ratatui::widgets::{Paragraph, Widget};
 
     use super::*;
-
-    /// T25.7 `/context`: bars scaled to `max_context`, right-aligned
-    /// numbers, the compaction threshold marked.
-    #[test]
-    fn context_modal_snapshot() {
-        let bars = ContextBars {
-            segments: vec![
-                ("tools", 21_500),
-                ("system", 3_200),
-                ("instructions", 120),
-                ("skills", 0),
-                ("memory", 0),
-                ("volatile", 240),
-                ("history verbatim", 41_000),
-                ("history pointers", 1_250),
-                ("summary", 900),
-            ],
-            total: 68_210,
-            cached: 51_000,
-            max_context: 200_000,
-            compact_at: 0.75,
-        };
-        let mut term = Terminal::new(TestBackend::new(72, bars.height())).expect("test terminal");
-        term.draw(|f| {
-            Paragraph::new(bars.lines(&Glyphs::default(), &Theme::dark()))
-                .render(f.area(), f.buffer_mut());
-        })
-        .expect("draw");
-        insta::assert_snapshot!(crate::view::buffer_to_string(term.backend().buffer()));
-    }
 
     fn plugin_grant(added: &[&str], removed: &[&str], repo: Option<&str>) -> PluginGrantDialog {
         let added: Vec<String> = added.iter().map(|s| s.to_string()).collect();
@@ -724,6 +693,31 @@ mod tests {
             text.contains("asks again only if capabilities widen"),
             "{text:?}"
         );
+    }
+
+    fn render_question(question: &Question) -> String {
+        let lines = question.lines(&Glyphs::default(), &Theme::dark());
+        let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+        let mut term = Terminal::new(TestBackend::new(72, height)).expect("test terminal");
+        term.draw(|f| Paragraph::new(lines).render(f.area(), f.buffer_mut()))
+            .expect("draw");
+        crate::view::buffer_to_string(term.backend().buffer())
+    }
+
+    /// T47.3: an MCP elicitation question names the server that asks and
+    /// reads `mcp`, not the model's `ask_user`.
+    #[test]
+    fn question_modal_labels_mcp_server() {
+        let question = Question::new(
+            CallId::new(),
+            "Sign up — Name".into(),
+            vec!["send".into(), "edit".into(), "decline".into()],
+        )
+        .from_agent(Some("mcp:github".into()));
+        let text = render_question(&question);
+        assert!(text.contains("mcp:github asks: mcp Sign up"), "{text}");
+        assert!(!text.contains("ask_user"), "{text}");
+        insta::assert_snapshot!(text);
     }
 
     fn render_remove(confirm: &RemoveConfirm) -> String {

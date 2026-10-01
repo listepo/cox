@@ -20,9 +20,15 @@ def flag(argv, name):
 
 
 def test_cox_reaches_a_local_server_through_messages_at_the_container_host():
+    # `[providers.lmstudio]` (T30.15/T30.16), not `[providers.anthropic]`
+    # with an overridden `base_url`: it is the section this provider ships,
+    # and it reads the loaded context back on its own (R§5.3), so no
+    # `context_window` `--ak` is needed either.
     run = matrix.plan_run("cox", LMSTUDIO, "m", OPTS)
-    assert run.argv[run.argv.index("-m") + 1] == "anthropic/m"
-    assert "base_url=http://host.lima.internal:1234" in flag(run.argv, "--ak")
+    assert run.argv[run.argv.index("-m") + 1] == "lmstudio/m"
+    ak = flag(run.argv, "--ak")
+    assert "base_url=http://host.lima.internal:1234" in ak
+    assert not any(a.startswith("context_window=") for a in ak)
     assert run.env == {"ANTHROPIC_API_KEY": "local"}
 
 
@@ -79,7 +85,7 @@ def test_dry_run_prints_one_command_per_agent_and_runs_nothing(monkeypatch, caps
 
 def test_preflight_reports_a_model_the_server_does_not_serve(monkeypatch):
     body = json.dumps({"data": [{"id": "other"}]}).encode()
-    monkeypatch.setattr(matrix.urllib.request, "urlopen", lambda *a, **k: io.BytesIO(body))
+    monkeypatch.setattr(matrix.OPENER, "open", lambda *a, **k: io.BytesIO(body))
     assert "does not serve m" in matrix.preflight(LMSTUDIO, "m")
     assert matrix.preflight(LMSTUDIO, "other") is None
     assert matrix.preflight(matrix.PROVIDERS["anthropic"], "m") is None
@@ -88,8 +94,28 @@ def test_preflight_reports_a_model_the_server_does_not_serve(monkeypatch):
 def test_preflight_reports_a_server_that_is_down(monkeypatch):
     def down(*a, **k):
         raise OSError("connection refused")
-    monkeypatch.setattr(matrix.urllib.request, "urlopen", down)
+    monkeypatch.setattr(matrix.OPENER, "open", down)
     assert "not reachable" in matrix.preflight(LMSTUDIO, "m")
+
+
+def test_preflight_refuses_a_url_that_is_not_local_http(monkeypatch):
+    def never(*a, **k):
+        raise AssertionError("opened a non-local URL")
+    monkeypatch.setattr(matrix.OPENER, "open", never)
+    for url in ["http://example.com:1234", "file:///etc", "ftp://localhost:1234"]:
+        remote = matrix.Provider("x", url, {matrix.CHAT: "/v1"}, local=True)
+        assert "not a local http(s) URL" in matrix.preflight(remote, "m")
+    assert matrix.local_url("http://[::1]:1234/v1/models")
+    assert matrix.local_url("https://127.0.0.1/v1/models")
+
+
+def test_prepare_steps_are_argv_without_shell_syntax():
+    assert matrix.prepare_argv("lms load {model} --context-length {context} -y",
+                               model="a b; rm -rf /", context=4096) == [
+        "lms", "load", "a b; rm -rf /", "--context-length", "4096", "-y"]
+    for provider in matrix.PROVIDERS.values():
+        for step in provider.prepare:
+            assert not set(step) & set("|&;<>`$"), step
 
 
 def trial(job, name, reward, *, error=None):
@@ -117,3 +143,17 @@ def test_summarize_and_table_show_reward_tokens_time_and_totals(tmp_path):
     assert "| a | 1.0 · 120 tok · 48s | error: AgentTimeoutError |" in out
     assert "| b | 0.0 · 120 tok · 48s | — |" in out
     assert "| **total** | 1/2 · $1.0000 | 0/1 · $0.5000 |" in out
+
+
+def test_repomap_presets_differ_only_in_the_budget_env(monkeypatch, capsys):
+    monkeypatch.setattr(matrix.subprocess, "run", lambda *a, **k: pytest.fail("ran"))
+    out = {}
+    for name in ("repomap-off", "repomap-2k"):
+        assert matrix.main(["--preset", name, "--dry-run"]) == 0
+        out[name] = capsys.readouterr().out.strip()
+    off, on = out["repomap-off"], out["repomap-2k"]
+    assert "--ae COX_CONTEXT_REPOMAP_BUDGET_TOKENS=0 " in off
+    assert "--ae COX_CONTEXT_REPOMAP_BUDGET_TOKENS=2000 " in on
+    assert off.count("harbor run") == on.count("harbor run") == 1
+    assert off.count(" -i ") == on.count(" -i ") == 12
+    assert off.replace("=0 ", "=N ").split(" --job-name")[0] == on.replace("=2000 ", "=N ").split(" --job-name")[0]

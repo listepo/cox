@@ -15,6 +15,9 @@ use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::time::Duration;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
+
 /// How long `query` waits for the terminal's keyboard-protocol reply before
 /// giving up and keeping whatever `detect` already guessed. Short enough
 /// that an unresponsive terminal (or a pipe that looks like a tty) never
@@ -233,35 +236,6 @@ pub fn notification(caps: &Caps, vte: bool, title: &str, body: &str) -> String {
     format!("{osc}\x07")
 }
 
-/// RFC 4648 standard alphabet with `=` padding, the encoding every terminal
-/// expects after `OSC 52`. `base64` sits in `Cargo.lock` twice already
-/// (`0.22.1`/`0.23.1`, pulled by unrelated OAuth/HTTP crates via
-/// `cox-mcp`/`cox-provider`) but is not a direct dependency of any
-/// workspace crate, so making it one for a payload this small would cost
-/// more (a version to track, a `[dependencies]` line, `deny.toml` review)
-/// than the dozen lines below (coordinator decision, T23.4: no `osc52`
-/// crossterm feature either, same reasoning — avoid a new dependency for
-/// one escape sequence).
-const B64_ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-fn base64_encode(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity((bytes.len() / 3 + 1) * 4);
-    for chunk in bytes.chunks(3) {
-        let b = [
-            chunk[0],
-            *chunk.get(1).unwrap_or(&0),
-            *chunk.get(2).unwrap_or(&0),
-        ];
-        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
-        let sextet = |shift: u32| B64_ALPHABET[((n >> shift) & 0x3f) as usize] as char;
-        out.push(sextet(18));
-        out.push(sextet(12));
-        out.push(if chunk.len() > 1 { sextet(6) } else { '=' });
-        out.push(if chunk.len() > 2 { sextet(0) } else { '=' });
-    }
-    out
-}
-
 /// OSC 52 clipboard write (T23.4): `Pc = c`, the default clipboard — cox
 /// tracks no mouse selection to justify the `p` (primary) destination
 /// crossterm's `osc52` feature also offers. Ends with ST (`ESC \`), the
@@ -269,7 +243,9 @@ fn base64_encode(bytes: &[u8]) -> String {
 /// naming BEL. The caller checks `Caps::osc52`; a terminal without it may
 /// print the bytes as visible text.
 pub fn copy(text: &str) -> String {
-    format!("\x1b]52;c;{}\x1b\\", base64_encode(text.as_bytes()))
+    // RFC 4648 standard alphabet with `=` padding, the encoding every
+    // terminal expects after `OSC 52`.
+    format!("\x1b]52;c;{}\x1b\\", STANDARD.encode(text))
 }
 
 #[cfg(test)]
@@ -571,15 +547,14 @@ mod tests {
         assert!(!caps.kitty_keyboard);
     }
 
-    /// T23.4: the local encoder against known vectors (empty, and one/two/
-    /// three trailing bytes, which is where padding differs).
+    /// T23.4, kept through the switch to the `base64` crate (A81): the
+    /// payload against known vectors (empty, and one/two/three trailing
+    /// bytes, which is where padding differs).
     #[test]
-    fn base64_encode_matches_known_vectors() {
-        assert_eq!(base64_encode(b""), "");
-        assert_eq!(base64_encode(b"f"), "Zg==");
-        assert_eq!(base64_encode(b"fo"), "Zm8=");
-        assert_eq!(base64_encode(b"foo"), "Zm9v");
-        assert_eq!(base64_encode(b"cell text"), "Y2VsbCB0ZXh0");
+    fn copy_pads_the_payload_like_rfc_4648() {
+        for (text, b64) in [("", ""), ("f", "Zg=="), ("fo", "Zm8="), ("foo", "Zm9v")] {
+            assert_eq!(copy(text), format!("\x1b]52;c;{b64}\x1b\\"));
+        }
     }
 
     #[test]

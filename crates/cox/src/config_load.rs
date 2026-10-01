@@ -7,8 +7,9 @@
 //! so callers keep writing `config_load::...`.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use cox_config::load::ClaudeLayers;
 use cox_ext::claude_settings;
 use cox_protocol::CoreError;
 use serde_json::Value as JsonValue;
@@ -58,6 +59,7 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
         ("tier", "tiers.<tier>.model"),
         ("sandbox", "sandbox.mode"),
         ("permission-mode", "permissions.mode"),
+        ("mode", "core.mode"),
         ("approve", "permissions.approval"),
         ("budget", "budget.session_usd"),
         ("profile", "core.profile"),
@@ -81,6 +83,8 @@ pub fn flag_key_map() -> HashMap<&'static str, &'static str> {
         ("continue", "runtime.continue"),
         ("resume", "runtime.resume"),
         ("deep", "runtime.deep"),
+        // T40.7: `cox run --image` attaches files to this one prompt.
+        ("image", "runtime.image"),
         // T27.6: `cox run --loop`/`--max-iterations` are invocation
         // parameters (the loop's own state), not persisted config.
         ("loop", "runtime.loop"),
@@ -159,6 +163,9 @@ pub fn flag_overrides(cli: &Cli) -> JsonValue {
             JsonValue::from(mode.clone()),
         );
     }
+    if let Some(mode) = &cli.mode {
+        set_dotted(&mut root, keys["mode"], JsonValue::from(mode.clone()));
+    }
     if let Some(approve) = &cli.approve {
         set_dotted(&mut root, keys["approve"], JsonValue::from(approve.clone()));
     }
@@ -205,17 +212,30 @@ pub fn flag_overrides(cli: &Cli) -> JsonValue {
     root
 }
 
-/// The imported `.claude/settings.json` files for `cwd`, if any exist.
-/// Broken files are warned about and skipped (D14).
-fn claude_layer(cwd: &Path) -> Option<JsonValue> {
-    let claude_home = home_dir().join(".claude");
-    let project = find_git_root(cwd);
-    let paths = claude_settings::paths(Some(&claude_home), project.as_deref());
-    let settings = claude_settings::load(&paths);
-    for notice in &settings.notices {
-        eprintln!("cox: warning: {notice}");
-    }
-    (!settings.is_empty()).then(|| settings.to_layer())
+/// The imported `.claude/settings.json` files for `cwd`, if any exist, the
+/// user's apart from the repository's (T22.11: the guard list treats the
+/// repository's like project config). Broken files are warned about and
+/// skipped (D14).
+fn claude_layer(cwd: &Path) -> Option<ClaudeLayers> {
+    let home = home_dir();
+    let claude_home = home.join(".claude");
+    // A home directory that is itself a git checkout (a dotfiles repo)
+    // must not turn the user's own file into a repository's;
+    // `find_git_root` returns a canonical path.
+    let canonical_home = home.canonicalize().unwrap_or(home);
+    let project = find_git_root(cwd).filter(|root| *root != canonical_home);
+    let read = |paths: Vec<PathBuf>| {
+        let settings = claude_settings::load(&paths);
+        for notice in &settings.notices {
+            eprintln!("cox: warning: {notice}");
+        }
+        (!settings.is_empty()).then(|| settings.to_layer())
+    };
+    let layers = ClaudeLayers {
+        user: read(claude_settings::paths(Some(&claude_home), None)),
+        project: read(claude_settings::paths(None, project.as_deref())),
+    };
+    (layers.user.is_some() || layers.project.is_some()).then_some(layers)
 }
 
 #[cfg(test)]
@@ -272,6 +292,27 @@ mod tests {
             "flags missing a config-key mapping: {missing:?}"
         );
     }
+
+    #[test]
+    fn mode_flag_maps_to_core_mode() {
+        use clap::Parser;
+
+        let cli = Cli::parse_from(["cox", "--mode", "architect"]);
+        let layer = flag_overrides(&cli);
+        assert_eq!(layer["core"]["mode"], JsonValue::from("architect"));
+        assert_eq!(flag_key_map()["mode"], "core.mode");
+
+        let parsed: cox_protocol::config::CoreConfig =
+            serde_json::from_value(layer["core"].clone()).expect("core layer parses");
+        assert_eq!(parsed.mode, cox_protocol::types::Mode::Architect);
+
+        assert!(Cli::try_parse_from(["cox", "--mode", "chaos"]).is_err());
+        assert!(
+            flag_overrides(&Cli::parse_from(["cox"]))
+                .get("core")
+                .is_none()
+        );
+    }
 }
 
 #[cfg(test)]
@@ -294,6 +335,7 @@ mod claude_settings_tests {
             input: serde_json::json!({ "command": "rm -rf build" }),
             risk: Risk::Exec,
             subject: "rm -rf build".into(),
+            segments: None,
         }
     }
 
@@ -315,6 +357,10 @@ mod claude_settings_tests {
     /// adds to (not replaces) the project's own list, and is labelled.
     #[test]
     fn config_claude_settings_import_matches_native_rules() {
+        // T22.10: a project list that omits a default deny gets it back
+        // ahead of its own rules, so each project list repeats the defaults
+        // to keep the lists below in its own order.
+        const DEFAULTS: &str = r#""Read(~/.ssh/**)", "Read(~/.aws/**)", "Bash(rm -rf /*)", "#;
         let home = tempdir().expect("tempdir");
         let git_root = tempdir().expect("tempdir");
         fs::create_dir_all(git_root.path().join(".git")).expect("mkdir .git");
@@ -322,7 +368,7 @@ mod claude_settings_tests {
         fs::create_dir_all(git_root.path().join(".claude")).expect("mkdir .claude");
         fs::write(
             git_root.path().join(".cox/config.toml"),
-            "[permissions]\ndeny = [\"Bash(curl *)\"]\n",
+            format!("[permissions]\ndeny = [{DEFAULTS}\"Bash(curl *)\"]\n"),
         )
         .expect("write project config");
         fs::write(
@@ -335,7 +381,7 @@ mod claude_settings_tests {
         fs::create_dir_all(native_dir.path().join(".cox")).expect("mkdir .cox");
         fs::write(
             native_dir.path().join(".cox/config.toml"),
-            "[permissions]\ndeny = [\"Bash(curl *)\", \"Bash(rm -rf *)\"]\n",
+            format!("[permissions]\ndeny = [{DEFAULTS}\"Bash(curl *)\", \"Bash(rm -rf *)\"]\n"),
         )
         .expect("write native config");
 
@@ -365,13 +411,106 @@ mod claude_settings_tests {
                 // The import is opt-out.
                 fs::write(
                     git_root.path().join(".cox/config.toml"),
-                    "[permissions]\ndeny = [\"Bash(curl *)\"]\nimport_claude_settings = false\n",
+                    format!(
+                        "[permissions]\ndeny = [{DEFAULTS}\"Bash(curl *)\"]\n\
+                         import_claude_settings = false\n"
+                    ),
                 )
                 .expect("rewrite project config");
                 let off = load(git_root.path(), &cli).expect("load opt-out");
-                assert_eq!(off.config.permissions.deny, ["Bash(curl *)"]);
+                assert_eq!(
+                    off.config.permissions.deny,
+                    [
+                        "Read(~/.ssh/**)",
+                        "Read(~/.aws/**)",
+                        "Bash(rm -rf /*)",
+                        "Bash(curl *)"
+                    ]
+                );
                 assert!(off.config.hooks.events.is_empty());
             },
         );
+    }
+
+    /// Loads `git_root` with `home` as both `HOME` and `COX_HOME`, so the
+    /// only `.claude` files are the ones a test wrote.
+    fn load_isolated(home: &Path, git_root: &Path) -> LoadedConfig {
+        let mut loaded = None;
+        temp_env(
+            &[
+                ("COX_HOME", Some(home.to_str().unwrap())),
+                ("HOME", Some(home.to_str().unwrap())),
+            ],
+            || loaded = Some(load(git_root, &Cli::parse_from(["cox"])).expect("load")),
+        );
+        loaded.expect("temp_env ran the closure")
+    }
+
+    /// T22.11 (A122): a repository's `.claude/settings.json` counts as
+    /// project config: its `allow` is dropped and reported like a project
+    /// `allow`, and its `deny` is added to the default deny.
+    #[test]
+    fn project_claude_settings_allow_is_dropped_and_its_deny_added() {
+        let home = tempdir().expect("tempdir");
+        let git_root = tempdir().expect("tempdir");
+        fs::create_dir_all(git_root.path().join(".git")).expect("mkdir .git");
+        fs::create_dir_all(git_root.path().join(".claude")).expect("mkdir .claude");
+        fs::write(
+            git_root.path().join(".claude/settings.json"),
+            r#"{"permissions":{"allow":["Bash"],"deny":["Bash(curl *)"]}}"#,
+        )
+        .expect("write settings");
+
+        let loaded = load_isolated(home.path(), git_root.path());
+        let permissions = &loaded.config.permissions;
+        assert!(permissions.allow.is_empty(), "{:?}", permissions.allow);
+        let v = loaded
+            .violations
+            .iter()
+            .find(|v| v.key == "permissions.allow")
+            .expect("an allow violation");
+        assert_eq!(v.project_value, "Bash");
+        assert_eq!(v.reason(), "A project may not allow a tool call");
+        assert_eq!(
+            permissions.deny,
+            [
+                "Read(~/.ssh/**)",
+                "Read(~/.aws/**)",
+                "Bash(rm -rf /*)",
+                "Bash(curl *)"
+            ]
+        );
+    }
+
+    /// T22.11 (A122): the user's own `~/.claude/settings.json` allow rule
+    /// still applies, while a repository's `.claude/settings.local.json`
+    /// allow next to it is dropped.
+    #[test]
+    fn user_claude_settings_allow_still_applies() {
+        let home = tempdir().expect("tempdir");
+        let git_root = tempdir().expect("tempdir");
+        fs::create_dir_all(home.path().join(".claude")).expect("mkdir ~/.claude");
+        fs::write(
+            home.path().join(".claude/settings.json"),
+            r#"{"permissions":{"allow":["Bash(git status)"]}}"#,
+        )
+        .expect("write user settings");
+        fs::create_dir_all(git_root.path().join(".git")).expect("mkdir .git");
+        fs::create_dir_all(git_root.path().join(".claude")).expect("mkdir .claude");
+        fs::write(
+            git_root.path().join(".claude/settings.local.json"),
+            r#"{"permissions":{"allow":["Bash"]}}"#,
+        )
+        .expect("write local settings");
+
+        let loaded = load_isolated(home.path(), git_root.path());
+        assert_eq!(loaded.config.permissions.allow, ["Bash(git status)"]);
+        let v = loaded
+            .violations
+            .iter()
+            .find(|v| v.key == "permissions.allow")
+            .expect("an allow violation");
+        assert_eq!(v.project_value, "Bash(git status), Bash");
+        assert_eq!(v.reverted_to, "Bash(git status)");
     }
 }

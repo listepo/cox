@@ -35,6 +35,9 @@ pub struct Capabilities {
     /// `ProviderModel.reasoning_effort` (T30.26); read by
     /// [`crate::effort_for`] for the Chat wire.
     pub reasoning_effort_param: Option<bool>,
+    /// Accepts image input. Declared per model by `ProviderModel.images`
+    /// (T37.6); read by the Chat wire's `Provider::accepts_images`.
+    pub images: Option<bool>,
 }
 
 impl Capabilities {
@@ -44,6 +47,7 @@ impl Capabilities {
     pub fn declared_by(model: &ProviderModel) -> Self {
         Self {
             reasoning_effort_param: model.reasoning_effort,
+            images: model.images,
             ..Self::default()
         }
     }
@@ -54,6 +58,10 @@ impl Capabilities {
 pub struct ModelRow {
     /// The model id, exactly as sent on the wire (a `ModelId` string).
     pub id: String,
+    /// What a person calls the model (`Claude Sonnet 5`), from models.dev's
+    /// `name` through `default.toml` (A111) or a config entry. `None` means
+    /// a reader shows the id.
+    pub display_name: Option<String>,
     /// Context window in tokens, when a layer has supplied one.
     pub context_window: Option<u32>,
     /// Max output tokens, when a layer has supplied one (no source emits
@@ -78,6 +86,7 @@ impl ModelRow {
     fn new(id: String, source: RowSource) -> Self {
         Self {
             id,
+            display_name: None,
             context_window: None,
             max_output: None,
             efforts: Vec::new(),
@@ -358,12 +367,19 @@ impl Catalog {
     fn overlay_model(&mut self, model: &ProviderModel, source: &RowSource) {
         let row = self.row_mut(&model.id, source);
         row.context_window = Some(model.context_window);
+        if model.display_name.is_some() {
+            row.display_name.clone_from(&model.display_name);
+        }
         if !model.efforts.is_empty() {
             row.efforts = model.efforts.clone();
         }
         // Like `efforts`: an entry that declares nothing keeps the row's.
-        if let Some(param) = Capabilities::declared_by(model).reasoning_effort_param {
+        let declared = Capabilities::declared_by(model);
+        if let Some(param) = declared.reasoning_effort_param {
             row.capabilities.reasoning_effort_param = Some(param);
+        }
+        if let Some(images) = declared.images {
+            row.capabilities.images = Some(images);
         }
     }
 
@@ -599,6 +615,35 @@ source_url = "https://example.test"
         assert_eq!(
             catalog.warnings(),
             ["plugin zeta also defines model shared-model; plugin alpha's row is kept"]
+        );
+    }
+
+    #[test]
+    fn builtin_names_claude_sonnet_5_from_models_dev() {
+        let catalog = Catalog::builtin().expect("builtin catalog");
+        let row = catalog.get("claude-sonnet-5").expect("sonnet row");
+        assert_eq!(row.display_name.as_deref(), Some("Claude Sonnet 5"));
+    }
+
+    #[test]
+    fn a_config_entry_without_a_name_keeps_the_builtin_one_and_a_new_id_has_none() {
+        let mut config = Config::default();
+        config.providers.anthropic.models = vec![ProviderModel {
+            id: "claude-sonnet-5".into(),
+            context_window: 555_000,
+            ..ProviderModel::default()
+        }];
+        config.providers.local.models = vec![ProviderModel {
+            id: "qwen3-coder".into(),
+            context_window: 32_768,
+            ..ProviderModel::default()
+        }];
+        let catalog = Catalog::load(&config, &[], None).expect("catalog");
+        let sonnet = catalog.get("claude-sonnet-5").expect("sonnet row");
+        assert_eq!(sonnet.display_name.as_deref(), Some("Claude Sonnet 5"));
+        assert_eq!(
+            catalog.get("qwen3-coder").expect("qwen row").display_name,
+            None
         );
     }
 

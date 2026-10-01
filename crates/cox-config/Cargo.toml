@@ -21,8 +21,10 @@ toml_edit = { workspace = true }
 # flattens the effective config through JSON.
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+# T37.30: `schema()` hands the desktop Settings screen `Config`'s JSON
+# Schema (was dev-only, for the drift test); already in the tree through
+# cox-protocol, which derives it.
+schemars = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-# T32.16: the config-schema drift test (`schema_for!(Config)`).
-schemars = { workspace = true }
