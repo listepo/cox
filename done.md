@@ -9247,3 +9247,24 @@ Deviations: none.
 Check: cox-p51 at p37-desktop: `cargo nextest run -p cox-app -p cox-ffi` 212 passed; clippy -D warnings clean; CoxModel `swift test` 128 tests in 6 suites passed; `just desktop-app` built (2026-09-29). Commit 467acfee.
 
 Not done: nothing.
+
+#### T47.5 The browser opener runs no shell on Windows
+
+- Model: Claude Code / opus-5.5
+- Depends: -
+- Size: ~50
+- Priority: P1
+- Complexity: 2
+- Goal: `cox_mcp::auth::open_browser` (T22.5) ran `cmd /C start "" <url>` on Windows, so a URL from an MCP server (OAuth or a T47.4 URL elicitation) carrying `& | ^ < > " %` was read by cmd.exe as syntax — command injection. The opener hands the URL to the platform as one argument with no shell in between, on every platform, and refuses anything that is not an `http(s)` URL (a URL protocol handler also runs `file:` paths, and a leading `-` would read as an option to `open`/`xdg-open`).
+- Files: `crates/cox-mcp/src/auth.rs`.
+- Check:
+  ```bash
+  mise exec -- cargo nextest run -p cox-mcp opener_passes_the_url
+  ```
+- Result:
+  - No crate: `open`/`webbrowser` are in neither `Cargo.lock` nor `rust.md`, and the stdlib covers it. Windows now runs `rundll32 url.dll,FileProtocolHandler <url>` (no cmd.exe, so nothing in the URL is syntax; `%` is not expanded); macOS `open <url>` and Linux `xdg-open <url>` are unchanged, as is the `DISPLAY`/`WAYLAND_DISPLAY` check.
+  - A pure `opener(os, url) -> Option<Command>` builds the argv; `open_browser` runs it. A non-`http(s)` URL gives `None`, so `open_browser` returns `false` and the printed URL is all the person has.
+- Tests: `opener_passes_the_url_as_one_argument_without_a_shell` — for `https://example.com/cb?a=1&b=2|calc^x<y>"%PATH%` the Windows argv is exactly `rundll32`, `url.dll,FileProtocolHandler`, the URL (fails with the `cmd /C start` form, whose program is `cmd`); macOS/Linux argv is `open`/`xdg-open` plus the URL; `file:`, `javascript:` and `-a Calculator` give `None`.
+- Follow-up: T47.4 (branch `t47.1`, another owner, not touched here) declines a URL with `CMD_SYNTAX` on Windows in `elicit::url_prompt`; that decline and its `docs/tools.md` clause ("would not survive the opener unchanged") can go once this is merged.
+- Check output: not run. Since 2026-09-28 task agents run no builds or tests; `cargo fmt -p cox-mcp --check` is clean. Pending the verification pass: the Check, `cargo nextest run -p cox-mcp`, clippy. Not exercised on Windows.
+- Status: done 2026-09-29
