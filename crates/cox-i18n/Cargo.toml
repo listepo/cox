@@ -1,0 +1,16 @@
+[package]
+name = "cox-i18n"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+polib = { workspace = true }
+unic-langid = { workspace = true }
+sys-locale = { workspace = true }
+thiserror = { workspace = true }
+
+[[bin]]
+name = "po-export"
+path = "src/bin/po-export.rs"

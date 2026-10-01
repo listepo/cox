@@ -60,13 +60,17 @@ fn secret_span(s: &str) -> Option<usize> {
         return Some("Bearer ".len() + end);
     }
     if let Some(after) = s.strip_prefix("sk-") {
-        return prefixed(3, after, 8);
+        // Anthropic (`sk-ant-api03-…`) and OpenAI project keys carry `-` and
+        // `_` in the body; an alphanumeric-only body stopped at `ant`.
+        return prefixed(3, after, 8, |b| {
+            b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_')
+        });
     }
     if let Some(after) = s.strip_prefix("AKIA") {
-        return prefixed(4, after, 16);
+        return prefixed(4, after, 16, u8::is_ascii_alphanumeric);
     }
     if let Some(after) = s.strip_prefix("ghp_") {
-        return prefixed(4, after, 8);
+        return prefixed(4, after, 8, u8::is_ascii_alphanumeric);
     }
     s.starts_with("-----BEGIN ").then(|| {
         // A PEM block runs to the end of its `-----END …-----` line; an
@@ -77,9 +81,9 @@ fn secret_span(s: &str) -> Option<usize> {
     })
 }
 
-/// `prefix` bytes plus at least `min` alphanumeric bytes, or no match.
-fn prefixed(prefix: usize, after: &str, min: usize) -> Option<usize> {
-    let n = after.bytes().take_while(u8::is_ascii_alphanumeric).count();
+/// `prefix` bytes plus at least `min` body bytes, or no match.
+fn prefixed(prefix: usize, after: &str, min: usize, body: fn(&u8) -> bool) -> Option<usize> {
+    let n = after.bytes().take_while(body).count();
     (n >= min).then_some(prefix + n)
 }
 
@@ -112,5 +116,11 @@ mod tests {
             assert_eq!(scrub(input).as_ref(), *want, "{input:?}");
         }
         assert!(matches!(scrub("plain text 1234"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn scrub_redacts_an_anthropic_key_whole() {
+        let line = "x-api-key: sk-ant-api03-R2D2_c3po-XyZ0123456789-abcDEF_ghiAA end";
+        assert_eq!(scrub(line), "x-api-key: «redacted» end");
     }
 }

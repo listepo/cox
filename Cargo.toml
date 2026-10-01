@@ -173,6 +173,15 @@ cpal = "0.18"
 # T54.3 (A123): the device rate (often 44.1/48 kHz) to whisper's 16 kHz.
 rubato = "5"
 
+# cox-i18n
+# gettext localization (en default, ru, uk; docs/i18n.md). polib parses the
+# embedded .po catalogs in pure Rust (no libintl, so nothing to install on
+# macOS or Windows); unic-langid validates the language tags negotiation
+# matches on; sys-locale reads the OS UI languages when no env var names one.
+polib = "0.3"
+unic-langid = "0.9"
+sys-locale = "0.3"
+
 # dev-deps
 insta = { version = "1.48", features = ["json"] }
 proptest = "1.11"
