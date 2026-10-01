@@ -803,3 +803,38 @@ fn update_on_a_linked_plugin_names_the_dev_loop() {
     let out = String::from_utf8(out).unwrap();
     assert!(out.contains("linked plugin: rebuild in place"), "{out}");
 }
+
+/// T53.2 through the real binary: `http://` and `file://` URLs and an
+/// https URL with no `--sha256` are refused before anything is fetched,
+/// and no staging directory is left behind. The fetch itself is tested
+/// in `plugin_cmd`'s unit tests against a mock server: that serves plain
+/// http, which the binary rightly refuses.
+#[test]
+fn plugin_install_url_through_the_binary_refuses_http_and_a_missing_hash() {
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    let sha = "0".repeat(64);
+    for url in ["http://127.0.0.1:9/demo.tar.gz", "file:///etc/passwd"] {
+        let out = cox_plugin(home.path(), cwd.path(), &["install", url, "--sha256", &sha])
+            .assert()
+            .failure()
+            .get_output()
+            .stderr
+            .clone();
+        let err = String::from_utf8(out).unwrap();
+        assert!(err.contains("must be https://"), "{err}");
+    }
+    let out = cox_plugin(
+        home.path(),
+        cwd.path(),
+        &["install", "https://127.0.0.1:9/demo.tar.gz"],
+    )
+    .assert()
+    .failure()
+    .get_output()
+    .stderr
+    .clone();
+    let err = String::from_utf8(out).unwrap();
+    assert!(err.contains("--sha256 <hex> is required"), "{err}");
+    assert!(!home.path().join("plugins").exists());
+}

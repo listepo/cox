@@ -14,7 +14,8 @@
         "parallel_tools": 4,
         "max_concurrent_subagents": 8,
         "log_level": "info",
-        "profile": ""
+        "profile": "",
+        "mode": "editor"
       }
     },
     "tiers": {
@@ -128,7 +129,8 @@
         "instruction_budget_tokens": 8000,
         "memory_budget_tokens": 800,
         "deferred_tools": true,
-        "system_prompt": "default"
+        "system_prompt": "default",
+        "repomap_budget_tokens": 0
       }
     },
     "permissions": {
@@ -191,7 +193,12 @@
         "git": true,
         "notify": "auto",
         "motion": "full",
-        "caps": {}
+        "caps": {},
+        "status_line": {
+          "command": "",
+          "refresh_s": 0,
+          "timeout_ms": 2000
+        }
       }
     },
     "hooks": {
@@ -259,6 +266,18 @@
         }
       }
     },
+    "voice": {
+      "description": "`[voice]`",
+      "$ref": "#/$defs/VoiceConfig",
+      "default": {
+        "enabled": false,
+        "model": "base.en",
+        "language": "en",
+        "key": "alt+v",
+        "auto_submit": true,
+        "max_seconds": 120
+      }
+    },
     "plugins": {
       "description": "`[plugins]`",
       "$ref": "#/$defs/PluginsConfig",
@@ -292,6 +311,13 @@
         "salience_min": 0.3
       }
     },
+    "session": {
+      "description": "`[session]`",
+      "$ref": "#/$defs/SessionConfig",
+      "default": {
+        "auto_title": false
+      }
+    },
     "telemetry": {
       "description": "`[telemetry]`",
       "$ref": "#/$defs/TelemetryConfig",
@@ -306,6 +332,42 @@
       "default": {
         "redact": true
       }
+    },
+    "desktop": {
+      "description": "`[desktop.appearance]` / `[desktop.transcript]` (macOS app, P37)",
+      "$ref": "#/$defs/DesktopConfig",
+      "default": {
+        "menu_bar": true,
+        "appearance": {
+          "material": "frosted",
+          "opacity": 0.42,
+          "blur": 34.0,
+          "depth": 1.0,
+          "tint": true,
+          "dark_highlight": "none",
+          "dark_highlight_scope": "controls"
+        },
+        "transcript": {
+          "cross_block_selection": true,
+          "text_size": 13.5,
+          "line_height": 1.55
+        },
+        "context": {
+          "cache_hit": "turn"
+        },
+        "review": {
+          "send": "queue"
+        },
+        "remote_hosts": []
+      }
+    },
+    "external_agents": {
+      "description": "`[external_agents.<name>]` (T52.2): user config only.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ExternalAgentConfig"
+      },
+      "default": {}
     }
   },
   "additionalProperties": false,
@@ -357,9 +419,29 @@
           "description": "`core.profile`: the assembled-prefix profile, `\"\"` (default) or\n`\"minimal\"` (T30.1: the core eight tools plus `expand`/`tool_search`,\na ≤300-token system prompt, no skills or memory index;\n`cox --profile minimal`).",
           "type": "string",
           "default": ""
+        },
+        "mode": {
+          "description": "`core.mode` (P42): the session's starting mode, `editor` (default)\nor `architect`; also `cox --mode`, and `/mode` switches it live.\nNot in the project-config guard list: architect only narrows\n`permissions.mode` and its think tier still needs confirmation, so a\nproject config may set it.",
+          "$ref": "#/$defs/Mode",
+          "default": "editor"
         }
       },
       "additionalProperties": false
+    },
+    "Mode": {
+      "description": "`core.mode` / `--mode` / `/mode` (P42, A73): a named preset over the\npermission mode and the main tier only. It never filters tools, so the\ncache prefix stays byte-stable, and it only narrows `permissions.mode`.",
+      "oneOf": [
+        {
+          "description": "The configured permission mode and main tier, unchanged.",
+          "type": "string",
+          "const": "editor"
+        },
+        {
+          "description": "`Plan` (read-only tools only) and the `think` main tier, confirmed.",
+          "type": "string",
+          "const": "architect"
+        }
+      ]
     },
     "TiersConfig": {
       "description": "`[tiers]` (plan.md §1.6): the three routing tiers (plan.md D5).",
@@ -696,6 +778,13 @@
           "type": "string",
           "default": ""
         },
+        "display_name": {
+          "description": "What a person calls the model (`\"Claude Sonnet 5\"`), from models.dev's\n`name` (A111). Unset means a reader shows the id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "context_window": {
           "description": "Context window in tokens (local servers do not report it; gateways\nvary it per model, so the section default is only a fallback).",
           "type": "integer",
@@ -713,6 +802,13 @@
         },
         "reasoning_effort": {
           "description": "Whether this model takes the Chat Completions `reasoning_effort`\nfield (T30.26). Unset means \"not declared\", and an `api = \"chat\"`\nsection then sends no effort at all: OpenAI documents the field,\nLM Studio's compatible endpoint does not list it (research.md\n§4.3.3), so it is opt-in per model rather than per wire.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "images": {
+          "description": "Whether this model takes image input (T37.6). Read only by an\n`api = \"chat\"` section, where one server hosts both vision and\ntext-only models: unset means \"not declared\", and an attached image\nis then held back with a notice rather than sent to a model that\nwould reject it. `false` also makes the Chat wire refuse any request\nthat still carries an image (T40.9).",
           "type": [
             "boolean",
             "null"
@@ -1044,6 +1140,13 @@
           "description": "`context.system_prompt`: which embedded system prompt assembly uses,\n`\"default\"` or `\"minimal\"` (T30.1: the ≤300-token prompt; profiles\nset this, users normally set `core.profile` instead).",
           "type": "string",
           "default": "default"
+        },
+        "repomap_budget_tokens": {
+          "description": "Token budget for the session repo map, placed last in system[2]\n(P43); `0` is off, the default until the T43.6 bench sets one.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 0
         }
       },
       "additionalProperties": false
@@ -1354,6 +1457,43 @@
             "type": "boolean"
           },
           "default": {}
+        },
+        "status_line": {
+          "description": "`[tui.status_line]` (T46.1): a user command whose first output line\nis one row above the built-in status line.",
+          "$ref": "#/$defs/StatusLineConfig",
+          "default": {
+            "command": "",
+            "refresh_s": 0,
+            "timeout_ms": 2000
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "StatusLineConfig": {
+      "description": "`[tui.status_line]` (P46, A77): the user's status command. It runs under\nthe sandbox, read-only and without network, and its output passes\n`cox_sanitize::sanitize`. A project config cannot set `command` (the\nguard in `cox-config`'s `load.rs`): a cloned repository must not choose\na program cox runs on every TUI start.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "A `/bin/sh -c` command fed the status JSON on stdin; empty is off.",
+          "type": "string",
+          "default": ""
+        },
+        "refresh_s": {
+          "description": "Re-run the command every this many seconds even when nothing\nchanged; 0 is off.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "maximum": 3600,
+          "default": 0
+        },
+        "timeout_ms": {
+          "description": "How long one run may take, in milliseconds, before it is killed and\nthe row goes blank.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 100,
+          "maximum": 10000,
+          "default": 2000
         }
       },
       "additionalProperties": false
@@ -1590,6 +1730,45 @@
       },
       "additionalProperties": false
     },
+    "VoiceConfig": {
+      "description": "`[voice]` (P54, A123): push-to-talk dictation with local whisper, used\nonly by a `cox` built with the `voice` feature. User config only: a\nproject config cannot set any `voice.*` key (the guard in `cox-config`'s\n`load.rs`), so a cloned repository can neither switch the microphone on\nnor choose the model file.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Whether the TUI's push-to-talk key records at all.",
+          "type": "boolean",
+          "default": false
+        },
+        "model": {
+          "description": "Whisper model name from `cox voice model list` (`tiny.en`,\n`base.en`, `small.en`, `tiny`, `base`, `small`).",
+          "type": "string",
+          "default": "base.en"
+        },
+        "language": {
+          "description": "ISO-639-1 language code passed to whisper; `auto` lets it detect.",
+          "type": "string",
+          "default": "en"
+        },
+        "key": {
+          "description": "The push-to-talk key, in the keymap's `modifier+key` form.",
+          "type": "string",
+          "default": "alt+v"
+        },
+        "auto_submit": {
+          "description": "Submit the transcript as `Enter` would, but only when the draft was\nempty before recording.",
+          "type": "boolean",
+          "default": true
+        },
+        "max_seconds": {
+          "description": "Longest recording kept, in seconds; audio past it is dropped.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 120
+        }
+      },
+      "additionalProperties": false
+    },
     "PluginsConfig": {
       "description": "`[plugins]` (PL§1, T33.6): the global switch for WASM plugins. Even\nwhen on, only a plugin granted for its exact digest loads (PL§3). Not\n`deny_unknown_fields`: the per-plugin `[plugins.<id>]` tables flatten in\nhere (T33.9), the `HooksConfig` pattern, since the plugin id is the TOML\nkey rather than a fixed field.",
       "type": "object",
@@ -1759,6 +1938,18 @@
       },
       "additionalProperties": false
     },
+    "SessionConfig": {
+      "description": "`[session]` (A113): per-session behaviour that is not a turn's own.",
+      "type": "object",
+      "properties": {
+        "auto_title": {
+          "description": "Whether one `title` job names the session after its first turn.\n`default.toml` turns it on; the Rust default is off so a\n`Config::default()` built by a test or an embedder never makes a\nmodel call nobody configured.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
     "TelemetryConfig": {
       "description": "`[telemetry]` (plan.md §1.6).",
       "type": "object",
@@ -1784,6 +1975,278 @@
           "description": "Whether secrets are redacted from a re-recorded cassette.",
           "type": "boolean",
           "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "DesktopConfig": {
+      "description": "`[desktop]`: the macOS app's own settings (P37, DS§3.5, A67). Only the\napp reads them; they live here so they get a schema and provenance like\nevery other setting.",
+      "type": "object",
+      "properties": {
+        "menu_bar": {
+          "description": "Show cox's menu-bar extra: what needs you, what runs, and today's\nspend (T51.14).",
+          "type": "boolean",
+          "default": true
+        },
+        "appearance": {
+          "description": "`[desktop.appearance]`",
+          "$ref": "#/$defs/DesktopAppearanceConfig",
+          "default": {
+            "material": "frosted",
+            "opacity": 0.42,
+            "blur": 34.0,
+            "depth": 1.0,
+            "tint": true,
+            "dark_highlight": "none",
+            "dark_highlight_scope": "controls"
+          }
+        },
+        "transcript": {
+          "description": "`[desktop.transcript]`",
+          "$ref": "#/$defs/DesktopTranscriptConfig",
+          "default": {
+            "cross_block_selection": true,
+            "text_size": 13.5,
+            "line_height": 1.55
+          }
+        },
+        "context": {
+          "description": "`[desktop.context]`",
+          "$ref": "#/$defs/DesktopContextConfig",
+          "default": {
+            "cache_hit": "turn"
+          }
+        },
+        "review": {
+          "description": "`[desktop.review]`",
+          "$ref": "#/$defs/DesktopReviewConfig",
+          "default": {
+            "send": "queue"
+          }
+        },
+        "remote_hosts": {
+          "description": "`ssh` host aliases the app connects to at launch, shown as sidebar\ngroups (T52.21). User config only: a project config cannot set it,\nsince a repository must not choose where the app opens a shell.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    },
+    "DesktopAppearanceConfig": {
+      "description": "`[desktop.appearance]` (DS§3.5): what the Appearance popover and\nSettings › Appearance edit.",
+      "type": "object",
+      "properties": {
+        "material": {
+          "description": "`frosted` | `glossy` | `solid`.",
+          "$ref": "#/$defs/Material",
+          "default": "frosted"
+        },
+        "opacity": {
+          "description": "Window and pane background opacity, 0 (clear) to 1 (opaque). Text\npanels never drop below `material.readableFloor`, whatever this is.",
+          "type": "number",
+          "format": "double",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.42
+        },
+        "blur": {
+          "description": "Background blur in pt, 0 to 60 (frosted); glossy reads it as reflection.",
+          "type": "number",
+          "format": "double",
+          "minimum": 0.0,
+          "maximum": 60.0,
+          "default": 34.0
+        },
+        "depth": {
+          "description": "Elevation scale, 0 (flat) to 1 (full shadows and highlights).",
+          "type": "number",
+          "format": "double",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 1.0
+        },
+        "tint": {
+          "description": "Tint the glass from the wallpaper.",
+          "type": "boolean",
+          "default": true
+        },
+        "dark_highlight": {
+          "description": "`none` | `subtle`: the top-edge highlight in dark mode (A109).",
+          "$ref": "#/$defs/DarkHighlight",
+          "default": "none"
+        },
+        "dark_highlight_scope": {
+          "description": "`controls` | `all`: the elevation levels `dark_highlight` applies to (A109).",
+          "$ref": "#/$defs/DarkHighlightScope",
+          "default": "controls"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Material": {
+      "description": "The window's glass material (DS§3.5).",
+      "oneOf": [
+        {
+          "description": "`glassEffect(.regular)`, heavy blur.",
+          "type": "string",
+          "const": "frosted"
+        },
+        {
+          "description": "`glassEffect(.clear)` plus the specular streak, light blur.",
+          "type": "string",
+          "const": "glossy"
+        },
+        {
+          "description": "Opaque `surface.window`; what Reduce Transparency forces.",
+          "type": "string",
+          "const": "solid"
+        }
+      ]
+    },
+    "DarkHighlight": {
+      "description": "The top-edge highlight lifted things draw in dark mode (A109, DS§3.4).",
+      "oneOf": [
+        {
+          "description": "No highlight: the dark mockup's look.",
+          "type": "string",
+          "const": "none"
+        },
+        {
+          "description": "White at a tenth of the light highlight's strength.",
+          "type": "string",
+          "const": "subtle"
+        }
+      ]
+    },
+    "DarkHighlightScope": {
+      "description": "Which elevation levels `dark_highlight` applies to (A109); the others\nkeep the light highlight.",
+      "oneOf": [
+        {
+          "description": "Controls only: e1 (chips, capsules, buttons, knobs).",
+          "type": "string",
+          "const": "controls"
+        },
+        {
+          "description": "Every level, e1 to e4, the transcript's user bubble included.",
+          "type": "string",
+          "const": "all"
+        }
+      ]
+    },
+    "DesktopTranscriptConfig": {
+      "description": "`[desktop.transcript]` (A67, A93).",
+      "type": "object",
+      "properties": {
+        "cross_block_selection": {
+          "description": "Whether a text selection runs across blocks like one document;\n`false` clamps it to the block where the drag started.",
+          "type": "boolean",
+          "default": true
+        },
+        "text_size": {
+          "description": "The transcript's prose size in pt at 100 % text size, 10 to 24;\ncode, headings and thoughts keep their size relative to it.",
+          "type": "number",
+          "format": "double",
+          "minimum": 10.0,
+          "maximum": 24.0,
+          "default": 13.5
+        },
+        "line_height": {
+          "description": "The prose line height as a multiple of the text size, 1 to 2.5.",
+          "type": "number",
+          "format": "double",
+          "minimum": 1.0,
+          "maximum": 2.5,
+          "default": 1.55
+        }
+      },
+      "additionalProperties": false
+    },
+    "DesktopContextConfig": {
+      "description": "`[desktop.context]` (A104): the inspector's Context & Cost tab.",
+      "type": "object",
+      "properties": {
+        "cache_hit": {
+          "description": "`turn` | `session`: the cache hit the tab shows.",
+          "$ref": "#/$defs/CacheHitScope",
+          "default": "turn"
+        }
+      },
+      "additionalProperties": false
+    },
+    "CacheHitScope": {
+      "description": "Which cache hit the Context tab shows (A104).",
+      "oneOf": [
+        {
+          "description": "The last turn's cache reads over what it sent: what the last\nrequests reused.",
+          "type": "string",
+          "const": "turn"
+        },
+        {
+          "description": "Every call's so far: whether the cache-stable prefix pays off.",
+          "type": "string",
+          "const": "session"
+        }
+      ]
+    },
+    "DesktopReviewConfig": {
+      "description": "`[desktop.review]` (A108): the Review pane.",
+      "type": "object",
+      "properties": {
+        "send": {
+          "description": "`queue` | `now`: when \"Send to agent\" posts while a turn runs.",
+          "$ref": "#/$defs/ReviewSend",
+          "default": "queue"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ReviewSend": {
+      "description": "When the Review pane's \"Send to agent\" posts its comments (A108).",
+      "oneOf": [
+        {
+          "description": "Behind the running turn, as the composer queues a prompt; at once\nwhen no turn runs.",
+          "type": "string",
+          "const": "queue"
+        },
+        {
+          "description": "At once, even while a turn runs.",
+          "type": "string",
+          "const": "now"
+        }
+      ]
+    },
+    "ExternalAgentConfig": {
+      "description": "One `[external_agents.<name>]` entry (T52.2, DT§3.3.1): an ACP agent a\ntop-level session can be driven by. The name is the TOML key. User\nconfig only: a project config can set none of it (the guards in\n`cox-config`'s `load.rs`), because an entry runs a program and widens\nwhere it may write. It always runs under the sandbox wrap, with network\non and file limits kept.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "Program that speaks ACP on stdio: a name found on `PATH`, or an absolute path.",
+          "type": "string",
+          "default": ""
+        },
+        "args": {
+          "description": "Arguments to `command`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "key_env": {
+          "description": "The agent's own key variable, passed through to it by name only.",
+          "type": "string",
+          "default": ""
+        },
+        "writable": {
+          "description": "Extra directories under your home the agent may write, for its own state.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
         }
       },
       "additionalProperties": false

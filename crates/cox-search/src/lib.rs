@@ -12,5 +12,6 @@
 //! call site (docs/design/crates.md, AGENTS.md trust boundaries).
 //! `cox-tools` re-exports the `Tool` types at the old `grep`/`glob` paths.
 
+pub mod fuzzy;
 pub mod glob;
 pub mod grep;

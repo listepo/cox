@@ -324,7 +324,7 @@ jobs:
           gh release view "$TAG" --json tagName,isDraft,assets \
             --jq '"published \(.tagName) draft=\(.isDraft) assets=\(.assets | length)"'
 
-  # The Homebrew cask in listepo/homebrew-tap is generated from this release:
+  # The Homebrew cask in pyrlyn/homebrew-tap is generated from this release:
   # version and both checksums. It runs after publish so `brew install` never
   # names a tarball that is not on the releases page yet.
   tap:
@@ -345,10 +345,10 @@ jobs:
           ls -l dist
       - name: Generate the cask
         env:
-          # A token that can push to listepo/homebrew-tap. The default
+          # A token that can push to pyrlyn/homebrew-tap. The default
           # GITHUB_TOKEN is scoped to this repository, so it cannot.
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          TAP_REPO: listepo/homebrew-tap
+          TAP_REPO: pyrlyn/homebrew-tap
           VERSION: ${{ needs.version.outputs.version }}
           TAG: ${{ needs.version.outputs.tag }}
           GH_TOKEN: ${{ github.token }}
@@ -401,21 +401,21 @@ jobs:
         run: |
           set -euo pipefail
           # Homebrew 4.6+ rejects bare cask paths; install via a local tap of the
-          # clone we are about to push (listepo/homebrew-tap → listepo/tap).
+          # clone we are about to push (pyrlyn/homebrew-tap → pyrlyn/tap).
           # Drop a prior tap first: otherwise `brew tap name path` can leave the
           # remote clone in place and smoke the published cask instead of
           # the one Generate just wrote for this tag.
-          brew untap listepo/tap >/dev/null 2>&1 || true
-          brew tap listepo/tap "$PWD/tap"
+          brew untap pyrlyn/tap >/dev/null 2>&1 || true
+          brew tap pyrlyn/tap "$PWD/tap"
           # Guard: the cask under this tap must advertise the version we published.
-          cask_version="$(brew info --cask --json=v2 listepo/tap/cox | python3 -c 'import json,sys; print(json.load(sys.stdin)["casks"][0]["version"])')"
+          cask_version="$(brew info --cask --json=v2 pyrlyn/tap/cox | python3 -c 'import json,sys; print(json.load(sys.stdin)["casks"][0]["version"])')"
           if [ "$cask_version" != "${{ needs.version.outputs.version }}" ]; then
             echo "smoke would install cask $cask_version, expected ${{ needs.version.outputs.version }}" >&2
             echo "---- tap/Casks/cox.rb ----" >&2
             cat tap/Casks/cox.rb >&2
             exit 1
           fi
-          brew install --cask --verbose listepo/tap/cox
+          brew install --cask --verbose pyrlyn/tap/cox
           brew uninstall --cask cox
       - name: Push the cask
         env:
@@ -431,3 +431,22 @@ jobs:
             fi
           fi
           git push origin HEAD
+
+  # A failed release opens or comments on a `release-failure` issue that mentions and assigns
+  # @listepo (pyrlyn/infra notify-release-failure): GitHub cannot filter Actions notifications
+  # per workflow, so this is the release failure notification. An ordinary merge skips every
+  # job after `version`, so it never gets here. Pinned to pyrlyn/infra
+  # ci/notify-release-failure; repin to its merge commit.
+  notify-failure:
+    needs: [version, verify, build, publish, tap]
+    if: always() && contains(needs.*.result, 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read # failed job names
+      issues: write
+    steps:
+      - uses: pyrlyn/infra/.github/actions/notify-release-failure@d709124d53dd4923eff8f594b3155842508b0049
+        with:
+          ref: ${{ needs.version.outputs.tag || github.ref_name }}
+          needs: ${{ toJSON(needs) }}

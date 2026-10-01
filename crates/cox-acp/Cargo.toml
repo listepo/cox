@@ -25,7 +25,12 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
+# An external agent's whole-file ACP diff becomes the unified diff Changes
+# and Review read (T52.3); already a workspace dependency, nothing new.
+similar = { workspace = true }
 
 [dev-dependencies]
 cox-provider = { path = "../cox-provider", version = "0.1.2" }
 tempfile = { workspace = true }
+# The update fold's snapshot test (T52.3); already a workspace dev-dependency.
+insta = { workspace = true }

@@ -6,8 +6,54 @@ check:
     mise exec -- cargo fmt --check
     mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 
-test: && dunnage
+# Only the tests a change can break (A99): the crates that own the files
+# changed since REF, and every crate depending on them. REF defaults to the
+# merge-base with origin/main; uncommitted and untracked files count. A
+# Cargo.toml/Cargo.lock/.cargo/mise.toml/justfile change runs everything.
+# `just test --changed-since HEAD`, `just test --dry-run` (print the command),
+# other flags go to nextest.
+[positional-arguments]
+test *args:
+    @uv run --no-project python scripts/changed_tests.py "$@"
+
+# The whole workspace, then the dunnage cleanup; CI runs the same suite.
+check-all: && dunnage
     mise exec -- cargo nextest run --workspace
+
+# The crates that build for Windows (P57, T57.1): the one list `just
+# windows-check` and CI's `windows` job use. Each P57 card adds the crates it
+# ports; T57.11 replaces the list with the whole workspace.
+windows_crates := "cox-plugin-api cox-protocol cox-sanitize cox-i18n cox-models cox-permission cox-config cox-tokens cox-patch cox-search cox-syntax cox-web cox-sandbox cox-render cox-telemetry cox-provider-http cox-provider-testkit cox-provider-anthropic cox-provider-openai cox-provider cox-store cox-plugin cox-core cox-tui cox-tools cox-acp"
+
+# `cargo check` and clippy over `windows_crates` for x64 and ARM64 Windows
+# (A128 (4)), library targets only (tests join in T57.11). On Windows cargo
+# runs natively (CI's `windows` job, whose rust action already made the
+# mise.toml pin the active toolchain). Elsewhere through cargo-xwin
+# (mise.toml) and its `clang` backend: clang-cl's `/imsvc` flags reach
+# ring's aarch64 assembly, which plain clang builds, and fail it. The
+# backend fetches a Windows sysroot into its cache on first use (several
+# GB); the Windows std comes from `rustup target add`, run here rather than
+# pinned in mise.toml so macOS and Linux CI never download it.
+[script("bash")]
+windows-check:
+    set -euo pipefail
+    targets=(x86_64-pc-windows-msvc aarch64-pc-windows-msvc)
+    args=()
+    for target in "${targets[@]}"; do args+=(--target "$target"); done
+    for crate in {{windows_crates}}; do args+=(-p "$crate"); done
+    if [ "{{os()}}" = windows ]; then
+        run=(env) cargo=(cargo)
+    else
+        # mise exec puts each pin on PATH itself; its shims directory can
+        # only add an inactive `clang` shim another project pinned, which
+        # cargo-xwin would take as the compiler.
+        PATH=$(printf %s "$PATH" | tr ':' '\n' | grep -v '/mise/shims$' | paste -sd: -)
+        export XWIN_CROSS_COMPILER=clang
+        run=(mise exec --) cargo=(mise exec -- cargo xwin)
+    fi
+    "${run[@]}" rustup target add "${targets[@]}"
+    "${cargo[@]}" check "${args[@]}"
+    "${cargo[@]}" clippy "${args[@]}" -- -D warnings
 
 # The guest workspace (plugins/, PL§9): pure/host-target tests only — no
 # wasm32 build here, that is CI's separate step (T33.40.2).
@@ -83,6 +129,41 @@ footprint *args:
 release:
     mise exec -- cargo build --profile dist -p cox
     @ls -lh "$(mise exec -- cargo metadata --format-version 1 --no-deps | tr ',' '\n' | grep -o '"target_directory":"[^"]*"' | cut -d'"' -f4)/dist/cox" | awk '{print "cox  " $5}'
+
+# The macOS app's Rust core (T37.15, DT§7): desktop/macos/build/CoxFFI.xcframework
+# (aarch64-apple-darwin only, macOS 26.0) plus the generated Swift bindings.
+desktop-xcframework:
+    mise exec -- bash scripts/desktop/xcframework.sh
+
+# The macOS app, Debug and ad-hoc signed (T37.32.1, DT§7): the XCFramework, then XcodeGen's
+# thin Cox.xcodeproj from desktop/macos/project.yml, then desktop/macos/build/Cox.app. No
+# signing identity; Developer ID and notarization are T37.32.2. Run it on a fixture with
+# `desktop/macos/build/Cox.app/Contents/MacOS/Cox -CoxFixture desktop/macos/Fixtures/edit.json`.
+desktop-app: desktop-xcframework
+    mise exec -- bash scripts/desktop/app.sh
+
+# The native apps' string resources from crates/cox-i18n/po (docs/i18n.md):
+# Apple .strings/.stringsdict and Windows .resw under target/i18n/ (gitignored).
+i18n-export *args:
+    mise exec -- cargo run -q -p cox-i18n --bin po-export {{args}}
+
+# Merges crates/cox-i18n/po/messages.pot into every <code>.po after the
+# template changes (GNU gettext's msgmerge; `brew install gettext`).
+i18n-update:
+    for po in crates/cox-i18n/po/*.po; do msgmerge --quiet --update --backup=none "$po" crates/cox-i18n/po/messages.pot || exit 1; done
+
+# Validates the catalogs with GNU gettext: msgfmt --check on each .po (header,
+# plural forms, {name} placeholders), format checks on the template, and
+# msgcmp that each .po holds exactly the template's messages.
+i18n-check:
+    msgfmt --check-format --output-file=/dev/null crates/cox-i18n/po/messages.pot
+    for po in crates/cox-i18n/po/*.po; do msgfmt --check --output-file=/dev/null "$po" && msgcmp --use-untranslated "$po" crates/cox-i18n/po/messages.pot || exit 1; done
+
+# The desktop design tokens (T37.17, DS§2): Style Dictionary regenerates CoxUI's
+# Tokens.swift and Colors.xcassets and the mockups' tokens.css from
+# desktop/design/tokens/*.json. CI runs the same build and fails on any diff.
+desktop-tokens:
+    cd desktop/design && mise exec -- npm ci --no-fund --no-audit && mise exec -- npm run build
 
 # $CARGO_HOME sizes (no deletes) and ./target
 cache:

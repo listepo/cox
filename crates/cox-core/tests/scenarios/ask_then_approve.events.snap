@@ -31,6 +31,19 @@ expression: value
     "item": "<id>"
   },
   {
+    "type": "context_breakdown",
+    "turn": "<id>",
+    "breakdown": {
+      "window": 1000000,
+      "total": 0,
+      "system": 0,
+      "tools": 0,
+      "instructions": 0,
+      "history": 0,
+      "cached": 0
+    }
+  },
+  {
     "type": "item_started",
     "item": "<id>",
     "kind": {
@@ -112,6 +125,19 @@ expression: value
       "bytes": 7,
       "duration_ms": 0,
       "diff": null
+    }
+  },
+  {
+    "type": "context_breakdown",
+    "turn": "<id>",
+    "breakdown": {
+      "window": 1000000,
+      "total": 0,
+      "system": 0,
+      "tools": 0,
+      "instructions": 0,
+      "history": 0,
+      "cached": 0
     }
   },
   {

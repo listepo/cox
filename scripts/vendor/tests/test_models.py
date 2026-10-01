@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import tomlkit
 
-from cox_vendor import models
+from cox_vendor import models, registry
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REGISTRY_BODY = (FIXTURES / "models_dev_subset.json").read_bytes()
@@ -148,6 +148,57 @@ def test_default_toml_regenerates_context_window_and_efforts(isolated_files):
     assert local["qwen3-coder"]["context_window"] == 32768
 
 
+def test_default_toml_takes_the_models_dev_name_as_display_name_after_the_id(isolated_files):
+    prices, default = isolated_files
+    models.run(fetch=fetching())
+    text = default.read_text()
+    assert '{id="claude-sonnet-5", display_name="Claude Sonnet 5", context_window=1000000' in text
+    doc = tomlkit.parse(text)
+    anthropic = {m["id"]: m for m in doc["providers"]["anthropic"]["models"]}
+    assert anthropic["claude-haiku-4-5"]["display_name"] == "Claude Haiku 4.5"
+    # No name on models.dev (glm-5.2), a blank one (qwen/qwen3-coder-plus) or
+    # no models.dev row at all (kimi-k2.7-code): no display_name, the reader
+    # falls back to the id.
+    zai = {m["id"]: m for m in doc["providers"]["z-ai"]["models"]}
+    assert "display_name" not in zai["glm-5.2"]
+    openrouter = {m["id"]: m for m in doc["providers"]["openrouter"]["models"]}
+    assert "display_name" not in openrouter["qwen/qwen3-coder-plus"]
+    moonshot = {m["id"]: m for m in doc["providers"]["moonshot"]["models"]}
+    assert "display_name" not in moonshot["kimi-k2.7-code"]
+    assert moonshot["kimi-k2.6"]["display_name"] == "Kimi K2.6"
+
+
+def test_a_renamed_model_updates_its_display_name_in_place(isolated_files):
+    prices, default = isolated_files
+    models.run(fetch=fetching())
+    renamed = json.loads(REGISTRY_BODY)
+    renamed["anthropic"]["models"]["claude-sonnet-5"]["name"] = "Claude Sonnet 5 (new)"
+    assert models.run(fetch=fetching(json.dumps(renamed).encode()))
+    text = default.read_text()
+    assert '{id="claude-sonnet-5", display_name="Claude Sonnet 5 (new)", context_window=' in text
+    assert text.count("display_name=") == 4
+
+
+def test_names_only_writes_the_names_and_nothing_else(isolated_files):
+    prices, default = isolated_files
+    before_prices = prices.read_text()
+    assert models.run(fetch=fetching(), names_only=True)
+    assert prices.read_text() == before_prices
+    doc = tomlkit.parse(default.read_text())
+    anthropic = {m["id"]: m for m in doc["providers"]["anthropic"]["models"]}
+    sonnet, haiku = anthropic["claude-sonnet-5"], anthropic["claude-haiku-4-5"]
+    assert sonnet["display_name"] == "Claude Sonnet 5"
+    # The fixture's stale efforts and context window stay as they were.
+    assert list(sonnet["efforts"]) == ["low", "high"]
+    assert haiku["context_window"] == 111111
+    # A second names-only run has nothing left to write.
+    assert models.run(check=True, fetch=fetching(), names_only=True) is False
+
+
+def test_model_names_is_a_registered_command():
+    assert registry.COMMANDS["model-names"] is models.run_names
+
+
 def test_default_toml_comments_and_unrelated_tables_are_preserved(isolated_files):
     prices, default = isolated_files
     models.run(fetch=fetching())
@@ -253,3 +304,81 @@ def test_a_malformed_registry_is_rejected_and_nothing_is_written(isolated_files)
         models.run(fetch=fetching(b"not json"))
     assert prices.read_text() == before_prices
     assert default.read_text() == before_default
+
+
+def test_a_google_row_fills_the_gemini_section_and_its_price():
+    # `[providers.gemini]` is priced from models.dev's `google` provider (P39).
+    # The numbers below are test values, not Google's prices.
+    registry = {
+        "google": {
+            "models": {
+                "gemini-3.8-flash": {
+                    "name": "Gemini 3.8 Flash",
+                    "limit": {"context": 1048576},
+                    "cost": {"input": 0.5, "output": 3.0, "cache_read": 0.05},
+                    "reasoning_options": [{"type": "effort", "values": ["minimal", "low", "medium", "high"]}],
+                }
+            }
+        }
+    }
+    default_text = (
+        "[providers.gemini]\n"
+        'api = "chat"\n'
+        'models = [{id="gemini-3.8-flash", context_window=0, efforts=[], reasoning_effort=true}]\n'
+    )
+    prices_text = (
+        "[[model]]\n"
+        'id = "gemini-3.8-flash"\n'
+        "input = 0.0\n"
+        "output = 0.0\n"
+        "cache_write = 0.0\n"
+        "cache_read = 0.0\n"
+        'verified_on = "1970-01-01"\n'
+        'source_url = "https://models.dev"\n'
+    )
+    report: list[str] = []
+
+    doc = tomlkit.parse(models.build_default_toml(default_text, registry, report=report))
+    row = doc["providers"]["gemini"]["models"][0]
+    assert row["display_name"] == "Gemini 3.8 Flash"
+    assert row["context_window"] == 1048576
+    # `minimal` is not a cox effort and is dropped.
+    assert list(row["efforts"]) == ["low", "medium", "high"]
+    assert row.unwrap()["reasoning_effort"] is True
+
+    id_to_sections = {"gemini-3.8-flash": ["gemini"]}
+    priced = tomlkit.parse(
+        models.build_prices_toml(prices_text, registry, id_to_sections=id_to_sections, today=TODAY, report=report)
+    )
+    price = priced["model"][0]
+    assert (price["input"], price["output"], price["cache_write"], price["cache_read"]) == (0.5, 3.0, 0.0, 0.05)
+    assert price["verified_on"] == TODAY
+    assert report == []
+
+
+def test_images_follows_models_dev_input_modalities():
+    # T40.10: `images` is whether `modalities.input` lists "image"; a row
+    # models.dev gives no modalities for keeps what it has (unset stays unset).
+    registry = {
+        "deepseek": {
+            "models": {
+                "deepseek-v4-pro": {"modalities": {"input": ["text"], "output": ["text"]}},
+                "deepseek-v4-flash": {"modalities": {"input": ["text", "image"], "output": ["text"]}},
+                "deepseek-v4-lite": {"name": "DeepSeek V4 Lite"},
+            }
+        }
+    }
+    default_text = (
+        "[providers.deepseek]\n"
+        'models = [{id="deepseek-v4-pro", efforts=["high"]}, '
+        '{id="deepseek-v4-flash", efforts=["high"], images=false}, '
+        '{id="deepseek-v4-lite", efforts=["high"]}]   # comment\n'
+    )
+    report: list[str] = []
+    text = models.build_default_toml(default_text, registry, report=report)
+    assert '{id="deepseek-v4-pro", efforts=["high"], images=false}' in text
+    assert '{id="deepseek-v4-flash", efforts=["high"], images=true}' in text
+    rows = {m["id"]: m for m in tomlkit.parse(text)["providers"]["deepseek"]["models"]}
+    assert "images" not in rows["deepseek-v4-lite"]
+    # A second pass has nothing left to change.
+    assert models.build_default_toml(text, registry, report=report) == text

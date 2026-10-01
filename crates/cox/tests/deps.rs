@@ -154,13 +154,38 @@ fn only_plugin_depends_on_extism() {
     );
 }
 
-/// Names of every package in `cox`'s normal dependency tree under `features`.
-fn cox_tree(features: &[&str]) -> HashSet<String> {
+/// P54 (A123): whisper.cpp's C++ build and platform audio live in
+/// `cox-voice` alone, and the default `cox` build never pulls it: only the
+/// `voice` feature, off by default, links it.
+#[test]
+fn only_cox_voice_depends_on_whisper_cpal_and_rubato() {
+    for (crate_name, crate_deps) in &all_deps() {
+        if crate_name == "cox-voice" {
+            continue;
+        }
+        for audio in ["whisper-rs", "cpal", "rubato"] {
+            assert!(
+                !crate_deps.contains(audio),
+                "{crate_name} must not depend on {audio}; only cox-voice does"
+            );
+        }
+    }
+    let default = tree("cox", &[]);
+    for banned in ["cox-voice", "whisper-rs", "whisper-rs-sys"] {
+        assert!(
+            !default.contains(banned),
+            "the default cox build must not pull {banned}"
+        );
+    }
+}
+
+/// Names of every package in `package`'s normal dependency tree under `features`.
+fn tree(package: &str, features: &[&str]) -> HashSet<String> {
     let output = Command::new("cargo")
         .args([
             "tree",
             "-p",
-            "cox",
+            package,
             "-e",
             "normal",
             "--offline",
@@ -188,8 +213,8 @@ fn cox_tree(features: &[&str]) -> HashSet<String> {
 /// drop extism and wasmtime.
 #[test]
 fn slim_build_has_no_wasm_runtime() {
-    let slim = cox_tree(&["--no-default-features", "--features", "otel"]);
-    let full = cox_tree(&[]);
+    let slim = tree("cox", &["--no-default-features", "--features", "otel"]);
+    let full = tree("cox", &[]);
     for wasm_crate in ["cox-plugin", "extism", "wasmtime"] {
         assert!(
             !slim.contains(wasm_crate),
@@ -313,7 +338,7 @@ fn no_crate_below_cox_depends_on_core() {
     // T34.1's `agent` tool matches a custom preset by `AgentDef`, but that
     // type lives in `cox_protocol::agent` precisely so this crate never
     // needs `cox-ext`, which does the filesystem read (`agents::discover`)
-    // the surface (`crates/cox/src/session.rs`) runs instead. cox-sanitize
+    // session assembly (`cox-session`) runs instead. cox-sanitize
     // (T33.9) holds the secret-redaction table `redact::scrub` re-exports,
     // shared with the plugin host; it is a pure leaf.
     let core_allowed: HashSet<&str> = [
@@ -492,9 +517,14 @@ fn no_crate_below_cox_depends_on_core() {
     );
 
     // mcp/store/ext depend only on cox-protocol: this is the rule the test
-    // is named for — none of them may reach cox-core.
-    let leaf_allowed: HashSet<&str> = ["cox-protocol"].into_iter().collect();
+    // is named for — none of them may reach cox-core. cox-ext also takes
+    // the leaf cox-sanitize (T44.2: presence text names another session's
+    // worktree to the model through the one guard).
     for crate_name in ["cox-mcp", "cox-store", "cox-ext"] {
+        let leaf_allowed: HashSet<&str> = match crate_name {
+            "cox-ext" => ["cox-protocol", "cox-sanitize"].into_iter().collect(),
+            _ => ["cox-protocol"].into_iter().collect(),
+        };
         let d = &deps[crate_name];
         assert!(
             !d.contains("cox-core"),
@@ -502,7 +532,7 @@ fn no_crate_below_cox_depends_on_core() {
         );
         assert!(
             d.iter().all(|dep| leaf_allowed.contains(dep.as_str())),
-            "{crate_name} may only depend on cox-protocol among workspace crates, found {d:?}"
+            "{crate_name} may only depend on {leaf_allowed:?} among workspace crates, found {d:?}"
         );
     }
 
@@ -532,4 +562,69 @@ fn no_crate_below_cox_depends_on_core() {
             .all(|dep| tools_allowed.contains(dep.as_str())),
         "cox-tools may only depend on cox-protocol/cox-sandbox/cox-patch/cox-syntax/cox-search/cox-web among workspace crates, found {tools_deps:?}"
     );
+}
+
+/// T37.1 (DT§4.2): session assembly is a library every surface shares, so
+/// it carries no CLI parser, no `anyhow` and no terminal: the flags stay in
+/// `crates/cox`, errors are `SessionError`, warnings come back as data.
+#[test]
+fn session_has_no_cli_or_terminal() {
+    let deps = &all_deps()["cox-session"];
+    for banned in ["clap", "anyhow", "cox-tui"] {
+        assert!(
+            !deps.contains(banned),
+            "cox-session must not depend on {banned}"
+        );
+    }
+}
+
+/// T37.8 (DT§4.2): the application core is UI-agnostic — the desktop app
+/// links it through `cox-ffi`, so no terminal toolkit may reach it, not even
+/// through `cox-render`'s default `ratatui` feature. D1 bans *depending on*
+/// `anyhow` and `clap`, so those are checked on its own manifest (T37.39):
+/// `cox-session` pulls `anyhow` transitively (tiktoken-rs, the ACP crate).
+#[test]
+fn app_has_no_terminal_or_cli() {
+    let deps = tree("cox-app", &[]);
+    for banned in ["ratatui", "crossterm", "cox-tui"] {
+        assert!(!deps.contains(banned), "cox-app must not pull {banned}");
+    }
+    let direct = &all_deps()["cox-app"];
+    for banned in ["clap", "anyhow"] {
+        assert!(
+            !direct.contains(banned),
+            "cox-app must not depend on {banned}"
+        );
+    }
+}
+
+/// T37.39 (D11, DT§4.2): the FFI only forwards — sessions are `cox-app`'s —
+/// so among workspace crates it reaches `cox-app` and `cox-protocol` alone.
+#[test]
+fn ffi_depends_only_on_app_and_protocol() {
+    let deps = &workspace_deps()["cox-ffi"];
+    let expected: HashSet<String> = ["cox-app", "cox-protocol"].map(String::from).into();
+    assert_eq!(deps, &expected, "cox-ffi's direct workspace dependencies");
+}
+
+/// T37.14 (D1, DT§4.2): the app's FFI layer is the one crate built on
+/// UniFFI, and the `cox` binary does not link it.
+#[test]
+fn only_ffi_depends_on_uniffi() {
+    for (crate_name, crate_deps) in &all_deps() {
+        if crate_name != "cox-ffi" {
+            assert!(
+                !crate_deps.contains("uniffi"),
+                "{crate_name} must not depend on uniffi; only cox-ffi does"
+            );
+        }
+    }
+    assert!(all_deps()["cox-ffi"].contains("uniffi"));
+    let cli = tree("cox", &[]);
+    for banned in ["cox-ffi", "uniffi"] {
+        assert!(
+            !cli.contains(banned),
+            "the cox binary must not pull {banned}"
+        );
+    }
 }

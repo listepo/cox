@@ -1,0 +1,26 @@
+[package]
+name = "cox-voice"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# T54.2 (A123): local speech-to-text through whisper.cpp. `tracing_backend`
+# routes whisper.cpp's and ggml's own logging into `tracing` instead of
+# stderr, which would paint over the TUI.
+whisper-rs = { workspace = true, features = ["tracing_backend"] }
+# T54.3: microphone capture from the default input device.
+cpal = { workspace = true }
+# T54.3: resampling the device rate to whisper's 16 kHz.
+rubato = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+# T54.7: the `Dictation` trait the TUI receives, implemented by `PushToTalk`.
+cox-protocol = { path = "../cox-protocol", version = "0.1.2" }
+async-trait = { workspace = true }
+# T54.7: loading and transcribing run on `spawn_blocking`, off the TUI's runtime.
+tokio = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

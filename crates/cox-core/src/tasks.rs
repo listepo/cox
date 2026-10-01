@@ -646,6 +646,7 @@ impl Session {
             archive: None,
             duration_ms: 0,
             diff: None,
+            structured: None,
         }
     }
 

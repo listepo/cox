@@ -21,64 +21,66 @@
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
-- T39.3. Chat translator replays a signature as `extra_content` on its tool call
-- T39.4. Surfaces skip the empty signed thinking item
-- T39.5. `[providers.gemini]` preset and vendored model rows
-- T39.6. Offline end-to-end: a Gemini-shaped two-round tool loop
+- T37.29.3. Inspector Context & Cost tab
+- T37.29.3.4. Context tab: budget cap and how close it is
+- T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
+- T37.32.2. Developer ID signing, notarization, Sparkle, bundled CLI, Homebrew cask
+- T37.33. Performance budget suite
 - T39.7. Optional: live check against the real Gemini endpoint (needs the creator's key)
-- T40.2. Core carries user attachments into history and the rollout
-- T40.3. Token estimate and context breakdown count images
-- T40.5. Core forwards a tool's image to the model, archived first
-- T40.6. Tool images are visible only in their own turn
-- T40.7. Headless `--image <path>` (repeatable)
-- T40.8. ACP image content blocks become attachments
-- T40.9. A model declared text-only refuses images at the wire
-- T40.10. `cox-vendor models` fills `images` from models.dev
-- T41.3. Diagnostic wire subset, file URIs and formatting
-- T41.4. One LSP server: spawn, handshake, document sync, collect, stop
-- T41.5. `Tool::shutdown`, called when the root session ends
-- T41.6. The `diagnostics` tool with a lazy per-language server pool
-- T41.7. Wire `diagnostics` into sessions, sandboxed, and into `doctor`
-- T41.8. End-to-end with a fake LSP server binary
-- T41.9. Optional: live check with real rust-analyzer
-- T42.1. Mode type, `narrower` and the resolved gate table
-- T42.2. `core.mode` config key and `--mode` flag
-- T42.3. Core applies the mode at build and on `/mode`
-- T42.4. TUI `/mode` and the mode badge
-- T42.5. Headless `--mode` consent, e2e and docs
-- T43.0. Amend the repo-map gate doc to the creator's decision
-- T43.1. Repo-map builder in `cox-tools`
-- T43.2. Protocol and config for the map
-- T43.3. system[2] carries the map
-- T43.4. Build the map once at session start; resume replays it
-- T43.5. `/repomap refresh` and the compaction rebuild
 - T43.6. Bench the map on and off
-- T44.2. One live session per worktree
-- T44.3. Worktrees in `/agents` and `cox sessions`
-- T44.4. Resume a worktree session in its worktree
-- T44.5. Worktree docs
-- T45.2. `permissionMode` in an agent definition narrows only
-- T45.3. Plugin manifest declares agent definitions
-- T45.4. Load granted plugins' agent definitions
-- T45.5. Core `Submission::UserAgent`
-- T45.6. `@name task` in the TUI composer
-- T46.1. `[tui.status_line]` config keys and the project guard
-- T46.2. Status-line runner: sandboxed, sanitized, debounced
-- T46.3. TUI: status-script input and its row
-- T46.4. Wire the status line into the TUI session and document it
-- T46.5. Theme files can be written back: token list, colour formatting, `set_token`
-- T46.6. Theme editor modal
-- T46.7. `Ctrl+E` in `/theme` opens the editor; `Enter` saves the file
-- T47.1. Elicitation form model: schema to prompts, answers to typed JSON
-- T47.2. `cox-mcp` client handler answers `elicitation/create` through an asker
-- T47.3. Bridge elicitation into the question modal (TUI and `--plain`) and document the surfaces
-- T47.4. URL-mode elicitation: show the URL, ask consent, open the browser
-- T48.1. trycmd harness plus text, json and bad-format cases
-- T48.2. stream-json and denied-write cases; drop the asserts the fixtures now cover
-- T49.1. Remote control scope gate
-- T49.2. Windows sandbox scope gate
-- T49.3. Voice input scope gate
-- T49.4. MCP Apps scope gate
-- T49.5. Cursor Cloud Agents API as a background-task backend — scope gate
-- T50.3. The volatile block shows the live permission mode
-- T50.5. `cox --plain` shows the mode after `/permissions`
+- T53.5. Freeze ABI `api = 1`
+- T53.6. `cox-plugin-api` ready for crates.io
+- T53.7. `cox-plugin-sdk` ready for crates.io
+- T53.8. Go SDK module ready to tag
+- T53.9. Templates and docs use the published SDKs
+- T56.1. `cox-cursor-cloud` crate: hand-written wire types
+- T56.2. Cloud Agents client: create, follow up, stream, cancel, usage
+- T56.3. `[[cloud_agents]]` manifest capability and its grant line
+- T56.4. `Engine` asks before code leaves the machine: `CloudAgent(<repo>)`
+- T56.5. `cloud_runs` table: a run outlives the session that started it
+- T56.6. Host driver: a background task becomes a Cursor Cloud run
+- T56.7. Usage row and resume
+- T56.8. Offline end-to-end over hand-written fixtures
+- T56.9. Docs: cloud agents for users and in EA
+- T56.10. Optional: live check against a real Cursor account (needs the creator's key)
+- T57.1. Windows CI job: `cargo check` over a growing crate list
+- T57.4. `path::confine` on Windows paths
+- T57.5. One kill path for process trees: hooks and the session environment
+- T57.6. The same kill path for the lsp server, the status line and external agents
+- T57.7. `cox-tools` compiles on Windows
+- T57.8. `bash` on Windows: ConPTY inside a job object
+- T57.9. `cox-app` and `crates/cox` compile on Windows
+- T57.10. Home, config and keys on Windows
+- T57.11. Full workspace on Windows: check, clippy and nextest
+- T57.12. Windows release target in cargo-dist
+- T57.13. End to end: the real binary on Windows
+- T58.1. Gate: C# bindings for `cox-ffi` generate and round-trip
+- T58.2. Design doc for the Windows client
+- T58.3. Solution layout under `desktop/windows/`
+- T58.4. Move the decisions still in CoxModel into `cox-app`
+- T58.5. C# client contract, fixture client and the session store
+- T58.6. The other stores
+- T58.7. Live client: `LiveCoreClient`, dispatcher and host bridge
+- T58.8. Design tokens as a XAML resource dictionary
+- T58.9. Windows Fluent mockups
+- T58.10. App shell: window, Mica, navigation
+- T58.11. Sidebar: projects and sessions
+- T58.12. Transcript blocks
+- T58.13. Markdown: `StyledDoc` to `RichTextBlock`
+- T58.14. Composer
+- T58.15. Approvals
+- T58.16. Questions (`ask_user`)
+- T58.17. Permission mode, model and effort controls
+- T58.18. Review
+- T58.19. Rewind timeline
+- T58.20. Inspector
+- T58.21. Search and command palette
+- T58.22. Settings and MCP servers
+- T58.23. Onboarding and doctor
+- T58.24. Notifications and badge
+- T58.25. D7 no-sandbox banner
+- T58.26. Resume, fork and hand off
+- T58.27. New session: in place or a new worktree
+- T58.28. Packaging
+- T58.29. UI automation smoke test
+- T58.30. Snapshot spike: WinUI controls to PNG

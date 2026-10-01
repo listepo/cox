@@ -74,12 +74,12 @@ fn status_line_shows_question_in_the_mode_slot_while_the_modal_is_open() {
     let mut state = State::new(PermissionMode::Plan, SandboxMode::WorkspaceWrite);
     update(
         &mut state,
-        Msg::Question {
-            call: CallId::new(),
+        Msg::Event(Event::QuestionAsked {
+            call_id: CallId::new(),
             question: "which environment?".into(),
             options: vec![],
-            agent: None,
-        },
+            source: None,
+        }),
     );
     let line = cox_tui::status::line(&state).to_string();
     assert!(line.contains("[question]"), "{line}");
@@ -182,6 +182,11 @@ fn command_todo_shows_the_panel_from_the_tool_output() {
                 bytes: 0,
                 duration_ms: 1,
                 diff: None,
+                structured: Some(Box::new(serde_json::json!([
+                    {"id": "1", "text": "read the loop", "state": "done"},
+                    {"id": "2", "text": "write cells", "state": "in_progress"},
+                    {"id": "3", "text": "snapshots", "state": "pending"},
+                ]))),
             },
         }),
     );
@@ -378,4 +383,43 @@ fn status_line_names_the_worktree_after_the_branch() {
         "{}",
         cox_tui::status::line(&state)
     );
+}
+
+#[test]
+fn state_changed_from_the_core_sets_mode_and_effort() {
+    let mut state = State::new(PermissionMode::Default, SandboxMode::WorkspaceWrite);
+    state.status.effort = Some(Effort::High);
+    update(
+        &mut state,
+        Msg::Event(Event::StateChanged {
+            mode: PermissionMode::Plan,
+            effort: None,
+        }),
+    );
+    assert_eq!(state.mode, PermissionMode::Plan);
+    assert_eq!(state.status.effort, None);
+}
+
+/// A113 (T37.22.9): the title a `TitleSet` carries shows before the mode
+/// badge, and `/rename` submits the user's title to the core.
+#[test]
+fn status_line_shows_the_session_title_and_rename_submits_it() {
+    let mut state = State::new(PermissionMode::Plan, SandboxMode::WorkspaceWrite);
+    turn(&mut state, "claude-sonnet-5", 0.41, 60_000);
+    update(
+        &mut state,
+        Msg::Event(Event::TitleSet {
+            title: "Fix the ledger".into(),
+            by_user: false,
+        }),
+    );
+    insta::assert_snapshot!(buffer_to_string(&render(&state, 120, 3)));
+    let rename = Submission::Rename {
+        title: "Ledger fix".into(),
+    };
+    assert!(submit(&mut state, "/rename Ledger fix").contains(&Cmd::Submit(rename)));
+    assert!(matches!(
+        commands::parse("/rename", Tier::Code),
+        Some(Action::Notice(_))
+    ));
 }

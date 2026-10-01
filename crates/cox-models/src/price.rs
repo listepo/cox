@@ -141,7 +141,7 @@ mod tests {
     #[test]
     fn usage_prices_toml_parses_and_has_all_tier_models() {
         let table = PriceTable::parse(DEFAULT_PRICES).expect("default prices parse");
-        assert_eq!(table.prices.len(), 21);
+        assert_eq!(table.prices.len(), 24, "T39.5 added the three gemini rows");
         // `price_for` is a linear find, so row order carries no meaning and
         // is not asserted on.
         // Verify all required tier models are present.

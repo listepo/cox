@@ -1,0 +1,42 @@
+---
+source: crates/cox-tui/src/view.rs
+expression: "format!(\"{buf:?}\")"
+---
+Buffer {
+    area: Rect { x: 0, y: 0, width: 60, height: 12 },
+    content: [
+        " context · 68000 of 200000 tokens · 34%                     ",
+        " ::##########====................................           ",
+        " : system            6800                                   ",
+        " # tools            43000                                   ",
+        " + instructions      2200                                   ",
+        " = history          16000                                   ",
+        "   cached           51000                                   ",
+        "                                                            ",
+        "                                                            ",
+        "                                                            ",
+        "> Esc close · PageUp scroll up · PageDown scroll down       ",
+        "- · ctx ▱▱▱▱▱ 34% · $0.00/5 · [default]                     ",
+    ],
+    styles: [
+        x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: BOLD,
+        x: 39, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 1, y: 1, fg: Gray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 3, y: 1, fg: Magenta, bg: Reset, underline: Reset, modifier: NONE,
+        x: 13, y: 1, fg: Blue, bg: Reset, underline: Reset, modifier: NONE,
+        x: 17, y: 1, fg: Gray, bg: Reset, underline: Reset, modifier: DIM,
+        x: 49, y: 1, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 2, fg: Gray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 3, y: 2, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 3, fg: Magenta, bg: Reset, underline: Reset, modifier: NONE,
+        x: 3, y: 3, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 4, fg: Cyan, bg: Reset, underline: Reset, modifier: NONE,
+        x: 3, y: 4, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 5, fg: Blue, bg: Reset, underline: Reset, modifier: NONE,
+        x: 3, y: 5, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 6, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+        x: 25, y: 6, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 2, y: 10, fg: Gray, bg: Reset, underline: Reset, modifier: NONE,
+        x: 0, y: 11, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+    ]
+}

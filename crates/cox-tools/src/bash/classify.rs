@@ -512,3 +512,23 @@ fn redirect_risk(node: Node, src: &[u8]) -> Risk {
     }
     Risk::Exec
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// T57.2: on Windows without Git Bash the line is PowerShell (or `cmd`),
+    /// which the bash grammar cannot parse. Such a line is `Exec` with
+    /// opaque segments, so no allow rule matches it and the engine asks.
+    #[test]
+    fn unparsed_powershell_command_asks() {
+        for line in [
+            "if (Test-Path .\\build) { Remove-Item .\\build -Recurse -Force }",
+            "$items = @(Get-ChildItem -Recurse); $items | Remove-Item -Force",
+            "for /f \"tokens=*\" %i in ('dir /b') do @del %i",
+        ] {
+            assert_eq!(classify(line), Risk::Exec, "{line}");
+            assert!(segments(line).opaque, "{line}");
+        }
+    }
+}
