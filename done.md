@@ -9303,3 +9303,25 @@ Not done: nothing.
 - Follow-up: T47.4 (branch `t47.1`, another owner, not touched here) declines a URL with `CMD_SYNTAX` on Windows in `elicit::url_prompt`; that decline and its `docs/tools.md` clause ("would not survive the opener unchanged") can go once this is merged.
 - Check output: not run. Since 2026-09-28 task agents run no builds or tests; `cargo fmt -p cox-mcp --check` is clean. Pending the verification pass: the Check, `cargo nextest run -p cox-mcp`, clippy. Not exercised on Windows.
 - Status: done 2026-09-29
+
+### T50.8. `scrub` redacts Anthropic `sk-ant-…` keys in full
+
+Renumbered from T50.7 on merge: main took T50.7 for `just test` runs only what a change can break.
+
+Model: mid-tier · Status: done 2026-09-28 · Depends: — · Size: ~20 · Files: `crates/cox-sanitize/src/redact.rs`
+
+Goal: `cox_sanitize::redact::scrub` redacts an Anthropic-shaped key (`sk-ant-api03-…`) whole. Today the `sk-` body is alphanumeric only, so the scan stops at the first `-` after `sk-`: `ant` is below the 8-byte floor and the key leaks verbatim into rollouts, logs and headless output. Other `sk-` keys (`sk-abc…`, `sk-proj-…`) keep being redacted and short `sk-` words stay verbatim.
+
+Plan:
+1. `redact.rs`: let `prefixed` take the body predicate; the `sk-` arm accepts ASCII alphanumerics plus `-` and `_` (the Anthropic and OpenAI project-key alphabets), the other arms stay alphanumeric only.
+2. Regression test `scrub_redacts_an_anthropic_key_whole` in the same file's `mod tests`: a `sk-ant-api03-…` key with `-` and `_` in its body, embedded in a line, becomes one `«redacted»` with the surrounding text intact.
+
+Check: `mise exec -- cargo nextest run -p cox-sanitize` (the new test fails on current `main`), clippy for the crate with `-D warnings`, `cargo fmt --check`.
+
+Done when: the Check passes.
+
+Out of scope: the separate cassette redactor in `cox-provider-testkit/src/replay.rs`.
+
+- Result: `crates/cox-sanitize/src/redact.rs`: `prefixed` takes the body predicate; the `sk-` arm accepts ASCII alphanumerics plus `-` and `_`, `AKIA` and `ghp_` stay alphanumeric only. Before the fix a `sk-ant-…` key matched nothing at all (`ant` is below the 8-byte floor), so the whole key survived.
+- Tests: `scrub_redacts_an_anthropic_key_whole` fails on the old code (the line comes back unchanged); `redact_table` still passes, so `sk-abc…` keys stay redacted and `sk-shrt` stays verbatim.
+- Check output summary: `cargo nextest run -p cox-sanitize` 6 passed; `cargo clippy -p cox-sanitize --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
