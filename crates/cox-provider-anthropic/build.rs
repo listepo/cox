@@ -54,7 +54,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     for (name, schema) in &flat {
         let mut schema = schema.clone();
         inline_variants(&mut schema, &flat, &mut vec![name.clone()]);
-        let schema: schemars::schema::Schema = serde_json::from_value(schema)
+        // The schema type is typify's own (schemars 0.8), inferred from
+        // `add_ref_types` below rather than named, so this crate does not
+        // depend on that schemars directly and the workspace stays on 1.x.
+        let schema = serde_json::from_value(schema)
             .map_err(|e| format!("schema {name} is not a JSON Schema: {e}"))?;
         defs.insert(name.clone(), schema);
     }

@@ -123,6 +123,7 @@ pub struct ModelChoice {
     pub provider: String,
     pub id: String,
     pub display_name: Option<String>,
+    pub short_name: Option<String>,
     pub efforts: Vec<Effort>,
     pub context_window: Option<u32>,
 }
@@ -151,6 +152,7 @@ pub struct ModelSection {
 pub struct MenuModel {
     pub id: String,
     pub display_name: Option<String>,
+    pub short_name: Option<String>,
     pub efforts: String,
 }
 
