@@ -14,7 +14,7 @@
 mise exec -- cargo nextest run --workspace   # unit, snapshot and e2e; no network, no API key
 just test                                    # only the crates changed since the merge-base with origin/main, and their dependents
 just test --changed-since HEAD               # the same against any git ref; `--dry-run` prints the nextest command
-just check-all                               # the whole workspace (as CI), then a lossless dunnage cleanup of target/
+just check-all                               # the whole workspace (as CI), then a lossless swarfr cleanup of target/
 mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 mise exec -- cargo fmt --check
 mise exec -- cargo insta review              # after an intentional TUI/transcript change

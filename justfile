@@ -16,8 +16,8 @@ check:
 test *args:
     @uv run --no-project python scripts/changed_tests.py "$@"
 
-# The whole workspace, then the dunnage cleanup; CI runs the same suite.
-check-all: && dunnage
+# The whole workspace, then the swarfr cleanup; CI runs the same suite.
+check-all: && swarfr
     mise exec -- cargo nextest run --workspace
 
 # The crates that build for Windows (P57, T57.1): the one list `just
@@ -83,12 +83,12 @@ plugin-examples lang:
     cd "{{justfile_directory()}}"
     mise exec -- cargo nextest run -p cox --run-ignored only -E 'test(plugin_example_{{lang}})'
 
-# Lossless cleanup of ./target (compress + dedupe); never deletes. A no-op without dunnage.
-dunnage:
+# Lossless cleanup of ./target (compress + dedupe); never deletes. A no-op without swarfr.
+swarfr:
     #!/usr/bin/env sh
-    command -v dunnage >/dev/null || { echo "dunnage not found; install it with: ketch install dunnage"; exit 0; }
+    command -v swarfr >/dev/null || { echo "swarfr not found; install it with: ketch install swarfr"; exit 0; }
     [ -d target ] || exit 0
-    dunnage run target || test $? -eq 2
+    swarfr run target || test $? -eq 2
 
 snap:
     mise exec -- cargo insta review
