@@ -40,7 +40,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T53.7 | todo | P3 | 2 | 0% | |
 | T53.8 | todo | P3 | 2 | 0% | |
 | T53.9 | todo | P3 | 1 | 0% | |
-| T56.1 | in progress | P3 | 2 | 0% | Claude Code / sonnet-5.5 |
 | T56.2 | todo | P3 | 3 | 0% | |
 | T56.3 | in progress | P3 | 3 | 0% | Claude Code / sonnet-5.5 |
 | T56.4 | todo | P3 | 3 | 0% | |
@@ -731,11 +730,9 @@ Rationale in §6 A13. Not redone here: unified-diff rendering (`cox-render/src/d
 
 Rationale in §6 A14. Not redone here: the `/` palette with nucleo ranking (T5.2 — `/sessions`, `/agents`, `/model` already complete), hooks (T7.4), `cox sessions` (T10.3/A13), subagent tasks (T9.2).
 
-
 ### P17 — Surface leftovers (goal: §1.12 resume/continue/first prompt, OpenAI retry, doctor prices, website matches the shipped binary)
 
 Rationale in §6 A20. T17.1–T17.7 are in `done.md`.
-
 
 ### P18 — TUI resume and the remaining website pages (goal: `cox --resume` opens the TUI; the site covers tools, compat, IDE and the walkthrough)
 
@@ -1512,15 +1509,6 @@ Every card in this phase:
 - runs every string from Cursor (stream text, tool names, artifact names, errors) through `cox_sanitize::sanitize`;
 - makes no network call in tests (wiremock and hand-written fixtures only, D12).
 
-#### T56.1 `cox-cursor-cloud` crate: hand-written wire types
-
-Depends: — (terms go-ahead given by the creator 2026-10-03, A123 (5)) · Size: ~170 · Files: `crates/cox-cursor-cloud/src/lib.rs` (new), `crates/cox-cursor-cloud/src/wire.rs` (new); manifests `crates/cox-cursor-cloud/Cargo.toml`, the workspace `Cargo.toml`; fixtures `crates/cox-cursor-cloud/tests/fixtures/*.json`
-Goal: serde types for the endpoints cox uses, written from https://cursor.com/docs/cloud-agent/api/endpoints: create agent (`prompt`, `model`, `repos` with `url` and `startingRef`, `autoCreatePR` defaulting to false), a follow-up run, run status (unknown values kept as `Other(String)`), the stream events (`status`, `assistant`, `thinking`, `tool_call`, `interaction_update`, `heartbeat`, `result`, `error`, `done`, and `Unknown` for anything else), cancel and run usage (`inputTokens`, `outputTokens`, `cacheWriteTokens`, `cacheReadTokens`, `totalTokens`). The crate is its own under D1: the one place a socket to `api.cursor.com` is opened (T56.2), not a `Provider`, and not session assembly; it depends on `cox-protocol` and `cox-provider-http` only. Rows in AGENTS.md Layout and `docs/design/crates.md`; no new dependency.
-Plan: add `crates/cox-cursor-cloud` (a workspace member by the `crates/*` glob) with `serde` and `serde_json` only (the `cox-protocol` and `cox-provider-http` edges arrive with T56.2, which first uses them); `wire.rs` holds the request types (`CreateAgentRequest`, `Repo`, `CreateRunRequest`), `RunStatus` with `Other(String)`, `StreamEvent` with `Unknown`, `RunUsage` and the cancel response, each tested against fixtures under `tests/fixtures/`; add the Layout row in `AGENTS.md` (rewrite the existing plan.md §1.1 row) and the `docs/design/crates.md` row; run `cargo nextest run -p cox-cursor-cloud`, `-p cox --test deps`, clippy and fmt.
-Check: `mise exec -- cargo nextest run -p cox-cursor-cloud create_agent_request_has_no_identity_fields stream_event_parses_every_documented_type unknown_stream_event_is_kept_as_unknown run_usage_parses_the_token_counts auto_create_pr_defaults_off`.
-Done when: the tests pass over hand-written fixtures.
-Out of scope: endpoints cox does not use (`/v1/me`, `/v1/repositories`, `/v1/sub-tokens`, archive, artifacts download).
-
 #### T56.2 Cloud Agents client: create, follow up, stream, cancel, usage
 
 Depends: T56.1 · Size: ~190 · Files: `crates/cox-cursor-cloud/src/client.rs` (new), `crates/cox-cursor-cloud/src/lib.rs`
@@ -2145,7 +2133,6 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 | R7 | Bash classifier misses a destructive command | a destructive command runs without asking | classifier is an allowlist for `ReadOnly` (unknown → `Exec` → ask); sandbox is the second guard; fuzz the parser | T3.7, T12.4 |
 | R8 | Task size limits force half-finished features | many §6 amendments | split by design at planning time; a phase gate reviews before the next phase starts | §2 |
 | R9 | Third-party prices and thresholds in research were unverifiable | ledger cost wrong | `prices.toml` verified from official pages before the ledger goes live; doctor warns when stale | T1.7 |
-
 
 ---
 

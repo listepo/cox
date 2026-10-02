@@ -33,7 +33,6 @@
 - T53.7. `cox-plugin-sdk` ready for crates.io
 - T53.8. Go SDK module ready to tag
 - T53.9. Templates and docs use the published SDKs
-- T56.1. `cox-cursor-cloud` crate: hand-written wire types
 - T56.2. Cloud Agents client: create, follow up, stream, cancel, usage
 - T56.3. `[[cloud_agents]]` manifest capability and its grant line
 - T56.4. `Engine` asks before code leaves the machine: `CloudAgent(<repo>)`
