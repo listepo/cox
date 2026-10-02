@@ -399,7 +399,8 @@ impl LiveSession {
     /// rows by turn, with its subagents' rows from their child sessions,
     /// and the project's spend today and this week in local time
     /// (T37.29.3.3). The project is the git checkout the session runs in,
-    /// else its folder, as `/sessions` scopes it.
+    /// else its folder, as `/sessions` scopes it. `[budget]`'s caps come with
+    /// the session's and the month's spend against them (T37.29.3.4).
     pub fn turn_costs(&self) -> Result<TurnCosts, AppError> {
         let store = self.app.workspace().store();
         let own = store.usage_ledger(&self.id())?;
@@ -408,10 +409,12 @@ impl LiveSession {
             .iter()
             .map(|child| store.usage_ledger(child))
             .collect::<Result<Vec<_>, _>>()?;
-        let mut costs = costs::build(&own, &children);
+        let now = chrono::Local::now();
+        let month = costs::month_spend(store, &now)?;
+        let mut costs = costs::build(&own, &children, &self.app.config(&self.cwd)?.budget, month);
         let root =
             cox_config::load::find_git_root(&self.cwd).unwrap_or_else(|| self.canonical_cwd());
-        let (today, week) = costs::periods(&chrono::Local::now());
+        let (today, week) = costs::periods(&now);
         costs.project = costs::footnote(
             &cox_ext::memory::slug_for(&self.cwd),
             store.project_spend(&root, &today)?,

@@ -52,7 +52,7 @@ pub use browser::{Browser, BrowserError, PageText};
 pub use changes::{ChangedFile, Changes, Checkpoint, FileChange, TurnFiles};
 pub use complete::{Completer, Completion};
 pub use controller::Controller;
-pub use costs::{CostRow, DaySummary, TurnCosts};
+pub use costs::{BudgetRow, CostRow, DaySummary, TurnCosts};
 pub use external::AgentChoice;
 pub use inbox::{Activity, Inbox, InboxItem, InboxStatus, Need};
 pub use info::{ConfigSource, Fact, Info};
