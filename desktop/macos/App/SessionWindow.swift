@@ -29,7 +29,7 @@ struct SessionWindow: View {
   let popOut: PopOut?
   /// The syntax theme the fixtures were recorded with; Settings' appearance replaces it.
   static let syntaxTheme = "base16-ocean.dark"
-  // MOCK: the welcome hero's facts are Figma frame 22's until T37.46 reads them from cox-app.
+  // MOCK: the welcome hero's facts are Figma frame 22's until T37.49 reads them from cox-app.
   static let welcome: any WelcomeService = MockWelcomeService()
   /// This window's hold on the sessions it shows in `AppStore`.
   @State private var windowID = UUID()

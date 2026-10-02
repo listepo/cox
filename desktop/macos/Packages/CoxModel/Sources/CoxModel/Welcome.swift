@@ -1,6 +1,6 @@
 // What an empty session's welcome hero shows (Figma frame 22-empty-session): one line about the
 // workspace and the suggestions that fill the composer. `WelcomeService` is the seam the app
-// reads them through; until T37.46 gives cox-app a call for them, `MockWelcomeService` returns
+// reads them through; until T37.49 gives cox-app a call for them, `MockWelcomeService` returns
 // the frame's own values. The app copies them into CoxUI's `WelcomeHero.State`.
 
 import CoxClient
@@ -33,7 +33,7 @@ public protocol WelcomeService: Sendable {
   func welcome(cwd: String) async throws -> WelcomeFacts
 }
 
-// MOCK: frame 22's summary and suggestions for every folder; T37.46 replaces this with the
+// MOCK: frame 22's summary and suggestions for every folder; T37.49 replaces this with the
 // workspace facts and suggestions cox-app reads from the folder.
 public struct MockWelcomeService: WelcomeService {
   public init() {}

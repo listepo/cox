@@ -2,7 +2,7 @@
 // many files a code rewind restores, and the rewind or fork the menu picks. The rewind and the
 // fork are the core's (`Intent.rewind`, `Intent.fork`); the restored-file count has no cox-app
 // call yet, so `RewindPreviewService` is the seam and `MockRewindPreviewService` the frame's
-// value until T37.47. The app copies the state into CoxUI's `RewindMenu.State`.
+// value until T37.46. The app copies the state into CoxUI's `RewindMenu.State`.
 
 import CoxClient
 
@@ -11,7 +11,7 @@ public protocol RewindPreviewService: Sendable {
   func restoredFiles(beforeTurn turn: UInt32) async throws -> Int
 }
 
-// MOCK: frame 14's "2 files restored" for every turn; T37.47 replaces this with the count the
+// MOCK: frame 14's "2 files restored" for every turn; T37.46 replaces this with the count the
 // core reads from the checkpoints after the turn.
 public struct MockRewindPreviewService: RewindPreviewService {
   public init() {}
