@@ -1,4 +1,92 @@
 
+#### T58.4 Move the decisions still in CoxModel into `cox-app`
+
+Model: Claude Code / sonnet-5.5 · Status: done 2026-10-03 · Depends: — · Size: an audit (~40 lines in `docs/design/desktop-windows.md` or this card) plus one sub-card per move · Files: see the sub-cards
+Goal: CoxModel is ~5 000 lines of Swift (stores, settings fields, remote hosts, completion, markdown helpers). Anything there that decides rather than renders (validation, ordering, text built from state, settings field rules) would have to be written a second time in C#. List each such piece with its file, and card its move into `cox-app` (with an FFI forwarder, A90) as T58.4.n; the Swift store then calls the forwarder. Pure view state stays in each client.
+Check: the audit list is in the card; each T58.4.n has a `cox-app` test and the macOS package tests still pass (`swift test` in each package under `desktop/macos/Packages`).
+
+
+Audit: (2026-09-29; `desktop/macos/Packages/CoxModel`, 5 081 lines of source in 56 files; Swift paths below are under `desktop/macos/Packages/CoxModel/Sources/`, and in the sub-cards under `desktop/macos/Packages/` unless they start with `desktop/`). 28 pieces decide and move (T58.4.1–T58.4.28), 17 stay in each client, 10 more belong to M2/M3 and are not carded (A127 (2)). A move is a Rust card (the rule in `cox-app` with its test, plus the `cox-ffi` record fields in `types.rs` or a one-expression forwarder, A90) and a Swift card (the `CoxClient` value, the `CoxCore` conversion, the store); a Swift side that needs a fourth file is split into plumbing and switch. Each store keeps its public shape, so the app and CoxUI do not change, and the Swift tests of a moved rule move to its Rust test.
+
+Moves:
+1. `CoxClient/Inbox.swift` `HostNote.init(_:badge:)`: a notification's line (`tool subject`, the tool alone without a subject, the question, the error, the task label). → T58.4.1, T58.4.2
+2. `CoxModel/InboxStore.swift` `InboxRow.init`: status and wait words (`approval waiting` … `task failed`, `expired`), `agent · wait`, an expired item read-only. → T58.4.1, T58.4.2
+3. `CoxModel/McpLogins.swift` `SettingsStore.logins`: each login state's line and its Log in / Log out. → T58.4.1, T58.4.3
+4. `CoxModel/SidebarStore.swift` `sections`: "Needs you", "Running" (a running session lifted out of its project), then projects; a project with no match hidden and a folded one opened only while filtering; the section count. → T58.4.4, T58.4.5
+5. `SidebarStore.row(_:in:ages:)`: activity → status dot and words (`running`, `waiting for you`, `failed`, `done` after a turn), the project or the age, the agent first, a cost only above zero. → T58.4.4, T58.4.5
+6. `SidebarStore.matches`: what the filter matches (title and subtitle). → T58.4.4, T58.4.5
+7. `SidebarStore.swift` `SessionEntry.name`: `Untitled session` until the core titles it. → T58.4.4, T58.4.5
+8. `CoxModel/ModelName.swift` `ModelName.short`: the `Claude ` vendor prefix and ` (latest)` dropped, else the id (A111, A116). → T58.4.6, T58.4.14
+9. `CoxModel/ToolbarState.swift` `ToolbarState.init`: the context percent cut out of the core's `context_share` at ` of `, the ring's fill as the parts' shares summed and capped, the session cost. → T58.4.6, T58.4.15
+10. `CoxModel/ModelMenu.swift` `ModelMenu.init`: one section per tier in first-listed order, a model listed once across tiers, section titles, the efforts line. → T58.4.7, T58.4.12, T58.4.13
+11. `CoxModel/SettingsStore.swift` `SettingsGroup.init(key:)` and `allCases` order: a key's top-level table → its page. → T58.4.8, T58.4.10, T58.4.11
+12. `SettingsStore.title(of:)`: `base_url` → `Base url`, the label the search also matches (the search itself, over the core's title and the key, stays in each client). → T58.4.8, T58.4.10, T58.4.11
+13. `SettingsStore.providers`, `storeKey`: the provider sections from the keys; an empty key or an unknown provider refused. → T58.4.8, T58.4.10, T58.4.11
+14. `CoxModel/SettingsFields.swift` `tables(in:)`, `detail(of:)`: one box per config table, the rule lists left out, a `providers.<name>` box's provider, `Set in <project file>` or the schema's help. → T58.4.8, T58.4.10, T58.4.11
+15. `CoxModel/DroppedValues.swift` `dropped(in:)`: a dropped value's page and its `999 → 5`. → T58.4.8, T58.4.10, T58.4.11
+16. `SettingsFields.control(of:)`: slider only for a number bounded on both ends, more than 3 options a pop-up except `permissions.mode`, lists and open shapes as JSON, the fallbacks for a value of another type. → T58.4.9, T58.4.10, T58.4.11
+17. `SettingsFields.modelMenu`: `tiers.<tier>.model` as that tier's catalog models, an unlisted value kept first. → T58.4.9, T58.4.10, T58.4.11
+18. `SettingsFields.edit`: typed input by the key's kind (a slider's number rounded for an integer, text parsed as a number, else sent as text). → T58.4.9, T58.4.10, T58.4.11
+19. `CoxModel/ComposerStore.swift` `typedToken`, `caret`: which token at the caret asks for rows (`@` anywhere, `/` only as the first word, none inside a word, with a selection or in shell mode). → T58.4.16, T58.4.18, T58.4.19
+20. `ComposerStore.pick`, `append`, the mention pruning in `edit`: the insert spliced in for the token plus one space, the caret after it, the picked `@` files. → T58.4.16, T58.4.18, T58.4.19
+21. `ComposerStore.edit` (`!` enters shell mode), `canSend`, `draftIntent`, `submit`, `submitNow`: shell line, `/` command line or turn, queued while a turn runs, what the draft keeps after a send. → T58.4.17, T58.4.18, T58.4.19
+22. `CoxModel/ReviewDraft.swift` `SessionStore.sendReview`: queued behind a running turn unless `[desktop.review] send = "now"`. → T58.4.17, T58.4.19
+23. `CoxModel/InfoTabState.swift` `InfoTabState.init`: the rows and their order, `~` for the home directory, `detached`, a layer's key count with its file as a detail row. → T58.4.20, T58.4.21
+24. `CoxModel/ChangesTabState.swift` worktree facts: `detached`, `Base` only with both base and commit. → T58.4.20, T58.4.22
+25. `CoxModel/ReviewState.swift` `ReviewState.init`: files grouped by the turn that changed them last, oldest turn first. → T58.4.20, T58.4.22, T58.4.25
+26. `CoxModel/TaskRows.swift` `SessionStore.tasks`: a finished task with no exit code is a success (CoxTranscript's `TranscriptCard.swift` reads it the same way). → T58.4.23, T58.4.24, T58.4.25
+27. `CoxClient/DocMarkdown.swift` `StyledDoc.markdown`, `DocBlock.markdown`, `DocBlock.fence`, `Span.markdown`: a reply's doc as Markdown (headings, list markers and depth, quotes, tables, a fence longer than any backtick run, bold/italic/strike marks). → T58.4.26, T58.4.27, T58.4.28
+28. `CoxModel/SessionStore.swift` `BlockKind.replaceDoc`: a streamed reply's text re-rendered as Markdown on each `docTail`. → T58.4.27
+
+Stays in each client (view state, platform, localization, test doubles):
+- `SessionStore.apply`, `BlockKind.append`, `lastLines` (the tool tail's 5-line cut): the patch-consumer contract that mirrors `cox_app::coalesce::apply` and `patch::tail`; every client applies patches into its own list, and T58.5 replays the same fixtures to the same snapshot, which catches a drift.
+- `ComposerStore.recall`, `moveSelection`, `selectedRange`, `dismissCompletion`, `toggleThink`, `leaveShell`: key navigation and toggles over what the core returns (`history`, `complete`).
+- `ComposerStore.attach`, `read`: the file read and its media type named by the OS (`UTType`; Windows has its own); the core decides what reaches the model (T37.6).
+- `ComposerStore.model`'s `name · effort` join: two core values side by side in the chip.
+- `SidebarStore.folded`, `filter` text, `watch`, `refresh`, `ages`, `paletteItems`: view state, refresh cadence, relative dates localized per client; the core ranks the palette.
+- `SidebarStore.swift` `ProviderHealth`: a count with its unit, and the check's status mapped to a dot colour.
+- `CoxModel/ContextSplit.swift`: a part's kind → its colour role, an unknown kind left out.
+- `CoxModel/ContextTabState.swift` `ContextTabState`, `CostHistoryState`: a choice between two strings the core formatted, the total row last.
+- `ChangesTabState` checkpoint time and worktree size, `ChangesTabState.date`: localized time and bytes.
+- `ToolbarState`'s project from the cwd's folder before `cox.db` lists the session, and `usd` (`$%.2f`) for task rows: display fallback and number formatting.
+- `ReviewDraft.pick`, `save`: which line number `LineComment` documents (`new`, else `old` for a removed line), the typed text trimmed.
+- `CoxModel/Rewind.swift`: one intent per click with the core's own numbers (turn, hunk index, digest); the core rewinds and refuses.
+- `SectionRows` readers (`DesktopAppearance`, `DesktopTranscript`, `reviewSend`, `cacheHitScope`, `darkHighlight`, `darkHighlightScope`, `showsMenuBar`): typed reads of values Rust stored; their fallbacks apply only before the first load.
+- `CoxModel/AppearanceSettings.swift` `AppearanceEdit.key`, `value`: which config key a popover control writes, the config's public names.
+- `SettingValue.json`, `SettingsStore.readKeys`, `storedKeys`, failures: JSON encoding for the FFI, the platform keychain through `SecretStore`, error text.
+- Fixture clients in `CoxClient` (`FixtureSession.complete`, `reviewMessage`, `Palette.swift` `SessionClient.palette`, `FixtureSettingsClient`'s rule order, `FixtureBestOf.pick`, `FixtureInbox`): test doubles, "enough to drive a view"; the C# fixture client (T58.5) has its own.
+- `CoxClient/TimelineDecoding.swift`: serde JSON of the fixtures.
+
+M2/M3, not carded (A127 (2) keeps P58 to M1; each moves when a Windows M2/M3 is planned):
+- `CoxModel/TerminalTabs.swift` `TerminalTab.title`, `closeTerminal`'s next selection (T51.6).
+- `CoxModel/BrowserBarState.swift`: the shown address and the lock (T51.10).
+- `CoxModel/MenuBarState.swift`: which inbox items the extra lists (T51.14).
+- `CoxModel/AskCox.swift`: open, then send (T51.17).
+- `CoxModel/AppStore.swift`: one store per session across windows (T51.11; a window registry is per client anyway).
+- `SidebarStore.listed` for Spotlight (T51.16); `Rewind.revert(hunk:in:)` (T51.21).
+- `CoxModel/RemoteHosts.swift`: alias trim, `desktop.remote_hosts` grows on connect, `host:` section ids, rows read-only while disconnected (T52.21).
+- `CoxModel/BestOfStore.swift` `prunes`, `pending`; `CoxClient/BestOf.swift` `Candidate.label` and `CandidateView`'s sums, which repeat `cox_app::Candidate::label` (T52.11).
+- `CoxModel/AgentPicker.swift` fallback to cox, `[AgentChoice].label(of:)`, `ToolbarState`'s `· ACP` chip and `—` cost (T52.7, mockup 27).
+- `SessionStore.pluginViews` and the slot keeping (T52.17).
+
+What landed: the audit is in the card; all 28 moves T58.4.1–T58.4.28 are in the tree (each closed above with its own Check), so this closing change only runs the card's Check. A client that renders now reads each decision from `cox-app` through a `cox-ffi` forwarder; what stays in each client is the list above.
+Check output:
+```text
+$ mise exec -- cargo nextest run -p cox-app -p cox-ffi
+227 tests run: 227 passed, 0 skipped (including cox-ffi forward_only every_ffi_body_is_one_forward_expression)
+$ swift test   # desktop/macos/Packages/CoxCore, after scripts/desktop/xcframework.sh
+24 tests passed
+$ swift test   # CoxModel
+126 tests in 6 suites passed
+$ swift test   # CoxTranscriptText
+37 tests in 7 suites passed
+$ swift test   # CoxPlatform
+31 tests in 1 suite passed
+$ swift test   # CoxTranscript, CoxUI (pixel snapshot and window-interaction suites; no source changed in this closing change)
+CoxTranscript: 55 tests, 25 issues; CoxUI: 239 tests, 931 issues
+```
+The CoxTranscript and CoxUI issues are in the pixel-snapshot suites and one composer-interaction test; this closing change touches no Swift or Rust, and the cause (macOS 27 rendering or the run environment) is not diagnosed.
+
 #### T58.4.25 Tasks tab, Review and the task card read the core's state and turns
 
 Model: already in the tree · Status: done 2026-09-29 · Depends: T58.4.22, T58.4.24 · Size: ~60 · Priority: P1 · Complexity: 1
