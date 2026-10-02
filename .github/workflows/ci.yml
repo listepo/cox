@@ -30,6 +30,11 @@ jobs:
   # Apple Silicon only).
   rust:
     uses: pyrlyn/infra/.github/workflows/ci-rust.yml@0603d0ae610af9f792c5caf925041292a857e480
+    # ci-rust cancels the whole run when a job fails (cancel-run-on-failure), which needs
+    # `actions: write` on the calling job.
+    permissions:
+      contents: read
+      actions: write
     with:
       # The shared matrix minus Windows: the workspace does not build there
       # yet (P57); the `windows` job below checks the crates that do.
