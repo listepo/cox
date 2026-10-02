@@ -27,17 +27,17 @@ Steps:
 
 Execution plan (Claude Code / opus-5.5, 2026-10-03). The card's size says "split at claim time", so this claim does step 1 only:
 1. Write PL§15 "Surfaces" in `docs/design/plugins.md`: the shared, terminal-only and desktop-only parts, the surface declaration, what a call to an unavailable surface does and versioning, each grounded in today's code (`cox-plugin-api` `manifest.rs`/`abi.rs`/`ui.rs`, `cox-plugin` `grant.rs`/`hostfn.rs`, `cox-app` `plugin_ui.rs`, `desktop/design/DESIGN.md` §6).
-2. Record the decisions as a §6 amendment (A132) with the build split into cards (manifest and grant, ABI, host, TUI, app core, Swift, SDK and example, docs), each with Files and Check; the cards wait for the creator's approval before they enter the table.
+2. Record the decisions as a §6 amendment (A134) with the build split into cards (manifest and grant, ABI, host, TUI, app core, Swift, SDK and example, docs), each with Files and Check; the cards wait for the creator's approval before they enter the table.
 3. Point PL§2, §4 and §8 at PL§15 where they change. No code: the drift tests and the example belong to the cards.
 Verify: links and section numbers resolve; `just test` has nothing to run for a docs-only change.
 
 Check: the API structure section is in `docs/design/plugins.md` with its §6 amendment; manifest and ABI drift tests (`docs/plugin.schema.json`, `docs/plugin-abi.schema.json`) pass with the new fields; a `cox-plugin` test loads the example in a terminal and a desktop session and finds each surface-only part present on its own surface and dropped with a notice (or `NotOnThisSurface`) on the other; `docs/plugins.md`, `docs/ru/` and `docs/uk/` cover all three parts; `just test` green.
 
-What landed: step 1 as the card's size line asked ("split at claim time"). `docs/design/plugins.md` §15 defines the shared, terminal-only and desktop-only parts, the `surfaces` declaration and surface tables, the grant lines, what a call to an unavailable surface does (`Notice(Info)`, dropped entries, `AbiError::NotOnThisSurface`) and versioning; §2, §4 and §8 point to it. `plan.md` §6 A132 records the decisions and proposes the build as T33.45.1–T33.45.10, whose Checks together cover this card's Check (drift tests, the two-surface example test, `docs/plugins.md` and its `docs/ru/`/`docs/uk/` translations). Not done here: steps 2 and 3 and every code change — they wait for the creator's approval of A132. Two findings differ from the card's first draft: the 24-cell segment budget, the drop order and the 8-row panel are already applied by `cox-app` too, so they are shared host layout, not terminal-only; and the app has no grant dialog (it loads only `Granted` plugins), so one grant covers both surfaces.
+What landed: step 1 as the card's size line asked ("split at claim time"). `docs/design/plugins.md` §15 defines the shared, terminal-only and desktop-only parts, the `surfaces` declaration and surface tables, the grant lines, what a call to an unavailable surface does (`Notice(Info)`, dropped entries, `AbiError::NotOnThisSurface`) and versioning; §2, §4 and §8 point to it. `plan.md` §6 A134 records the decisions and proposes the build as T33.45.1–T33.45.10, whose Checks together cover this card's Check (drift tests, the two-surface example test, `docs/plugins.md` and its `docs/ru/`/`docs/uk/` translations). Not done here: steps 2 and 3 and every code change — they wait for the creator's approval of A134. Two findings differ from the card's first draft: the 24-cell segment budget, the drop order and the 8-row panel are already applied by `cox-app` too, so they are shared host layout, not terminal-only; and the app has no grant dialog (it loads only `Granted` plugins), so one grant covers both surfaces.
 Check:
 ```text
 $ grep -n "^## 15\|^### 15\." docs/design/plugins.md
-509:## 15. Surfaces: shared, terminal-only and desktop-only (T33.45, A132)
+509:## 15. Surfaces: shared, terminal-only and desktop-only (T33.45, A134)
 513:### 15.1 Surfaces
 527:### 15.2 Shared API (both surfaces)
 542:### 15.3 Terminal-only API
@@ -46,7 +46,7 @@ $ grep -n "^## 15\|^### 15\." docs/design/plugins.md
 595:### 15.6 Calls to an unavailable surface
 605:### 15.7 Versioning
 612:### 15.8 Where the code lives
-$ grep -c "^- A132" plan.md
+$ grep -c "^- A134" plan.md
 1
 Docs-only change: no crate touched, so there is no drift test or `just test` run to report.
 ```

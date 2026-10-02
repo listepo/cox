@@ -506,9 +506,9 @@ The creator resolved every open question this design and the Jev use case (A25/A
 14. **No prebuilt Jev plugin archive ships with the release.** Users build it from `plugins/jev` (`just plugin jev`) and install it with `cox plugin install <dir>` (§1).
 15. **Plugin agent definitions are grant-gated, local definitions win** (T45.3, 2026-09-29). An `[[agents]]` file is loaded only for a `Granted` plugin, and each file is its own approval line, so an update that adds or renames one asks again. A `.cox/agents/*.md` or `~/.cox/agents/*.md` definition of the same name wins over the plugin's, with a notice (T45.4). The definition's `permissionMode` can only narrow the parent's mode (T45.2).
 
-## 15. Surfaces: shared, terminal-only and desktop-only (T33.45, A132)
+## 15. Surfaces: shared, terminal-only and desktop-only (T33.45, A134)
 
-Plugins were designed for the terminal (§8), but they already run in every session cox opens, and the desktop app draws the shared slots through `cox-app` (`crates/cox-app/src/plugin_ui.rs`, T52.14–T52.17, T52.23). Until this section, nothing said which surface a feature belongs to: a plugin could not declare where it runs, `[capabilities.ui]` mixed a terminal-only part (`keys`) with shared ones, and there was no desktop-only API. This section splits the API into three parts, says how a plugin declares them and what happens when it asks for a part the current surface does not have. Build cards: §6 A132 in `plan.md`.
+Plugins were designed for the terminal (§8), but they already run in every session cox opens, and the desktop app draws the shared slots through `cox-app` (`crates/cox-app/src/plugin_ui.rs`, T52.14–T52.17, T52.23). Until this section, nothing said which surface a feature belongs to: a plugin could not declare where it runs, `[capabilities.ui]` mixed a terminal-only part (`keys`) with shared ones, and there was no desktop-only API. This section splits the API into three parts, says how a plugin declares them and what happens when it asks for a part the current surface does not have. Build cards: §6 A134 in `plan.md`.
 
 ### 15.1 Surfaces
 
