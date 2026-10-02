@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Session assembly (T37.1, DT§4.2): turns an effective `Config` into a
 //! live [`Session`] — provider, built-in and MCP tools, skills, subagent
 //! definitions, hooks, plugins, the checkpointer and worktrees. Separate

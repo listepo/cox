@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // A `PlatformHost` as the generated `AppHost` (DT§4.4): the app passes
 // `HostBridge(MacHost())` to `LiveCoreClient`. Separate from the client
 // because it runs the other way — Rust calls it — and it is the one place

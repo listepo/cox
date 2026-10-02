@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `Submission`, `Event`, `Item`, config and tool-schema types: every type
 //! that crosses a crate boundary. Kept separate so every other crate can
 //! depend on the contract without depending on any implementation.

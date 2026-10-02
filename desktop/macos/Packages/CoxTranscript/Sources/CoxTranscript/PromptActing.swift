@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // What a hovered prompt's actions do (T37.23.9, DT§5.2): Copy puts the prompt's text on the
 // pasteboard, Edit and resend puts it in the session's composer draft and rewinds the
 // conversation to before it (T37.23.18). Here because the

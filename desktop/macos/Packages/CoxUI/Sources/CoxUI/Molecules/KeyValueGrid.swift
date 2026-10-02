@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // `KeyValueGrid` (DS§6.3 row `KeyValueGrid`, the mockup's `.tokpop .grid` and inspector `.kv`):
 // labelled figures in columns — the token popover's turn and session totals, the inspector's
 // facts. Separate so every table of figures aligns its numbers the same way.

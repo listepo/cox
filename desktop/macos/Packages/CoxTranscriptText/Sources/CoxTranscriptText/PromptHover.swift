@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // A hovered prompt's actions (T37.23.9, DT§5.2): while the pointer is over a prompt, the view
 // `TranscriptCards.promptActions` makes for it floats over its bubble's top trailing corner.
 // Its own file because it is the one place the transcript follows the pointer; the actions and

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Background task list (T9.2): two running tasks in the status count,
 //! `/tasks` output, and the snapshot of the list.
 

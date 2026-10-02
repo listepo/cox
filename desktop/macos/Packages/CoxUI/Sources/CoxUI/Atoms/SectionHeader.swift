@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // `SectionHeader` (DS§6.2 row `SectionHeader(title, trailing)`, the mockup's `.sect` and
 // `.ih`): the uppercase label over a sidebar group or an inspector block, with an optional
 // trailing view — a `CountBadge`, a button. Separate so every group is headed the same way;

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The exported surface end to end (T37.14): a real session in a scratch
 //! `COX_HOME`, driven through `App` and `SessionHandle` as Swift drives
 //! them, with the in-memory host from the fixture recorder. The session

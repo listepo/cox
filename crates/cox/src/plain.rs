@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `cox --plain` (T29.1): the fifth consumer of the core's `Event` stream,
 //! for screen readers and terminals that cannot redraw. Every event becomes
 //! whole labelled lines appended to stdout — no cursor movement, no line is

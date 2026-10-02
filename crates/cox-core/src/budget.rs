@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Session and monthly spend caps (plan.md D6h / T2.7). Pure so tests do
 //! not need a provider; `Session` feeds it ledger totals.
 

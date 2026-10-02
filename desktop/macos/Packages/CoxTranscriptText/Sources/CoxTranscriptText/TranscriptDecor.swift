@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // A prompt's bubble and a thought's fold in the transcript text (T37.23.4,
 // DT§5.2): both stay text, so a drag can start partway through a prompt and run
 // on into the reply, which a card attachment (selected whole) cannot give. A

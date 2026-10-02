@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! T7.5: Claude settings lift only what cox understands, accumulate across
 //! files in Claude's order, and never fail on a broken file.
 

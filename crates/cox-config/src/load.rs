@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Config loading and provenance (plan.md §1.6/D13/T0.3): layers
 //! `config/default.toml` < `~/.cox/config.toml` < `<git root>/.cox/config.toml`
 //! < `COX_<SECTION>_<KEY>` env vars < CLI flags via `figment`, enforces the

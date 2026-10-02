@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // What the user asks a session to do (DT§4.3 Intents), as cox-ffi's
 // `Intent`. Separate from the timeline because it only flows the other way:
 // the stores send it, nothing decodes it.

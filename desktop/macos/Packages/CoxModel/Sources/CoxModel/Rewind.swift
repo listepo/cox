@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // The rewind timeline's intent (T37.28.1, DT§5.4): a checkpoint of `ChangesTabState`, whose id
 // is the turn, and the scope the person picked become `Intent.rewind`; a changed file's Revert
 // (T37.28.3) becomes `Intent.revertFile`, and a Review hunk's (T51.21) `Intent.revertHunk`. Here,

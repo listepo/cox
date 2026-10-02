@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // The one-block clamp (T37.42, A67): with `crossBlockSelection` off, every
 // selection the text view sets is cut to one block — the block a drag started
 // in, whichever way it runs. Its own file because it hooks AppKit's selection

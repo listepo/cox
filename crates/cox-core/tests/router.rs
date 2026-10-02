@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Router tests (T9.1): the job table, the think gate, no auto-escalation,
 //! overrides and local mode, plus `/model` through a live session.
 

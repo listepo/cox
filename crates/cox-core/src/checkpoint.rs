@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! When the loop takes a checkpoint (T26.1): before a `Write`/`Destructive`
 //! call whose tool names its paths (`Tool::touches`), and around every other
 //! call that can change the workspace (a shell, an MCP tool) by comparing

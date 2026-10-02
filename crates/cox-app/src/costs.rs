@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The Context & Cost tab's cost history (T37.29.3.2, DT§5.1, mockup 10's
 //! "Cost by turn"): the session's ledger `usage` rows grouped by turn, each
 //! turn's subagents right under it, and the session total, every figure

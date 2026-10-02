@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The composer (T5.2): a `tui-textarea` wrapped so the keys that mean
 //! something to cox — submit, newline, `@`, `/`, history — are decided here
 //! and everything else is plain editing. Pure like the rest of `state`; the

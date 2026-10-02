@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `cox-i18n`: the user-facing strings of cox in gettext catalogs (`.po`),
 //! embedded in the binary, and the one place a message id becomes text in the
 //! user's language. English (`en`) is the source and default locale; `ru` and

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // `TranscriptView` (DS§6.4 row `TranscriptView`, DT§5.2): a session's timeline as one
 // selectable document — `CoxTranscriptText`'s TextKit 2 view with the blocks as text and the
 // card blocks as CoxUI cards — kept in step with the session by the same patches its

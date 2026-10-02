@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Fixture recorder (T37.14, DT§8): plays a Scripted scenario through the
 //! same `App` and `SessionHandle` the macOS app links and writes the patch
 //! batches it pulled, plus the final snapshot, as JSON for the Swift tests.

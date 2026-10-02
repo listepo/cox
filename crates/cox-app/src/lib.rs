@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `cox-app` (DT§4.3): the UI-agnostic application core the desktop app
 //! drives through `cox-ffi`: the pure fold over the core's `Event` stream,
 //! the drain task that feeds it (`controller`) and the sessions themselves

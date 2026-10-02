@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // Cards as view-backed attachments (T37.41's Check): a card that expands and
 // collapses moves the block below it without touching its range, and a drag
 // across a card selects the card whole. Run in an off-screen window, with real

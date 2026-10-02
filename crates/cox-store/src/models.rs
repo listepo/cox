@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `Queryable`/`Insertable` row types for `schema.rs`'s non-virtual tables
 //! (plan.md §1.7/D9). Every field is a plain SQL-shaped type (`String`,
 //! `i64`, ...); the `Store` impl in `lib.rs` converts to/from the

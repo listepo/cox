@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // `StatusDot` (DS§6.2 row `StatusDot`, the mockup's `.dot .d-*`): a session's state as a
 // `Size.statusDot` dot. Separate so the sidebar, the session header and the footer show a
 // state in one colour and shape.

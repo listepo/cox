@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // The 2 000-block transcript both engines draw: prose, code, diffs and tool
 // cards in a fixed rotation, deterministic so every run measures the same text.
 // Each block carries its Markdown source, which is what a copy must return.

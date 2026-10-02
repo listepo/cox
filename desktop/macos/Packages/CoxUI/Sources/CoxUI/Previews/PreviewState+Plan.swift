@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // `PreviewState` fixtures for the inspector's Plan tab (T37.29.2): the mockup's five steps — two
 // done, one in progress, two pending. Separate from `PreviewState+Inspector.swift` so the
 // inspector's tabs, built in parallel, add their fixtures without editing one file.

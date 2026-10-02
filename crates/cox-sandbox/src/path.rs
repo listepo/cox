@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Path confinement: the single trust-boundary guard for every filesystem
 //! path a tool receives from the model (AGENTS.md: "`cox_tools::path::confine`
 //! — every path from the model passes through it; rejects escapes from the

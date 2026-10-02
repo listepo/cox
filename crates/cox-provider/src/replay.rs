@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The `Replay` provider: serves recorded HTTP cassettes so contract tests
 //! and evals run with no network and no key (D12). Cassette hashing,
 //! secret redaction and the write/near-miss-hint helpers live in

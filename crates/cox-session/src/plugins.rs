@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The plugin side of session assembly (T33.6, T33.12, T33.19, T33.44):
 //! the grant check that decides which plugins load, their tools, `[[mcp]]`
 //! servers, `[[provider]]` sections and external agents, and starting them

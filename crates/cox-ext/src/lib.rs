@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Instruction files (`AGENTS.md`/`CLAUDE.md` hierarchy), skills
 //! (`SKILL.md`), slash commands, subagent definitions, and hook config.
 //! Separate because these are user- and repo-supplied extension points, not

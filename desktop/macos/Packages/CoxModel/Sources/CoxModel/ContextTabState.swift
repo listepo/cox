@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // The inspector's Context tab (T37.29.3.1, DT§5.1 Context & Cost): the window's split and the
 // turn's cache hit from the token meter's latest `UsageView`, and "Compact now". Here, not in
 // CoxUI, because the meter's figures decide what the tab shows (DS§1); the app copies them into

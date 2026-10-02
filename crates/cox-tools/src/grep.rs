@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `grep`: ripgrep-equivalent content search (plan.md T3.3). The walk,
 //! match and format engine (`search`) moved to the pure `cox-search` crate
 //! (T32.5) — no filesystem, no `ToolCx`. [`GrepTool`] is the `Tool` impl: it

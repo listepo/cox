@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The session owner (DT§4.3, §4.5): one [`App`] per process holds the
 //! workspace, the inbox across sessions and the [`Host`], and opens and
 //! resumes sessions through `cox-session`; [`crate::live`] runs each one.

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-only
+// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The two filesystem/process trust guards (T32.3; `docs/design/crates.md`
 //! C3): `path::confine`, the one place a filesystem path from the model is
 //! checked against the workspace roots, and `sandbox`, the front door that
