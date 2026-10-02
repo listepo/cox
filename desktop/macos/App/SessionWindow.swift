@@ -29,6 +29,8 @@ struct SessionWindow: View {
   let popOut: PopOut?
   /// The syntax theme the fixtures were recorded with; Settings' appearance replaces it.
   static let syntaxTheme = "base16-ocean.dark"
+  // MOCK: the welcome hero's facts are Figma frame 22's until T37.46 reads them from cox-app.
+  static let welcome: any WelcomeService = MockWelcomeService()
   /// This window's hold on the sessions it shows in `AppStore`.
   @State private var windowID = UUID()
   /// Set once first run chose a project; a fixture launch never asks.
@@ -191,6 +193,14 @@ struct SessionWindow: View {
           }
           TranscriptView(store: showing.store, send: send)
             .composer(showing.composer)
+            .overlay {
+              // Figma frame 22: an empty session shows the welcome hero until its first block.
+              if showing.store.blocks.isEmpty, let info = showing.info {
+                SessionWelcome(
+                  project: screen.toolbar.project, cwd: info.cwd, composer: showing.composer,
+                  service: Self.welcome)
+              }
+            }
           let panels = PluginWidgets.panels(showing.store)
           if !panels.isEmpty { PluginPanel(panels).fixedSize(horizontal: false, vertical: true) }
           BestOfBar(launcher: bestOf, open: showing, model: model) { sessions in

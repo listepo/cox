@@ -12,6 +12,12 @@ extension SessionStore {
   /// turn — none that `ChangesTabState` writes — sends nothing.
   public func rewind(checkpoint id: String, code: Bool, conversation: Bool) async throws {
     guard let turn = UInt32(id) else { return }
+    try await rewind(toTurn: turn, code: code, conversation: conversation)
+  }
+
+  /// Rewinds to before `turn`, the first turn the core undoes: the timeline's checkpoints and a
+  /// prompt's rewind menu (Figma frame 14) alike.
+  public func rewind(toTurn turn: UInt32, code: Bool, conversation: Bool) async throws {
     _ = try await send(.rewind(toTurn: turn, code: code, conversation: conversation))
   }
 
