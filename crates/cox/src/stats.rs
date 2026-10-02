@@ -175,7 +175,7 @@ pub fn run(home: &Path, args: &StatsArgs) -> anyhow::Result<()> {
         let session: SessionId = session_id.parse()?;
         let rows = store.usage_for_session(&session)?;
         if rows.is_empty() {
-            println!("No usage records found for session {session_id}");
+            println!("No usage records found for this session");
             return Ok(());
         }
         if args.cache {
