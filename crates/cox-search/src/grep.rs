@@ -16,7 +16,10 @@ use ignore::WalkBuilder;
 /// One formatted output line plus whether it counts toward a caller's
 /// match cap (context/`--` break lines don't).
 pub struct Line {
+    /// The line as `rg -n --no-heading` prints it, `path` prefix included.
     pub text: String,
+    /// Whether this is a match line (counted toward the cap) rather than a
+    /// context or `--` break line.
     pub is_match: bool,
 }
 
@@ -94,8 +97,10 @@ pub(crate) fn glob_allows(
 /// An invalid regex or glob pattern handed to [`search`].
 #[derive(Debug, thiserror::Error)]
 pub enum SearchError {
+    /// The regex pattern did not compile.
     #[error("invalid pattern: {0}")]
     Pattern(grep_regex::Error),
+    /// The glob filter did not parse.
     #[error("invalid glob: {0}")]
     Glob(globset::Error),
 }

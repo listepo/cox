@@ -20,7 +20,9 @@ use crate::grep::{glob_allows, walker};
 
 /// A candidate path with the two keys it can be ordered by.
 pub struct Candidate {
+    /// The path as shown to the caller.
     pub display: String,
+    /// Last modification time, the key for newest-first ordering.
     pub mtime: SystemTime,
 }
 

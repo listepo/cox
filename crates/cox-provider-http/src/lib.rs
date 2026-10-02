@@ -13,6 +13,10 @@
 //! `cox_provider::http::resolve_key` (named in AGENTS.md and tests) keep
 //! working for existing callers.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod http;
 pub mod retry;
 pub mod sse;

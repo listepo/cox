@@ -4,6 +4,10 @@
 //! (`app`, `live`), kept out of every surface crate so the TUI could share
 //! it later and no UI toolkit leaks in (`crates/cox/tests/deps.rs`).
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod app;
 pub mod best_of;
 pub mod browser;

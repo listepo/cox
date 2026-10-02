@@ -8,6 +8,10 @@
 //! instead. [`Client`] is re-exported so cox-tools can name the field type
 //! without depending on `reqwest` itself.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 use std::time::Duration;
 
 use cox_protocol::ToolError;

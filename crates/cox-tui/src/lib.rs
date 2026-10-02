@@ -2,6 +2,10 @@
 //! output goes through here. Separate from `cox-core` so the agent loop has
 //! no notion of a terminal and the TUI can be tested by feeding it `Event`s.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod app;
 pub mod banner;
 pub mod cells;

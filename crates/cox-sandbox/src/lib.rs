@@ -13,5 +13,9 @@
 //! `cox_tools::path::confine` and `cox_tools::sandbox::Policy` keep working
 //! for existing callers.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod path;
 pub mod sandbox;

@@ -12,6 +12,10 @@
 //! typify build step over the vendored spec in `schema/`, and for its size;
 //! `cox-provider` re-exports it at the old `cox_provider::anthropic` path.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod request;
 pub mod stream;
 /// Wire types generated from the vendored OpenAPI spec (T30.12) — internal
