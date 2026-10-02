@@ -26,7 +26,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.16 | todo | P2 | 2 | 0% | |
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
-| T33.45 | todo | P2 | 4 | 0% | |
+| T33.45 | in progress | P2 | 4 | 5% | Claude Code / opus-5.5 |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.29.3 | todo | P2 | 4 | 80% | |
 | T37.29.3.4 | todo | P3 | 2 | 0% | |
@@ -1081,6 +1081,12 @@ Steps:
    Record the decisions as a §6 amendment before code; split the build into cards (manifest + grant, ABI + host functions per part, TUI wiring, app wiring through `cox-app`/`cox-ffi`), each with its own Check.
 2. **Once the API is built, generate the plugin API documentation**: the shared, terminal-only and desktop-only references in `docs/plugins.md` (or `docs/plugins/api.md`), generated from `docs/plugin.schema.json` and `docs/plugin-abi.schema.json` where possible, in English with `docs/ru/` and `docs/uk/` translations.
 3. **Examples**: a small Rust plugin in `plugins/examples/` on `cox-plugin-sdk` that uses the shared API (a command and a status segment), the terminal-only API (a leader key) and the desktop-only API (one desktop-only contribution), and loads on both surfaces, each part showing only where it exists; built by `cox-plugin-fixtures` like `plugins/examples/rust`.
+
+Execution plan (Claude Code / opus-5.5, 2026-10-03). The card's size says "split at claim time", so this claim does step 1 only:
+1. Write PL§15 "Surfaces" in `docs/design/plugins.md`: the shared, terminal-only and desktop-only parts, the surface declaration, what a call to an unavailable surface does and versioning, each grounded in today's code (`cox-plugin-api` `manifest.rs`/`abi.rs`/`ui.rs`, `cox-plugin` `grant.rs`/`hostfn.rs`, `cox-app` `plugin_ui.rs`, `desktop/design/DESIGN.md` §6).
+2. Record the decisions as a §6 amendment (A132) with the build split into cards (manifest and grant, ABI, host, TUI, app core, Swift, SDK and example, docs), each with Files and Check; the cards wait for the creator's approval before they enter the table.
+3. Point PL§2, §4 and §8 at PL§15 where they change. No code: the drift tests and the example belong to the cards.
+Verify: links and section numbers resolve; `just test` has nothing to run for a docs-only change.
 
 Check: the API structure section is in `docs/design/plugins.md` with its §6 amendment; manifest and ABI drift tests (`docs/plugin.schema.json`, `docs/plugin-abi.schema.json`) pass with the new fields; a `cox-plugin` test loads the example in a terminal and a desktop session and finds each surface-only part present on its own surface and dropped with a notice (or `NotOnThisSurface`) on the other; `docs/plugins.md`, `docs/ru/` and `docs/uk/` cover all three parts; `just test` green.
 
