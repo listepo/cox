@@ -864,6 +864,13 @@ async fn turn_costs_group_the_ledger_by_turn_with_the_subagent_under_its_turn() 
         "{}",
         costs.project
     );
+    let caps: Vec<_> = costs.budget.iter().map(|r| r.label.as_str()).collect();
+    assert_eq!(caps, ["Session", "This month"]);
+    assert!(
+        costs.budget[0].text.ends_with(" of $5.00"),
+        "{:?}",
+        costs.budget
+    );
 }
 
 /// A104: the meter formats the cache hit both for the last turn and for the

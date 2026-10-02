@@ -27,7 +27,7 @@ use cox_app::patch::{Block, BlockId, BlockKind, Status, TimelinePatch, ToolState
 use cox_app::review::LineComment;
 use cox_app::workspace::{SidebarKind, SidebarRow, SidebarSection, SidebarStatus, SubtitlePart};
 use cox_app::{
-    Activity, BrowserError, ChangedFile, Changes, Checkpoint, Completion, ConfigSource,
+    Activity, BrowserError, BudgetRow, ChangedFile, Changes, Checkpoint, Completion, ConfigSource,
     ContextPart, CostRow, DaySummary, Dropped, FileChange, Icon, InboxItem, InboxStatus, Info,
     Intent, Layer, Linked, LoginAction, McpLogin, McpServer, McpStatus, MeterRow, MeterText,
     ModelChoice, Need, PageText, PaletteHit, PaletteItem, PaletteKind, Project, SearchHit,
@@ -847,6 +847,14 @@ pub struct TurnCosts {
     pub rows: Vec<CostRow>,
     pub total: CostRow,
     pub project: String,
+    pub budget: Vec<BudgetRow>,
+}
+
+#[uniffi::remote(Record)]
+pub struct BudgetRow {
+    pub label: String,
+    pub text: String,
+    pub fraction: Option<f64>,
 }
 
 #[uniffi::remote(Record)]
