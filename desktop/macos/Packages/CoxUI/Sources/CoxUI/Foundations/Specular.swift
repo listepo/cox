@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // `.specular(_:in:)` (DS§3.5, DS§6.1): the diagonal sweep and streak that make glass read as
 // glass, the mockup's `.window:after`. Separate so the sweep's shape lives in one place; it

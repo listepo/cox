@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // `PluginPanel` (DS§6.4 row `PluginPanel`, PL§8, T52.17): the plugin `panel` slot above the
 // composer — each shown panel under a header naming its plugin, at most eight rows of the code

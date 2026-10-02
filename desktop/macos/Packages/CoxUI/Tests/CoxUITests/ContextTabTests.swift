@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // The Context tab's check (T37.29.3.1, DT§5.1, DS§6.4): the inspector on its Context tab per
 // light/dark × Solid/Frosted cell, with the window unknown, with the cost by turn (T37.29.3.2),

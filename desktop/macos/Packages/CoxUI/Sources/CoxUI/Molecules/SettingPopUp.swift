@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // `SettingPopUp` (DS§6.3 row `SettingPopUp`, the mockup's Settings `.sel` with its chevron): a
 // setting picked from a menu — a tier's model, an enum with more options than a segmented control

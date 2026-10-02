@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // `PreviewState` fixtures for the tool card's molecules (T37.21.1, T37.21.4): tool headers and
 // terminal tails, as mockup screen 28's transcript shows them. Separate from `PreviewState.swift`

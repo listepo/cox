@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // The plugin slots as CoxUI draws them (PL§8, T52.17): CoxClient's `PluginView` mapped onto
 // CoxUI's `PluginWidget` through CoxTranscript, which slots the session window shows, and the

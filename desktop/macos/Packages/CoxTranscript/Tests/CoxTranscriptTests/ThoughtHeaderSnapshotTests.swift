@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // A thought's fold header in both states (T37.23.10's Check, DS§6.3 row `ThinkingDisclosure`):
 // "Thinking" while the thought streams, "Thought for 12 s" once its `ThinkingDone` gave the

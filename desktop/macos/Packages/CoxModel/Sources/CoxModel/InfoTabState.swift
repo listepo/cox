@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // The inspector's Info tab (T37.29.5, DT§5.1): cox-app's `Info` as the rows CoxUI's
 // `InfoTab.State` holds — the session's facts and the config layers it runs with, listed as the

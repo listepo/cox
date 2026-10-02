@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // `PluginWidgetView` (DS§6.3 row `PluginWidgetView`, PL§8, T52.16): a plugin's closed widget
 // tree — text, list, table, key–value rows, gauge, stack, block — drawn natively. Separate so a

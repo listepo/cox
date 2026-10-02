@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // `CoxSlider` (DS§6.1, the mockup's `.slider`): a sunken track, an `accent` fill up to the
 // value and the 3D knob on top. A view rather than a style: macOS has no public `SliderStyle`,

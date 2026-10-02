@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // `InfoTab` (DS§6.4 row `InfoTab`; DT§5.1 Info): the inspector's last tab — what the session is
 // and where it lives: its id, folder, worktree and rollout file, the config layers it runs

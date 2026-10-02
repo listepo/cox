@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // `PreviewState` fixtures for the code molecules (T37.21.2, T37.21.3): the retry-jitter diff from
 // mockup screen 28 and the test the turn adds for its cap, as highlighted runs the core would send. Separate from

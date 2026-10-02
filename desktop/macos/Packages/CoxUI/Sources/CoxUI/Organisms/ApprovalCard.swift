@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Ivan Tugay
-// SPDX-License-Identifier: GPL-3.0-only
-// Licensed under GPL-3.0 only; see https://www.gnu.org/licenses/gpl-3.0.html
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
 
 // `ApprovalCard` (DS§6.4 row `ApprovalCard`, the mockup's `.appr`, DT§5.2 Approval): a tool call
 // that waits on the person — what it will run, why they are asked, which subagent asks, what
