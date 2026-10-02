@@ -41,7 +41,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T53.8 | todo | P3 | 2 | 0% | |
 | T53.9 | todo | P3 | 1 | 0% | |
 | T56.2 | todo | P3 | 3 | 0% | |
-| T56.3 | in progress | P3 | 3 | 0% | Claude Code / sonnet-5.5 |
 | T56.4 | todo | P3 | 3 | 0% | |
 | T56.5 | in progress | P3 | 2 | 0% | Claude Code / sonnet-5.5 |
 | T56.6 | todo | P3 | 4 | 0% | |
@@ -1516,15 +1515,6 @@ Goal: a client over `cox-provider-http` (connection setup, Bearer auth, non-2xx 
 Check: `mise exec -- cargo nextest run -p cox-cursor-cloud client_sends_the_key_as_bearer_only client_never_retries_create client_stream_reconnects_without_duplicate_events client_error_text_never_contains_the_key client_user_agent_is_cox_version_only` (wiremock).
 Done when: the tests pass.
 Out of scope: webhooks (not in the v1 API); artifacts.
-
-#### T56.3 `[[cloud_agents]]` manifest capability and its grant line
-
-Depends: — (terms go-ahead given by the creator 2026-10-03, A123 (5)) · Size: ~150 · Files: `crates/cox-plugin-api/src/manifest.rs`, `crates/cox-plugin/src/grant.rs`; generated `docs/plugin.schema.json`
-Goal: `[[cloud_agents]]` entries with `name`, `backend` (a closed set: `"cursor"`), `key_env` (default `CURSOR_API_KEY`), optional `model` and `description`. There is no URL field: the host for a backend is fixed, so a plugin cannot point the key elsewhere. The grant line names the host `api.cursor.com`, the key env, that the prompt and the repository's GitHub URL are sent, and that Cursor clones the repository and pushes a branch on its servers, billed to the user's Cursor plan; a changed entry asks for the grant again, as every capability does (T33.6).
-Plan: add `CloudAgent` (`name`, `backend: CloudBackend` closed to `cursor`, `key_env` defaulting to `CURSOR_API_KEY`, optional `model` and `description`, `deny_unknown_fields` so a `url` key is rejected) and `PluginManifest.cloud_agents` in `manifest.rs` with validation; add the grant line for each entry in `grant.rs`; regenerate `docs/plugin.schema.json` the way the drift test documents; run the named tests plus `-p cox-plugin-api -p cox-plugin`, clippy and fmt.
-Check: `mise exec -- cargo nextest run -p cox-plugin-api manifest_cloud_agent_backend_is_a_closed_set manifest_cloud_agent_has_no_url_field` and `-p cox-plugin grant_lists_cloud_agent_host_key_and_off_machine_code`, plus `plugin_schema_matches_committed_file`.
-Done when: the tests pass and the schema is regenerated.
-Out of scope: any backend other than Cursor.
 
 #### T56.4 `Engine` asks before code leaves the machine: `CloudAgent(<repo>)`
 
