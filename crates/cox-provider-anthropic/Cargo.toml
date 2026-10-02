@@ -26,7 +26,7 @@ futures = { workspace = true }
 # takes (already in the tree through typify), not a second schema library.
 typify = { workspace = true }
 serde_json = { workspace = true }
-schemars = "0.8"
+schemars = "1.2"
 
 [dev-dependencies]
 insta = { workspace = true }
