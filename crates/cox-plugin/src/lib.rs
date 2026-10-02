@@ -31,6 +31,8 @@
 //!   `Advisor` trait, calling `cox_decide` (PL§4, T33.20).
 //! - [`tool`] — `WasmTool`: a plugin's granted tool as a deferred `Tool`
 //!   named `wasm__<id>__<tool>`, its spec frozen at `cox_init` (PL§7, T33.12).
+//! - [`net`] — `cox_http`: the allow-list, the body cap, and the PL§7d
+//!   refusal of a `net` entry that covers a provider host (T33.14.1).
 
 #![warn(missing_docs)]
 
@@ -46,6 +48,7 @@ pub mod host;
 pub mod hostfn;
 pub mod install;
 pub mod live;
+pub mod net;
 pub mod provider;
 pub mod tool;
 
