@@ -4,6 +4,10 @@
 //! session grants — no I/O, so the 30-row table and the proptest need no
 //! session around them. A tool never checks its own permission.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod policy;
 pub mod rules;
 

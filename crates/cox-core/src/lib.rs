@@ -3,8 +3,6 @@
 //! through traits in `cox-protocol`, so the loop can be tested by replaying
 //! events instead of calling a model.
 
-#![warn(missing_docs)]
-
 mod advise;
 mod budget;
 pub mod cache_diag;

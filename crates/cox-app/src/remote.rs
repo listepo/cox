@@ -684,6 +684,8 @@ mod tests {
     }
 
     #[test]
+    // why: env::set_var/remove_var are unsafe in edition 2024 (per-process tests).
+    #[allow(unsafe_code)]
     fn remote_spawn_forwards_no_agent_and_no_env() {
         // SAFETY: nextest runs each test in its own process.
         unsafe { std::env::set_var("ANTHROPIC_API_KEY", "sk-must-not-leave") };

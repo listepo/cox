@@ -3,6 +3,8 @@
 //! host — the built `cox app-server --stdio` — so the session, the wire and
 //! the patch stream are the shipped ones, only the network is missing.
 
+// why: env::set_var/remove_var are unsafe in edition 2024 (per-process tests).
+#![allow(unsafe_code)]
 #![cfg(feature = "app-server")]
 
 use std::os::unix::fs::PermissionsExt as _;

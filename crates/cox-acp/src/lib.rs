@@ -4,6 +4,10 @@
 //! holds the reverse role, cox as the ACP client of an external agent
 //! (`client`, T35.3), since both sides share one protocol dependency.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod client;
 pub mod client_events;
 pub mod client_tools;

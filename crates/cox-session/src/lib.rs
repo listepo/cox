@@ -6,6 +6,10 @@
 //! the caller loads config from its own flags, and what went wrong on the
 //! way comes back as [`Warning`]s for it to show, never printed here.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

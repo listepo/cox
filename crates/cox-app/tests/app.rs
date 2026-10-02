@@ -4,6 +4,9 @@
 //! `cox-ffi`. The host is in memory, never the real Keychain (A49); nextest
 //! runs each test in its own process, so each sets its own environment.
 
+// why: env::set_var/remove_var are unsafe in edition 2024 (per-process tests).
+#![allow(unsafe_code)]
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};

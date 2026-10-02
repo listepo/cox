@@ -24,6 +24,8 @@ use seccompiler::{
 const WANTED: ABI = ABI::V3;
 
 /// Whether this kernel has Landlock at all.
+// why: raw landlock_create_ruleset syscall to probe the ABI version (FFI).
+#[allow(unsafe_code)]
 pub fn supported() -> bool {
     // SAFETY: the version probe passes no attribute (null, size 0) and
     // touches no memory; the kernel only reports its ABI number.

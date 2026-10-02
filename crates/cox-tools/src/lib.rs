@@ -12,6 +12,10 @@
 //! GET and HTML→text engine live in `cox-web` (T32.7); `web_fetch.rs` keeps
 //! only the `Tool` glue (`ToolCx`, input parsing, output framing).
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod ask_user;
 pub mod bash;
 pub mod checkpoint;

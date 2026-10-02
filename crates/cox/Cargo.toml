@@ -149,3 +149,6 @@ cox-plugin-fixtures = { path = "../cox-plugin-fixtures" }
 [[example]]
 name = "plugin_bench"
 required-features = ["plugins"]
+
+[lints]
+workspace = true

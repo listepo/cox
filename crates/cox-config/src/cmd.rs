@@ -186,6 +186,8 @@ fn set_value_in(path: &Path, key: &str, value: TomlValue) -> Result<(), ConfigEr
 }
 
 #[cfg(test)]
+// why: env::set_var/remove_var are unsafe in edition 2024 (per-process tests).
+#[allow(unsafe_code)]
 mod tests {
     use cox_protocol::CoreError;
     use tempfile::tempdir;

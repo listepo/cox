@@ -121,6 +121,8 @@ impl From<SessionError> for AppError {
 /// find `cargo` and `mise` and env-var keys resolve as in a terminal.
 /// Call once at launch, before any session opens. Returns why it fell back
 /// to the inherited environment, if it did.
+// why: applies the login shell env at startup; env::set_var is unsafe (2024).
+#[allow(unsafe_code)]
 pub async fn load_login_env() -> Option<String> {
     let (env, warning) = cox_session::env::login_env(LOGIN_TIMEOUT).await;
     for (key, value) in env {

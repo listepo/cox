@@ -9,6 +9,10 @@
 //! (T37.7); everything that speaks ratatui sits behind the default `ratatui`
 //! feature, so the desktop app can depend on this crate without it.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 #[cfg(feature = "ratatui")]
 pub mod color;
 #[cfg(feature = "ratatui")]

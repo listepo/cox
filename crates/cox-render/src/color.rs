@@ -244,6 +244,8 @@ mod tests {
     }
 
     #[test]
+    // why: env::set_var/remove_var are unsafe in edition 2024 (per-process tests).
+    #[allow(unsafe_code)]
     fn tmux_skips_the_query_without_touching_the_terminal() {
         // SAFETY: test-only env mutation, no other test in this module reads TMUX.
         unsafe { std::env::set_var("TMUX", "/tmp/tmux-1000/default,1234,0") };

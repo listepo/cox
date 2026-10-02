@@ -15,6 +15,10 @@
 //! `cox-protocol` only — while `confine` stays a single call site
 //! (docs/design/crates.md, AGENTS.md trust boundaries).
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod apply;
 pub mod parse;
 

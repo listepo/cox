@@ -5,6 +5,10 @@
 //! agent over stdio (`cox mcp`). `elicit` maps a server's
 //! `elicitation/create` form onto the questions a person answers (T47.1).
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod auth;
 pub mod client;
 pub mod discovery;
