@@ -29,7 +29,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.45 | todo | P2 | 4 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.29.3 | todo | P2 | 4 | 80% | |
-| T37.29.3.4 | todo | P3 | 2 | 0% | |
+| T37.29.3.4 | in progress | P3 | 2 | 10% | Claude Code / sonnet-5.5 |
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
@@ -1395,9 +1395,16 @@ Check: a snapshot per cell; cox-app tests for each new call.
 
 #### T37.29.3.4 Context tab: budget cap and how close it is
 
-Depends: T37.29.3.2 · Size: ~120 · Files: `crates/cox-app/…`, `desktop/macos/Packages/CoxUI/…/Organisms/ContextTab.swift`
-Goal: the configured cap and the spend as `$0.42 of $5.00` with a gauge. On hold by the creator (2026-09-28). Needs the creator's choice before it is claimed: where the cap comes from (a config key or the existing budget setting), whether it is per session or per day, and what the tab shows with no cap.
-Check: a cox-app test for the figure; snapshots with and without a cap.
+Depends: T37.29.3.2 · Size: ~120 · Files: `crates/cox-store/src/queries.rs`, `crates/cox-app/src/costs.rs`, `crates/cox-app/src/live.rs`, `crates/cox-ffi/src/types.rs`, `desktop/macos/Packages/…` (CoxClient `TurnCosts`, CoxCore `CostsConvert`, CoxModel `CostHistoryState`, CoxUI `ContextTab`)
+Goal: the configured caps and the spend as `$0.42 of $5.00` with a gauge. Decided by the creator 2026-10-03: show both caps, the existing `[budget].session_usd` (default 5.0) and `[budget].monthly_usd` (default 100.0); no new config key. Session spend is this session's ledger total (subagents included) against `session_usd`; month-to-date spend is the whole ledger since the local month's start against `monthly_usd`. A cap that is not a positive finite number leaves its row with the spend alone (`$0.42`) and no gauge, because `BudgetConfig` has no "no cap" value (the core stops at a cap of 0, `budget::decide`) and a fraction of 0 is undefined.
+Check: a cox-app test for the figures; snapshots with and without a cap.
+Status: in progress
+Execution plan:
+- cox-store: `Store::activity_since` already sums the whole ledger since a cutoff, so the month-to-date figure reuses it (no new query); a cox-app test proves the month cut.
+- cox-app `costs.rs`: `month_start(now)` beside `periods` (one shared local-midnight helper); `BudgetRow { label, text, fraction }` and `budget_rows(config, session, month)`; `TurnCosts.budget`. `LiveSession::turn_costs` fills it from `app.config(cwd)`.
+- cox-ffi `types.rs`: the `BudgetRow` record; `TurnCosts.budget`.
+- Swift: CoxClient `TurnCosts.budget`, CoxCore `CostsConvert`, CoxModel `CostHistoryState.budget`, CoxUI `ContextTab.State.budget` drawn as a label, the text and a capsule gauge; snapshots with caps and with one cap missing.
+- Verify: `cargo nextest run -p cox-store -p cox-app -p cox-ffi`, clippy, fmt; `swift test` for the touched packages.
 
 #### T37.32 Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 
