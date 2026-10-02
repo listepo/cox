@@ -66,7 +66,7 @@ pub(crate) fn model_names(config: &Config) -> ModelNames {
 /// Drops a leading `Claude ` and a trailing ` (latest)` so the chip can
 /// fit; a name that is only the prefix or suffix is left whole rather
 /// than showing nothing.
-fn shorten(name: &str) -> String {
+pub(crate) fn shorten(name: &str) -> String {
     let name = match name.strip_suffix(" (latest)") {
         Some(rest) if !rest.is_empty() => rest,
         _ => name,

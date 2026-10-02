@@ -14,7 +14,7 @@
 mise exec -- cargo nextest run --workspace   # unit, snapshot and e2e; no network, no API key
 just test                                    # only the crates changed since the merge-base with origin/main, and their dependents
 just test --changed-since HEAD               # the same against any git ref; `--dry-run` prints the nextest command
-just check-all                               # the whole workspace (as CI), then a lossless dunnage cleanup of target/
+just check-all                               # the whole workspace (as CI), then a lossless swarfr cleanup of target/
 mise exec -- cargo clippy --workspace --all-targets -- -D warnings
 mise exec -- cargo fmt --check
 mise exec -- cargo insta review              # after an intentional TUI/transcript change
@@ -66,7 +66,7 @@ The rule that keeps crates honest: anything that talks to the network, the files
 
 ## Workflow
 
-Tasks carry `Status:` (`open`|`in progress`) and `Model:`. Claim only `open`; set `in progress` + model; work only on `main` (no task branches). ≤200 LOC, ≤3 files per task. Run the task's Check, then the three commands above, commit `<task-id>: <title>`. Every implemented task is marked `Status: done <date>` and moved to `done.md` with its Check output — implemented work left in `plan.md` as `open` or `in progress` is unfinished. **Before you stop** (end/compaction/handoff): unfinished → `open`, `Model: -`.
+Tasks carry `Status:` (`open`|`in progress`) and `Model:`. Claim only `open`; set `in progress` + model. ≤200 LOC, ≤3 files per task. Run the task's Check, then the three commands above, commit `<task-id>: <title>`. Every implemented task is marked `Status: done <date>` and moved to `done.md` with its Check output — implemented work left in `plan.md` as `open` or `in progress` is unfinished. **Before you stop** (end/compaction/handoff): unfinished → `open`, `Model: -`.
 
 ## Conventions
 
@@ -114,8 +114,4 @@ Any provider. Runtime routing (`plan.md` D5) and agent work follow the same rule
 
 ## Host agents
 
-Save tokens. If anything is unclear, ask the creator first. Write a short execution plan into that task's card in `plan.md`, then claim and work. Default cap: **5** parallel agents per project unless the creator says otherwise. Never use max effort or fast mode without permission. Cheapest model for scripts, commands, repo scans, web, file moves, tests. On Cursor: **grok 4.6** (no fast) for planning, refactoring, bug hunts; **composer 2.5** (no fast) for file moves, tests, commands, scans, web. Before writing code, decide whether a ready library or framework should be used. A new dependency is allowed only if it is current (not abandoned) and the creator approved it. Packages already in `toolchain.md` may be reused without asking again. Prefer the latest versions of tools and packages, but bump already-installed ones only with the creator’s permission. Rust: reuse crates already used by sibling projects in this workspace (workspace-root `rust.md`). If this repo lacks one it should use, add a `plan.md` task — do not add the dependency silently. Extract duplicated helpers into `packages/` and depend via local `{ path = "..." }`. No version bumps without permission.
-
 If a directory above this repository contains an `AGENTS.md` or `CLAUDE.md`, follow it too. If it conflicts with this file, ask the creator.
-
-**Config files.** A config file this project owns has a schema generated from its types (Rust: `schemars`), committed and checked by a drift test, and one module owns all config loading, validation and editing. A config file another program owns (an agent host's or an editor's) gets no schema from us: check only our own entry in it and leave the rest byte-for-byte, comments included.

@@ -95,8 +95,7 @@ final class AppModel {
     // so it keeps the plain stand-in. Set before any window can copy.
     if !launch.isFixture { DocMarkdown.writer = CoreDocWriter() }
     settings = try? SettingsStore(
-      client: launch.live.get(), secrets: launch.secrets, catalog: launch.live.get(),
-      cwd: LaunchCore.project())
+      client: launch.live.get(), secrets: launch.secrets, cwd: LaunchCore.project())
     sidebar = SidebarStore(
       workspace: launch.isFixture ? nil : try? launch.live.get(),
       inbox: (try? launch.core.get() as? any InboxClient).map { InboxStore(client: $0) })
