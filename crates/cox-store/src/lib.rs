@@ -5,6 +5,7 @@
 //! (plan.md §1.7/D9). The only crate that contains SQL — a workspace test
 //! asserts no other crate depends on `diesel`.
 
+pub mod cloud_runs;
 pub mod fts;
 pub mod lock;
 mod models;
@@ -1133,7 +1134,7 @@ mod tests {
             err,
             StoreError::SchemaNewer {
                 db: "99991231000000".into(),
-                binary: "00000000000006".into(),
+                binary: "00000000000007".into(),
             }
         );
     }

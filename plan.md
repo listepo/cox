@@ -42,7 +42,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T53.9 | todo | P3 | 1 | 0% | |
 | T56.2 | todo | P3 | 3 | 0% | |
 | T56.4 | todo | P3 | 3 | 0% | |
-| T56.5 | in progress | P3 | 2 | 0% | Claude Code / sonnet-5.5 |
 | T56.6 | todo | P3 | 4 | 0% | |
 | T56.7 | todo | P3 | 4 | 0% | |
 | T56.8 | todo | P3 | 3 | 0% | |
@@ -1523,15 +1522,6 @@ Goal: a new permission subject `CloudAgent(<github owner>/<repo>)` in the rule g
 Check: `mise exec -- cargo nextest run -p cox-permission cloud_agent_asks_in_auto_and_bypass cloud_agent_is_denied_in_plan_mode cloud_agent_user_allow_rule_matches_one_repo cloud_agent_project_allow_is_reverted cloud_agent_approval_text_names_repo_ref_and_off_machine`.
 Done when: the tests pass; the rule grammar docs list the subject.
 Out of scope: any other remote-execution subject.
-
-#### T56.5 `cloud_runs` table: a run outlives the session that started it
-
-Depends: — (terms go-ahead given by the creator 2026-10-03, A123 (5)) · Size: ~120 · Files: `crates/cox-store/migrations/00000000000006_cloud_runs/up.sql` and `down.sql` (new), `crates/cox-store/src/models.rs`, `crates/cox-store/src/queries.rs`; generated `crates/cox-store/src/schema.rs`
-Goal: one row per run: session id, task id, backend, agent id, run id, repository, model, status, `usage_recorded`, created and updated times. Diesel models and typed queries (D9): insert, set status, list a session's non-terminal runs, and mark usage recorded exactly once (`UPDATE … WHERE usage_recorded = false` through the DSL, returning whether this call won).
-Plan: add migration `00000000000007_cloud_runs` (recheck the next free number against main before pushing, T37.29.3.4 may also add one), extend `schema.rs` in the existing style, add `CloudRunRow` and `NewCloudRun` to `models.rs` and typed queries (insert, set status, list a session's non-terminal runs, mark usage recorded once) to `queries.rs` on the Diesel DSL; run the three named tests plus `-p cox-store`, clippy and fmt.
-Check: `mise exec -- cargo nextest run -p cox-store cloud_run_round_trips cloud_runs_lists_only_non_terminal_runs mark_usage_recorded_wins_once`.
-Done when: the migration applies on a fresh and an existing database; the tests pass.
-Out of scope: storing stream text (the transcript goes through the archive as any task result does).
 
 #### T56.6 Host driver: a background task becomes a Cursor Cloud run
 
