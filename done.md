@@ -5751,6 +5751,29 @@ Check:
 - After merging into `p37-desktop`: the same runs as T37.29.3.2.
 Not done: the app target passes `SettingsStore.cacheHitScope` into the tab (T37.22.3).
 
+#### T37.29.3.4 Context tab: budget cap and how close it is
+
+Depends: T37.29.3.2 · Size: ~120 · Files: `crates/cox-app/src/costs.rs`, `crates/cox-app/src/live.rs`, `crates/cox-ffi/src/types.rs`, `desktop/macos/Packages/…` (CoxClient `TurnCosts`, CoxCore `CostsConvert`, CoxModel `CostHistoryState`, CoxUI `ContextTab`)
+Goal: the configured caps and the spend as `$0.42 of $5.00` with a gauge. Decided by the creator 2026-10-03: show both caps, the existing `[budget].session_usd` (default 5.0) and `[budget].monthly_usd` (default 100.0); no new config key. Session spend is this session's ledger total (subagents included) against `session_usd`; month-to-date spend is the whole ledger since the local month's start against `monthly_usd`. A cap that is not a positive finite number leaves its row with the spend alone (`$0.42`) and no gauge, because `BudgetConfig` has no "no cap" value (the core stops at a cap of 0, `budget::decide`) and a fraction of 0 is undefined.
+Check: a cox-app test for the figures; snapshots with and without a cap.
+Status: done 2026-10-03
+Result:
+- cox-app `costs.rs`: `BudgetRow { label, text, fraction }` and `budget_rows`, filled into `TurnCosts.budget` by `build`; `month_start` and `month_spend` beside `periods` (a shared `local_start`). `LiveSession::turn_costs` passes the session's effective `[budget]` (`App::config`) and the month's spend. cox-ffi, CoxClient, CoxCore `CostsConvert` and CoxModel `CostHistoryState` carry `budget` field for field; CoxUI `ContextTab.State.budget` draws a "Budget" section, a label and `$0.42 of $5.00` per cap with a capsule gauge, shown before the session spent anything.
+Deviations: no new cox-store query. `Store::activity_since` already sums the whole ledger since a cutoff, so the month's figure reuses it (it also counts sessions, one cheap extra query). The month's cap is checked against every project's spend, as `[budget].monthly_usd` reads.
+Check:
+- cox-store, cox-app and cox-ffi 263 passed, 2 skipped (`budget_rows_show_the_fraction_of_each_cap`, `a_spend_over_its_cap_fills_the_gauge_and_no_more`, `a_cap_that_is_not_positive_leaves_the_spend_alone`, `month_spend_counts_only_this_month`, `the_month_starts_at_local_midnight_of_the_first`, the subagent figure in `a_subagent_sits_under_the_turn_it_started_in_and_a_fork_is_left_out`, and the figure in `turn_costs_group_the_ledger_by_turn_with_the_subagent_under_its_turn`; `forward_only` passes); clippy `-D warnings` and fmt clean.
+- CoxModel 126 passed (`theCostHistoryIsTheTurnsThenTheSessionTotal` checks `budget`).
+- CoxUI: 5 new snapshots (`contextTabWithBudgetCaps` x4, `contextTabWithOneCapMissing`), recorded on this machine.
+Not done: CoxCore `ConvertTests` (`turnCostsConvertFieldForField` carries `budget`) was not run, it needs the XCFramework. The existing ContextTab snapshots do not match their references on this machine (pixel drift on views this change does not touch), so they were neither re-recorded nor verified here. App wiring (T37.32.1, T37.22.3).
+
+#### T37.29.3 Inspector Context & Cost tab
+
+Depends: T37.25.1 · Size: split into T37.29.3.1–T37.29.3.5 · Files: see the sub-cards
+Goal: the context window as a StackedBar by part, cache-hit %, Compact now, per-turn cost as a KeyValueGrid, session and project totals and the budget cap; the missing cox-app calls (context breakdown, per-turn history, project totals, budget) come with it.
+Check: a snapshot per cell; cox-app tests for each new call.
+Status: done 2026-10-03
+Result: T37.29.3.1 to T37.29.3.5 are done (see each card).
+
 #### T37.28.6 Review comments queue while a turn runs
 
 Depends: T37.28.4 · Size: ~80 · Files: `desktop/macos/Packages/CoxModel/…/ReviewDraft.swift`, `crates/cox-config/…`
