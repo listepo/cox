@@ -26,7 +26,17 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T33.40.16 | todo | P2 | 2 | 0% | |
 | T33.40.17 | todo | P3 | 2 | 0% | |
 | T33.43 | todo | P1 | 2 | 0% | |
-| T33.45 | todo | P2 | 4 | 0% | |
+| T33.45 | todo | P2 | 4 | 10% | |
+| T33.45.1 | todo | P2 | 3 | 0% | |
+| T33.45.2 | todo | P2 | 3 | 0% | |
+| T33.45.3 | todo | P2 | 4 | 0% | |
+| T33.45.4 | todo | P2 | 3 | 0% | |
+| T33.45.5 | todo | P2 | 4 | 0% | |
+| T33.45.6 | todo | P2 | 3 | 0% | |
+| T33.45.7 | todo | P2 | 4 | 0% | |
+| T33.45.8 | todo | P2 | 3 | 0% | |
+| T33.45.9 | todo | P2 | 3 | 0% | |
+| T33.45.10 | todo | P2 | 2 | 0% | |
 | T35.10 | todo | P3 | 2 | 0% | |
 | T37.29.3 | todo | P2 | 4 | 80% | |
 | T37.29.3.4 | todo | P3 | 2 | 0% | |
@@ -1084,6 +1094,68 @@ Steps:
 
 Check: the API structure section is in `docs/design/plugins.md` with its §6 amendment; manifest and ABI drift tests (`docs/plugin.schema.json`, `docs/plugin-abi.schema.json`) pass with the new fields; a `cox-plugin` test loads the example in a terminal and a desktop session and finds each surface-only part present on its own surface and dropped with a notice (or `NotOnThisSurface`) on the other; `docs/plugins.md`, `docs/ru/` and `docs/uk/` cover all three parts; `just test` green.
 
+Progress (2026-10-03): step 1 is done — §15 of `docs/design/plugins.md` and amendment A134, approved by the creator; the build is T33.45.1–T33.45.10 below. This card closes when they are done.
+
+#### T33.45.1 Manifest and grant: surfaces and surface tables
+
+Depends: — · Files: `crates/cox-plugin-api/src/manifest.rs`, `crates/cox-plugin/src/grant.rs`, `docs/plugin.schema.json` · Design: `docs/design/plugins.md` §15, A134
+
+Check: `surfaces_default_to_every_surface`, `surface_table_outside_its_surfaces_is_rejected`, `ui_keys_is_an_alias_of_terminal_keys`, `stored_ui_keys_grant_covers_terminal_keys` and the manifest schema drift test pass.
+
+#### T33.45.2 ABI: surface payloads
+
+Depends: — · Files: `crates/cox-plugin-api/src/abi.rs`, `crates/cox-plugin-api/src/ui.rs`, `docs/plugin-abi.schema.json` · Design: `docs/design/plugins.md` §15, A134
+
+Check: round trips for `Surface`, `InitOut.desktop`, `DesktopNotice`, `Widget::Image`, `Span.link`; `unknown_fields_are_ignored_both_ways` covers the new fields; the ABI schema drift test passes.
+
+#### T33.45.3 Host: load filter, granted filter, `cox:desktop/v1`
+
+Depends: T33.45.1, T33.45.2 · Files: `crates/cox-plugin/src/hostfn.rs`, `crates/cox-plugin/src/live.rs`, `crates/cox-session/src/plugins.rs` · Design: `docs/design/plugins.md` §15, A134
+
+Check: `plugin_outside_its_surfaces_is_skipped_with_a_notice`, `other_surface_init_entries_are_dropped_with_a_notice`, `desktop_notify_on_terminal_is_not_on_this_surface` (inline WAT, no build).
+
+#### T33.45.4 TUI: links, image `alt`, surfaces in listings
+
+Depends: T33.45.2, T33.45.3 · Files: `crates/cox-tui/src/plugin_ui.rs`, `crates/cox/src/plugin_cmd.rs` · Design: `docs/design/plugins.md` §15, A134
+
+Check: insta snapshots of a linked span with and without OSC 8 and of an image's `alt`; `cox plugin list --json` shows `surfaces`.
+
+#### T33.45.5 App core: inspector tab, toolbar and palette actions
+
+Depends: T33.45.3 · Files: `crates/cox-app/src/plugin_ui.rs`, `crates/cox-app/src/palette.rs`, `crates/cox-app/src/live.rs` · Design: `docs/design/plugins.md` §15, A134
+
+Check: `cox-app` tests: the tab renders only while selected, an action runs its command, an action naming an undeclared command is dropped, `plugin_keys` is gone. Coordinate with T58.4 on `live.rs`.
+
+#### T33.45.6 App core: notifications, links and images
+
+Depends: T33.45.5 · Files: `crates/cox-app/src/plugin_ui.rs`, `crates/cox-app/src/app.rs`, `crates/cox-app/src/wire.rs` · Design: `docs/design/plugins.md` §15, A134
+
+Check: a plugin notice with actions reaches `Host::notify`'s test double and its action runs the command; a remote link goes through `confirm_open_url`; the app-server wire round-trips the new payloads.
+
+#### T33.45.7 FFI and Swift: the desktop contributions
+
+Depends: T33.45.6 · Files: `crates/cox-ffi/src/{session,types}.rs`, `desktop/macos/Packages/CoxUI/…` (Inspector, SessionToolbar, CommandPalette, PluginWidgetView), `desktop/design/DESIGN.md` §6 rows · Design: `docs/design/plugins.md` §15, A134
+
+Check: `forward_only` passes; a snapshot per new view in light and dark; an unknown SF Symbol draws `puzzlepiece.extension` (settles §15.4's **unverified** note).
+
+#### T33.45.8 SDK and the surfaces example
+
+Depends: T33.45.3 · Files: `plugins/sdk/src/lib.rs`, `plugins/examples/surfaces/` (new), `crates/cox-plugin-fixtures/build.rs` · Design: `docs/design/plugins.md` §15, A134
+
+Check: a `cox-plugin` test loads the example (a command and a status segment, a leader key, an inspector tab and a notification) in a terminal and a desktop session and finds each surface-only part present on its own surface and dropped with a notice or `NotOnThisSurface` on the other.
+
+#### T33.45.9 Docs: the three-part plugin API reference
+
+Depends: T33.45.1, T33.45.2 · Files: `docs/plugins.md` (or `docs/plugins/api.md`), its generator and drift test · Design: `docs/design/plugins.md` §15, A134
+
+Check: every field of `docs/plugin.schema.json` and `docs/plugin-abi.schema.json` appears under its part (shared, terminal-only, desktop-only), checked by test.
+
+#### T33.45.10 Docs: Russian and Ukrainian translations
+
+Depends: T33.45.9 · Files: `docs/ru/plugins.md`, `docs/uk/plugins.md` (new directories) · Design: `docs/design/plugins.md` §15, A134
+
+Check: both cover all three parts and every heading of the English page; `just test` green.
+
 **Order.** T33.1 → T33.2 → T33.3 → T33.4 → T33.5 → T33.6 is the critical path. After it these can run in parallel:
 
 - T33.7–T33.8;
@@ -2128,6 +2200,7 @@ Order of value if time is short: M1 → M2 → P8 (T8.1–T8.3) → P6 → P7 �
 - A129 T58.4.4, T58.4.6, T58.4.14, T58.1, T58.8, T58.28, T37.44, T52.17, T51.22 follow-ups — by the creator (2026-09-29). (1) **Sidebar filter (T58.4.4/T58.4.5)**: the filter moves to Rust; matching the localized `age` part is dropped; diacritic folding is kept only if a crate already in the workspace provides it (no new dependency), otherwise the filter stays case-insensitive only. (2) **Short model names (T58.4.6/T58.4.14)**: the core adds a separate `short_name` field; `Status.model_name` and `ModelChoice.display_name` keep their existing meaning, so the TUI and ACP do not change. (3) **Patch application and the tool tail cut** stay mirrored in each client, checked by fixture replay, not lifted into the protocol. (4) **Windows M2/M3** pieces (terminal, browser, tray, ACP, best-of-N, plugin panels) stay uncarded until a Windows M2/M3 is planned; the `ideas.md` line already covers them. (5) **Packaging (T58.28)**: packaged with external location (a sparse package) for actionable-notification identity, installed by cox's own installer, not full MSIX virtualization — answers A127 open question 3. (6) **Accent colour (T58.8)**: the cox token accent, as on macOS; a "follow the system accent" setting may come later — answers A127 open question 7. (7) **Bindings way out (T58.1)**: do not move `cox-ffi` back to uniffi 0.31; keep waiting for upstream (PR #176 adds uniffi 0.32); if the gate is not met by its review date, carry a fork under `forks/` with #176 applied — answers A127 open question 1. (8) New card **T37.44.18** "Terminal well token is opaque dark": `surface.terminal` becomes an opaque dark value matching mockup 24 (`#15161a`) in both appearances, with a High Contrast value as the token pipeline requires. (9) New card **T37.44.19** "Mockup 24 keeps the composer": the composer stays above the terminal pane; mockup 24 changes to match. (10) New card **T52.23** "Desktop draws plugin `tool:`/`item:` renderers", split for size into **T52.23.1** (Rust: `cox-app` render path, a `Block` field, `cox-ffi` types) and **T52.23.2** (Swift: CoxModel and the CoxUI tool card); T52.17's renderer-widgets-inside-tool-cards part moves here, so T52.17 closes on its panel, status-segment, overlay and command parts. (11) New card **T51.23** "Panes draw from `glass.fill` and `glass.border`": CoxUI's pane fill and rim move off `surface.*`/`separator` onto the T51.1 glass tokens, and the specular sweep's white literal (`Specular.swift`, `TranscriptView.swift`) gets a token in the same change; light and dark snapshots are re-recorded on purpose. Why: the creator's decisions on the CoxModel audit's open items and the design follow-ups the verification passes and A127/A128 left open. Effect: T58.4.4, T58.4.6, T58.4.14, T58.1, T58.8 and T58.28 are rewritten; T52.17's card gains one sentence; T37.44.18, T37.44.19, T52.23.1, T52.23.2 and T51.23 are new cards; no other card or status changes.
 - A127 §1.1 (planned `cox-ffi` `cdylib`, planned `desktop/windows/` row, the "Planned by A127" note), §3 (new P57: T57.1–T57.13, P58: T58.1–T58.30) — a Windows build of the core and a Windows desktop client, by the creator (2026-09-29). (1) **UI stack: WinUI 3 + C# over the in-process Rust core through `cox-ffi` (UniFFI).** C# bindings are generated by uniffi-bindgen-cs (NordSecurity). All logic stays in Rust (`cox-app`), as in the Swift client (DT goal 1: no logic re-implemented in the UI). (2) **Scope: M1 parity only**, the DT§3.1 feature set. M2 and M3 (terminal pane, browser pane, pop-out windows, tray and hotkey, ACP host, best-of-N, plugin panels) are not in these phases and not in `roadmap.md`; `ideas.md` holds them as one line. (3) **Sandbox: as D7 says.** On Windows there is no sandbox, a loud warning, and `on-request` forced; the Windows sandbox stays deferred (A123 (2), `docs/design/v0.3-windows-sandbox.md`); the UI shows the warning (T58.25). This supersedes DT§1 "Non-goals (v1): Windows/Linux GUI" for Windows (Linux GUI stays a non-goal); `docs/design/desktop.md` §1 carries a pointer. It is also the "Windows release target first, as its own decision" that A123 (2) asked for: T57.12 adds the target, the release stays the creator's step. Facts behind the cards, checked 2026-09-29 (`research.md` §10, ledger #41–#44): uniffi-bindgen-cs's latest release `v0.11.0+v0.31.0` is on uniffi 0.31, cox-ffi pins 0.32.2, the 0.32 upgrade is open PR #176 and async callback interfaces are broken (issue #165), so T58.1 is a gate like T33.43; the current Windows App SDK is 2.5.1 (the 1.8 line's servicing ended 2026-09-24); .NET 10 is the LTS; D7's forced `on-request` is only a doc comment today (T57.3); keyring 4.2.0 and portable-pty 0.9.0 already have Windows backends; `nix` and process groups are the blockers. D1 names one macOS app linking `cox-ffi` as a static library; a C# app loads it as a DLL, so T58.1 adds `cdylib` and T58.2 proposes D1's new wording. Open questions for the creator: (1) **Bindings way out** if T58.1's gate is not met by 2026-12-31: wait, move `cox-ffi` to uniffi 0.31 (a version change), or carry a fork under `forks/`. (2) **Shell on Windows** for `bash`, `!` and hooks (T57.2): Git Bash else PowerShell (Claude Code), `pwsh` → Windows PowerShell → `cmd` (Codex), or Git Bash required. (3) **Packaging** (T58.28): MSIX with virtualization off, packaged with external location, or unpackaged self-contained. (4) **Minimum Windows version and architectures**: Windows 10 or 11 only (Mica needs Windows 11, with a solid fallback), x64 only or also ARM64 (cargo-dist's Windows signing covers x64 only). (5) **process-wrap 10.0.1** as the one kill path for process trees (T57.5; not in `rust.md`; alternatives win32job or raw `windows-sys`). (6) **Which policies the D7 rule forces**: only `on-failure` becomes `on-request`, or also `untrusted` and `never` (T57.3 keeps the stricter two until answered). (7) **Accent colour**: the cox token accent, or the user's Windows accent (T58.8). Why: the creator wants the desktop client on Windows with the same core and no second implementation of its logic. Effect: P57 and P58; no existing card changes; P58's feature cards wait on T58.1 and on the creator's approval of T58.9's mockups.
 - A131 §3 P7 (new T7.8; numbered A67 on its branch, renumbered on merge because main's A67 is P37), by the creator. Why: T7.1 landed the instruction-chain loader but left wiring it into `context::assemble` for later (its done.md "Not done" line), and no later card picked it up, so `system[2]` is still a one-line stub and no surface sends `AGENTS.md`/`CLAUDE.md` to the model (§4 item 3). Effect: one card; the surface loads the chain and hands the text to `cox-core` (D2); the stub stays only for a workspace with no instruction file, so its prefix bytes do not change. The card touches more than three source files because the ACP factory builds its session without `open`, and the e2e needs the scripted provider to match on system blocks. No decision changes.
+- A134 §3 P33 (T33.45 step 1; build cards T33.45.1–T33.45.10 build cards T33.45.1–T33.45.10), proposed by Claude Code / opus-5.5 under T33.45 and approved by the creator (2026-10-03); the cards are in §3 P33 and the task table, and T33.45 stays open until they land. Design: `docs/design/plugins.md` §15. Decisions: (1) **Surfaces.** `SessionSpec.surface` maps to a plugin `Surface`: `tui` and `plain` → `terminal`, `app` (local or over `cox app-server`) → `desktop`, `headless`, `acp`. (2) **Shared API** = `api = 1` minus keys, plus `InitIn.surface` and `Span.link` (OSC 8 in the terminal, a click-to-open link in the app). The 24-cell segment budget, the drop-first order and the 8-row panel are shared host layout, not terminal-only: `cox-app` already applies them (`SEGMENT_COLS`, `PANEL_ROWS`). (3) **Terminal-only API** = leader keys (`[capabilities.terminal] keys`; `ui.keys` stays an alias under `api = 1`); `cox:tui/v1` is reserved with no function yet. (4) **Desktop-only API** = an inspector tab, toolbar items, palette actions (both run a declared command through `cox_command`), actionable notifications (`cox_desktop_notify` in `cox:desktop/v1`) and package images in widgets; no sidebar section (a plugin lives in one session, the sidebar spans the window), no menu-bar items, never plugin UI code. (5) **Declaring**: `surfaces = [...]`, default every surface; `[capabilities.terminal]`, `[capabilities.desktop]`; new grant lines `terminal.keys`, `desktop.inspector|toolbar|palette|notify`; a stored `ui.keys` reads as `terminal.keys`; one grant covers both surfaces. (6) **Unavailable surface**: not loaded with a `Notice(Info)`; the other surface's grant left out of `granted`; its `InitOut` entries dropped with one `Notice(Info)`; a surface host function answers `AbiError::NotOnThisSurface`, checked before the grant; values degrade (image → `alt`, link → text). (7) **Versioning**: the ABI parts stay `api = 1`; the manifest denies unknown keys, so a cox older than this refuses a manifest using the new keys and skips the plugin (fail open). Why: the creator's A131. No §0 decision changes. The creator confirmed (2026-10-03): `plain` is `terminal`; a plugin skipped for its surface gets a `Notice(Info)`; an older cox skips a manifest with the new keys rather than relaxing the unknown-key rule. The creator did **not** confirm leaving out a sidebar section in (4): that stays an open question for the creator, and no card below depends on it. Cards (≤ 200 LOC and ≤ 3 files each; together they cover T33.45's original Check): T33.45.1–T33.45.10 in §3 P33.
 
 ## 7. Risk register
 
