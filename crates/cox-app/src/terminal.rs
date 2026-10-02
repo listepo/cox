@@ -288,6 +288,8 @@ fn descendant_pids(root: i32) -> Vec<i32> {
 
 #[cfg(target_os = "macos")]
 #[link(name = "proc")]
+// why: libproc proc_listchildpids FFI declaration (macOS).
+#[allow(unsafe_code)]
 unsafe extern "C" {
     fn proc_listchildpids(ppid: i32, buffer: *mut i32, buffersize: i32) -> i32;
 }
@@ -295,6 +297,8 @@ unsafe extern "C" {
 /// `proc_listchildpids` returns how many pids fit, and a full buffer may
 /// have stopped early, so grow until the result is shorter than the buffer.
 #[cfg(target_os = "macos")]
+// why: calls the libproc proc_listchildpids FFI with a buffer we size.
+#[allow(unsafe_code)]
 fn child_pids(parent: i32) -> Vec<i32> {
     let mut cap = 32usize;
     loop {
@@ -421,6 +425,8 @@ mod tests {
     /// write outside the workspace fails as `bash`'s would.
     #[cfg(target_os = "macos")]
     #[tokio::test]
+    // why: env::set_var/remove_var are unsafe in edition 2024 (per-process tests).
+    #[allow(unsafe_code)]
     async fn terminal_write_outside_the_workspace_is_denied_under_workspace_write() {
         let base = tempfile::tempdir().expect("tempdir");
         let base_path = canonical(base.path());

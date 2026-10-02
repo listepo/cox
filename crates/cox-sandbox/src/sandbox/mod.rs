@@ -78,6 +78,8 @@ pub fn backend(linux: LinuxBackend) -> Option<Backend> {
 /// the backend, or bare for `danger-full-access` and hosts without one.
 /// `shell` is an absolute path the caller already resolved from its own
 /// allowlist — the sandbox never looks a program up on `PATH`.
+// why: Command::pre_exec applies the sandbox guard in the forked child.
+#[allow(unsafe_code)]
 pub fn command(
     policy: &SandboxPolicy,
     roots: &[PathBuf],

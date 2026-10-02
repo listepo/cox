@@ -5,6 +5,9 @@
 //! sessions are `cox-app`'s (T37.39), so its sole workspace dependencies are
 //! `cox-app` and `cox-protocol`, and it alone uses `uniffi` (`deps.rs`).
 
+// why: the uniffi scaffolding and exports expand to unsafe extern "C" glue.
+#![allow(unsafe_code)]
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 

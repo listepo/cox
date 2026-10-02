@@ -696,6 +696,8 @@ pub static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Sets env vars for the duration of `f`, restoring the previous value
 /// (or absence) afterwards, holding [`ENV_LOCK`] throughout so this
 /// doesn't race other env-mutating tests in the crate.
+// why: env::set_var/remove_var are unsafe in edition 2024; ENV_LOCK is held.
+#[allow(unsafe_code)]
 pub fn temp_env(vars: &[(&str, Option<&str>)], f: impl FnOnce()) {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let previous: Vec<(String, Option<String>)> = vars

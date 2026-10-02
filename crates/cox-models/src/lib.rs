@@ -11,8 +11,6 @@
 //! an embedded or caller-supplied string — a file on disk is the caller's
 //! job (`cox-provider::usage::load_price_table`).
 
-#![warn(missing_docs)]
-
 mod catalog;
 mod effort;
 mod price;

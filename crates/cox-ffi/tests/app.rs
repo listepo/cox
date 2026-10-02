@@ -5,6 +5,9 @@
 //! forwarding, the runtime, the host bridge and the error mapping. nextest
 //! runs each test in its own process, so each sets its own environment.
 
+// why: env::set_var/remove_var are unsafe in edition 2024 (per-process tests).
+#![allow(unsafe_code)]
+
 #[path = "../examples/record.rs"]
 #[allow(dead_code)]
 mod record;

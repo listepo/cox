@@ -335,6 +335,8 @@ fn http_error(status: reqwest::StatusCode, body: &str, retry_after: Option<u64>)
 }
 
 #[cfg(test)]
+// why: env::set_var/remove_var are unsafe in edition 2024 (per-process tests).
+#[allow(unsafe_code)]
 mod tests {
     use super::*;
 
