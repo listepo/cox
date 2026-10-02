@@ -9343,3 +9343,16 @@ Done when: the Check passes.
 - Result: `crates/cox-provider-testkit/src/replay.rs`: the `sk-` arm of `redact_secrets` counts ASCII alphanumerics plus `-` and `_`, the body alphabet T50.7 gave `scrub`; the 8-byte floor and the `Bearer ` arm are unchanged. Before the fix a `sk-ant-…` key matched nothing (`ant` is below the floor), so the whole key reached the cassette.
 - Tests: `cassette_redaction_removes_an_anthropic_key_whole` fails on the old code (the line came back unchanged); `redact_strips_sk_and_bearer` and `redact_preserves_non_ascii` still pass; `cox-provider`'s `no_secrets_in_fixtures` still finds no secret in the committed fixtures under the wider alphabet.
 - Check output summary: `cargo nextest run -p cox-provider-testkit` 9 passed; `cargo nextest run -p cox-provider` 28 passed; `cargo clippy -p cox-provider-testkit --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+
+### T37.46. Rewind menu: the restored-file count from the session's changes
+
+Model: Cursor / grok bot · Status: done 2026-10-02 · Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxModel/Sources/CoxModel/RewindMenuState.swift`, its test, `desktop/design/DESIGN.md`
+
+Goal: Figma frame 14's "2 files restored" is the real count, replacing `MockRewindPreviewService` (`// MOCK:`). A code rewind to before turn N restores every file the session changed in turn N or later.
+Research: `cox_app::changes::Changes.turns` (`crates/cox-app/src/changes.rs`) already lists the session's changed files grouped by the turn that changed each last, oldest turn first, and crosses to Swift unchanged as `CoxClient.Changes.turns` (`SessionClient.changes()`). A file changed in turns 1 and 3 sits under turn 3 only, so the files under turns ≥ N are exactly the files changed at or after N, each once: the count needs no new core call, no FFI change and no new dependency. A shell command's writes are not in `turns` (T26 scope), so the count is a lower bound, as the Changes tab already is.
+Plan: `ChangesRewindPreview: RewindPreviewService` over a `SessionClient` sums `turns.filter { $0.turn >= N }` file counts; the mock is deleted; the DS§6 row stops saying "mocked".
+Check: a CoxModel test over a `FixtureSession` whose changes list files under turns 1–3 gives 3, 2 and 0 for N = 1, 3 and 4.
+
+- Result: `CoxModel/RewindMenuState.swift`: `MockRewindPreviewService` is gone; `ChangesRewindPreview` reads `SessionClient.changes()` and sums the files under `Changes.turns` entries of turn ≥ N; `SessionStore.rewindMenu(turn:preview:)` uses it when no preview is given. The DS§6 `RewindMenu` row names it.
+- Tests: `theRewindMenuCountsTheFilesChangedAtOrAfterItsTurn` (files under turns 1 and 3: 3, 2, 2, 0 for N = 1…4; the mock gave 2 for every turn) and `aFailedPreviewLeavesTheCountUnknown`.
+- Check output summary: `swift test --no-parallel --build-system swiftbuild` in CoxModel: 130 tests passed; `xcrun swift-format lint --strict` clean.

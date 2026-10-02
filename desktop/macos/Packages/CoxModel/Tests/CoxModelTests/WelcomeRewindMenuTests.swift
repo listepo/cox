@@ -1,6 +1,7 @@
 // Figma sync seams (frames 22-empty-session and 14-rewind-edit-resend): a welcome suggestion
-// drafts its prompt; the rewind menu carries its turn and restored count, a failed preview leaves
-// the count unknown, and its scopes and fork reach the core as `Intent.rewind` and `Intent.fork`.
+// drafts its prompt; the rewind menu counts the files changed at or after its turn (T37.46), a
+// failed preview leaves the count unknown, and its scopes and fork reach the core as
+// `Intent.rewind` and `Intent.fork`.
 
 import CoxClient
 import Testing
@@ -23,12 +24,29 @@ private struct FailingPreview: RewindPreviewService {
   #expect(session.sent.isEmpty, "a suggestion drafts; the person sends")
 }
 
+/// One file per call; `turn` is the turn that changed it last.
+private func file(_ path: String, turn: UInt32) -> ChangedFile {
+  ChangedFile(path: path, change: .edited, added: 1, removed: 0, call: path, turn: turn)
+}
+
 @MainActor
-@Test func theRewindMenuCountsTheFilesOrLeavesThemUnknown() async {
+@Test func theRewindMenuCountsTheFilesChangedAtOrAfterItsTurn() async {
+  let changes = Changes(turns: [
+    TurnFiles(turn: 1, files: [file("Cargo.toml", turn: 1)]),
+    TurnFiles(turn: 3, files: [file("src/retry.rs", turn: 3), file("tests/backoff.rs", turn: 3)]),
+  ])
+  let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []), changes: changes)
+  let store = SessionStore(session: session)
+  var counts: [Int?] = []
+  for turn: UInt32 in [1, 2, 3, 4] {
+    counts.append(await store.rewindMenu(turn: turn).restoredFiles)
+  }
+  #expect(counts == [3, 2, 2, 0])
+}
+
+@MainActor
+@Test func aFailedPreviewLeavesTheCountUnknown() async {
   let store = SessionStore(session: FixtureSession(fixture: Fixture(batches: [], snapshot: [])))
-  #expect(
-    await store.rewindMenu(turn: 2, preview: MockRewindPreviewService())
-      == RewindMenuState(turn: 2, restoredFiles: 2))
   #expect(
     await store.rewindMenu(turn: 2, preview: FailingPreview())
       == RewindMenuState(turn: 2, restoredFiles: nil))

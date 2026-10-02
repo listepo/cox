@@ -33,7 +33,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.46 | todo | P2 | 2 | 0% | |
 | T37.47 | todo | P2 | 3 | 0% | |
 | T37.48 | todo | P2 | 3 | 0% | |
 | T37.49 | todo | P2 | 4 | 0% | |
@@ -1422,14 +1421,6 @@ Confirm the bundle id `io.github.listepo.cox` (T37.32.1 derived it from the repo
 On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
-
-#### T37.46 Rewind menu: the restored-file count from the session's changes
-
-Depends: — · Size: ~60 · Files: `desktop/macos/Packages/CoxModel/Sources/CoxModel/RewindMenuState.swift`, its test, `desktop/design/DESIGN.md`
-Goal: Figma frame 14's "2 files restored" is the real count, replacing `MockRewindPreviewService` (`// MOCK:`). A code rewind to before turn N restores every file the session changed in turn N or later.
-Research: `cox_app::changes::Changes.turns` (`crates/cox-app/src/changes.rs`) already lists the session's changed files grouped by the turn that changed each last, oldest turn first, and crosses to Swift unchanged as `CoxClient.Changes.turns` (`SessionClient.changes()`). A file changed in turns 1 and 3 sits under turn 3 only, so the files under turns ≥ N are exactly the files changed at or after N, each once: the count needs no new core call, no FFI change and no new dependency. A shell command's writes are not in `turns` (T26 scope), so the count is a lower bound, as the Changes tab already is.
-Plan: `ChangesRewindPreview: RewindPreviewService` over a `SessionClient` sums `turns.filter { $0.turn >= N }` file counts; the mock is deleted; the DS§6 row stops saying "mocked".
-Check: a CoxModel test over a `FixtureSession` whose changes list files under turns 1–3 gives 3, 2 and 0 for N = 1, 3 and 4.
 
 #### T37.47 Turn numbers in the transcript gutter
 

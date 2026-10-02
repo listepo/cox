@@ -1,8 +1,8 @@
 // A prompt's rewind menu (Figma frame 14-rewind-edit-resend): the turn it rewinds to before, how
 // many files a code rewind restores, and the rewind or fork the menu picks. The rewind and the
-// fork are the core's (`Intent.rewind`, `Intent.fork`); the restored-file count has no cox-app
-// call yet, so `RewindPreviewService` is the seam and `MockRewindPreviewService` the frame's
-// value until T37.46. The app copies the state into CoxUI's `RewindMenu.State`.
+// fork are the core's (`Intent.rewind`, `Intent.fork`); the count is read from the session's
+// `Changes` (T37.46). `RewindPreviewService` stays the seam so a test or preview can give any
+// count. The app copies the state into CoxUI's `RewindMenu.State`.
 
 import CoxClient
 
@@ -11,12 +11,21 @@ public protocol RewindPreviewService: Sendable {
   func restoredFiles(beforeTurn turn: UInt32) async throws -> Int
 }
 
-// MOCK: frame 14's "2 files restored" for every turn; T37.46 replaces this with the count the
-// core reads from the checkpoints after the turn.
-public struct MockRewindPreviewService: RewindPreviewService {
-  public init() {}
+/// The count from the core's Changes tab (T37.46): `Changes.turns` lists each changed file once,
+/// under the turn that changed it last, so the files under turn N or later are exactly those a
+/// code rewind to before N restores. A shell command's writes are not listed, as in the tab.
+public struct ChangesRewindPreview: RewindPreviewService {
+  let session: any SessionClient
 
-  public func restoredFiles(beforeTurn turn: UInt32) async throws -> Int { 2 }
+  public init(session: any SessionClient) { self.session = session }
+
+  public func restoredFiles(beforeTurn turn: UInt32) async throws -> Int {
+    Self.restored(try await session.changes(), beforeTurn: turn)
+  }
+
+  static func restored(_ changes: Changes, beforeTurn turn: UInt32) -> Int {
+    changes.turns.filter { $0.turn >= turn }.reduce(0) { $0 + $1.files.count }
+  }
 }
 
 public struct RewindMenuState: Equatable, Sendable {
@@ -30,10 +39,14 @@ public struct RewindMenuState: Equatable, Sendable {
 }
 
 extension SessionStore {
-  /// The menu for a prompt's turn, with the count `preview` gives; a failed preview leaves the
-  /// count unknown rather than the menu closed.
-  public func rewindMenu(turn: UInt32, preview: any RewindPreviewService) async -> RewindMenuState {
-    RewindMenuState(turn: turn, restoredFiles: try? await preview.restoredFiles(beforeTurn: turn))
+  /// The menu for a prompt's turn, with the count `preview` gives (the session's own changes
+  /// when none is given); a failed preview leaves the count unknown rather than the menu closed.
+  public func rewindMenu(
+    turn: UInt32, preview: (any RewindPreviewService)? = nil
+  ) async -> RewindMenuState {
+    let preview = preview ?? ChangesRewindPreview(session: session)
+    return RewindMenuState(
+      turn: turn, restoredFiles: try? await preview.restoredFiles(beforeTurn: turn))
   }
 
   /// Fork a new session here: a child that starts from the conversation before `turn`.
