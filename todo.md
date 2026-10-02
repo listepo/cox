@@ -1,6 +1,7 @@
 # Todo
 
-- T33.14. `cox_http` and filesystem preopens
+- T33.14.1. `cox_http`
+- T33.14.2. Filesystem preopens
 - T33.18. Providers, ABI form (`PluginProvider`)
 - T33.34. Go: SDK wrapper, template, example
 - T33.36. Kotlin: thin PDK, template, example
