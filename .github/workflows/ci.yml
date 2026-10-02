@@ -23,13 +23,18 @@ env:
 # version: the `rust` job through the shared pyrlyn/infra workflow, the others
 # through .github/actions/rust. Both fail when rustc is not that pin.
 jobs:
-  # The shared pyrlyn/infra workflow, pinned by commit (descendant of the
-  # ci-rust pin in #57; this commit also ships release-plz.yml and pipeline.yml):
+  # The shared pyrlyn/infra workflow, pinned by commit (descendant of e6e376e, which
+  # pins Xcode 27 through the setup-xcode action; `xcode-version` defaults to 27):
   # fmt once, then per target clippy (--all-targets --all-features), check, and
   # nextest where the runner executes the target (Linux x86_64 and aarch64,
   # macOS aarch64) or a build where it does not (macOS x86_64).
   rust:
-    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@189816ac5a375e18e0235044970efcbc40e3cabd
+    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@87cca51e2e995af39b78e6938bc89a82a844f4e2
+    # ci-rust cancels the whole run when a job fails (cancel-run-on-failure), which needs
+    # `actions: write` on the calling job.
+    permissions:
+      contents: read
+      actions: write
     with:
       # The shared matrix minus Windows: the workspace does not build there
       # yet (P57); the `windows` job below checks the crates that do.
@@ -37,8 +42,8 @@ jobs:
         [
         {"os": "ubuntu-latest", "target": "x86_64-unknown-linux-gnu"},
         {"os": "ubuntu-24.04-arm", "target": "aarch64-unknown-linux-gnu"},
-        {"os": "macos-latest", "target": "aarch64-apple-darwin"},
-        {"os": "macos-latest", "target": "x86_64-apple-darwin"}
+        {"os": "xcode-27", "target": "aarch64-apple-darwin"},
+        {"os": "xcode-27", "target": "x86_64-apple-darwin"}
         ]
       # The manifest is virtual with `default-members`; cover every member.
       clippy-args: --workspace
@@ -187,7 +192,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, ubuntu-24.04]
+        os: [xcode-27, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -211,7 +216,7 @@ jobs:
   # skipping them. A skipped macOS job reports `skipped` under its own name,
   # which a required check treats as passed.
   changes:
-    uses: pyrlyn/infra/.github/workflows/changes.yml@f49cd4a1e9b5c0e4b70f7253f4a1de16971402ca # main
+    uses: pyrlyn/infra/.github/workflows/changes.yml@87cca51e2e995af39b78e6938bc89a82a844f4e2 # main
     permissions:
       contents: read
     with:
@@ -230,9 +235,13 @@ jobs:
     if: >-
       !cancelled()
       && (needs.changes.result != 'success' || needs.changes.outputs.swift == 'true')
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: pyrlyn/infra/.github/actions/setup-xcode@87cca51e2e995af39b78e6938bc89a82a844f4e2
+        with:
+          version: '27'
 
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
@@ -271,8 +280,9 @@ jobs:
 
   # The macOS app (T37.15, DT§7): CoxFFI.xcframework for Apple Silicon only
   # (A67), then `swift test` for every package under desktop/macos/Packages,
-  # then the app target, unsigned (T37.32.1). macos-26 is the arm64 image
-  # whose Xcode 26 carries the macOS 26 SDK the app targets. Always the full
+  # then the app target, unsigned (T37.32.1). xcode-27 is GitHub's arm64 image
+  # with Xcode 27 (macos-26 / macos-latest carry Xcode 26.x); setup-xcode selects
+  # the pinned stable Xcode 27 and fails when the image has none. Always the full
   # build: every package and the app, never only the changed ones.
   desktop-macos:
     needs: changes
@@ -280,9 +290,13 @@ jobs:
       !cancelled()
       && (needs.changes.result != 'success'
       || needs.changes.outputs.swift == 'true' || needs.changes.outputs.rust == 'true')
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: pyrlyn/infra/.github/actions/setup-xcode@87cca51e2e995af39b78e6938bc89a82a844f4e2
+        with:
+          version: '27'
 
       - uses: ./.github/actions/rust
 
