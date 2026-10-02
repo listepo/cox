@@ -26,8 +26,8 @@ jobs:
   # The shared pyrlyn/infra workflow, pinned by commit (descendant of e6e376e, which
   # pins Xcode 27 through the setup-xcode action; `xcode-version` defaults to 27):
   # fmt once, then per target clippy (--all-targets --all-features), check, and
-  # nextest where the runner executes the target (Linux x86_64 and aarch64,
-  # macOS aarch64) or a build where it does not (macOS x86_64).
+  # nextest on every target (Linux x86_64 and aarch64, macOS aarch64; macOS is
+  # Apple Silicon only).
   rust:
     uses: pyrlyn/infra/.github/workflows/ci-rust.yml@87cca51e2e995af39b78e6938bc89a82a844f4e2
     # ci-rust cancels the whole run when a job fails (cancel-run-on-failure), which needs
@@ -42,8 +42,7 @@ jobs:
         [
         {"os": "ubuntu-latest", "target": "x86_64-unknown-linux-gnu"},
         {"os": "ubuntu-24.04-arm", "target": "aarch64-unknown-linux-gnu"},
-        {"os": "xcode-27", "target": "aarch64-apple-darwin"},
-        {"os": "xcode-27", "target": "x86_64-apple-darwin"}
+        {"os": "xcode-27", "target": "aarch64-apple-darwin"}
         ]
       # The manifest is virtual with `default-members`; cover every member.
       clippy-args: --workspace
