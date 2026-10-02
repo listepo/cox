@@ -12,16 +12,18 @@ public struct ModelChoice: Equatable, Sendable {
   public var id: String
   /// What the catalog calls it, `Claude Sonnet 5`; `nil` when it has no name.
   public var displayName: String?
+  /// That name as the desktop shows it, `Sonnet 5` (A129); `nil` with `displayName`.
+  public var shortName: String?
   /// The efforts it takes; empty means any.
   public var efforts: [Effort]
   public var contextWindow: UInt32?
 
   public init(
-    tier: Tier, provider: String, id: String, displayName: String? = nil, efforts: [Effort] = [],
-    contextWindow: UInt32? = nil
+    tier: Tier, provider: String, id: String, displayName: String? = nil,
+    shortName: String? = nil, efforts: [Effort] = [], contextWindow: UInt32? = nil
   ) {
     (self.tier, self.provider, self.id, self.displayName) = (tier, provider, id, displayName)
-    (self.efforts, self.contextWindow) = (efforts, contextWindow)
+    (self.shortName, self.efforts, self.contextWindow) = (shortName, efforts, contextWindow)
   }
 }
 
@@ -43,11 +45,17 @@ public struct MenuModel: Equatable, Sendable {
   public var id: String
   /// What the catalog calls it; `nil` when it has no name.
   public var displayName: String?
+  /// What the row shows, `Sonnet 5` (A129); `nil` with `displayName`, and the row shows the id.
+  public var shortName: String?
   /// `low · high`; empty when it takes any effort.
   public var efforts: String
 
-  public init(id: String, displayName: String? = nil, efforts: String = "") {
-    (self.id, self.displayName, self.efforts) = (id, displayName, efforts)
+  public init(
+    id: String, displayName: String? = nil, shortName: String? = nil, efforts: String = ""
+  ) {
+    (self.id, self.displayName, self.shortName, self.efforts) = (
+      id, displayName, shortName, efforts
+    )
   }
 }
 
@@ -79,7 +87,7 @@ public struct FixtureModels: ModelsClient {
     var sections: [ModelSection] = []
     for choice in fixedModels {
       let model = MenuModel(
-        id: choice.id, displayName: choice.displayName,
+        id: choice.id, displayName: choice.displayName, shortName: choice.shortName,
         efforts: choice.efforts.map(\.rawValue).joined(separator: " · "))
       if let index = sections.firstIndex(where: { $0.tier == choice.tier }) {
         sections[index].models.append(model)
