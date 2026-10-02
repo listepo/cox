@@ -6,7 +6,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 
 | # | Status | Priority | Complexity | Readiness | Agent |
 | --- | --- | --- | --- | --- | --- |
-| T33.14.1 | in progress | P2 | 3 | 0% | Claude Code / opus-5.5 |
 | T33.14.2 | todo | P2 | 3 | 0% | |
 | T33.18 | todo | P2 | 5 | 0% | |
 | T33.34 | todo | P2 | 4 | 0% | |
@@ -802,18 +801,6 @@ Every card in this phase:
 - runs the three standard commands.
 
 Host unit tests use inline WAT (R§4.3.5 P15); no `.wasm` is ever committed. **Blockers** (everything after them depends on them): T33.1, T33.2, T33.3, T33.5, T33.6.
-
-#### T33.14.1 `cox_http`
-
-Split from T33.14 by the creator 2026-10-03 because the preopens wait on T33.43; the filesystem half is T33.14.2.
-Depends: T33.9 · Size: ~180 · Files: `crates/cox-plugin/src/net.rs`, `src/hostfn.rs`, `crates/cox-session/src/plugins.rs`
-Goal: `cox_http` over reqwest: the host must match the allow-list, the body is capped, and a `net` entry equal to a configured provider host is refused at validation (PL§7d).
-Plan:
-1. `crates/cox-plugin/src/net.rs` (new): `Net` built from the granted `net:<host>` lines, matched with the one matcher `Capabilities::net_allows`; `Net::target(export, url)` is the context rule (refused in `cox_render`, http/https only, no `Host` header override), shaped so T33.40.1 step 3 adds the provider-host branch (allowed only inside `cox_provider_stream`) next to it; `Net::send` runs on reqwest with redirects off (a redirect could leave the allow-list), a timeout, and a streamed body cap `MAX_HTTP_RESPONSE_BYTES` (over it is `TooLarge`, never a silent cut); `refuse_provider_hosts(manifest, &ProvidersConfig)` refuses a `net` entry that covers the host of any configured provider section or of the plugin's own `[[provider]]` rows.
-2. `hostfn.rs`: dispatch `cox_http` to `Net`, blocking the plugin's worker on the session runtime like `cox_model_call`; no runtime answers `Failed`.
-3. `crates/cox-session/src/plugins.rs`: a `Granted` plugin whose `net` covers a provider host is not loaded, with a notice (fail open).
-4. `cox-plugin` gets `reqwest` (already a workspace dependency) and `wiremock` (dev).
-Check: wiremock `http_outside_allow_list_is_refused`, `net_entry_matching_provider_host_is_rejected`, plus `http_to_allowed_host_round_trips`, `http_body_over_cap_is_too_large`, `http_redirect_is_not_followed`, `http_in_render_is_not_in_this_context`.
 
 #### T33.14.2 Filesystem preopens
 
