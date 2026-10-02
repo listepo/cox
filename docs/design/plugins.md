@@ -563,7 +563,7 @@ Rules for all of them:
 - `symbol` is an SF Symbol name matching `[a-z0-9.]{1,64}`. A name the system does not know draws `puzzlepiece.extension`. That `NSImage(systemSymbolName:accessibilityDescription:)` returns nil for an unknown name is **unverified**: Apple's page (https://developer.apple.com/documentation/appkit/nsimage/init(systemsymbolname:accessibilitydescription:)) did not render its text to a fetch on 2026-10-03; the Swift card proves it with a test.
 - `CommandOut` gains `OpenInspector`, the desktop counterpart of `OpenOverlay`.
 - Every string passes `cox_sanitize::sanitize` in `cox-app` before Swift sees it, as `WidgetView` does today.
-- **Not offered:** a sidebar section — the sidebar lists the window's sessions across projects (DS§6.4 `Sidebar`), while a plugin instance lives in one session (T33.44), so it would need a window-scoped plugin lifetime the host does not have; menu-bar items — the palette covers them and the menu bar is app-wide; plugin-supplied SwiftUI, HTML or web views — never; HTML from MCP servers is `v0.3-mcp-apps.md`'s separate path.
+- **Not offered (open: the creator has not confirmed this, A134):** a sidebar section — the sidebar lists the window's sessions across projects (DS§6.4 `Sidebar`), while a plugin instance lives in one session (T33.44), so it would need a window-scoped plugin lifetime the host does not have; menu-bar items — the palette covers them and the menu bar is app-wide; plugin-supplied SwiftUI, HTML or web views — never; HTML from MCP servers is `v0.3-mcp-apps.md`'s separate path.
 
 ### 15.5 Declaring surfaces
 
