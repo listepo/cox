@@ -1,8 +1,9 @@
 // An empty session's welcome (Figma frame 22-empty-session): CoxUI's `WelcomeHero` over the
-// transcript until the first block, with the facts `WelcomeService` gives for the session's
+// transcript until the first block, with the facts CoxClient's `WelcomeService` gives for the session's
 // folder, a suggestion filling the composer's draft. Here because the hero meets the composer's
 // store only in this package; the app decides when the transcript is empty.
 
+import CoxClient
 import CoxModel
 import CoxUI
 import SwiftUI

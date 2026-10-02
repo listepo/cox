@@ -2,7 +2,7 @@
 // transcript column shows before the first prompt — the app icon, "What should we do in
 // <project>?", one line about the workspace, and three suggestions that fill the composer.
 // Separate so the transcript only decides when it is empty; the facts and the suggestions are
-// the caller's (CoxModel's `WelcomeService`).
+// the caller's (CoxClient's `WelcomeService`, filled by cox-app).
 
 import SwiftUI
 

@@ -17,7 +17,19 @@ private struct FailingPreview: RewindPreviewService {
 @Test func aWelcomeSuggestionDraftsItsPrompt() async throws {
   let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []))
   let composer = ComposerStore(session: SessionStore(session: session))
-  let facts = try await MockWelcomeService().welcome(cwd: "/w/cox")
+  let facts = try await FixtureWelcome(
+    WelcomeFacts(
+      summary: "Rust workspace · 31 crates · AGENTS.md loaded",
+      suggestions: [
+        WelcomeSuggestion(
+          title: "Explain the architecture", detail: "How do the parts of cox fit together?",
+          prompt: "Explain the architecture: how do the parts of cox fit together?"),
+        WelcomeSuggestion(
+          title: "Find and fix a failing test",
+          detail: "Run cargo nextest and fix the first failure",
+          prompt: "Run cargo nextest and fix the first failure."),
+      ])
+  ).welcome(cwd: "/w/cox")
   let first = try #require(facts.suggestions.first)
   composer.suggest(first)
   #expect(composer.text == first.prompt)

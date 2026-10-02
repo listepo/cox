@@ -37,6 +37,7 @@ pub mod tasks;
 pub mod terminal;
 pub mod timeline;
 pub mod usage;
+pub mod welcome;
 pub mod wire;
 pub mod workspace;
 
@@ -69,6 +70,7 @@ pub use tasks::{TaskKind, TaskTarget};
 pub use terminal::{TerminalError, TerminalHandle};
 pub use timeline::Timeline;
 pub use usage::{Meter, Tally, TurnUsage, UsageView};
+pub use welcome::{Suggestion, Welcome};
 pub use workspace::{Project, SearchHit, SessionEntry, Workspace, WorkspaceError};
 
 // What the exported types carry, named here so `cox-ffi` depends on no
