@@ -67,6 +67,20 @@ extension TranscriptStyle {
     }
   }
 
+  /// A prompt's turn number in the margin left of its bubble (T37.47; Figma frames 01 and 14,
+  /// CoxUI's `TurnGutter`): right-aligned in a box `width` wide whose leading edge is `offset`
+  /// left of the bubble's, centred on the prompt's first line.
+  public struct Gutter: Equatable {
+    public var font: NSFont
+    public var color: NSColor
+    public var width: CGFloat
+    public var offset: CGFloat
+
+    public init(font: NSFont, color: NSColor, width: CGFloat, offset: CGFloat) {
+      (self.font, self.color, self.width, self.offset) = (font, color, width, offset)
+    }
+  }
+
   /// A thought's reasoning and the rule beside it.
   public struct Thought: Equatable {
     public var font: NSFont

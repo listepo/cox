@@ -26,7 +26,6 @@
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.32.2. Developer ID signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
-- T37.47. Turn numbers in the transcript gutter
 - T37.48. Rewind menu from the turn gutter
 - T37.49. Welcome hero facts and suggestions from cox-app
 - T39.7. Optional: live check against the real Gemini endpoint (needs the creator's key)

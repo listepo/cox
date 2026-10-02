@@ -33,7 +33,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.47 | todo | P2 | 3 | 0% | |
 | T37.48 | todo | P2 | 3 | 0% | |
 | T37.49 | todo | P2 | 4 | 0% | |
 | T39.7 | todo | P3 | 2 | 0% | |
@@ -1421,14 +1420,6 @@ Confirm the bundle id `io.github.listepo.cox` (T37.32.1 derived it from the repo
 On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
-
-#### T37.47 Turn numbers in the transcript gutter
-
-Depends: — · Size: ~120 · Files: `desktop/macos/Packages/CoxTranscriptText/Sources/CoxTranscriptText/TranscriptDecor.swift`, `…/TranscriptDecorStyle.swift`, a CoxTranscript snapshot test
-Goal: every prompt's turn number sits in the gutter left of its bubble, as Figma frames 01 and 14 draw it (CoxUI's `TurnGutter`: `size.turnGutter` wide, right-aligned, `size.turnGutterOffset` from the bubble, `font.detail` in `text.secondary`).
-Research: the transcript is one TextKit 2 view (`CoxTranscriptText`), not SwiftUI rows, so `TurnGutter` cannot be placed per prompt by SwiftUI layout; the bubble is drawn by `DecorFragment` (`TranscriptDecor.swift`) from the `.user` block, and `Block.turn` already carries the turn (`CoxClient.Block`). The view's gutter is the text container's leading inset (36 pt in `BlockSelectionTests`), wide enough for `size.turnGutter`. Drawing the number in the fragment keeps it in step with layout and scrolling for free; a hosted SwiftUI view per prompt would need its own frame tracking, as `PromptHover` does for one view at a time.
-Plan: `TranscriptDecorStyle` gains the gutter font, colour and offset from the tokens (mapped in CoxTranscript's `TranscriptStyle.cox`); the bubble's first-edge draw also draws the turn number right-aligned in the gutter; gutter clicks keep selecting blocks (T37.42.2).
-Check: a CoxTranscript snapshot of two prompts shows `1` and `2` in the gutter; the block-selection tests stay green.
 
 #### T37.48 Rewind menu from the turn gutter
 
