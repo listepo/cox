@@ -1,3 +1,56 @@
+#### T33.45 Design the plugin API: shared, terminal-only and desktop-only
+
+Status: done 2026-10-03 (step 1, the design) · Model: Claude Code / opus-5.5
+
+Depends: — · Size: split at claim time (design doc first, then one card per API part, the docs and the examples) · Priority: P2 · Complexity: 4 · Files: `docs/design/plugins.md`, `crates/cox-plugin-api/src/{manifest,abi}.rs`, `crates/cox-plugin/src/{grant,hostfn}.rs`, `plugins/sdk/`, `plugins/examples/`, `docs/plugins.md` (+ `docs/ru/`, `docs/uk/`)
+
+Context: plugins were built for cox in the terminal (P33, PL§1–§13). The desktop app already draws the PL§8 widget slots through `cox-app` (`plugin_ui.rs`: `panel`, `status.left`/`status.right`, `overlay`, `/<id>:<name>` commands, T52.17; `tool:`/`item:` renderers, T52.23), but nothing in the API says which surface a feature belongs to: a plugin cannot declare where it runs, `[capabilities.ui]` mixes terminal-only parts (leader keys) with shared ones, and there is no desktop-only API at all. Plugins must work both in the terminal (CLI/TUI) and in the desktop app.
+
+Goal: one plugin API in three parts — a **shared API** for what both surfaces offer, a **terminal-only API** and a **desktop-only API** — with a defined behaviour when a plugin asks for a part the current surface does not have, then its documentation and a Rust example that uses all three.
+
+API requirements:
+- A shared API for desktop and terminal (features available in both).
+- A separate API only for terminal-only features.
+- A separate API only for desktop-only features.
+
+Steps:
+1. **Spell out the API structure** in a new PL§ (from the existing system, `cox-plugin-api` `manifest.rs`/`abi.rs`/`ui.rs` and `cox-plugin` `grant.rs`/`hostfn.rs`), concretely:
+   - *Shared API* (both surfaces; today's `api = 1` minus the terminal-only parts): exports `cox_init`, `cox_on_event`, `cox_hook`, `cox_decide`/`cox_decide_resume`, `cox_tool_*`, `cox_provider_stream`, `cox_command`, `cox_render`, `cox_render_item`, `cox_shutdown`; manifest `[capabilities]` `events`, `hooks`, `tools`, `invoke`, `context`, `kv`, `model`, `net`, `fs`, `decide`, `[[provider]]`, `[[models]]`, `[[mcp]]`, `[[external_agents]]`, `[[agents]]`; host functions in `cox:host/v1` (`cox_log`, `cox_notify`, `cox_kv_*`, `cox_context`, `cox_invoke_tool`, `cox_model_call`, `cox_http`, `cox_output`/`cox_cancelled`, `cox_redraw`); the closed `Widget` tree with `StyleToken` roles and the `panel`, `status.left`/`status.right` and `overlay` slots and `ui.render` targets, which both surfaces draw (sized in cells: the TUI's grid, the app's `monoCode` cells).
+   - *Terminal-only API*: what only a terminal has — `ui.keys`/`KeyDecl`/`cox_key` under `plugin.leader`, the status row's 24-column segment budget and narrow-terminal drop order, anything that depends on the inline viewport (D10); proposed additions are listed as such.
+   - *Desktop-only API*: what only the app has — proposed, each with its native control and the DS§ catalogue row it maps to: e.g. an inspector tab slot, a toolbar item, a sidebar section, actionable notifications, palette actions with an SF Symbol, links and images in widgets; the app draws them natively from the declarative tree, never plugin-supplied UI code.
+   - *Declaring surfaces*: a manifest field (proposed `surfaces = ["terminal", "desktop"]`, default both) plus surface tables (`[capabilities.terminal]`, `[capabilities.desktop]`) beside the shared `[capabilities]`; `InitIn` gains `surface` (`terminal`, `desktop`, `headless`, `acp`) so a plugin adapts at run time; the grant line (T33.6) names the surface parts it asks for.
+   - *Calls to an unavailable surface*: a plugin whose `surfaces` excludes the current one is not loaded, with a notice (fail open, never fatal); a surface-only capability on the other surface is left out of `granted` and its `InitOut` entries are dropped with a notice, as an ungranted one is today; a surface-only host function returns a new `AbiError::NotOnThisSurface`, like `NotInThisContext`, never a trap; headless and ACP still call no UI export.
+   - *Versioning*: the parts are additive, so they stay `api = 1` under PL§4's minor rule (unknown fields ignored both ways); surface host functions get their own namespaces (`cox:tui/v1`, `cox:desktop/v1`) so a surface part can grow without touching `cox:host/v1`; a breaking change to any part raises the ABI major; `cox plugin list` shows each plugin's surfaces.
+   Record the decisions as a §6 amendment before code; split the build into cards (manifest + grant, ABI + host functions per part, TUI wiring, app wiring through `cox-app`/`cox-ffi`), each with its own Check.
+2. **Once the API is built, generate the plugin API documentation**: the shared, terminal-only and desktop-only references in `docs/plugins.md` (or `docs/plugins/api.md`), generated from `docs/plugin.schema.json` and `docs/plugin-abi.schema.json` where possible, in English with `docs/ru/` and `docs/uk/` translations.
+3. **Examples**: a small Rust plugin in `plugins/examples/` on `cox-plugin-sdk` that uses the shared API (a command and a status segment), the terminal-only API (a leader key) and the desktop-only API (one desktop-only contribution), and loads on both surfaces, each part showing only where it exists; built by `cox-plugin-fixtures` like `plugins/examples/rust`.
+
+Execution plan (Claude Code / opus-5.5, 2026-10-03). The card's size says "split at claim time", so this claim does step 1 only:
+1. Write PL§15 "Surfaces" in `docs/design/plugins.md`: the shared, terminal-only and desktop-only parts, the surface declaration, what a call to an unavailable surface does and versioning, each grounded in today's code (`cox-plugin-api` `manifest.rs`/`abi.rs`/`ui.rs`, `cox-plugin` `grant.rs`/`hostfn.rs`, `cox-app` `plugin_ui.rs`, `desktop/design/DESIGN.md` §6).
+2. Record the decisions as a §6 amendment (A132) with the build split into cards (manifest and grant, ABI, host, TUI, app core, Swift, SDK and example, docs), each with Files and Check; the cards wait for the creator's approval before they enter the table.
+3. Point PL§2, §4 and §8 at PL§15 where they change. No code: the drift tests and the example belong to the cards.
+Verify: links and section numbers resolve; `just test` has nothing to run for a docs-only change.
+
+Check: the API structure section is in `docs/design/plugins.md` with its §6 amendment; manifest and ABI drift tests (`docs/plugin.schema.json`, `docs/plugin-abi.schema.json`) pass with the new fields; a `cox-plugin` test loads the example in a terminal and a desktop session and finds each surface-only part present on its own surface and dropped with a notice (or `NotOnThisSurface`) on the other; `docs/plugins.md`, `docs/ru/` and `docs/uk/` cover all three parts; `just test` green.
+
+What landed: step 1 as the card's size line asked ("split at claim time"). `docs/design/plugins.md` §15 defines the shared, terminal-only and desktop-only parts, the `surfaces` declaration and surface tables, the grant lines, what a call to an unavailable surface does (`Notice(Info)`, dropped entries, `AbiError::NotOnThisSurface`) and versioning; §2, §4 and §8 point to it. `plan.md` §6 A132 records the decisions and proposes the build as T33.45.1–T33.45.10, whose Checks together cover this card's Check (drift tests, the two-surface example test, `docs/plugins.md` and its `docs/ru/`/`docs/uk/` translations). Not done here: steps 2 and 3 and every code change — they wait for the creator's approval of A132. Two findings differ from the card's first draft: the 24-cell segment budget, the drop order and the 8-row panel are already applied by `cox-app` too, so they are shared host layout, not terminal-only; and the app has no grant dialog (it loads only `Granted` plugins), so one grant covers both surfaces.
+Check:
+```text
+$ grep -n "^## 15\|^### 15\." docs/design/plugins.md
+509:## 15. Surfaces: shared, terminal-only and desktop-only (T33.45, A132)
+513:### 15.1 Surfaces
+527:### 15.2 Shared API (both surfaces)
+542:### 15.3 Terminal-only API
+548:### 15.4 Desktop-only API
+568:### 15.5 Declaring surfaces
+595:### 15.6 Calls to an unavailable surface
+605:### 15.7 Versioning
+612:### 15.8 Where the code lives
+$ grep -c "^- A132" plan.md
+1
+Docs-only change: no crate touched, so there is no drift test or `just test` run to report.
+```
+
 
 #### T58.4.25 Tasks tab, Review and the task card read the core's state and turns
 

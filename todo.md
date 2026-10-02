@@ -20,7 +20,6 @@
 - T33.40.16. Docs and plan sweep after the removal
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
-- T33.45. Design the plugin API: shared, terminal-only and desktop-only
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
 - T37.29.3. Inspector Context & Cost tab
 - T37.29.3.4. Context tab: budget cap and how close it is
