@@ -33,7 +33,6 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T37.32 | todo | P1 | 3 | 0% | |
 | T37.32.2 | todo | P1 | 3 | 0% | |
 | T37.33 | todo | P1 | 3 | 0% | |
-| T37.48 | todo | P2 | 3 | 0% | |
 | T37.49 | todo | P2 | 4 | 0% | |
 | T39.7 | todo | P3 | 2 | 0% | |
 | T43.6 | todo | P3 | 3 | 40% | |
@@ -1420,14 +1419,6 @@ Confirm the bundle id `io.github.listepo.cox` (T37.32.1 derived it from the repo
 On hold by the creator (A107). Depends: T37.23 · Size: ~120 · Files: `justfile`, `desktop/macos/Benchmarks/…`, `research.md`
 Goal: `just desktop-bench` measures cold start, first frame of a 2 000-block session, stream frame time and memory against DT§1 budgets; results go into `research.md`.
 Check: the suite runs locally and in the nightly job; every budget has a measured row.
-
-#### T37.48 Rewind menu from the turn gutter
-
-Depends: T37.46, T37.47 · Size: ~150 · Files: `desktop/macos/Packages/CoxTranscriptText/Sources/CoxTranscriptText/PromptHover.swift`, `desktop/macos/Packages/CoxTranscript/Sources/CoxTranscript/PromptActing.swift`, a CoxTranscript test
-Goal: as in Figma frame 14, a hovered prompt's turn number turns into the marked `TurnGutter` (accent, rewind glyph); clicking it opens CoxUI's `RewindMenu` under it with the count from T37.46, and a scope or "Fork a new session here" reaches the core through `SessionStore.rewind(toTurn:code:conversation:)` and `fork(beforeTurn:)`.
-Research: `Intent.rewind(toTurn:code:conversation:)` and `Intent.fork(turn:)` already exist in `CoxClient.Intent` and the core (`cox_app::intent::dispatch`); the core's `toTurn` is the first turn undone, so the prompt's own turn is passed, as Edit and resend does (`ComposerStore.resend`). `PromptHover.swift` already hosts one SwiftUI view per hovered prompt at its bubble's top trailing corner; the marked number reuses that tracking at the bubble's leading edge. A fork returns its child session (`CoreClient.send`), which the app opens as it opens any fork.
-Plan: `TranscriptCards` gains `promptGutter`; the hovered prompt shows it at the gutter; its click shows `RewindMenu` in an `NSPopover`; `PromptActing` maps the menu's intents to the store and closes the popover.
-Check: a CoxTranscript test hovers prompt 2, opens the menu and picks Code only and Fork, and the fixture session receives `.rewind(toTurn: 2, code: true, conversation: false)` and `.fork(turn: 2)`.
 
 #### T37.49 Welcome hero facts and suggestions from cox-app
 
