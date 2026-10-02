@@ -11,7 +11,7 @@
   "Darwin-arm64-ci": {
     "startup_ms": 6.9,
     "first_frame_ms": 35.7,
-    "rss_mib": 24.0,
+    "rss_mib": 27.6,
     "binary_bytes": 77764992,
     "turns": 30,
     "calls": 60,
