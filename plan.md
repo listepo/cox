@@ -64,7 +64,7 @@ A modular terminal coding agent in Rust (coxswain: steers work while models, too
 | T58.1 | todo | P1 | 4 | 0% | |
 | T58.2 | todo | P2 | 2 | 0% | |
 | T58.3 | todo | P1 | 3 | 0% | |
-| T58.4 | todo | P1 | 3 | 10% | |
+| T58.4 | in progress | P1 | 3 | 90% | Claude Code / sonnet-5.5 |
 | T58.5 | todo | P2 | 3 | 0% | |
 | T58.6 | todo | P2 | 3 | 0% | |
 | T58.7 | todo | P2 | 4 | 0% | |
@@ -1713,6 +1713,8 @@ Check: `dotnet build desktop/windows/Cox.sln -c Debug` and `dotnet test desktop/
 Depends: — · Size: an audit (~40 lines in `docs/design/desktop-windows.md` or this card) plus one sub-card per move · Files: see the sub-cards
 Goal: CoxModel is ~5 000 lines of Swift (stores, settings fields, remote hosts, completion, markdown helpers). Anything there that decides rather than renders (validation, ordering, text built from state, settings field rules) would have to be written a second time in C#. List each such piece with its file, and card its move into `cox-app` (with an FFI forwarder, A90) as T58.4.n; the Swift store then calls the forwarder. Pure view state stays in each client.
 Check: the audit list is in the card; each T58.4.n has a `cox-app` test and the macOS package tests still pass (`swift test` in each package under `desktop/macos/Packages`).
+
+Execution plan (2026-10-03): all 28 sub-cards T58.4.1–T58.4.28 are already in `done.md` (the tree has each move, the last one T58.4.14 landed in #92), so nothing is left to move. Remaining: (1) run `cargo nextest` for `cox-app` and `cox-ffi` and `swift test` in each package under `desktop/macos/Packages` to satisfy the Check; (2) close this card into `done.md` with the Check output. Files: `plan.md`, `todo.md`, `done.md`.
 
 Audit: (2026-09-29; `desktop/macos/Packages/CoxModel`, 5 081 lines of source in 56 files; Swift paths below are under `desktop/macos/Packages/CoxModel/Sources/`, and in the sub-cards under `desktop/macos/Packages/` unless they start with `desktop/`). 28 pieces decide and move (T58.4.1–T58.4.28), 17 stay in each client, 10 more belong to M2/M3 and are not carded (A127 (2)). A move is a Rust card (the rule in `cox-app` with its test, plus the `cox-ffi` record fields in `types.rs` or a one-expression forwarder, A90) and a Swift card (the `CoxClient` value, the `CoxCore` conversion, the store); a Swift side that needs a fourth file is split into plumbing and switch. Each store keeps its public shape, so the app and CoxUI do not change, and the Swift tests of a moved rule move to its Rust test.
 
