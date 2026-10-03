@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `cox-ffi` (DT§4.4, §4.5): the macOS app's surface — the fifth, beside the
 //! TUI, `run -p`, ACP and `cox mcp` (D11). UniFFI exports over `cox-app`,
 //! linked into the app as a static library; the one tokio runtime every
@@ -395,6 +399,12 @@ impl App {
     /// sidebar reads it again then, not on a timer.
     pub async fn workspace_changed(self: Arc<Self>) -> Result<(), AppError> {
         Ok(on_runtime(async move { self.owner.workspace_changed().await }).await??)
+    }
+
+    /// An empty session's welcome hero for `cwd` (Figma frame 22, T37.49);
+    /// it reads the folder's files, so it runs off the caller's thread.
+    pub async fn welcome(self: Arc<Self>, cwd: String) -> Result<cox_app::Welcome, AppError> {
+        on_runtime(async move { self.owner.welcome(Path::new(&cwd)) }).await
     }
 
     /// The first-run checklist for a session in `cwd` (DT§5.8, T37.31); it

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Pure rendering for the terminal: themes and colour tokens, colour-depth
 //! mapping, markdown with syntax highlighting, diffs, SVG export, glyph sets
 //! and OSC 8 link marking. Split out of `cox-tui` (T32.2, `docs/design/crates.md`

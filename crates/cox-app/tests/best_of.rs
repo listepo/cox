@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Best of n end to end (T52.9, T52.10, DT§3.3.1): `App::best_of`,
 //! `compare` and `pick` over a fake git side that makes plain directories,
 //! counts their files' lines as the diffstat, treats a `DIRTY` file as

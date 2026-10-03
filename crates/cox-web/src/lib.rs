@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The web-fetch engine: an HTTP GET with a hard timeout and a byte cap,
 //! plus a hand-rolled HTML→text reduction (headings, paragraphs, lists and
 //! code) — a tag walk rather than a DOM crate. Split out of `cox-tools`
