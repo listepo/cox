@@ -108,6 +108,19 @@ final class Offscreen {
     }
   }
 
+  /// The one card's view once it is in the window and the launch passes are done with it.
+  /// A pass that ran before TextKit drew the card's line marked it for a re-layout
+  /// (`placing`) that runs only on a later run-loop turn (`afterDisplay`); the view can be in
+  /// the window first, so waiting for the view alone left that follow-up pending into the test.
+  func placedCard() throws -> CardHost {
+    #expect(
+      wait {
+        let hosts = cardHosts(in: view)
+        return hosts.count == 1 && hosts.allSatisfy { $0.window != nil && !$0.placing }
+      }, "the card's view is in place with no re-layout pending")
+    return try #require(cardHosts(in: view).first)
+  }
+
   func close() {
     window.orderOut(nil)
     window.close()
@@ -147,7 +160,7 @@ struct TranscriptCardsTests {
     let card = try #require(screen.frame(of: "c"))
 
     fold.open = true
-    #expect(screen.wait { (screen.frame(of: "b")?.minY ?? 0) > closed.minY })
+    #expect(screen.wait { abs((screen.frame(of: "b")?.minY ?? 0) - closed.minY - 160) < 1 })
     let opened = try #require(screen.frame(of: "b"))
     #expect(abs(opened.minY - closed.minY - 160) < 1, "the next block moves by the card's growth")
     #expect(abs((screen.frame(of: "c")?.height ?? 0) - card.height - 160) < 1)
@@ -166,8 +179,7 @@ struct TranscriptCardsTests {
   @Test func aCardAViewportPassLeftOutIsLaidOutAgainOncePerTurn() throws {
     let screen = Offscreen(TranscriptTextView.make(), blocks: blocks)
     defer { screen.close() }
-    #expect(screen.wait { cardHosts(in: screen.view).count == 1 })
-    let host = try #require(cardHosts(in: screen.view).first)
+    let host = try screen.placedCard()
     screen.view.placeCards()
     #expect(!host.placing, "a card in place is left alone")
 
@@ -186,8 +198,7 @@ struct TranscriptCardsTests {
   @Test func withoutNSTextViewsOwnPassCardsArePlacedAndSuperIsNotCalled() throws {
     let screen = Offscreen(TranscriptTextView.make(), blocks: blocks)
     defer { screen.close() }
-    #expect(screen.wait { cardHosts(in: screen.view).count == 1 })
-    let host = try #require(cardHosts(in: screen.view).first)
+    let host = try screen.placedCard()
     let controller = try #require(screen.view.textLayoutManager?.textViewportLayoutController)
     #expect(controller.delegate === screen.view, "the controller calls the view's override")
 
