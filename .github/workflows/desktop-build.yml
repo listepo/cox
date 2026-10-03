@@ -1,0 +1,71 @@
+name: desktop build
+
+# The macOS app as people run it (T37.32.3, DT§7): a Debug Cox.app with every macOS feature the
+# app has, Developer ID-signed with the pyrlyn org certificate (ad-hoc when a manual run has
+# none), packed by scripts/desktop/dmg.sh into Cox-<version>-<run>-debug-arm64.dmg and uploaded
+# as the `desktop-macos-dmg` artifact. Debug, so no hardened runtime and no notarization
+# (T37.32.2): Gatekeeper asks once, through System Settings -> Privacy & Security -> Open Anyway.
+#
+# Run it from Actions -> desktop build (any branch). release.yml calls it with the tag's commit
+# and `require-signing`, and attaches the DMG to the release.
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to build; empty builds the calling run's commit.
+        type: string
+        required: false
+        default: ''
+      require-signing:
+        description: Fail instead of signing ad-hoc when the certificate secrets are missing.
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  app:
+    runs-on: xcode-27
+    # A hung xcodebuild would otherwise hold the runner for 6 h; a cold Rust cache needs headroom.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: ./.github/actions/desktop-macos
+
+      - name: Import signing certificate
+        uses: ./.github/actions/macos-signing
+        with:
+          certificate: ${{ secrets.MACOS_CERTIFICATE }}
+          password: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          required: ${{ inputs.require-signing && 'true' || 'false' }}
+
+      # The run number is the build number, so two DMGs of one version are told apart in Finder
+      # and in About.
+      - name: Cox.app
+        run: |
+          set -euo pipefail
+          mise install aqua:yonaskolb/XcodeGen
+          mise exec -- bash scripts/desktop/app.sh CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+
+      - name: DMG
+        id: dmg
+        run: echo "path=$(bash scripts/desktop/dmg.sh | tail -n 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Remove signing keychain
+        if: always() && env.SIGNING_KEYCHAIN != ''
+        run: security delete-keychain "$SIGNING_KEYCHAIN"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-macos-dmg
+          path: ${{ steps.dmg.outputs.path }}
+          if-no-files-found: error

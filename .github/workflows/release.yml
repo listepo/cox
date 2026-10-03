@@ -9,8 +9,9 @@ name: release
 # workflow, so the dispatch is explicit.
 #
 # Here: verify (fmt, clippy, nextest — the same gate as CI) on the tagged
-# commit, build all three targets through `scripts/package.sh`, smoke-test the
-# native tarballs, upload everything to bump's draft and publish it, then the
+# commit, build all three targets through `scripts/package.sh` and the macOS
+# app's DMG through desktop-build.yml, smoke-test the native tarballs, upload
+# everything to bump's draft and publish it, then the
 # cask. A failed build leaves the tag and a draft (not on /releases/latest, so
 # `install.sh` and `cox self update` never see it); re-run this workflow with
 # the same tag to finish it.
@@ -141,47 +142,14 @@ jobs:
       - uses: ./.github/actions/rust
       - uses: Swatinem/rust-cache@v2
 
-      # The certificate goes into a keychain of its own, created for this job
-      # and deleted at the end of it, so nothing is left on the runner and the
-      # login keychain is never touched. An unsigned release is refused the
-      # same way an untested one is: it would be discovered by whoever installs
-      # it, not here.
+      # An unsigned release is refused the same way an untested one is: it
+      # would be discovered by whoever installs it, not here.
       - name: Import signing certificate
         if: matrix.sign
-        env:
-          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
-        run: |
-          if [ -z "$MACOS_CERTIFICATE" ] || [ -z "$MACOS_CERTIFICATE_PWD" ]; then
-            echo "MACOS_CERTIFICATE and MACOS_CERTIFICATE_PWD must both be set:" >&2
-            echo "a base64-encoded Developer ID Application .p12 and its password." >&2
-            exit 1
-          fi
-          keychain="$RUNNER_TEMP/signing.keychain-db"
-          keychain_pwd="$(openssl rand -hex 16)"
-          cert="$RUNNER_TEMP/certificate.p12"
-          echo "$MACOS_CERTIFICATE" | base64 --decode > "$cert"
-
-          security create-keychain -p "$keychain_pwd" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$keychain_pwd" "$keychain"
-          security import "$cert" -P "$MACOS_CERTIFICATE_PWD" \
-            -f pkcs12 -k "$keychain" -T /usr/bin/codesign
-          rm -f "$cert"
-          # Without this, codesign would prompt for the key and hang the job.
-          security set-key-partition-list -S apple-tool:,apple:,codesign: \
-            -s -k "$keychain_pwd" "$keychain" >/dev/null
-          security list-keychains -d user -s "$keychain" login.keychain-db
-
-          identity="$(security find-identity -v -p codesigning "$keychain" \
-            | sed -nE 's/^ *[0-9]+\) ([0-9A-F]{40}) "Developer ID Application:.*/\1/p')"
-          if [ "$(printf '%s\n' "$identity" | grep -c .)" -ne 1 ]; then
-            echo "expected exactly one Developer ID Application identity, found:" >&2
-            security find-identity -v -p codesigning "$keychain" >&2
-            exit 1
-          fi
-          echo "COX_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
-          echo "SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+        uses: ./.github/actions/macos-signing
+        with:
+          certificate: ${{ secrets.MACOS_CERTIFICATE }}
+          password: ${{ secrets.MACOS_CERTIFICATE_PWD }}
 
       - name: Package
         run: scripts/package.sh ${{ matrix.target }} dist
@@ -245,8 +213,18 @@ jobs:
           path: dist/*.tar.xz
           if-no-files-found: error
 
+  # The macOS app's DMG (T37.32.3), from the same tagged commit, published with the CLI
+  # archives. It must be Developer ID-signed, as the CLI must.
+  desktop:
+    needs: [version, verify]
+    uses: ./.github/workflows/desktop-build.yml
+    with:
+      ref: ${{ needs.version.outputs.ref }}
+      require-signing: true
+    secrets: inherit
+
   publish:
-    needs: [version, build]
+    needs: [version, build, desktop]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -260,14 +238,14 @@ jobs:
       - name: Collect assets and checksums
         run: |
           mkdir -p dist
-          find staging -name '*.tar.xz' -exec mv {} dist/ \;
+          find staging \( -name '*.tar.xz' -o -name '*.dmg' \) -exec mv {} dist/ \;
           cd dist
           # One aggregate file. Sorted, so the file is reproducible.
-          shasum -a 256 $(ls *.tar.xz | sort) > SHA256SUMS
+          shasum -a 256 $(ls *.tar.xz *.dmg | sort) > SHA256SUMS
           cat SHA256SUMS
           # Per-archive sidecars: install.sh and `cox self update` fetch
           # `<archive>.sha256` next to each tarball.
-          for f in *.tar.xz; do
+          for f in *.tar.xz *.dmg; do
             shasum -a 256 "$f" > "$f.sha256"
           done
       # bump.yml made the tag and the draft release (notes from CHANGELOG.md).
@@ -399,7 +377,7 @@ jobs:
   # per workflow, so this is the release failure notification. Pinned to pyrlyn/infra
   # ci/notify-release-failure; repin to its merge commit.
   notify-failure:
-    needs: [version, verify, build, publish, tap]
+    needs: [version, verify, build, desktop, publish, tap]
     if: always() && contains(needs.*.result, 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 5
