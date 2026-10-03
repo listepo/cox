@@ -22,6 +22,12 @@ on:
         type: boolean
         required: false
         default: false
+    # Only the certificate: the caller passes these two by name, never `secrets: inherit`.
+    secrets:
+      MACOS_CERTIFICATE:
+        required: false
+      MACOS_CERTIFICATE_PWD:
+        required: false
 
 permissions:
   contents: read

@@ -221,7 +221,9 @@ jobs:
     with:
       ref: ${{ needs.version.outputs.ref }}
       require-signing: true
-    secrets: inherit
+    secrets:
+      MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+      MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
 
   publish:
     needs: [version, build, desktop]
