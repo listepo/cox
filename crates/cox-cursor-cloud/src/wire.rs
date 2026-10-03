@@ -10,6 +10,10 @@
 //! and nothing that names the user: there is no field for a name, an email or
 //! a git identity, so none can be sent by mistake.
 
+// why: the fields and variants mirror the endpoints page linked above one to
+// one; restating that page here would only drift from it.
+#![allow(missing_docs)]
+
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
