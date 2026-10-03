@@ -17,7 +17,6 @@ os="$(uname -s)"
 arch="$(uname -m)"
 case "${os}-${arch}" in
   Darwin-arm64) TARGET="aarch64-apple-darwin" ;;
-  Darwin-x86_64) TARGET="x86_64-apple-darwin" ;;
   Linux-x86_64) TARGET="x86_64-unknown-linux-gnu" ;;
   Linux-aarch64) TARGET="aarch64-unknown-linux-gnu" ;;
   *) echo "error: no cox release for ${os}/${arch}" >&2; exit 1 ;;

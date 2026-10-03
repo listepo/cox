@@ -9,7 +9,7 @@ name: release
 # workflow, so the dispatch is explicit.
 #
 # Here: verify (fmt, clippy, nextest — the same gate as CI) on the tagged
-# commit, build all four targets through `scripts/package.sh`, smoke-test the
+# commit, build all three targets through `scripts/package.sh`, smoke-test the
 # native tarballs, upload everything to bump's draft and publish it, then the
 # cask. A failed build leaves the tag and a draft (not on /releases/latest, so
 # `install.sh` and `cox self update` never see it); re-run this workflow with
@@ -122,9 +122,6 @@ jobs:
           - target: aarch64-apple-darwin
             os: xcode-27
             sign: true
-          - target: x86_64-apple-darwin
-            os: xcode-27
-            sign: true
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             sign: false
@@ -227,10 +224,7 @@ jobs:
             exit 1
           fi
 
-      # The arm64 runner can build the x86_64 slice but cannot run it, so only
-      # the native one is smoke-tested here.
       - name: Smoke test
-        if: matrix.target != 'x86_64-apple-darwin'
         run: |
           mkdir -p smoke
           tar -xJf dist/cox-${{ matrix.target }}.tar.xz -C smoke
@@ -335,11 +329,10 @@ jobs:
             exit 1
           fi
           arm="$(shasum -a 256 dist/cox-aarch64-apple-darwin.tar.xz | cut -d' ' -f1)"
-          intel="$(shasum -a 256 dist/cox-x86_64-apple-darwin.tar.xz | cut -d' ' -f1)"
 
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPO}.git" tap
           mkdir -p tap/Casks
-          scripts/cask.sh "$release_version" "$arm" "$intel" > tap/Casks/cox.rb
+          scripts/cask.sh "$release_version" "$arm" > tap/Casks/cox.rb
       - name: Lint the cask
         run: brew style tap/Casks/cox.rb
       # Commit before smoking: `brew tap … $PWD/tap` uses the git HEAD of a

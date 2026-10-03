@@ -29,7 +29,7 @@ jobs:
   # nextest on every target (Linux x86_64 and aarch64, macOS aarch64; macOS is
   # Apple Silicon only).
   rust:
-    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@87cca51e2e995af39b78e6938bc89a82a844f4e2
+    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@0603d0ae610af9f792c5caf925041292a857e480
     # ci-rust cancels the whole run when a job fails (cancel-run-on-failure), which needs
     # `actions: write` on the calling job.
     permissions:
@@ -44,8 +44,8 @@ jobs:
         {"os": "ubuntu-24.04-arm", "target": "aarch64-unknown-linux-gnu"},
         {"os": "xcode-27", "target": "aarch64-apple-darwin"}
         ]
-      # The manifest is virtual with `default-members`; ci-rust's `package-args`
-      # (default --workspace) covers every member for clippy and check.
+      # The manifest is virtual with `default-members`; ci-rust's default `package-args`
+      # (--workspace) already covers every member, so no `clippy-args` here.
       tools: nextest
       # Linux job A (plan.md T4.2): the sandbox must pick bubblewrap; job B
       # (sandbox-landlock) covers the Landlock fallback. cox-voice's build
@@ -215,7 +215,7 @@ jobs:
   # skipping them. A skipped macOS job reports `skipped` under its own name,
   # which a required check treats as passed.
   changes:
-    uses: pyrlyn/infra/.github/workflows/changes.yml@87cca51e2e995af39b78e6938bc89a82a844f4e2 # main
+    uses: pyrlyn/infra/.github/workflows/changes.yml@0603d0ae610af9f792c5caf925041292a857e480 # main
     permissions:
       contents: read
     with:
