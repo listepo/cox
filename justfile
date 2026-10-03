@@ -142,6 +142,12 @@ desktop-xcframework:
 desktop-app: desktop-xcframework
     mise exec -- bash scripts/desktop/app.sh
 
+# The app as a DMG to hand out (T37.32.3): desktop/macos/build/Cox-<version>-<build>-debug-arm64.dmg,
+# ad-hoc signed unless COX_SIGN_IDENTITY names a Developer ID Application identity. CI builds the
+# same through the `desktop build` workflow.
+desktop-dmg: desktop-app
+    bash scripts/desktop/dmg.sh
+
 # The native apps' string resources from crates/cox-i18n/po (docs/i18n.md):
 # Apple .strings/.stringsdict and Windows .resw under target/i18n/ (gitignored).
 i18n-export *args:
