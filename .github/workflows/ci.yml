@@ -297,6 +297,14 @@ jobs:
         with:
           version: '27'
 
+      # Since Xcode 26 the Metal toolchain is a separate component, and the xcode-27 image does
+      # not ship it for Xcode 27: SwiftTerm's Shaders.metal (CoxPlatform) then fails to compile.
+      # Download it for the Xcode setup-xcode just selected.
+      - name: Metal toolchain
+        run: |
+          xcodebuild -showComponent MetalToolchain || true
+          xcodebuild -downloadComponent MetalToolchain
+
       - uses: ./.github/actions/rust
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
