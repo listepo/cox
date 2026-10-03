@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `cox_http` (PL§4, PL§7d, T33.14.1): which URLs a plugin may reach and
 //! the one request path to them. Separate from `hostfn` because that module
 //! decides what an import may do in general, while this one owns the network
