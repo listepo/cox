@@ -1261,6 +1261,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cox-cursor-cloud"
+version = "0.1.2"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cox-ext"
 version = "0.1.2"
 dependencies = [

@@ -958,6 +958,7 @@ pub(crate) mod tests {
             models: Vec::new(),
             mcp: Vec::new(),
             external_agents: Vec::new(),
+            cloud_agents: Vec::new(),
             agents: Vec::new(),
         };
         let mut plugins = PluginsConfig::default();
