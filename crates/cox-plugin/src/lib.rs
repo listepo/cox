@@ -34,8 +34,6 @@
 //! - [`net`] — `cox_http`: the allow-list, the body cap, and the PL§7d
 //!   refusal of a `net` entry that covers a provider host (T33.14.1).
 
-#![warn(missing_docs)]
-
 pub mod advisor;
 pub mod context;
 pub mod discover;

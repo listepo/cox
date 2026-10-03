@@ -11,8 +11,6 @@
 //! - [`ui`] — the `Widget` tree `cox_render` returns (PL§8); its schema is
 //!   part of `docs/plugin-abi.schema.json`.
 
-#![warn(missing_docs)]
-
 pub mod abi;
 pub mod manifest;
 pub mod ui;

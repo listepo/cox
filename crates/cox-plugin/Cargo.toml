@@ -57,3 +57,6 @@ tokio-util = { workspace = true }
 # T33.14.1: `cox_http` tests run against a local mock server, never the
 # network; already the workspace's HTTP mock.
 wiremock = { workspace = true }
+
+[lints]
+workspace = true

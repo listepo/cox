@@ -4,6 +4,9 @@
 //! `cox-ffi`. The host is in memory, never the real Keychain (A49); nextest
 //! runs each test in its own process, so each sets its own environment.
 
+// why: env::set_var/remove_var are unsafe in edition 2024 (per-process tests).
+#![allow(unsafe_code)]
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -863,6 +866,13 @@ async fn turn_costs_group_the_ledger_by_turn_with_the_subagent_under_its_turn() 
         )),
         "{}",
         costs.project
+    );
+    let caps: Vec<_> = costs.budget.iter().map(|r| r.label.as_str()).collect();
+    assert_eq!(caps, ["Session", "This month"]);
+    assert!(
+        costs.budget[0].text.ends_with(" of $5.00"),
+        "{:?}",
+        costs.budget
     );
 }
 

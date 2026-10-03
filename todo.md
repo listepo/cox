@@ -20,9 +20,18 @@
 - T33.40.16. Docs and plan sweep after the removal
 - T33.40.17. Optional: record live fixtures (needs the creator's key)
 - T33.43. Bump extism to a release on wasmtime ≥ 48 and drop the advisory ignores
+- T33.45. Design the plugin API: shared, terminal-only and desktop-only
+- T33.45.1. Manifest and grant: surfaces and surface tables
+- T33.45.2. ABI: surface payloads
+- T33.45.3. Host: load filter, granted filter, `cox:desktop/v1`
+- T33.45.4. TUI: links, image `alt`, surfaces in listings
+- T33.45.5. App core: inspector tab, toolbar and palette actions
+- T33.45.6. App core: notifications, links and images
+- T33.45.7. FFI and Swift: the desktop contributions
+- T33.45.8. SDK and the surfaces example
+- T33.45.9. Docs: the three-part plugin API reference
+- T33.45.10. Docs: Russian and Ukrainian translations
 - T35.10. Optional: live check against a real Cursor account (needs the creator's key)
-- T37.29.3. Inspector Context & Cost tab
-- T37.29.3.4. Context tab: budget cap and how close it is
 - T37.32. Signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.32.2. Developer ID signing, notarization, Sparkle, bundled CLI, Homebrew cask
 - T37.33. Performance budget suite
@@ -57,7 +66,6 @@
 - T58.1. Gate: C# bindings for `cox-ffi` generate and round-trip
 - T58.2. Design doc for the Windows client
 - T58.3. Solution layout under `desktop/windows/`
-- T58.4. Move the decisions still in CoxModel into `cox-app`
 - T58.5. C# client contract, fixture client and the session store
 - T58.6. The other stores
 - T58.7. Live client: `LiveCoreClient`, dispatcher and host bridge

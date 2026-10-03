@@ -16,6 +16,10 @@
 //! [`export`] lowers the same catalogs to Apple `.strings`/`.stringsdict` and
 //! Windows `.resw` files for the native apps (`docs/i18n.md`).
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod catalog;
 pub mod export;
 pub mod format;

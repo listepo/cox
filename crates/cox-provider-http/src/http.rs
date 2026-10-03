@@ -155,6 +155,8 @@ pub fn map_http_error(
 }
 
 #[cfg(test)]
+// why: env::set_var/remove_var are unsafe in edition 2024 (per-process tests).
+#[allow(unsafe_code)]
 mod tests {
     use super::*;
 

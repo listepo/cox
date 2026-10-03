@@ -10,6 +10,10 @@
 //! this crate through `parse_bash` and the re-exported `Node` type it
 //! walks.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod outline;
 
 pub use tree_sitter::Node;

@@ -18,6 +18,10 @@
 //! (`crates/cox-provider/src/lib.rs`), so `cox_provider::tokens::*` keeps
 //! working for existing callers.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 use cox_protocol::errors::ProviderError;
 use cox_protocol::image::IMAGE_TOKEN_ESTIMATE;
 use cox_protocol::types::{Content, Request};

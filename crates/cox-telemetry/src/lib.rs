@@ -6,6 +6,10 @@
 //! opens files or sockets, while this crate owns exporter lifecycle and
 //! shutdown flushing.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 use std::path::Path;
 
 use tracing_appender::non_blocking::WorkerGuard;

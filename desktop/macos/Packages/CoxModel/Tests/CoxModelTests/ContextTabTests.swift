@@ -96,7 +96,11 @@ import Testing
       CostRow(label: "explore", values: ["9.8k", "600", "0/9.8k", "0.03"], detail: true),
     ],
     total: CostRow(label: "Session", values: ["41.2k", "2.8k", "28.0k/12.9k", "0.32"]),
-    project: "Project cox today: $3.18 · this week: $21.40.")
+    project: "Project cox today: $3.18 · this week: $21.40.",
+    budget: [
+      BudgetRow(label: "Session", text: "$0.32 of $5.00", fraction: 0.064),
+      BudgetRow(label: "This month", text: "$12.00"),
+    ])
   let session = FixtureSession(fixture: Fixture(batches: [], snapshot: []), costs: costs)
   let history = try await SessionStore(session: session).costHistory()
   #expect(history.columns == costs.columns)
@@ -104,6 +108,7 @@ import Testing
   #expect(history.rows.map(\.isDetail) == [false, true, false])
   #expect(history.rows.last?.values == ["41.2k", "2.8k", "28.0k/12.9k", "0.32"])
   #expect(history.footnote == "Project cox today: $3.18 · this week: $21.40.")
+  #expect(history.budget == costs.budget)
 }
 
 @Test func anEmptyLedgerHidesTheCostHistoryButKeepsTheProjectFootnote() {

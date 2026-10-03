@@ -8,6 +8,9 @@
 //! `ui://` resource is never fetched, and a tool with
 //! `_meta.ui.resourceUri` yields the same `ToolOutput` as its UI-less twin.
 
+// why: env::set_var/remove_var are unsafe in edition 2024 (per-process tests).
+#![allow(unsafe_code)]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};

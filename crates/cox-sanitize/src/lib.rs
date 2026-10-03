@@ -17,6 +17,10 @@
 //! [`redact`] is the sibling output guard for secrets rather than escapes
 //! (T28.4, moved here by T33.9).
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod redact;
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
