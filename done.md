@@ -1,4 +1,40 @@
 
+#### T33.14.1 `cox_http`
+
+Split from T33.14 by the creator 2026-10-03 because the preopens wait on T33.43; the filesystem half is T33.14.2.
+Model: Claude Code / opus-5.5 · Status: done 2026-10-03 · Depends: T33.9 · Size: ~180 · Priority: P2 · Complexity: 3 · Files: `crates/cox-plugin/src/net.rs`, `src/hostfn.rs`, `crates/cox-session/src/plugins.rs`
+Goal: `cox_http` over reqwest: the host must match the allow-list, the body is capped, and a `net` entry equal to a configured provider host is refused at validation (PL§7d).
+Plan:
+1. `crates/cox-plugin/src/net.rs` (new): `Net` built from the granted `net:<host>` lines, matched with the one matcher `Capabilities::net_allows`; `Net::target(url)` is the network rule (http/https only, the host on the allow-list; `hostfn` refuses `cox_render` first and `Net::send` refuses a `Host` header override), shaped so T33.40.1 step 3 adds the provider-host branch (allowed only inside `cox_provider_stream`) next to it; `Net::send` runs on reqwest with redirects off (a redirect could leave the allow-list), a timeout, and a streamed body cap `MAX_HTTP_RESPONSE_BYTES` (over it is `TooLarge`, never a silent cut); `refuse_provider_hosts(manifest, &ProvidersConfig)` refuses a `net` entry that covers the host of any configured provider section or of the plugin's own `[[provider]]` rows.
+2. `hostfn.rs`: dispatch `cox_http` to `Net`, blocking the plugin's worker on the session runtime like `cox_model_call`; no runtime answers `Failed`.
+3. `crates/cox-session/src/plugins.rs`: a `Granted` plugin whose `net` covers a provider host is not loaded, with a notice (fail open).
+4. `cox-plugin` gets `reqwest` (already a workspace dependency) and `wiremock` (dev).
+Check: wiremock `http_outside_allow_list_is_refused`, `net_entry_matching_provider_host_is_rejected`, plus `http_to_allowed_host_round_trips`, `http_body_over_cap_is_too_large`, `http_redirect_is_not_followed`, `http_in_render_is_not_in_this_context`.
+What landed: `crates/cox-plugin/src/net.rs` (`Net::target`, `Net::send`, `refuse_provider_hosts`, `MAX_HTTP_RESPONSE_BYTES` = 1 MiB, 30 s timeout, redirects off), `cox_http` in `hostfn.rs`, and the PL§7d refusal at load in `crates/cox-session/src/plugins.rs`. `unimplemented_import_links_and_answers_failed` now uses `cox_redraw`, the import still unimplemented.
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-plugin -p cox-session -E 'test(http) | test(provider_host) | test(net_entry) | test(target_matches)'
+PASS cox-plugin net::tests::net_entry_matching_provider_host_is_rejected
+PASS cox-plugin net::tests::target_matches_the_url_host_not_its_userinfo
+PASS cox-session plugins::tests::plugin_http_server_needs_its_host_in_net
+PASS cox-plugin host::tests::http_request_is_compiled_out
+PASS cox-plugin hostfn::tests::http_in_render_is_not_in_this_context
+PASS cox-session plugins::tests::granted_plugin_with_provider_host_in_net_is_not_loaded
+PASS cox-plugin hostfn::tests::http_outside_allow_list_is_refused
+PASS cox-plugin hostfn::tests::http_body_over_cap_is_too_large
+PASS cox-plugin hostfn::tests::http_redirect_is_not_followed
+PASS cox-plugin hostfn::tests::http_to_allowed_host_round_trips
+10 tests run: 10 passed, 135 skipped
+$ mise exec -- cargo nextest run -p cox-plugin -p cox-session
+145 tests run: 145 passed, 0 skipped
+$ mise exec -- cargo nextest run -p cox --test deps
+10 tests run: 10 passed, 0 skipped
+$ mise exec -- cargo clippy -p cox-plugin -p cox-session --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+```
+
 #### T58.4 Move the decisions still in CoxModel into `cox-app`
 
 Model: Claude Code / sonnet-5.5 · Status: done 2026-10-03 · Depends: — · Size: an audit (~40 lines in `docs/design/desktop-windows.md` or this card) plus one sub-card per move · Files: see the sub-cards
