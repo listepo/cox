@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The `Provider` trait implementations: the Anthropic Messages API, the
 //! OpenAI Responses/Chat APIs (also Ollama, vLLM, LM Studio, OpenRouter),
 //! the TypeSafe Jev System One API, and the `Replay`/`Scripted` fakes used

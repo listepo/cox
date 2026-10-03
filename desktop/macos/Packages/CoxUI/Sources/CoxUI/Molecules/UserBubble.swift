@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // `UserBubble` (DS§6.3 row `UserBubble`, the mockup's `.user` and `.user .att`): what the user
 // sent in a turn — the prompt and, under it, the pictures and files attached to it. Separate so
 // every user turn in the transcript is one card, set apart from the assistant's prose.

@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `cox-ffi` (DT§4.4, §4.5): the macOS app's surface — the fifth, beside the
 //! TUI, `run -p`, ACP and `cox mcp` (D11). UniFFI exports over `cox-app`,
 //! linked into the app as a static library; the one tokio runtime every

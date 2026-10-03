@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! `cox self update [--version v]` (T12.2): downloads the release archive
 //! for this platform from GitHub, verifies its `.sha256` checksum, and
 //! replaces the running binary. Refuses to install without a matching

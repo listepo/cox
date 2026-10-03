@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // What a prompt's bubble and a thought's fold are drawn with (T37.23.4, T37.23.9): the values
 // the app fills from CoxUI's tokens. Apart from `TranscriptDecor.swift`, which sets and draws
 // them, so the drawing file holds only the drawing.
