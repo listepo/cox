@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The sandbox front door (plan.md D7): turns a shell command, or any
 //! program argv (`argv`, the desktop terminal pane's login shell), plus the
 //! session's `SandboxPolicy` into what confines it on this host. Separate from `bash` so the tool only knows it runs *a* command,

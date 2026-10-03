@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Token estimation and counting for a `Request` (plan.md T1.8), moved to
 //! its own crate by T32.10 (dependency (a): `tiktoken-rs` and its BPE data
 //! are the only reason `cox-provider` used to pull them in). Three ways to

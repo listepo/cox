@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The WASM plugin host (A52, `docs/design/plugins.md`): loads a plugin
 //! module with extism and runs each plugin on a worker thread of its own. A
 //! crate of its own because it is the only one that links extism and

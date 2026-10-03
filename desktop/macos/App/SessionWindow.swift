@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // One window's sessions (DT§5.1): opens a session on the launch's core and shows it in CoxUI's
 // `MainScreen`, the transcript and composer in its column, over the behind-window blur; the
 // first-run checklist comes first on a first launch (DT§5.8), after the login shell's

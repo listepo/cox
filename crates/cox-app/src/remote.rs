@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! A workspace on another machine (DT§4.4, T52.20): `ssh <host> cox
 //! app-server --stdio` spoken over `wire`, with the same calls a local
 //! `App` and `LiveSession` answer, so the desktop app drives a remote

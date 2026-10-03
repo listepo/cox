@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 // A hovered prompt's actions (T37.23.9, DT§5.2): while the pointer is over a prompt, the view
 // `TranscriptCards.promptActions` makes for it floats over its bubble's top trailing corner, and
 // `promptGutter`'s over its turn number (T37.48, Figma frame 14), which opens `promptMenu` in a
