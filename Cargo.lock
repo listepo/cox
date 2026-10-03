@@ -1261,6 +1261,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cox-cursor-cloud"
+version = "0.1.2"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cox-ext"
 version = "0.1.2"
 dependencies = [
@@ -1362,6 +1370,7 @@ dependencies = [
  "cox-sanitize",
  "extism",
  "figment",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1371,6 +1380,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "wasmtime",
+ "wiremock",
 ]
 
 [[package]]

@@ -1,4 +1,40 @@
 
+#### T33.14.1 `cox_http`
+
+Split from T33.14 by the creator 2026-10-03 because the preopens wait on T33.43; the filesystem half is T33.14.2.
+Model: Claude Code / opus-5.5 · Status: done 2026-10-03 · Depends: T33.9 · Size: ~180 · Priority: P2 · Complexity: 3 · Files: `crates/cox-plugin/src/net.rs`, `src/hostfn.rs`, `crates/cox-session/src/plugins.rs`
+Goal: `cox_http` over reqwest: the host must match the allow-list, the body is capped, and a `net` entry equal to a configured provider host is refused at validation (PL§7d).
+Plan:
+1. `crates/cox-plugin/src/net.rs` (new): `Net` built from the granted `net:<host>` lines, matched with the one matcher `Capabilities::net_allows`; `Net::target(url)` is the network rule (http/https only, the host on the allow-list; `hostfn` refuses `cox_render` first and `Net::send` refuses a `Host` header override), shaped so T33.40.1 step 3 adds the provider-host branch (allowed only inside `cox_provider_stream`) next to it; `Net::send` runs on reqwest with redirects off (a redirect could leave the allow-list), a timeout, and a streamed body cap `MAX_HTTP_RESPONSE_BYTES` (over it is `TooLarge`, never a silent cut); `refuse_provider_hosts(manifest, &ProvidersConfig)` refuses a `net` entry that covers the host of any configured provider section or of the plugin's own `[[provider]]` rows.
+2. `hostfn.rs`: dispatch `cox_http` to `Net`, blocking the plugin's worker on the session runtime like `cox_model_call`; no runtime answers `Failed`.
+3. `crates/cox-session/src/plugins.rs`: a `Granted` plugin whose `net` covers a provider host is not loaded, with a notice (fail open).
+4. `cox-plugin` gets `reqwest` (already a workspace dependency) and `wiremock` (dev).
+Check: wiremock `http_outside_allow_list_is_refused`, `net_entry_matching_provider_host_is_rejected`, plus `http_to_allowed_host_round_trips`, `http_body_over_cap_is_too_large`, `http_redirect_is_not_followed`, `http_in_render_is_not_in_this_context`.
+What landed: `crates/cox-plugin/src/net.rs` (`Net::target`, `Net::send`, `refuse_provider_hosts`, `MAX_HTTP_RESPONSE_BYTES` = 1 MiB, 30 s timeout, redirects off), `cox_http` in `hostfn.rs`, and the PL§7d refusal at load in `crates/cox-session/src/plugins.rs`. `unimplemented_import_links_and_answers_failed` now uses `cox_redraw`, the import still unimplemented.
+Check:
+```text
+$ mise exec -- cargo nextest run -p cox-plugin -p cox-session -E 'test(http) | test(provider_host) | test(net_entry) | test(target_matches)'
+PASS cox-plugin net::tests::net_entry_matching_provider_host_is_rejected
+PASS cox-plugin net::tests::target_matches_the_url_host_not_its_userinfo
+PASS cox-session plugins::tests::plugin_http_server_needs_its_host_in_net
+PASS cox-plugin host::tests::http_request_is_compiled_out
+PASS cox-plugin hostfn::tests::http_in_render_is_not_in_this_context
+PASS cox-session plugins::tests::granted_plugin_with_provider_host_in_net_is_not_loaded
+PASS cox-plugin hostfn::tests::http_outside_allow_list_is_refused
+PASS cox-plugin hostfn::tests::http_body_over_cap_is_too_large
+PASS cox-plugin hostfn::tests::http_redirect_is_not_followed
+PASS cox-plugin hostfn::tests::http_to_allowed_host_round_trips
+10 tests run: 10 passed, 135 skipped
+$ mise exec -- cargo nextest run -p cox-plugin -p cox-session
+145 tests run: 145 passed, 0 skipped
+$ mise exec -- cargo nextest run -p cox --test deps
+10 tests run: 10 passed, 0 skipped
+$ mise exec -- cargo clippy -p cox-plugin -p cox-session --all-targets -- -D warnings
+clean
+$ mise exec -- cargo fmt --check
+clean
+```
+
 #### T58.4 Move the decisions still in CoxModel into `cox-app`
 
 Model: Claude Code / sonnet-5.5 · Status: done 2026-10-03 · Depends: — · Size: an audit (~40 lines in `docs/design/desktop-windows.md` or this card) plus one sub-card per move · Files: see the sub-cards
@@ -9454,6 +9490,46 @@ Done when: the Check passes.
 - Result: `crates/cox-provider-testkit/src/replay.rs`: the `sk-` arm of `redact_secrets` counts ASCII alphanumerics plus `-` and `_`, the body alphabet T50.7 gave `scrub`; the 8-byte floor and the `Bearer ` arm are unchanged. Before the fix a `sk-ant-…` key matched nothing (`ant` is below the floor), so the whole key reached the cassette.
 - Tests: `cassette_redaction_removes_an_anthropic_key_whole` fails on the old code (the line came back unchanged); `redact_strips_sk_and_bearer` and `redact_preserves_non_ascii` still pass; `cox-provider`'s `no_secrets_in_fixtures` still finds no secret in the committed fixtures under the wider alphabet.
 - Check output summary: `cargo nextest run -p cox-provider-testkit` 9 passed; `cargo nextest run -p cox-provider` 28 passed; `cargo clippy -p cox-provider-testkit --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+
+#### T56.1 `cox-cursor-cloud` crate: hand-written wire types
+
+Status: done 2026-10-03 · Depends: — (terms go-ahead given by the creator 2026-10-03, A123 (5)) · Size: ~170 · Files: `crates/cox-cursor-cloud/src/lib.rs` (new), `crates/cox-cursor-cloud/src/wire.rs` (new); manifests `crates/cox-cursor-cloud/Cargo.toml`, the workspace `Cargo.toml`; fixtures `crates/cox-cursor-cloud/tests/fixtures/*.json`
+Goal: serde types for the endpoints cox uses, written from https://cursor.com/docs/cloud-agent/api/endpoints: create agent (`prompt`, `model`, `repos` with `url` and `startingRef`, `autoCreatePR` defaulting to false), a follow-up run, run status (unknown values kept as `Other(String)`), the stream events (`status`, `assistant`, `thinking`, `tool_call`, `interaction_update`, `heartbeat`, `result`, `error`, `done`, and `Unknown` for anything else), cancel and run usage (`inputTokens`, `outputTokens`, `cacheWriteTokens`, `cacheReadTokens`, `totalTokens`). The crate is its own under D1: the one place a socket to `api.cursor.com` is opened (T56.2), not a `Provider`, and not session assembly; it depends on `cox-protocol` and `cox-provider-http` only. Rows in AGENTS.md Layout and `docs/design/crates.md`; no new dependency.
+Plan: add `crates/cox-cursor-cloud` (a workspace member by the `crates/*` glob) with `serde` and `serde_json` only (the `cox-protocol` and `cox-provider-http` edges arrive with T56.2, which first uses them); `wire.rs` holds the request types (`CreateAgentRequest`, `Repo`, `CreateRunRequest`), `RunStatus` with `Other(String)`, `StreamEvent` with `Unknown`, `RunUsage` and the cancel response, each tested against fixtures under `tests/fixtures/`; add the Layout row in `AGENTS.md` (rewrite the existing plan.md §1.1 row) and the `docs/design/crates.md` row; run `cargo nextest run -p cox-cursor-cloud`, `-p cox --test deps`, clippy and fmt.
+Check: `mise exec -- cargo nextest run -p cox-cursor-cloud create_agent_request_has_no_identity_fields stream_event_parses_every_documented_type unknown_stream_event_is_kept_as_unknown run_usage_parses_the_token_counts auto_create_pr_defaults_off`.
+Done when: the tests pass over hand-written fixtures.
+Out of scope: endpoints cox does not use (`/v1/me`, `/v1/repositories`, `/v1/sub-tokens`, archive, artifacts download).
+
+- Result: new crate `crates/cox-cursor-cloud` (`serde` and `serde_json` only; the `cox-protocol` and `cox-provider-http` edges arrive with T56.2, the first card to use them). `src/wire.rs` holds the hand-written types from https://cursor.com/docs/cloud-agent/api/endpoints (checked 2026-10-03): `CreateAgentRequest` (prompt envelope, optional model, `repos` with `startingRef`, `autoCreatePR` always sent and false), `CreateRunRequest`, `Run`/`RunStatus` (open enum, unknown kept as `Other`, unknown never terminal), `CreateAgentResponse`/`CreateRunResponse`/`CancelResponse`, `UsageResponse`/`RunUsage`, and `StreamEvent::parse(event, data)` covering `status`, `assistant`, `thinking`, `tool_call`, `interaction_update`, `heartbeat`, `result`, `error`, `done` and `Unknown`. Fixtures in `crates/cox-cursor-cloud/tests/fixtures/`. Rows added to `AGENTS.md` Layout, `docs/design/crates.md` and plan.md §1.1.
+- Deviation noted: the card says `prompt` is text; Cursor's docs make it an object `{ "text": ... }` and `model` an object `{ "id": ... }`, so the types follow the docs. No `name` field is modelled, so no request can carry one.
+- Check output summary: `cargo nextest run -p cox-cursor-cloud` 11 passed (the five named tests plus six more); `cargo nextest run -p cox --test deps` 10 passed; `cargo clippy -p cox-cursor-cloud --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+
+#### T56.3 `[[cloud_agents]]` manifest capability and its grant line
+
+Status: done 2026-10-03 · Depends: — (terms go-ahead given by the creator 2026-10-03, A123 (5)) · Size: ~150 · Files: `crates/cox-plugin-api/src/manifest.rs`, `crates/cox-plugin/src/grant.rs`; generated `docs/plugin.schema.json`
+Goal: `[[cloud_agents]]` entries with `name`, `backend` (a closed set: `"cursor"`), `key_env` (default `CURSOR_API_KEY`), optional `model` and `description`. There is no URL field: the host for a backend is fixed, so a plugin cannot point the key elsewhere. The grant line names the host `api.cursor.com`, the key env, that the prompt and the repository's GitHub URL are sent, and that Cursor clones the repository and pushes a branch on its servers, billed to the user's Cursor plan; a changed entry asks for the grant again, as every capability does (T33.6).
+Plan: add `CloudAgent` (`name`, `backend: CloudBackend` closed to `cursor`, `key_env` defaulting to `CURSOR_API_KEY`, optional `model` and `description`, `deny_unknown_fields` so a `url` key is rejected) and `PluginManifest.cloud_agents` in `manifest.rs` with validation; add the grant line for each entry in `grant.rs`; regenerate `docs/plugin.schema.json` the way the drift test documents; run the named tests plus `-p cox-plugin-api -p cox-plugin`, clippy and fmt.
+Check: `mise exec -- cargo nextest run -p cox-plugin-api manifest_cloud_agent_backend_is_a_closed_set manifest_cloud_agent_has_no_url_field` and `-p cox-plugin grant_lists_cloud_agent_host_key_and_off_machine_code`, plus `plugin_schema_matches_committed_file`.
+Done when: the tests pass and the schema is regenerated.
+Out of scope: any backend other than Cursor.
+
+- Result: `crates/cox-plugin-api/src/manifest.rs` gains `CloudAgentDecl` (`name`, `backend`, `key_env` defaulting to `CURSOR_API_KEY`, optional `model` and `description`; `deny_unknown_fields`, so `url`, `base_url` or `host` is refused), the closed `CloudBackend` enum (`cursor`, with `host()` fixing `api.cursor.com` and `name()`), `PluginManifest.cloud_agents` and its validation (the name fits as a prefixed tool name; `key_env` is an env var name, not a value). A `[[cloud_agents]]` entry needs `wasm`, like `[[external_agents]]`. `crates/cox-plugin/src/grant.rs` adds one approval line per entry naming the backend, `host=api.cursor.com`, the key env, the model, that the prompt and the repository's GitHub URL are sent, and that the service clones the repository and pushes a branch on its servers, billed to the user's plan; any change to an entry asks again through the existing `check`. `docs/plugin.schema.json` regenerated.
+- Tests: `manifest_cloud_agent_backend_is_a_closed_set`, `manifest_cloud_agent_has_no_url_field`, `manifest_cloud_agent_defaults_the_key_env_and_round_trips`, `manifest_cloud_agent_rejects_a_key_value_in_key_env`, `manifest_rejects_a_wasm_less_package_with_provider_models_or_agents` (extended), `grant_lists_cloud_agent_host_key_and_off_machine_code`, `plugin_schema_matches_committed_file`.
+- Check output summary: `cargo nextest run -p cox-plugin-api -p cox-plugin` 111 passed; `cargo clippy -p cox-plugin-api -p cox-plugin --all-targets -- -D warnings` clean; `cargo fmt` applied to both crates.
+
+#### T56.5 `cloud_runs` table: a run outlives the session that started it
+
+Status: done 2026-10-03 · Depends: — (terms go-ahead given by the creator 2026-10-03, A123 (5)) · Size: ~120 · Files: `crates/cox-store/migrations/00000000000006_cloud_runs/up.sql` and `down.sql` (new), `crates/cox-store/src/models.rs`, `crates/cox-store/src/queries.rs`; generated `crates/cox-store/src/schema.rs`
+Goal: one row per run: session id, task id, backend, agent id, run id, repository, model, status, `usage_recorded`, created and updated times. Diesel models and typed queries (D9): insert, set status, list a session's non-terminal runs, and mark usage recorded exactly once (`UPDATE … WHERE usage_recorded = false` through the DSL, returning whether this call won).
+Plan: add migration `00000000000007_cloud_runs` (recheck the next free number against main before pushing, T37.29.3.4 may also add one), extend `schema.rs` in the existing style, add `CloudRunRow` and `NewCloudRun` to `models.rs` and typed queries (insert, set status, list a session's non-terminal runs, mark usage recorded once) to `queries.rs` on the Diesel DSL; run the three named tests plus `-p cox-store`, clippy and fmt.
+Check: `mise exec -- cargo nextest run -p cox-store cloud_run_round_trips cloud_runs_lists_only_non_terminal_runs mark_usage_recorded_wins_once`.
+Done when: the migration applies on a fresh and an existing database; the tests pass.
+Out of scope: storing stream text (the transcript goes through the archive as any task result does).
+
+- Result: migration `00000000000007_cloud_runs` (`up.sql`, `down.sql`; the down was run against the up in sqlite3) creates `cloud_runs`, keyed by `(backend, run_id)`, with session id, task id, agent id, repository, model (NULL when the backend picked its default), `status`, `terminal`, `usage_recorded`, created and updated times, and an index on `session_id`. `schema.rs` and `models.rs` (`CloudRunDbRow`) gained the table; the schema snapshot was updated. Typed Diesel queries (no raw SQL) are in the new `crates/cox-store/src/cloud_runs.rs`: `cloud_run_insert`, `cloud_run_set_status`, `cloud_run`, `cloud_runs_non_terminal` and `cloud_run_mark_usage_recorded` (one conditional `UPDATE … WHERE usage_recorded = false`, true for exactly one caller). `older_binary_refuses_newer_schema` now expects the binary version `00000000000007`.
+- Deviations from the card: the queries live in `cloud_runs.rs`, not `queries.rs` (that file holds ledger aggregations and was being edited by another task); a `terminal` column carries the host's verdict on the backend's `status` word, so `cox-store` embeds no backend's status list.
+- Tests: `cloud_run_round_trips`, `cloud_runs_lists_only_non_terminal_runs`, `mark_usage_recorded_wins_once`, plus the existing `schema_snapshot_matches` and `migrations_are_idempotent` (an existing database).
+- Check output summary: `cargo nextest run -p cox-store` 34 passed; `cargo clippy -p cox-store --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
 
 ### T37.46. Rewind menu: the restored-file count from the session's changes
 

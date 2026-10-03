@@ -13,6 +13,7 @@
 // drop this allow once its public items are documented.
 #![allow(missing_docs)]
 
+pub mod cloud_runs;
 pub mod fts;
 pub mod lock;
 mod models;
@@ -1141,7 +1142,7 @@ mod tests {
             err,
             StoreError::SchemaNewer {
                 db: "99991231000000".into(),
-                binary: "00000000000006".into(),
+                binary: "00000000000007".into(),
             }
         );
     }
