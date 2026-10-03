@@ -26,10 +26,15 @@ jobs:
   # The shared pyrlyn/infra workflow, pinned by commit (descendant of the
   # ci-rust pin in #57; this commit also ships release-plz.yml and pipeline.yml):
   # fmt once, then per target clippy (--all-targets --all-features), check, and
-  # nextest where the runner executes the target (Linux x86_64 and aarch64,
-  # macOS aarch64) or a build where it does not (macOS x86_64).
+  # nextest on every target (Linux x86_64 and aarch64, macOS aarch64; macOS is
+  # Apple Silicon only).
   rust:
-    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@189816ac5a375e18e0235044970efcbc40e3cabd
+    uses: pyrlyn/infra/.github/workflows/ci-rust.yml@0603d0ae610af9f792c5caf925041292a857e480
+    # ci-rust cancels the whole run when a job fails (cancel-run-on-failure), which needs
+    # `actions: write` on the calling job.
+    permissions:
+      contents: read
+      actions: write
     with:
       # The shared matrix minus Windows: the workspace does not build there
       # yet (P57); the `windows` job below checks the crates that do.
@@ -37,11 +42,10 @@ jobs:
         [
         {"os": "ubuntu-latest", "target": "x86_64-unknown-linux-gnu"},
         {"os": "ubuntu-24.04-arm", "target": "aarch64-unknown-linux-gnu"},
-        {"os": "macos-latest", "target": "aarch64-apple-darwin"},
-        {"os": "macos-latest", "target": "x86_64-apple-darwin"}
+        {"os": "xcode-27", "target": "aarch64-apple-darwin"}
         ]
-      # The manifest is virtual with `default-members`; cover every member.
-      clippy-args: --workspace
+      # The manifest is virtual with `default-members`; ci-rust's default `package-args`
+      # (--workspace) already covers every member, so no `clippy-args` here.
       tools: nextest
       # Linux job A (plan.md T4.2): the sandbox must pick bubblewrap; job B
       # (sandbox-landlock) covers the Landlock fallback. cox-voice's build
@@ -211,7 +215,7 @@ jobs:
   # skipping them. A skipped macOS job reports `skipped` under its own name,
   # which a required check treats as passed.
   changes:
-    uses: pyrlyn/infra/.github/workflows/changes.yml@f49cd4a1e9b5c0e4b70f7253f4a1de16971402ca # main
+    uses: pyrlyn/infra/.github/workflows/changes.yml@0603d0ae610af9f792c5caf925041292a857e480 # main
     permissions:
       contents: read
     with:
