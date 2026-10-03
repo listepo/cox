@@ -9,12 +9,19 @@ extension CoxClient.TurnCosts {
   init(_ costs: CoxFFIBindings.TurnCosts) {
     self.init(
       columns: costs.columns, rows: costs.rows.map { CoxClient.CostRow($0) },
-      total: CoxClient.CostRow(costs.total), project: costs.project)
+      total: CoxClient.CostRow(costs.total), project: costs.project,
+      budget: costs.budget.map { CoxClient.BudgetRow($0) })
   }
 }
 
 extension CoxClient.CostRow {
   init(_ row: CoxFFIBindings.CostRow) {
     self.init(label: row.label, values: row.values, detail: row.detail)
+  }
+}
+
+extension CoxClient.BudgetRow {
+  init(_ row: CoxFFIBindings.BudgetRow) {
+    self.init(label: row.label, text: row.text, fraction: row.fraction)
   }
 }

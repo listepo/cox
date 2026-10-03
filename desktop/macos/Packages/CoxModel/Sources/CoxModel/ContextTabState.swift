@@ -4,7 +4,8 @@
 // `ContextTab.State` field for field. `CostHistoryState` is the tab's cost by turn, read from
 // the ledger when the tab asks (T37.29.3.2), with the project's spend as its footnote
 // (T37.29.3.3). `[desktop.context] cache_hit` picks the turn's or the session's cache hit (A104);
-// "Compact now" waits while the meter's turn runs (A105). The budget comes later.
+// "Compact now" waits while the meter's turn runs (A105). The budget caps against the spend ride
+// with the cost history (T37.29.3.4).
 
 import CoxClient
 
@@ -59,11 +60,14 @@ public struct CostHistoryState: Equatable, Sendable {
   public var rows: [Row] = []
   /// `Project cox today: $3.18 · this week: $21.40. …`, shown even before this session spent.
   public var footnote = ""
+  /// The session's and the month's spend against their caps, shown even before this session
+  /// spent (T37.29.3.4).
+  public var budget: [BudgetRow] = []
 
   public init() {}
 
   public init(_ costs: TurnCosts) {
-    footnote = costs.project
+    (footnote, budget) = (costs.project, costs.budget)
     guard !costs.rows.isEmpty else { return }
     let row = { (cost: CostRow) in
       Row(label: cost.label, values: cost.values, isDetail: cost.detail)
