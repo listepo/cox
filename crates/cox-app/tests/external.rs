@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! A top-level session driven by an external ACP agent (T52.4-T52.6,
 //! DT§3.3.1), end to end: `App::open_agent` starts `tests/fixtures/fake_acp.sh` from a
 //! scratch user config's `[external_agents.fake]`, under the real sandbox

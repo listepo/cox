@@ -25,8 +25,8 @@ allow = [
     # wasmtime and cranelift (under extism, T33.3/A52): Apache-2.0 plus the
     # LLVM exception, which only waives the attribution clause for binaries.
     "Apache-2.0 WITH LLVM-exception",
-    # cox's own crates (A68): "GPL-3.0-only OR LicenseRef-cox-Royalty-Free".
-    # Only this ref is allowed, not GPL-3.0-only itself, so no GPL dependency
+    # cox's own crates (A68): "GPL-3.0-or-later OR LicenseRef-cox-Royalty-Free".
+    # Only this ref is allowed, not GPL-3.0-or-later itself, so no GPL dependency
     # can slip in and break the royalty-free option.
     "LicenseRef-cox-Royalty-Free",
 ]

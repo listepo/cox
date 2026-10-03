@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! The session owner end to end (T37.39): `App` opens a real session built
 //! by cox-session in a scratch `COX_HOME` over the Scripted provider, and
 //! `LiveSession` runs intents as the macOS app sends them through
@@ -866,6 +870,13 @@ async fn turn_costs_group_the_ledger_by_turn_with_the_subagent_under_its_turn() 
         )),
         "{}",
         costs.project
+    );
+    let caps: Vec<_> = costs.budget.iter().map(|r| r.label.as_str()).collect();
+    assert_eq!(caps, ["Session", "This month"]);
+    assert!(
+        costs.budget[0].text.ends_with(" of $5.00"),
+        "{:?}",
+        costs.budget
     );
 }
 

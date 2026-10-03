@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Ivan Tugay
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Licensed under GPL-3.0 or later; see https://www.gnu.org/licenses/gpl-3.0.html
+
 //! Process-wide structured logging and optional OTLP export (T32.9; `docs/
 //! design/crates.md` C9). Separate from `crates/cox` because it is the only
 //! user of five otel crates (dependency (a)); it takes plain values rather
