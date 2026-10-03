@@ -23,8 +23,8 @@ env:
 # version: the `rust` job through the shared pyrlyn/infra workflow, the others
 # through .github/actions/rust. Both fail when rustc is not that pin.
 jobs:
-  # The shared pyrlyn/infra workflow, pinned by commit (descendant of the
-  # ci-rust pin in #57; this commit also ships release-plz.yml and pipeline.yml):
+  # The shared pyrlyn/infra workflow, pinned by commit (descendant of e6e376e, which
+  # pins Xcode 27 through the setup-xcode action; `xcode-version` defaults to 27):
   # fmt once, then per target clippy (--all-targets --all-features), check, and
   # nextest on every target (Linux x86_64 and aarch64, macOS aarch64; macOS is
   # Apple Silicon only).
@@ -191,7 +191,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, ubuntu-24.04]
+        os: [xcode-27, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -234,9 +234,13 @@ jobs:
     if: >-
       !cancelled()
       && (needs.changes.result != 'success' || needs.changes.outputs.swift == 'true')
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: pyrlyn/infra/.github/actions/setup-xcode@87cca51e2e995af39b78e6938bc89a82a844f4e2
+        with:
+          version: '27'
 
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
@@ -275,8 +279,9 @@ jobs:
 
   # The macOS app (T37.15, DT§7): CoxFFI.xcframework for Apple Silicon only
   # (A67), then `swift test` for every package under desktop/macos/Packages,
-  # then the app target, unsigned (T37.32.1). macos-26 is the arm64 image
-  # whose Xcode 26 carries the macOS 26 SDK the app targets. Always the full
+  # then the app target, unsigned (T37.32.1). xcode-27 is GitHub's arm64 image
+  # with Xcode 27 (macos-26 / macos-latest carry Xcode 26.x); setup-xcode selects
+  # the pinned stable Xcode 27 and fails when the image has none. Always the full
   # build: every package and the app, never only the changed ones.
   desktop-macos:
     needs: changes
@@ -284,9 +289,21 @@ jobs:
       !cancelled()
       && (needs.changes.result != 'success'
       || needs.changes.outputs.swift == 'true' || needs.changes.outputs.rust == 'true')
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: pyrlyn/infra/.github/actions/setup-xcode@87cca51e2e995af39b78e6938bc89a82a844f4e2
+        with:
+          version: '27'
+
+      # Since Xcode 26 the Metal toolchain is a separate component, and the xcode-27 image does
+      # not ship it for Xcode 27: SwiftTerm's Shaders.metal (CoxPlatform) then fails to compile.
+      # Download it for the Xcode setup-xcode just selected.
+      - name: Metal toolchain
+        run: |
+          xcodebuild -showComponent MetalToolchain || true
+          xcodebuild -downloadComponent MetalToolchain
 
       - uses: ./.github/actions/rust
 
