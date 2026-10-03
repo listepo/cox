@@ -282,7 +282,9 @@ jobs:
   # then the app target, unsigned (T37.32.1). xcode-27 is GitHub's arm64 image
   # with Xcode 27 (macos-26 / macos-latest carry Xcode 26.x); setup-xcode selects
   # the pinned stable Xcode 27 and fails when the image has none. Always the full
-  # build: every package and the app, never only the changed ones.
+  # build: every package and the app, never only the changed ones. The toolchain
+  # and XCFramework steps are .github/actions/desktop-macos, shared with the
+  # desktop build workflow (T37.32.3).
   desktop-macos:
     needs: changes
     if: >-
@@ -293,35 +295,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: pyrlyn/infra/.github/actions/setup-xcode@87cca51e2e995af39b78e6938bc89a82a844f4e2
-        with:
-          version: '27'
-
-      # Since Xcode 26 the Metal toolchain is a separate component, and the xcode-27 image does
-      # not ship it for Xcode 27: SwiftTerm's Shaders.metal (CoxPlatform) then fails to compile.
-      # Download it for the Xcode setup-xcode just selected.
-      - name: Metal toolchain
-        run: |
-          xcodebuild -showComponent MetalToolchain || true
-          xcodebuild -downloadComponent MetalToolchain
-
-      - uses: ./.github/actions/rust
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-
-      - name: CoxFFI.xcframework
-        run: bash scripts/desktop/xcframework.sh
-
-      - name: arm64 only
-        run: |
-          set -euo pipefail
-          libs=$(find desktop/macos/build/CoxFFI.xcframework -name '*.a')
-          [ -n "$libs" ] || { echo "no library in CoxFFI.xcframework" >&2; exit 1; }
-          for lib in $libs; do
-            archs=$(lipo -archs "$lib")
-            echo "$lib: $archs"
-            [ "$archs" = arm64 ] || { echo "expected arm64 only" >&2; exit 1; }
-          done
+      - uses: ./.github/actions/desktop-macos
 
       # Serial: the UI tests share one NSApplication (key window, appearance, main run loop),
       # and the benchmark times the main thread, so tests running alongside break both. Every
