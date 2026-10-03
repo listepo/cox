@@ -44,8 +44,8 @@ jobs:
         {"os": "ubuntu-24.04-arm", "target": "aarch64-unknown-linux-gnu"},
         {"os": "xcode-27", "target": "aarch64-apple-darwin"}
         ]
-      # The manifest is virtual with `default-members`; cover every member.
-      clippy-args: --workspace
+      # The manifest is virtual with `default-members`; ci-rust's default `package-args`
+      # (--workspace) already covers every member, so no `clippy-args` here.
       tools: nextest
       # Linux job A (plan.md T4.2): the sandbox must pick bubblewrap; job B
       # (sandbox-landlock) covers the Landlock fallback. cox-voice's build
