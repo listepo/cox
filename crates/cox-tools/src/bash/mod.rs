@@ -415,6 +415,8 @@ fn command_for(
 
 /// Makes the PTY slave the child's stdio and controlling terminal.
 #[cfg(unix)]
+// why: pre_exec + ioctl(TIOCSCTTY) after fork to attach the PTY are unsafe.
+#[allow(unsafe_code)]
 fn attach_pty(cmd: &mut Command, slave: &OwnedFd) -> Result<(), ToolError> {
     let stdio = |fd: &OwnedFd| fd.try_clone().map(Stdio::from).map_err(|_| ToolError::Io);
     cmd.stdin(stdio(slave)?)
@@ -681,6 +683,8 @@ struct Workspace<'a> {
 /// can notice `DRAINING`/`STOP` instead of blocking forever on a PTY that
 /// a grandchild still holds open.
 #[cfg(unix)]
+// why: BorrowedFd::borrow_raw on an fd we own for the duration of the poll.
+#[allow(unsafe_code)]
 fn readable(fd: RawFd, timeout_ms: u8) -> bool {
     // SAFETY: `fd` is the master's descriptor and the master is owned by the
     // reader thread that calls this, so it stays open for the whole call.

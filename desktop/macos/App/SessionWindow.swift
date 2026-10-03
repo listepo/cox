@@ -191,6 +191,15 @@ struct SessionWindow: View {
           }
           TranscriptView(store: showing.store, send: send)
             .composer(showing.composer)
+            .overlay {
+              // Figma frame 22: an empty session shows the welcome hero until its first block.
+              if showing.store.blocks.isEmpty, let info = showing.info {
+                SessionWelcome(
+                  project: screen.toolbar.project, cwd: info.cwd, composer: showing.composer,
+                  // cox-app reads the folder (T37.49); without a core the hero asks alone.
+                  service: (try? model.launch.live.get()) ?? FixtureWelcome())
+              }
+            }
           let panels = PluginWidgets.panels(showing.store)
           if !panels.isEmpty { PluginPanel(panels).fixedSize(horizontal: false, vertical: true) }
           BestOfBar(launcher: bestOf, open: showing, model: model) { sessions in

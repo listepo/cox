@@ -6,6 +6,10 @@
 //! until they are transcribed or dropped. `PushToTalk` joins the two
 //! behind `cox_protocol`'s `Dictation`, the one thing the TUI sees.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 mod capture;
 mod transcribe;
 

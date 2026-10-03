@@ -16,5 +16,9 @@
 //! `cox-provider` for those helpers — a cycle. `cox_provider::scripted`
 //! and `cox_provider::replay` re-export what moved here.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod replay;
 pub mod scripted;

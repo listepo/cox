@@ -30,6 +30,8 @@ public struct TranscriptStyle: Equatable {
   public var bubble: Bubble
   public var thought: Thought
   public var quote: Quote
+  /// Where a prompt's turn number sits; `nil` draws none.
+  public var gutter: Gutter?
   /// A list's indent, and the gap between a table's columns (`TranscriptStructure.swift`).
   public var indent: CGFloat
   /// Each face's line height (`TranscriptLineHeights.swift`).
@@ -39,7 +41,8 @@ public struct TranscriptStyle: Equatable {
     body: NSFont, code: NSFont, headings: Headings? = nil, text: NSColor,
     colors: [StyleToken: NSColor] = [:], blockSpacing: CGFloat, inset: NSSize,
     bubble: Bubble = .system, thought: Thought = .system, quote: Quote = .system,
-    indent: CGFloat = 0, lineHeights: LineHeights = .natural, readingWidth: CGFloat? = nil
+    indent: CGFloat = 0, lineHeights: LineHeights = .natural, readingWidth: CGFloat? = nil,
+    gutter: Gutter? = nil
   ) {
     (self.body, self.code, self.text, self.colors) = (body, code, text, colors)
     self.headings =
@@ -48,7 +51,7 @@ public struct TranscriptStyle: Equatable {
       blockSpacing, inset, bubble, thought
     )
     (self.quote, self.indent) = (quote, indent)
-    (self.lineHeights, self.readingWidth) = (lineHeights, readingWidth)
+    (self.lineHeights, self.readingWidth, self.gutter) = (lineHeights, readingWidth, gutter)
   }
 
   public static var system: TranscriptStyle {

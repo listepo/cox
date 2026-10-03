@@ -29,8 +29,6 @@
 //! dependencies (a), the typify build step, and size (c)), kept at this path
 //! so `cox_provider::anthropic::*` keeps working.
 
-#![warn(missing_docs)]
-
 pub use cox_provider_anthropic as anthropic;
 pub use cox_provider_http::http;
 pub mod jev;

@@ -32,8 +32,6 @@
 //! - [`tool`] — `WasmTool`: a plugin's granted tool as a deferred `Tool`
 //!   named `wasm__<id>__<tool>`, its spec frozen at `cox_init` (PL§7, T33.12).
 
-#![warn(missing_docs)]
-
 pub mod advisor;
 pub mod context;
 pub mod discover;

@@ -11,6 +11,11 @@
 //!
 //! `cargo run -p cox-ffi --example record -- <scenario.toml> <out.json> <prompt>...`
 
+// why: scratch_env sets COX_HOME/HOME; env::set_var is unsafe in edition 2024.
+#![allow(unsafe_code)]
+// why: an example and test fixture, not public API; its helpers need no docs.
+#![allow(missing_docs)]
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};

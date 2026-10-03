@@ -18,8 +18,6 @@
 //! - [`config`] — the `Config` struct tree mirroring `config/default.toml` (plan.md §1.6).
 //! - [`plugin`] — `cox-plugin-api` re-exported (A52): the `plugin.toml` manifest and, later, the ABI payloads. It lives in its own crate because the guest SDK builds it for wasm32.
 
-#![warn(missing_docs)]
-
 pub mod agent;
 pub mod commands;
 pub mod config;

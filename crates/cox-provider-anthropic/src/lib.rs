@@ -12,6 +12,10 @@
 //! typify build step over the vendored spec in `schema/`, and for its size;
 //! `cox-provider` re-exports it at the old `cox_provider::anthropic` path.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod request;
 pub mod stream;
 /// Wire types generated from the vendored OpenAPI spec (T30.12) — internal
@@ -335,6 +339,8 @@ fn http_error(status: reqwest::StatusCode, body: &str, retry_after: Option<u64>)
 }
 
 #[cfg(test)]
+// why: env::set_var/remove_var are unsafe in edition 2024 (per-process tests).
+#[allow(unsafe_code)]
 mod tests {
     use super::*;
 

@@ -3,6 +3,10 @@
 //! Separate because these are user- and repo-supplied extension points, not
 //! core agent logic.
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+
 pub mod agents;
 pub mod claude_settings;
 pub mod commands;

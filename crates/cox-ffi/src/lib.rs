@@ -5,6 +5,12 @@
 //! sessions are `cox-app`'s (T37.39), so its sole workspace dependencies are
 //! `cox-app` and `cox-protocol`, and it alone uses `uniffi` (`deps.rs`).
 
+// why: this crate was not under `missing_docs` before the workspace lints;
+// drop this allow once its public items are documented.
+#![allow(missing_docs)]
+// why: the uniffi scaffolding and exports expand to unsafe extern "C" glue.
+#![allow(unsafe_code)]
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
@@ -389,6 +395,12 @@ impl App {
     /// sidebar reads it again then, not on a timer.
     pub async fn workspace_changed(self: Arc<Self>) -> Result<(), AppError> {
         Ok(on_runtime(async move { self.owner.workspace_changed().await }).await??)
+    }
+
+    /// An empty session's welcome hero for `cwd` (Figma frame 22, T37.49);
+    /// it reads the folder's files, so it runs off the caller's thread.
+    pub async fn welcome(self: Arc<Self>, cwd: String) -> Result<cox_app::Welcome, AppError> {
+        on_runtime(async move { self.owner.welcome(Path::new(&cwd)) }).await
     }
 
     /// The first-run checklist for a session in `cwd` (DT§5.8, T37.31); it

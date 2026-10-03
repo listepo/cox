@@ -27,6 +27,11 @@ public struct TranscriptCards {
   var toggle: @MainActor (BlockID) -> Void = { _ in }
   /// The actions a hovered prompt shows over its bubble (`PromptHover.swift`); `nil` shows none.
   public var promptActions: (@MainActor (Block) -> AnyView)?
+  /// The turn number a hovered prompt shows over the drawn one, left of its bubble (T37.48,
+  /// Figma frame 14); its `open` shows `promptMenu` under it. `nil` shows none.
+  public var promptGutter: (@MainActor (Block, _ open: @escaping @MainActor () -> Void) -> AnyView)?
+  /// What a prompt's gutter opens, in a popover; `close` dismisses it.
+  public var promptMenu: (@MainActor (Block, _ close: @escaping @MainActor () -> Void) -> AnyView)?
 
   public init<Card: View, Tile: View, Header: View>(
     _ view: @escaping @MainActor (Block) -> Card,
