@@ -39,6 +39,7 @@ use cox_app::{KeyError, PermissionRule, RuleKind, SessionGrant, SettingsGroup};
 use cox_app::{KeyValueRow, PluginKey, PluginSlot, SpanView, WidgetView};
 use cox_app::{MenuModel, ModelSection};
 use cox_app::{SettingControl, SettingInput, SettingOption};
+use cox_app::{Suggestion, Welcome};
 use cox_protocol::ids::{ArchiveId, CallId, SessionId, TaskId, TurnId};
 use cox_protocol::plugin::Slot;
 use cox_protocol::plugin::ui::StyleToken;
@@ -125,6 +126,19 @@ pub struct ModelChoice {
     pub short_name: Option<String>,
     pub efforts: Vec<Effort>,
     pub context_window: Option<u32>,
+}
+
+#[uniffi::remote(Record)]
+pub struct Welcome {
+    pub summary: String,
+    pub suggestions: Vec<Suggestion>,
+}
+
+#[uniffi::remote(Record)]
+pub struct Suggestion {
+    pub title: String,
+    pub detail: String,
+    pub prompt: String,
 }
 
 #[uniffi::remote(Record)]

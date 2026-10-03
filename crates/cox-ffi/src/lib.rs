@@ -397,6 +397,12 @@ impl App {
         Ok(on_runtime(async move { self.owner.workspace_changed().await }).await??)
     }
 
+    /// An empty session's welcome hero for `cwd` (Figma frame 22, T37.49);
+    /// it reads the folder's files, so it runs off the caller's thread.
+    pub async fn welcome(self: Arc<Self>, cwd: String) -> Result<cox_app::Welcome, AppError> {
+        on_runtime(async move { self.owner.welcome(Path::new(&cwd)) }).await
+    }
+
     /// The first-run checklist for a session in `cwd` (DT§5.8, T37.31); it
     /// runs `git` and probes the sandbox, so it runs off the caller's thread.
     pub async fn checklist(self: Arc<Self>, cwd: String) -> Result<Vec<CheckRow>, AppError> {

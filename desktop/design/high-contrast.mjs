@@ -34,7 +34,7 @@ const WORDS = [
 ];
 const CODE = ['syntax.keyword', 'syntax.string', 'syntax.number', 'syntax.function', 'syntax.comment', 'syntax.type'];
 const onCode = (...fills) => ['surface.code', ...fills.map((f) => `${f}@surface.code`)];
-const TILES = ['neutral', 'edit', 'shell', 'search', 'write'];
+const TILES = ['neutral', 'edit', 'shell', 'search', 'write', 'app'];
 const PAGES = ['general', 'models', 'permissions', 'sandbox', 'budget', 'mcp', 'plugins', 'appearance', 'advanced'];
 
 // Which colour sits on which. `fill@surface` is a translucent fill over that surface. `move: 'bg'`
